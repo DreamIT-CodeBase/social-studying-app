@@ -1,14 +1,19 @@
 // Azure OpenAI (AI Foundry) — GPT-4o deployment for question generation.
 // API key stored in Key Vault.
+//
+// GPT-4o quota: new subscriptions start at 0 TPM. Set gpt4oCapacity = 0 to
+// create the account without a model deployment. Request quota at:
+// https://aka.ms/oai/quotaincrease — then redeploy with capacity > 0.
 param location string
 param environment string
 param tags object
 param keyVaultName string
 
-@description('Tokens-per-minute capacity for GPT-4o (in thousands). 10 = 10K TPM.')
-param gpt4oCapacity int = environment == 'prod' ? 40 : 10
+@description('Tokens-per-minute capacity for GPT-4o (in thousands). 0 = skip model deployment (no quota yet).')
+param gpt4oCapacity int = 0
 
 var accountName = 'oai-socialstudyapp-${environment}'
+var hasQuota = gpt4oCapacity > 0
 
 resource openAiAccount 'Microsoft.CognitiveServices/accounts@2024-04-01-preview' = {
   name: accountName
@@ -24,7 +29,8 @@ resource openAiAccount 'Microsoft.CognitiveServices/accounts@2024-04-01-preview'
   }
 }
 
-resource gpt4oDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-04-01-preview' = {
+// Only deployed when quota has been granted — set gpt4oCapacity > 0 in params.json
+resource gpt4oDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-04-01-preview' = if (hasQuota) {
   parent: openAiAccount
   name: 'gpt-4o'
   sku: {
@@ -55,4 +61,5 @@ resource openAiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
 
 output openAiEndpoint string = openAiAccount.properties.endpoint
 output openAiKeySecretUri string = openAiKeySecret.properties.secretUriWithVersion
-output deploymentName string = gpt4oDeployment.name
+// Empty string when no deployment exists — Container App env var will be blank until quota is granted
+output deploymentName string = hasQuota ? gpt4oDeployment.name : ''
