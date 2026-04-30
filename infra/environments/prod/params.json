@@ -2,8 +2,13 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "environment": { "value": "prod" },
-    "location": { "value": "eastus" },
-    "tenantName": { "value": "socialstudyapp" }
+    "environment":       { "value": "prod" },
+    "location":          { "value": "eastus" },
+    "tenantName":        { "value": "socialstudyapp" },
+    "deployerObjectId":  { "value": "" },
+    "b2cTenantId":       { "value": "" },
+    "b2cClientId":       { "value": "" },
+    "b2cPolicyName":     { "value": "B2C_1_signupsignin" },
+    "gpt4oCapacity":     { "value": 40 }
   }
 }
