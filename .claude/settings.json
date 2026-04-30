@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(cd backend && pytest *)",
+      "Bash(cd backend && ruff *)",
+      "Bash(cd backend && mypy *)",
+      "Bash(cd backend && uvicorn *)",
+      "Bash(pip install *)",
+      "Bash(cd backend && pip install *)",
+      "Bash(cd flutter_app && flutter test *)",
+      "Bash(cd flutter_app && flutter analyze *)",
+      "Bash(cd flutter_app && dart format *)",
+      "Bash(cd flutter_app && dart run build_runner *)",
+      "Bash(cd flutter_app && flutter pub *)",
+      "Bash(cd flutter_app && flutter gen-l10n)",
+      "Bash(cat *)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(echo *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(cd mcp-server && pytest *)",
+      "Bash(cd mcp-server && ruff *)",
+      "Bash(python -c *)",
+      "Bash(which *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git branch *)",
+      "Bash(git checkout *)",
+      "Bash(git stash *)"
+    ],
+    "deny": [
+      "Bash(git push *)",
+      "Bash(git push)",
+      "Bash(az * delete *)",
+      "Bash(az group delete *)",
+      "Bash(az cosmosdb * delete *)",
+      "Bash(rm -rf /)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf .git)",
+      "Bash(curl * | bash)",
+      "Bash(wget * | bash)",
+      "Bash(az deployment *)",
+      "Bash(terraform apply *)",
+      "Bash(terraform destroy *)",
+      "Bash(flutter build * --release *)",
+      "Bash(fastlane *)"
+    ]
+  },
+  "env": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUTF8": "1"
+  }
+}
