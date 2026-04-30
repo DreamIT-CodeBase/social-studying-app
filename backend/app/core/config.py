@@ -7,10 +7,9 @@ class Settings(BaseSettings):
     environment: str = "development"
     allowed_origins: list[str] = ["http://localhost:3000"]
 
-    # Azure Cosmos DB
-    cosmos_endpoint: str = ""
-    cosmos_key: str = ""
-    cosmos_database: str = "social_study"
+    # Azure Cosmos DB (MongoDB API)
+    # replaced by Azure connection string in prod
+    cosmos_connection_string: str = "mongodb://localhost:27017"
 
     # Azure AI Search
     search_endpoint: str = ""
