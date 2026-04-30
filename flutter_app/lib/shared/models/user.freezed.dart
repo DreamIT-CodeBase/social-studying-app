@@ -1,0 +1,585 @@
+// coverage:ignore-file
+// GENERATED CODE - DO NOT MODIFY BY HAND
+// ignore_for_file: type=lint
+// ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
+
+part of 'user.dart';
+
+// **************************************************************************
+// FreezedGenerator
+// **************************************************************************
+
+T _$identity<T>(T value) => value;
+
+final _privateConstructorUsedError = UnsupportedError(
+    'It seems like you constructed your class using `MyClass._()`. This constructor is only meant to be used by freezed and you are not supposed to need it nor use it.\nPlease check the documentation here for more information: https://github.com/rrousselGit/freezed#adding-getters-and-methods-to-our-models');
+
+WorkspaceMembership _$WorkspaceMembershipFromJson(Map<String, dynamic> json) {
+  return _WorkspaceMembership.fromJson(json);
+}
+
+/// @nodoc
+mixin _$WorkspaceMembership {
+  String get workspaceId => throw _privateConstructorUsedError;
+  String get workspaceName => throw _privateConstructorUsedError;
+  UserRole get role => throw _privateConstructorUsedError;
+
+  /// Serializes this WorkspaceMembership to a JSON map.
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+
+  /// Create a copy of WorkspaceMembership
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  $WorkspaceMembershipCopyWith<WorkspaceMembership> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $WorkspaceMembershipCopyWith<$Res> {
+  factory $WorkspaceMembershipCopyWith(
+          WorkspaceMembership value, $Res Function(WorkspaceMembership) then) =
+      _$WorkspaceMembershipCopyWithImpl<$Res, WorkspaceMembership>;
+  @useResult
+  $Res call({String workspaceId, String workspaceName, UserRole role});
+}
+
+/// @nodoc
+class _$WorkspaceMembershipCopyWithImpl<$Res, $Val extends WorkspaceMembership>
+    implements $WorkspaceMembershipCopyWith<$Res> {
+  _$WorkspaceMembershipCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  /// Create a copy of WorkspaceMembership
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? workspaceId = null,
+    Object? workspaceName = null,
+    Object? role = null,
+  }) {
+    return _then(_value.copyWith(
+      workspaceId: null == workspaceId
+          ? _value.workspaceId
+          : workspaceId // ignore: cast_nullable_to_non_nullable
+              as String,
+      workspaceName: null == workspaceName
+          ? _value.workspaceName
+          : workspaceName // ignore: cast_nullable_to_non_nullable
+              as String,
+      role: null == role
+          ? _value.role
+          : role // ignore: cast_nullable_to_non_nullable
+              as UserRole,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$WorkspaceMembershipImplCopyWith<$Res>
+    implements $WorkspaceMembershipCopyWith<$Res> {
+  factory _$$WorkspaceMembershipImplCopyWith(_$WorkspaceMembershipImpl value,
+          $Res Function(_$WorkspaceMembershipImpl) then) =
+      __$$WorkspaceMembershipImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call({String workspaceId, String workspaceName, UserRole role});
+}
+
+/// @nodoc
+class __$$WorkspaceMembershipImplCopyWithImpl<$Res>
+    extends _$WorkspaceMembershipCopyWithImpl<$Res, _$WorkspaceMembershipImpl>
+    implements _$$WorkspaceMembershipImplCopyWith<$Res> {
+  __$$WorkspaceMembershipImplCopyWithImpl(_$WorkspaceMembershipImpl _value,
+      $Res Function(_$WorkspaceMembershipImpl) _then)
+      : super(_value, _then);
+
+  /// Create a copy of WorkspaceMembership
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? workspaceId = null,
+    Object? workspaceName = null,
+    Object? role = null,
+  }) {
+    return _then(_$WorkspaceMembershipImpl(
+      workspaceId: null == workspaceId
+          ? _value.workspaceId
+          : workspaceId // ignore: cast_nullable_to_non_nullable
+              as String,
+      workspaceName: null == workspaceName
+          ? _value.workspaceName
+          : workspaceName // ignore: cast_nullable_to_non_nullable
+              as String,
+      role: null == role
+          ? _value.role
+          : role // ignore: cast_nullable_to_non_nullable
+              as UserRole,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$WorkspaceMembershipImpl implements _WorkspaceMembership {
+  const _$WorkspaceMembershipImpl(
+      {required this.workspaceId,
+      required this.workspaceName,
+      required this.role});
+
+  factory _$WorkspaceMembershipImpl.fromJson(Map<String, dynamic> json) =>
+      _$$WorkspaceMembershipImplFromJson(json);
+
+  @override
+  final String workspaceId;
+  @override
+  final String workspaceName;
+  @override
+  final UserRole role;
+
+  @override
+  String toString() {
+    return 'WorkspaceMembership(workspaceId: $workspaceId, workspaceName: $workspaceName, role: $role)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$WorkspaceMembershipImpl &&
+            (identical(other.workspaceId, workspaceId) ||
+                other.workspaceId == workspaceId) &&
+            (identical(other.workspaceName, workspaceName) ||
+                other.workspaceName == workspaceName) &&
+            (identical(other.role, role) || other.role == role));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode =>
+      Object.hash(runtimeType, workspaceId, workspaceName, role);
+
+  /// Create a copy of WorkspaceMembership
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$WorkspaceMembershipImplCopyWith<_$WorkspaceMembershipImpl> get copyWith =>
+      __$$WorkspaceMembershipImplCopyWithImpl<_$WorkspaceMembershipImpl>(
+          this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$WorkspaceMembershipImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _WorkspaceMembership implements WorkspaceMembership {
+  const factory _WorkspaceMembership(
+      {required final String workspaceId,
+      required final String workspaceName,
+      required final UserRole role}) = _$WorkspaceMembershipImpl;
+
+  factory _WorkspaceMembership.fromJson(Map<String, dynamic> json) =
+      _$WorkspaceMembershipImpl.fromJson;
+
+  @override
+  String get workspaceId;
+  @override
+  String get workspaceName;
+  @override
+  UserRole get role;
+
+  /// Create a copy of WorkspaceMembership
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$WorkspaceMembershipImplCopyWith<_$WorkspaceMembershipImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+User _$UserFromJson(Map<String, dynamic> json) {
+  return _User.fromJson(json);
+}
+
+/// @nodoc
+mixin _$User {
+  String get id => throw _privateConstructorUsedError;
+  String get email => throw _privateConstructorUsedError;
+  String get displayName => throw _privateConstructorUsedError;
+  String get tenantId => throw _privateConstructorUsedError;
+  UserRole get role => throw _privateConstructorUsedError;
+  List<WorkspaceMembership> get workspaceMemberships =>
+      throw _privateConstructorUsedError;
+  String? get avatarUrl => throw _privateConstructorUsedError;
+  int? get gradeLevel => throw _privateConstructorUsedError;
+  DateTime get createdAt => throw _privateConstructorUsedError;
+  DateTime get lastLogin => throw _privateConstructorUsedError;
+  bool get isDeleted => throw _privateConstructorUsedError;
+
+  /// Serializes this User to a JSON map.
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+
+  /// Create a copy of User
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  $UserCopyWith<User> get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $UserCopyWith<$Res> {
+  factory $UserCopyWith(User value, $Res Function(User) then) =
+      _$UserCopyWithImpl<$Res, User>;
+  @useResult
+  $Res call(
+      {String id,
+      String email,
+      String displayName,
+      String tenantId,
+      UserRole role,
+      List<WorkspaceMembership> workspaceMemberships,
+      String? avatarUrl,
+      int? gradeLevel,
+      DateTime createdAt,
+      DateTime lastLogin,
+      bool isDeleted});
+}
+
+/// @nodoc
+class _$UserCopyWithImpl<$Res, $Val extends User>
+    implements $UserCopyWith<$Res> {
+  _$UserCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  /// Create a copy of User
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? id = null,
+    Object? email = null,
+    Object? displayName = null,
+    Object? tenantId = null,
+    Object? role = null,
+    Object? workspaceMemberships = null,
+    Object? avatarUrl = freezed,
+    Object? gradeLevel = freezed,
+    Object? createdAt = null,
+    Object? lastLogin = null,
+    Object? isDeleted = null,
+  }) {
+    return _then(_value.copyWith(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as String,
+      email: null == email
+          ? _value.email
+          : email // ignore: cast_nullable_to_non_nullable
+              as String,
+      displayName: null == displayName
+          ? _value.displayName
+          : displayName // ignore: cast_nullable_to_non_nullable
+              as String,
+      tenantId: null == tenantId
+          ? _value.tenantId
+          : tenantId // ignore: cast_nullable_to_non_nullable
+              as String,
+      role: null == role
+          ? _value.role
+          : role // ignore: cast_nullable_to_non_nullable
+              as UserRole,
+      workspaceMemberships: null == workspaceMemberships
+          ? _value.workspaceMemberships
+          : workspaceMemberships // ignore: cast_nullable_to_non_nullable
+              as List<WorkspaceMembership>,
+      avatarUrl: freezed == avatarUrl
+          ? _value.avatarUrl
+          : avatarUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      gradeLevel: freezed == gradeLevel
+          ? _value.gradeLevel
+          : gradeLevel // ignore: cast_nullable_to_non_nullable
+              as int?,
+      createdAt: null == createdAt
+          ? _value.createdAt
+          : createdAt // ignore: cast_nullable_to_non_nullable
+              as DateTime,
+      lastLogin: null == lastLogin
+          ? _value.lastLogin
+          : lastLogin // ignore: cast_nullable_to_non_nullable
+              as DateTime,
+      isDeleted: null == isDeleted
+          ? _value.isDeleted
+          : isDeleted // ignore: cast_nullable_to_non_nullable
+              as bool,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$UserImplCopyWith<$Res> implements $UserCopyWith<$Res> {
+  factory _$$UserImplCopyWith(
+          _$UserImpl value, $Res Function(_$UserImpl) then) =
+      __$$UserImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call(
+      {String id,
+      String email,
+      String displayName,
+      String tenantId,
+      UserRole role,
+      List<WorkspaceMembership> workspaceMemberships,
+      String? avatarUrl,
+      int? gradeLevel,
+      DateTime createdAt,
+      DateTime lastLogin,
+      bool isDeleted});
+}
+
+/// @nodoc
+class __$$UserImplCopyWithImpl<$Res>
+    extends _$UserCopyWithImpl<$Res, _$UserImpl>
+    implements _$$UserImplCopyWith<$Res> {
+  __$$UserImplCopyWithImpl(_$UserImpl _value, $Res Function(_$UserImpl) _then)
+      : super(_value, _then);
+
+  /// Create a copy of User
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? id = null,
+    Object? email = null,
+    Object? displayName = null,
+    Object? tenantId = null,
+    Object? role = null,
+    Object? workspaceMemberships = null,
+    Object? avatarUrl = freezed,
+    Object? gradeLevel = freezed,
+    Object? createdAt = null,
+    Object? lastLogin = null,
+    Object? isDeleted = null,
+  }) {
+    return _then(_$UserImpl(
+      id: null == id
+          ? _value.id
+          : id // ignore: cast_nullable_to_non_nullable
+              as String,
+      email: null == email
+          ? _value.email
+          : email // ignore: cast_nullable_to_non_nullable
+              as String,
+      displayName: null == displayName
+          ? _value.displayName
+          : displayName // ignore: cast_nullable_to_non_nullable
+              as String,
+      tenantId: null == tenantId
+          ? _value.tenantId
+          : tenantId // ignore: cast_nullable_to_non_nullable
+              as String,
+      role: null == role
+          ? _value.role
+          : role // ignore: cast_nullable_to_non_nullable
+              as UserRole,
+      workspaceMemberships: null == workspaceMemberships
+          ? _value._workspaceMemberships
+          : workspaceMemberships // ignore: cast_nullable_to_non_nullable
+              as List<WorkspaceMembership>,
+      avatarUrl: freezed == avatarUrl
+          ? _value.avatarUrl
+          : avatarUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      gradeLevel: freezed == gradeLevel
+          ? _value.gradeLevel
+          : gradeLevel // ignore: cast_nullable_to_non_nullable
+              as int?,
+      createdAt: null == createdAt
+          ? _value.createdAt
+          : createdAt // ignore: cast_nullable_to_non_nullable
+              as DateTime,
+      lastLogin: null == lastLogin
+          ? _value.lastLogin
+          : lastLogin // ignore: cast_nullable_to_non_nullable
+              as DateTime,
+      isDeleted: null == isDeleted
+          ? _value.isDeleted
+          : isDeleted // ignore: cast_nullable_to_non_nullable
+              as bool,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$UserImpl implements _User {
+  const _$UserImpl(
+      {required this.id,
+      required this.email,
+      required this.displayName,
+      required this.tenantId,
+      required this.role,
+      final List<WorkspaceMembership> workspaceMemberships = const [],
+      this.avatarUrl,
+      this.gradeLevel,
+      required this.createdAt,
+      required this.lastLogin,
+      this.isDeleted = false})
+      : _workspaceMemberships = workspaceMemberships;
+
+  factory _$UserImpl.fromJson(Map<String, dynamic> json) =>
+      _$$UserImplFromJson(json);
+
+  @override
+  final String id;
+  @override
+  final String email;
+  @override
+  final String displayName;
+  @override
+  final String tenantId;
+  @override
+  final UserRole role;
+  final List<WorkspaceMembership> _workspaceMemberships;
+  @override
+  @JsonKey()
+  List<WorkspaceMembership> get workspaceMemberships {
+    if (_workspaceMemberships is EqualUnmodifiableListView)
+      return _workspaceMemberships;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_workspaceMemberships);
+  }
+
+  @override
+  final String? avatarUrl;
+  @override
+  final int? gradeLevel;
+  @override
+  final DateTime createdAt;
+  @override
+  final DateTime lastLogin;
+  @override
+  @JsonKey()
+  final bool isDeleted;
+
+  @override
+  String toString() {
+    return 'User(id: $id, email: $email, displayName: $displayName, tenantId: $tenantId, role: $role, workspaceMemberships: $workspaceMemberships, avatarUrl: $avatarUrl, gradeLevel: $gradeLevel, createdAt: $createdAt, lastLogin: $lastLogin, isDeleted: $isDeleted)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$UserImpl &&
+            (identical(other.id, id) || other.id == id) &&
+            (identical(other.email, email) || other.email == email) &&
+            (identical(other.displayName, displayName) ||
+                other.displayName == displayName) &&
+            (identical(other.tenantId, tenantId) ||
+                other.tenantId == tenantId) &&
+            (identical(other.role, role) || other.role == role) &&
+            const DeepCollectionEquality()
+                .equals(other._workspaceMemberships, _workspaceMemberships) &&
+            (identical(other.avatarUrl, avatarUrl) ||
+                other.avatarUrl == avatarUrl) &&
+            (identical(other.gradeLevel, gradeLevel) ||
+                other.gradeLevel == gradeLevel) &&
+            (identical(other.createdAt, createdAt) ||
+                other.createdAt == createdAt) &&
+            (identical(other.lastLogin, lastLogin) ||
+                other.lastLogin == lastLogin) &&
+            (identical(other.isDeleted, isDeleted) ||
+                other.isDeleted == isDeleted));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode => Object.hash(
+      runtimeType,
+      id,
+      email,
+      displayName,
+      tenantId,
+      role,
+      const DeepCollectionEquality().hash(_workspaceMemberships),
+      avatarUrl,
+      gradeLevel,
+      createdAt,
+      lastLogin,
+      isDeleted);
+
+  /// Create a copy of User
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$UserImplCopyWith<_$UserImpl> get copyWith =>
+      __$$UserImplCopyWithImpl<_$UserImpl>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$UserImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _User implements User {
+  const factory _User(
+      {required final String id,
+      required final String email,
+      required final String displayName,
+      required final String tenantId,
+      required final UserRole role,
+      final List<WorkspaceMembership> workspaceMemberships,
+      final String? avatarUrl,
+      final int? gradeLevel,
+      required final DateTime createdAt,
+      required final DateTime lastLogin,
+      final bool isDeleted}) = _$UserImpl;
+
+  factory _User.fromJson(Map<String, dynamic> json) = _$UserImpl.fromJson;
+
+  @override
+  String get id;
+  @override
+  String get email;
+  @override
+  String get displayName;
+  @override
+  String get tenantId;
+  @override
+  UserRole get role;
+  @override
+  List<WorkspaceMembership> get workspaceMemberships;
+  @override
+  String? get avatarUrl;
+  @override
+  int? get gradeLevel;
+  @override
+  DateTime get createdAt;
+  @override
+  DateTime get lastLogin;
+  @override
+  bool get isDeleted;
+
+  /// Create a copy of User
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$UserImplCopyWith<_$UserImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}

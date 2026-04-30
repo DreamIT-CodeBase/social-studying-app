@@ -5,12 +5,12 @@ import 'package:social_study_app/core/routing/router.dart';
 import 'package:social_study_app/core/theme/app_theme.dart';
 
 void main() {
-  setAppFlavor(AppFlavor.admin);
-  runApp(const ProviderScope(child: SocialStudyApp()));
+  setAppFlavor(AppFlavor.student);
+  runApp(const ProviderScope(child: _StudentApp()));
 }
 
-class SocialStudyApp extends ConsumerWidget {
-  const SocialStudyApp({super.key});
+class _StudentApp extends ConsumerWidget {
+  const _StudentApp();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
