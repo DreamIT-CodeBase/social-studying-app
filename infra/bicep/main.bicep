@@ -176,7 +176,6 @@ module containerApp 'modules/container-apps.bicep' = {
     tags: tags
     managedIdentityId: identity.outputs.identityId
     managedIdentityClientId: identity.outputs.identityClientId
-    keyVaultUri: keyVault.outputs.keyVaultUri
     cosmosConnectionSecretUri: cosmos.outputs.cosmosConnectionSecretUri
     redisConnectionSecretUri: redis.outputs.redisConnectionSecretUri
     serviceBusConnectionSecretUri: serviceBus.outputs.serviceBusConnectionSecretUri

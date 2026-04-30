@@ -7,8 +7,6 @@ param tags object
 param managedIdentityId string
 param managedIdentityClientId string
 
-param keyVaultUri string
-
 // Secret URIs (with version) from Key Vault — pinned so rotations don't break live traffic
 param cosmosConnectionSecretUri string
 param redisConnectionSecretUri string
@@ -143,23 +141,74 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = {
             memory: environment == 'prod' ? '2Gi' : '1Gi'
           }
           env: [
-            { name: 'ENVIRONMENT'; value: environment }
-            { name: 'COSMOS_CONNECTION_STRING'; secretRef: 'cosmos-connection-string' }
-            { name: 'REDIS_URL'; secretRef: 'redis-connection-string' }
-            { name: 'SERVICE_BUS_CONNECTION'; secretRef: 'service-bus-connection-string' }
-            { name: 'AZURE_OPENAI_ENDPOINT'; value: openAiEndpoint }
-            { name: 'AZURE_OPENAI_KEY'; secretRef: 'azure-openai-key' }
-            { name: 'AZURE_OPENAI_DEPLOYMENT'; value: openAiDeploymentName }
-            { name: 'SEARCH_ENDPOINT'; value: searchEndpoint }
-            { name: 'SEARCH_KEY'; secretRef: 'ai-search-key' }
-            { name: 'CONTENT_SAFETY_ENDPOINT'; value: contentSafetyEndpoint }
-            { name: 'CONTENT_SAFETY_KEY'; secretRef: 'content-safety-key' }
-            { name: 'STORAGE_CONNECTION_STRING'; secretRef: 'storage-connection-string' }
-            { name: 'STORAGE_ENDPOINT'; value: storageEndpoint }
-            { name: 'B2C_TENANT_ID'; value: b2cTenantId }
-            { name: 'B2C_CLIENT_ID'; value: b2cClientId }
-            { name: 'B2C_POLICY_NAME'; value: b2cPolicyName }
-            { name: 'MANAGED_IDENTITY_CLIENT_ID'; value: managedIdentityClientId }
+            {
+              name: 'ENVIRONMENT'
+              value: environment
+            }
+            {
+              name: 'COSMOS_CONNECTION_STRING'
+              secretRef: 'cosmos-connection-string'
+            }
+            {
+              name: 'REDIS_URL'
+              secretRef: 'redis-connection-string'
+            }
+            {
+              name: 'SERVICE_BUS_CONNECTION'
+              secretRef: 'service-bus-connection-string'
+            }
+            {
+              name: 'AZURE_OPENAI_ENDPOINT'
+              value: openAiEndpoint
+            }
+            {
+              name: 'AZURE_OPENAI_KEY'
+              secretRef: 'azure-openai-key'
+            }
+            {
+              name: 'AZURE_OPENAI_DEPLOYMENT'
+              value: openAiDeploymentName
+            }
+            {
+              name: 'SEARCH_ENDPOINT'
+              value: searchEndpoint
+            }
+            {
+              name: 'SEARCH_KEY'
+              secretRef: 'ai-search-key'
+            }
+            {
+              name: 'CONTENT_SAFETY_ENDPOINT'
+              value: contentSafetyEndpoint
+            }
+            {
+              name: 'CONTENT_SAFETY_KEY'
+              secretRef: 'content-safety-key'
+            }
+            {
+              name: 'STORAGE_CONNECTION_STRING'
+              secretRef: 'storage-connection-string'
+            }
+            {
+              name: 'STORAGE_ENDPOINT'
+              value: storageEndpoint
+            }
+            {
+              name: 'B2C_TENANT_ID'
+              value: b2cTenantId
+            }
+            {
+              name: 'B2C_CLIENT_ID'
+              value: b2cClientId
+            }
+            {
+              name: 'B2C_POLICY_NAME'
+              value: b2cPolicyName
+            }
+            {
+              name: 'MANAGED_IDENTITY_CLIENT_ID'
+              value: managedIdentityClientId
+            }
           ]
           probes: [
             {

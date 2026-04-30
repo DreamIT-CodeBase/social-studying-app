@@ -59,7 +59,6 @@ resource tenantsCollection 'Microsoft.DocumentDB/databaseAccounts/mongodbDatabas
         }
         {
           key: { keys: ['admin_email'] }
-          options: { unique: true, sparse: true }
         }
       ]
     }
