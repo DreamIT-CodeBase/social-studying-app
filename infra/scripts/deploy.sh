@@ -124,12 +124,9 @@ purge_deleted_key_vaults() {
   while IFS= read -r vault_name; do
     [[ -z "$vault_name" ]] && continue
     warn "Purging soft-deleted Key Vault: $vault_name"
-    az keyvault purge --name "$vault_name" --location "$location" --no-wait
-    info "Purge initiated for $vault_name (runs in background)"
+    az keyvault purge --name "$vault_name" --location "$location"
+    success "Purged: $vault_name"
   done <<< "$deleted_vaults"
-
-  # Brief wait to let purge register before deployment starts
-  sleep 10
 }
 
 # ── Infrastructure deployment ─────────────────────────────────────────────────
