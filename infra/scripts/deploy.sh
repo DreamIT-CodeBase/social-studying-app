@@ -103,11 +103,45 @@ validate() {
   success "Bicep validation passed"
 }
 
+# ── Purge soft-deleted Key Vaults ────────────────────────────────────────────
+# Key Vault soft-delete keeps names reserved for 7 days after RG deletion.
+# uniqueString(resourceGroup().id) produces the same name on redeploy, so
+# we purge any matching deleted vault before deploying to avoid VaultAlreadyExists.
+
+purge_deleted_key_vaults() {
+  local location="$1"
+  info "Checking for soft-deleted Key Vaults matching 'kv-ssa-${ENV}-*'..."
+
+  local deleted_vaults
+  deleted_vaults=$(az keyvault list-deleted \
+    --query "[?starts_with(name, 'kv-ssa-${ENV}-')].name" \
+    -o tsv 2>/dev/null || echo "")
+
+  if [[ -z "$deleted_vaults" ]]; then
+    return 0
+  fi
+
+  while IFS= read -r vault_name; do
+    [[ -z "$vault_name" ]] && continue
+    warn "Purging soft-deleted Key Vault: $vault_name"
+    az keyvault purge --name "$vault_name" --location "$location" --no-wait
+    info "Purge initiated for $vault_name (runs in background)"
+  done <<< "$deleted_vaults"
+
+  # Brief wait to let purge register before deployment starts
+  sleep 10
+}
+
 # ── Infrastructure deployment ─────────────────────────────────────────────────
 
 deploy_infra() {
   info "Deploying infrastructure to environment: $ENV"
   inject_deployer_id
+
+  # Resolve location from params file for the purge step
+  local deploy_location
+  deploy_location=$(jq -r '.parameters.location.value // "eastus"' "$PARAMS_FILE")
+  purge_deleted_key_vaults "$deploy_location"
 
   local deployment_name="social-study-app-$ENV-$(date +%Y%m%d%H%M%S)"
 
