@@ -17,6 +17,10 @@ htmlcov/
 backend/.env
 mcp-server/.env
 *.env.local
+*.env.dev
+*.env.staging
+*.env.prod
+*.env.production
 
 # Flutter / Dart
 flutter_app/.dart_tool/
