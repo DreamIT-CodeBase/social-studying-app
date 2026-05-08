@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "10810620875424710885"
+      "templateHash": "15297219064111606010"
     }
   },
   "parameters": {
@@ -319,7 +319,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "4023791913023788281"
+              "templateHash": "16915746603128696841"
             }
           },
           "parameters": {
@@ -337,7 +337,7 @@
             }
           },
           "variables": {
-            "registryName": "[format('acrsocialstudyapp{0}', parameters('environment'))]",
+            "registryName": "[format('acrssa{0}{1}', parameters('environment'), uniqueString(resourceGroup().id))]",
             "acrPullRoleId": "7f951dda-4ed3-4680-a7ca-43fe172d538d"
           },
           "resources": [
@@ -418,7 +418,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "16285762807792006995"
+              "templateHash": "275545068735506806"
             }
           },
           "parameters": {
@@ -436,7 +436,7 @@
             }
           },
           "variables": {
-            "accountName": "[format('cosmos-socialstudyapp-{0}', parameters('environment'))]"
+            "accountName": "[format('cosmos-ssa-{0}-{1}', parameters('environment'), uniqueString(resourceGroup().id))]"
           },
           "resources": [
             {
@@ -574,7 +574,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "4445020621669787535"
+              "templateHash": "9357745988501971216"
             }
           },
           "parameters": {
@@ -592,7 +592,7 @@
             }
           },
           "variables": {
-            "redisName": "[format('redis-socialstudyapp-{0}', parameters('environment'))]"
+            "redisName": "[format('redis-ssa-{0}-{1}', parameters('environment'), uniqueString(resourceGroup().id))]"
           },
           "resources": [
             {
@@ -678,7 +678,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "1907196324256049232"
+              "templateHash": "16429470818623657415"
             }
           },
           "parameters": {
@@ -696,7 +696,7 @@
             }
           },
           "variables": {
-            "searchName": "[format('search-socialstudyapp-{0}', parameters('environment'))]"
+            "searchName": "[format('srch-ssa-{0}-{1}', parameters('environment'), uniqueString(resourceGroup().id))]"
           },
           "resources": [
             {
@@ -915,7 +915,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "10845532569447680991"
+              "templateHash": "16639449366393234636"
             }
           },
           "parameters": {
@@ -933,7 +933,7 @@
             }
           },
           "variables": {
-            "namespaceName": "[format('sb-socialstudyapp-{0}', parameters('environment'))]"
+            "namespaceName": "[format('sb-ssa-{0}-{1}', parameters('environment'), uniqueString(resourceGroup().id))]"
           },
           "resources": [
             {
@@ -1041,7 +1041,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "3059202445617071235"
+              "templateHash": "7008448212235273378"
             }
           },
           "parameters": {
@@ -1066,7 +1066,7 @@
             }
           },
           "variables": {
-            "accountName": "[format('oai-socialstudyapp-{0}', parameters('environment'))]",
+            "accountName": "[format('oai-ssa-{0}-{1}', parameters('environment'), uniqueString(resourceGroup().id))]",
             "hasQuota": "[greater(parameters('gpt4oCapacity'), 0)]"
           },
           "resources": [
@@ -1170,7 +1170,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "5214518474907049787"
+              "templateHash": "6940728905795293410"
             }
           },
           "parameters": {
@@ -1188,7 +1188,7 @@
             }
           },
           "variables": {
-            "accountName": "[format('cs-socialstudyapp-{0}', parameters('environment'))]"
+            "accountName": "[format('cs-ssa-{0}-{1}', parameters('environment'), uniqueString(resourceGroup().id))]"
           },
           "resources": [
             {
@@ -1226,6 +1226,102 @@
             "contentSafetyKeySecretUri": {
               "type": "string",
               "value": "[reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'content-safety-key'), '2023-07-01').secretUriWithVersion]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'key-vault')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('resourceGroupName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "document-intelligence",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          },
+          "keyVaultName": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'key-vault'), '2025-04-01').outputs.keyVaultName.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "13419766682605911999"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "environment": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "object"
+            },
+            "keyVaultName": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "accountName": "[format('di-ssa-{0}-{1}', parameters('environment'), uniqueString(resourceGroup().id))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.CognitiveServices/accounts",
+              "apiVersion": "2024-04-01-preview",
+              "name": "[variables('accountName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "FormRecognizer",
+              "sku": {
+                "name": "S0"
+              },
+              "properties": {
+                "customSubDomainName": "[variables('accountName')]",
+                "publicNetworkAccess": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('keyVaultName'), 'document-intelligence-key')]",
+              "properties": {
+                "value": "[listKeys(resourceId('Microsoft.CognitiveServices/accounts', variables('accountName')), '2024-04-01-preview').key1]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts', variables('accountName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "documentIntelligenceEndpoint": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('accountName')), '2024-04-01-preview').endpoint]"
+            },
+            "documentIntelligenceKeySecretUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'document-intelligence-key'), '2023-07-01').secretUriWithVersion]"
             }
           }
         }
@@ -1282,6 +1378,9 @@
           "storageConnectionSecretUri": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.storageConnectionSecretUri.value]"
           },
+          "documentIntelligenceKeySecretUri": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'document-intelligence'), '2025-04-01').outputs.documentIntelligenceKeySecretUri.value]"
+          },
           "openAiEndpoint": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'openai'), '2025-04-01').outputs.openAiEndpoint.value]"
           },
@@ -1296,6 +1395,9 @@
           },
           "storageEndpoint": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.storageEndpoint.value]"
+          },
+          "documentIntelligenceEndpoint": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'document-intelligence'), '2025-04-01').outputs.documentIntelligenceEndpoint.value]"
           },
           "b2cTenantId": {
             "value": "[parameters('b2cTenantId')]"
@@ -1317,7 +1419,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "16112665032589456284"
+              "templateHash": "9301122415095375944"
             }
           },
           "parameters": {
@@ -1357,6 +1459,9 @@
             "storageConnectionSecretUri": {
               "type": "string"
             },
+            "documentIntelligenceKeySecretUri": {
+              "type": "string"
+            },
             "openAiEndpoint": {
               "type": "string"
             },
@@ -1370,6 +1475,9 @@
               "type": "string"
             },
             "storageEndpoint": {
+              "type": "string"
+            },
+            "documentIntelligenceEndpoint": {
               "type": "string"
             },
             "b2cTenantId": {
@@ -1485,6 +1593,11 @@
                       "name": "storage-connection-string",
                       "keyVaultUrl": "[parameters('storageConnectionSecretUri')]",
                       "identity": "[parameters('managedIdentityId')]"
+                    },
+                    {
+                      "name": "document-intelligence-key",
+                      "keyVaultUrl": "[parameters('documentIntelligenceKeySecretUri')]",
+                      "identity": "[parameters('managedIdentityId')]"
                     }
                   ],
                   "ingress": {
@@ -1573,6 +1686,14 @@
                           "value": "[parameters('storageEndpoint')]"
                         },
                         {
+                          "name": "DOCUMENT_INTELLIGENCE_ENDPOINT",
+                          "value": "[parameters('documentIntelligenceEndpoint')]"
+                        },
+                        {
+                          "name": "DOCUMENT_INTELLIGENCE_KEY",
+                          "secretRef": "document-intelligence-key"
+                        },
+                        {
                           "name": "B2C_TENANT_ID",
                           "value": "[parameters('b2cTenantId')]"
                         },
@@ -1655,6 +1776,7 @@
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'ai-search')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'content-safety')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'cosmos')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'document-intelligence')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'managed-identity')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'openai')]",
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'redis')]",
@@ -1704,6 +1826,14 @@
     "storageEndpoint": {
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.storageEndpoint.value]"
+    },
+    "contentSafetyEndpoint": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'content-safety'), '2025-04-01').outputs.contentSafetyEndpoint.value]"
+    },
+    "documentIntelligenceEndpoint": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'document-intelligence'), '2025-04-01').outputs.documentIntelligenceEndpoint.value]"
     }
   }
 }

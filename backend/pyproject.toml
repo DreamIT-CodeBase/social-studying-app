@@ -10,6 +10,7 @@ dependencies = [
     "motor>=3.4",                        # async MongoDB driver for Cosmos DB MongoDB API
     "azure-storage-blob>=12.19",
     "azure-search-documents>=11.6",
+    "azure-ai-documentintelligence>=1.0",  # PDF/OCR text extraction (prebuilt-read)
     "azure-identity>=1.17",
     "openai>=1.35",                    # Azure OpenAI via AI Foundry
     "redis>=5.0",

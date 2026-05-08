@@ -165,6 +165,17 @@ module contentSafety 'modules/content-safety.bicep' = {
   }
 }
 
+module documentIntelligence 'modules/document-intelligence.bicep' = {
+  name: 'document-intelligence'
+  scope: rg
+  params: {
+    location: location
+    environment: environment
+    tags: tags
+    keyVaultName: keyVault.outputs.keyVaultName
+  }
+}
+
 // ── Step 4: Container Apps (needs all of the above) ───────────────────────────
 
 module containerApp 'modules/container-apps.bicep' = {
@@ -183,11 +194,13 @@ module containerApp 'modules/container-apps.bicep' = {
     searchKeySecretUri: aiSearch.outputs.searchKeySecretUri
     contentSafetyKeySecretUri: contentSafety.outputs.contentSafetyKeySecretUri
     storageConnectionSecretUri: storage.outputs.storageConnectionSecretUri
+    documentIntelligenceKeySecretUri: documentIntelligence.outputs.documentIntelligenceKeySecretUri
     openAiEndpoint: openAi.outputs.openAiEndpoint
     openAiDeploymentName: openAi.outputs.deploymentName
     searchEndpoint: aiSearch.outputs.searchEndpoint
     contentSafetyEndpoint: contentSafety.outputs.contentSafetyEndpoint
     storageEndpoint: storage.outputs.storageEndpoint
+    documentIntelligenceEndpoint: documentIntelligence.outputs.documentIntelligenceEndpoint
     b2cTenantId: b2cTenantId
     b2cClientId: b2cClientId
     b2cPolicyName: b2cPolicyName
@@ -207,3 +220,5 @@ output cosmosAccountName string = cosmos.outputs.cosmosAccountName
 output searchEndpoint string = aiSearch.outputs.searchEndpoint
 output openAiEndpoint string = openAi.outputs.openAiEndpoint
 output storageEndpoint string = storage.outputs.storageEndpoint
+output contentSafetyEndpoint string = contentSafety.outputs.contentSafetyEndpoint
+output documentIntelligenceEndpoint string = documentIntelligence.outputs.documentIntelligenceEndpoint

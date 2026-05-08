@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379"
 
+    # Azure AI Document Intelligence (formerly Form Recognizer)
+    document_intelligence_endpoint: str = ""
+    document_intelligence_key: str = ""
+
     # Azure Service Bus
     service_bus_connection: str = ""
 

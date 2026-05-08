@@ -15,6 +15,7 @@ param openAiKeySecretUri string
 param searchKeySecretUri string
 param contentSafetyKeySecretUri string
 param storageConnectionSecretUri string
+param documentIntelligenceKeySecretUri string
 
 // Plain-text configuration values
 param openAiEndpoint string
@@ -22,6 +23,7 @@ param openAiDeploymentName string
 param searchEndpoint string
 param contentSafetyEndpoint string
 param storageEndpoint string
+param documentIntelligenceEndpoint string
 
 // Azure AD B2C — set after B2C tenant is provisioned (Task 1.5)
 param b2cTenantId string = ''
@@ -118,6 +120,11 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = {
           keyVaultUrl: storageConnectionSecretUri
           identity: managedIdentityId
         }
+        {
+          name: 'document-intelligence-key'
+          keyVaultUrl: documentIntelligenceKeySecretUri
+          identity: managedIdentityId
+        }
       ]
       ingress: {
         external: true
@@ -192,6 +199,14 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'STORAGE_ENDPOINT'
               value: storageEndpoint
+            }
+            {
+              name: 'DOCUMENT_INTELLIGENCE_ENDPOINT'
+              value: documentIntelligenceEndpoint
+            }
+            {
+              name: 'DOCUMENT_INTELLIGENCE_KEY'
+              secretRef: 'document-intelligence-key'
             }
             {
               name: 'B2C_TENANT_ID'

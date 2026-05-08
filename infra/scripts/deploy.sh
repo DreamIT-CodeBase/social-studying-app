@@ -38,10 +38,15 @@ error()   { echo -e "${RED}[ERR]${NC}  $*" >&2; exit 1; }
 
 preflight() {
   info "Running pre-flight checks..."
+  info "  - Mode:        ${MODE:-full (infra + image)}"
+  info "  - Environment: $ENV"
+  info "  - Params file: $PARAMS_FILE"
+  info "  - Bicep file:  $BICEP_FILE"
 
   command -v az      >/dev/null 2>&1 || error "Azure CLI not found. Install: https://aka.ms/installazurecli"
   command -v docker  >/dev/null 2>&1 || { [[ "$MODE" == "--infra-only" || "$MODE" == "--validate" ]] || error "Docker not found — required for image build."; }
   command -v jq      >/dev/null 2>&1 || error "jq not found. Install: brew install jq / apt-get install jq"
+  info "  - az, jq, docker available"
 
   [[ -f "$PARAMS_FILE" ]]  || error "Params file not found: $PARAMS_FILE"
   [[ -f "$BICEP_FILE" ]]   || error "Bicep file not found: $BICEP_FILE"
@@ -55,7 +60,12 @@ preflight() {
   local sub_name sub_id
   sub_name=$(echo "$account" | jq -r '.name')
   sub_id=$(echo "$account"   | jq -r '.id')
-  info "Subscription: $sub_name ($sub_id)"
+  info "  - Subscription: $sub_name ($sub_id)"
+
+  local resource_location
+  resource_location=$(jq -r '.parameters.location.value // ""' "$PARAMS_FILE")
+  info "  - Sub-deployment region: $LOCATION (deployment metadata only)"
+  info "  - Resource region:       ${resource_location:-(not set in params)}"
 
   if [[ "$ENV" == "prod" ]]; then
     warn "Deploying to PRODUCTION. Press Ctrl-C within 5 seconds to abort..."
@@ -68,6 +78,7 @@ preflight() {
 # ── Inject deployer object ID ─────────────────────────────────────────────────
 
 inject_deployer_id() {
+  info "Resolving deployer object ID for Key Vault role assignment..."
   local deployer_id
   deployer_id=$(az ad signed-in-user show --query id -o tsv 2>/dev/null || \
                 az account show --query "user.name" -o tsv)
@@ -77,7 +88,7 @@ inject_deployer_id() {
     deployer_id=$(az ad sp show --id "$deployer_id" --query id -o tsv 2>/dev/null || echo "$deployer_id")
   fi
 
-  info "Deployer object ID: $deployer_id"
+  info "  - Deployer object ID: $deployer_id"
 
   # Inject into params file if placeholder is still there
   local tmp
@@ -86,6 +97,7 @@ inject_deployer_id() {
      '.parameters.deployerObjectId.value = $id' \
      "$PARAMS_FILE" > "$tmp"
   mv "$tmp" "$PARAMS_FILE"
+  info "  - Patched $PARAMS_FILE with deployer object ID"
 }
 
 # ── Bicep validation ──────────────────────────────────────────────────────────
@@ -103,56 +115,122 @@ validate() {
   success "Bicep validation passed"
 }
 
-# ── Purge soft-deleted Key Vaults ────────────────────────────────────────────
-# Key Vault soft-delete keeps names reserved for 7 days after RG deletion.
-# uniqueString(resourceGroup().id) produces the same name on redeploy, so
-# we purge any matching deleted vault before deploying to avoid VaultAlreadyExists.
-
-purge_deleted_key_vaults() {
-  local location="$1"
-  info "Checking for soft-deleted Key Vaults matching 'kv-ssa-${ENV}-*'..."
-
-  local deleted_vaults
-  deleted_vaults=$(az keyvault list-deleted \
-    --query "[?starts_with(name, 'kv-ssa-${ENV}-')].name" \
-    -o tsv 2>/dev/null || echo "")
-
-  if [[ -z "$deleted_vaults" ]]; then
-    return 0
-  fi
-
-  while IFS= read -r vault_name; do
-    [[ -z "$vault_name" ]] && continue
-    warn "Purging soft-deleted Key Vault: $vault_name"
-    az keyvault purge --name "$vault_name" --location "$location"
-    success "Purged: $vault_name"
-  done <<< "$deleted_vaults"
-}
-
 # ── Infrastructure deployment ─────────────────────────────────────────────────
 
 deploy_infra() {
   info "Deploying infrastructure to environment: $ENV"
   inject_deployer_id
 
-  # Resolve location from params file for the purge step
-  local deploy_location
-  deploy_location=$(jq -r '.parameters.location.value // "eastus"' "$PARAMS_FILE")
-  purge_deleted_key_vaults "$deploy_location"
-
   local deployment_name="social-study-app-$ENV-$(date +%Y%m%d%H%M%S)"
+  info "Deployment name: $deployment_name"
+  info "Submitting deployment to Azure (async — script will then poll status)..."
 
+  # --no-wait returns immediately with the deployment queued. We then poll with
+  # watch_deployment(), which prints a per-resource status table every 30s.
+  # This replaces the old --output table flow that hung silently on Windows /
+  # Git Bash when the streaming connection dropped.
   az deployment sub create \
     --name "$deployment_name" \
     --location "$LOCATION" \
     --template-file "$BICEP_FILE" \
     --parameters "@$PARAMS_FILE" \
-    --output table
+    --no-wait \
+    --output none
+
+  success "Deployment submitted. Watch via:"
+  info "  az deployment sub show --name $deployment_name --query properties.provisioningState -o tsv"
+  echo ""
+
+  watch_deployment "$deployment_name"
+
+  local final_state
+  final_state=$(az deployment sub show --name "$deployment_name" \
+                  --query properties.provisioningState -o tsv 2>/dev/null || echo "Unknown")
+
+  if [[ "$final_state" != "Succeeded" ]]; then
+    warn "Deployment ended with state: $final_state"
+    warn "Failed resources:"
+    az deployment operation sub list --name "$deployment_name" \
+      --query "[?properties.provisioningState=='Failed'].{module:properties.targetResource.resourceName, error:properties.statusMessage.error.message}" \
+      -o table || true
+    error "Deployment did not succeed. See above."
+  fi
 
   success "Infrastructure deployment complete: $deployment_name"
 
   # Extract outputs and write backend .env
   extract_outputs "$deployment_name"
+}
+
+# ── Deployment watcher ────────────────────────────────────────────────────────
+#
+# Polls the sub-scope deployment every POLL_INTERVAL seconds and prints:
+#   1. Overall provisioning state of the sub-deployment
+#   2. Per-module status table (Succeeded / Running / Failed counts)
+#   3. Names of modules currently provisioning, with elapsed time
+#
+# Exits when the deployment reaches Succeeded / Failed / Canceled.
+
+watch_deployment() {
+  local deployment_name="$1"
+  local poll_interval="${POLL_INTERVAL:-30}"
+  local elapsed=0
+  local iteration=0
+
+  info "Polling every ${poll_interval}s. Press Ctrl-C to stop watching (deployment continues in Azure)."
+  echo ""
+
+  while true; do
+    iteration=$((iteration + 1))
+    local state
+    state=$(az deployment sub show --name "$deployment_name" \
+              --query properties.provisioningState -o tsv 2>/dev/null || echo "Unknown")
+
+    echo -e "${CYAN}── poll #${iteration}  (+${elapsed}s)  overall: ${state} ──${NC}"
+
+    # Pull all module operations once, reuse for both summary and pending list
+    local ops
+    ops=$(az deployment operation sub list --name "$deployment_name" -o json 2>/dev/null || echo "[]")
+
+    # Compact summary: count by state
+    local summary
+    summary=$(echo "$ops" | jq -r '.[].properties.provisioningState' 2>/dev/null \
+              | sort | uniq -c | awk '{printf "%s=%s  ", $2, $1}')
+    if [[ -n "$summary" ]]; then
+      echo "  modules: $summary"
+    else
+      echo "  modules: (no operations reported yet)"
+    fi
+
+    # In-progress modules with their start time
+    local pending
+    pending=$(echo "$ops" \
+              | jq -r '.[] | select(.properties.provisioningState=="Running") | "    \(.properties.targetResource.resourceName // .properties.targetResource.id // "?")  (started \(.properties.timestamp))"' 2>/dev/null)
+    if [[ -n "$pending" ]]; then
+      echo "  in progress:"
+      echo "$pending"
+    fi
+
+    # Recently-failed modules surface immediately so we don't waste time waiting
+    local failed
+    failed=$(echo "$ops" \
+              | jq -r '.[] | select(.properties.provisioningState=="Failed") | "    \(.properties.targetResource.resourceName // "?"): \(.properties.statusMessage.error.message // "(no message)")"' 2>/dev/null)
+    if [[ -n "$failed" ]]; then
+      warn "  FAILED modules:"
+      echo "$failed"
+    fi
+
+    case "$state" in
+      Succeeded|Failed|Canceled)
+        echo ""
+        info "Deployment reached terminal state: $state (after ${elapsed}s, ${iteration} polls)"
+        return 0
+        ;;
+    esac
+
+    sleep "$poll_interval"
+    elapsed=$((elapsed + poll_interval))
+  done
 }
 
 # ── Extract outputs → write .env ──────────────────────────────────────────────
@@ -174,24 +252,45 @@ extract_outputs() {
   kv_name=$(echo "$outputs"        | jq -r '.keyVaultName.value // ""')
   container_app=$(echo "$outputs"  | jq -r '.containerAppName.value // ""')
   rg_name=$(echo "$outputs"        | jq -r '.resourceGroupName.value // ""')
+  info "  - Resource group: $rg_name"
+  info "  - Key Vault:      $kv_name"
+  info "  - Container app:  $container_app"
+  info "  - API URL:        $api_url"
 
   # Pull secrets from Key Vault to write a local .env
   info "Reading secrets from Key Vault: $kv_name"
-  local cosmos_cs redis_cs sb_cs openai_key search_key cs_key storage_cs
-  cosmos_cs=$(az keyvault secret show   --vault-name "$kv_name" --name "cosmos-connection-string"  -o tsv --query "value" 2>/dev/null || echo "")
-  redis_cs=$(az keyvault secret show    --vault-name "$kv_name" --name "redis-connection-string"   -o tsv --query "value" 2>/dev/null || echo "")
+  local cosmos_cs redis_cs sb_cs openai_key search_key cs_key storage_cs di_key
+  cosmos_cs=$(az keyvault secret show   --vault-name "$kv_name" --name "cosmos-connection-string"     -o tsv --query "value" 2>/dev/null || echo "")
+  redis_cs=$(az keyvault secret show    --vault-name "$kv_name" --name "redis-connection-string"      -o tsv --query "value" 2>/dev/null || echo "")
   sb_cs=$(az keyvault secret show       --vault-name "$kv_name" --name "service-bus-connection-string" -o tsv --query "value" 2>/dev/null || echo "")
-  openai_key=$(az keyvault secret show  --vault-name "$kv_name" --name "azure-openai-key"          -o tsv --query "value" 2>/dev/null || echo "")
-  search_key=$(az keyvault secret show  --vault-name "$kv_name" --name "ai-search-key"             -o tsv --query "value" 2>/dev/null || echo "")
-  cs_key=$(az keyvault secret show      --vault-name "$kv_name" --name "content-safety-key"        -o tsv --query "value" 2>/dev/null || echo "")
-  storage_cs=$(az keyvault secret show  --vault-name "$kv_name" --name "storage-connection-string" -o tsv --query "value" 2>/dev/null || echo "")
+  openai_key=$(az keyvault secret show  --vault-name "$kv_name" --name "azure-openai-key"             -o tsv --query "value" 2>/dev/null || echo "")
+  search_key=$(az keyvault secret show  --vault-name "$kv_name" --name "ai-search-key"                -o tsv --query "value" 2>/dev/null || echo "")
+  cs_key=$(az keyvault secret show      --vault-name "$kv_name" --name "content-safety-key"           -o tsv --query "value" 2>/dev/null || echo "")
+  storage_cs=$(az keyvault secret show  --vault-name "$kv_name" --name "storage-connection-string"    -o tsv --query "value" 2>/dev/null || echo "")
+  di_key=$(az keyvault secret show      --vault-name "$kv_name" --name "document-intelligence-key"    -o tsv --query "value" 2>/dev/null || echo "")
 
-  local search_endpoint openai_endpoint storage_endpoint content_safety_endpoint
-  search_endpoint=$(echo "$outputs"         | jq -r '.searchEndpoint.value // ""')
-  openai_endpoint=$(echo "$outputs"         | jq -r '.openAiEndpoint.value // ""')
-  storage_endpoint=$(echo "$outputs"        | jq -r '.storageEndpoint.value // ""')
+  # Warn on any missing secret — empty values almost always indicate the matching
+  # module didn't deploy or RBAC is not yet propagated to the deployer identity.
+  local missing=""
+  [[ -z "$cosmos_cs"  ]] && missing+=" cosmos-connection-string"
+  [[ -z "$redis_cs"   ]] && missing+=" redis-connection-string"
+  [[ -z "$sb_cs"      ]] && missing+=" service-bus-connection-string"
+  [[ -z "$openai_key" ]] && missing+=" azure-openai-key"
+  [[ -z "$search_key" ]] && missing+=" ai-search-key"
+  [[ -z "$cs_key"     ]] && missing+=" content-safety-key"
+  [[ -z "$storage_cs" ]] && missing+=" storage-connection-string"
+  [[ -z "$di_key"     ]] && missing+=" document-intelligence-key"
+  [[ -n "$missing"    ]] && warn "Missing Key Vault secrets:$missing"
+
+  local search_endpoint openai_endpoint storage_endpoint cs_endpoint di_endpoint
+  search_endpoint=$(echo "$outputs"  | jq -r '.searchEndpoint.value // ""')
+  openai_endpoint=$(echo "$outputs"  | jq -r '.openAiEndpoint.value // ""')
+  storage_endpoint=$(echo "$outputs" | jq -r '.storageEndpoint.value // ""')
+  cs_endpoint=$(echo "$outputs"      | jq -r '.contentSafetyEndpoint.value // ""')
+  di_endpoint=$(echo "$outputs"      | jq -r '.documentIntelligenceEndpoint.value // ""')
 
   local env_file="$REPO_ROOT/backend/.env.$ENV"
+  info "Writing $env_file..."
   cat > "$env_file" <<EOF
 # Auto-generated by deploy.sh on $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Environment: $ENV
@@ -213,12 +312,16 @@ AZURE_OPENAI_KEY=$openai_key
 AZURE_OPENAI_DEPLOYMENT=gpt-4o
 
 # Azure Content Safety
-CONTENT_SAFETY_ENDPOINT=$(echo "$outputs" | jq -r '.contentSafetyEndpoint.value // ""' 2>/dev/null || echo "")
+CONTENT_SAFETY_ENDPOINT=$cs_endpoint
 CONTENT_SAFETY_KEY=$cs_key
 
 # Azure Blob Storage
 STORAGE_CONNECTION_STRING=$storage_cs
 STORAGE_ENDPOINT=$storage_endpoint
+
+# Azure AI Document Intelligence (Sprint 2.1)
+DOCUMENT_INTELLIGENCE_ENDPOINT=$di_endpoint
+DOCUMENT_INTELLIGENCE_KEY=$di_key
 
 # Azure Service Bus
 SERVICE_BUS_CONNECTION=$sb_cs
