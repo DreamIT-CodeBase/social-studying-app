@@ -213,6 +213,7 @@ module containerApp 'modules/container-apps.bicep' = {
 output resourceGroupName string = resourceGroupName
 output apiUrl string = containerApp.outputs.apiUrl
 output containerAppName string = containerApp.outputs.containerAppName
+output workerAppName string = containerApp.outputs.workerAppName
 output registryLoginServer string = acr.outputs.registryLoginServer
 output registryName string = acr.outputs.registryName
 output keyVaultName string = keyVault.outputs.keyVaultName

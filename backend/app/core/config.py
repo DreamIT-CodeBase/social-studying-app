@@ -38,6 +38,7 @@ class Settings(BaseSettings):
 
     # Azure Service Bus
     service_bus_connection: str = ""
+    service_bus_documents_queue: str = "document-ingestion"
 
 
 settings = Settings()

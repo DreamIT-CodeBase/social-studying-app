@@ -37,6 +37,7 @@ param registryLoginServer string
 
 var envName = 'cae-socialstudyapp-${environment}'
 var appName = 'ca-api-${environment}'
+var workerAppName = 'ca-worker-${environment}'
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: 'log-socialstudyapp-${environment}'
@@ -267,6 +268,154 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+// ── Worker Container App (Sprint 2.3) ─────────────────────────────────────────
+// Same image as the API, different entrypoint: `python -m app.workers.document_ingestion`.
+// No ingress — workers consume from Service Bus, not HTTP. Scales 0→N on queue
+// depth via the KEDA azure-servicebus trigger.
+//
+// Scaling auth uses the connection string (matches the project's worker-auth
+// decision in memory/sprint_2_3_decisions.md). KEDA does NOT support managed
+// identity for the azure-servicebus trigger as of api-version 2024-03-01.
+
+resource workerApp 'Microsoft.App/containerApps@2024-03-01' = {
+  name: workerAppName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${managedIdentityId}': {}
+    }
+  }
+  properties: {
+    environmentId: containerAppEnv.id
+    configuration: {
+      registries: [
+        {
+          server: registryLoginServer
+          identity: managedIdentityId
+        }
+      ]
+      // Same Key Vault secrets as the API — worker reads connection strings
+      // directly per the Sprint 2.3 auth decision. KEDA scaler also reads
+      // 'service-bus-connection-string' to query queue depth.
+      secrets: [
+        {
+          name: 'cosmos-connection-string'
+          keyVaultUrl: cosmosConnectionSecretUri
+          identity: managedIdentityId
+        }
+        {
+          name: 'service-bus-connection-string'
+          keyVaultUrl: serviceBusConnectionSecretUri
+          identity: managedIdentityId
+        }
+        {
+          name: 'storage-connection-string'
+          keyVaultUrl: storageConnectionSecretUri
+          identity: managedIdentityId
+        }
+        {
+          name: 'document-intelligence-key'
+          keyVaultUrl: documentIntelligenceKeySecretUri
+          identity: managedIdentityId
+        }
+        {
+          name: 'content-safety-key'
+          keyVaultUrl: contentSafetyKeySecretUri
+          identity: managedIdentityId
+        }
+      ]
+      // No ingress block — worker is not HTTP-reachable.
+    }
+    template: {
+      containers: [
+        {
+          name: 'worker'
+          image: apiImage
+          // Override the API's uvicorn entrypoint; same image, different process.
+          command: ['python']
+          args: ['-m', 'app.workers.document_ingestion']
+          resources: {
+            cpu: json(environment == 'prod' ? '1.0' : '0.5')
+            memory: environment == 'prod' ? '2Gi' : '1Gi'
+          }
+          env: [
+            {
+              name: 'ENVIRONMENT'
+              value: environment
+            }
+            {
+              name: 'COSMOS_CONNECTION_STRING'
+              secretRef: 'cosmos-connection-string'
+            }
+            {
+              name: 'SERVICE_BUS_CONNECTION'
+              secretRef: 'service-bus-connection-string'
+            }
+            {
+              name: 'STORAGE_CONNECTION_STRING'
+              secretRef: 'storage-connection-string'
+            }
+            {
+              name: 'STORAGE_ENDPOINT'
+              value: storageEndpoint
+            }
+            {
+              name: 'DOCUMENT_INTELLIGENCE_ENDPOINT'
+              value: documentIntelligenceEndpoint
+            }
+            {
+              name: 'DOCUMENT_INTELLIGENCE_KEY'
+              secretRef: 'document-intelligence-key'
+            }
+            {
+              name: 'CONTENT_SAFETY_ENDPOINT'
+              value: contentSafetyEndpoint
+            }
+            {
+              name: 'CONTENT_SAFETY_KEY'
+              secretRef: 'content-safety-key'
+            }
+            {
+              name: 'MANAGED_IDENTITY_CLIENT_ID'
+              value: managedIdentityClientId
+            }
+          ]
+          // No HTTP probes for a worker process. Container Apps will restart
+          // the container if the python process exits, which is the right
+          // signal for a long-running asyncio loop.
+        }
+      ]
+      scale: {
+        // Scale-to-zero in dev keeps costs near zero between uploads.
+        // Prod keeps min=1 so the first message after idle isn't slow.
+        minReplicas: environment == 'prod' ? 1 : 0
+        maxReplicas: environment == 'prod' ? 10 : 3
+        rules: [
+          {
+            name: 'queue-depth'
+            custom: {
+              type: 'azure-servicebus'
+              metadata: {
+                queueName: 'document-ingestion'
+                messageCount: '5'
+              }
+              auth: [
+                {
+                  secretRef: 'service-bus-connection-string'
+                  triggerParameter: 'connection'
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+
 output apiUrl string = 'https://${apiApp.properties.configuration.ingress.fqdn}'
 output containerAppName string = apiApp.name
 output containerAppEnvName string = containerAppEnv.name
+output workerAppName string = workerApp.name

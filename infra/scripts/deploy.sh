@@ -245,16 +245,18 @@ extract_outputs() {
     --query "properties.outputs" \
     -o json)
 
-  local api_url registry_server registry_name kv_name container_app rg_name
+  local api_url registry_server registry_name kv_name container_app worker_app rg_name
   api_url=$(echo "$outputs"        | jq -r '.apiUrl.value // ""')
   registry_server=$(echo "$outputs" | jq -r '.registryLoginServer.value // ""')
   registry_name=$(echo "$outputs"  | jq -r '.registryName.value // ""')
   kv_name=$(echo "$outputs"        | jq -r '.keyVaultName.value // ""')
   container_app=$(echo "$outputs"  | jq -r '.containerAppName.value // ""')
+  worker_app=$(echo "$outputs"     | jq -r '.workerAppName.value // ""')
   rg_name=$(echo "$outputs"        | jq -r '.resourceGroupName.value // ""')
   info "  - Resource group: $rg_name"
   info "  - Key Vault:      $kv_name"
   info "  - Container app:  $container_app"
+  info "  - Worker app:     ${worker_app:-(none — older deployment without Sprint 2.3)}"
   info "  - API URL:        $api_url"
 
   # Pull secrets from Key Vault to write a local .env
@@ -335,6 +337,7 @@ B2C_POLICY_NAME=B2C_1_signupsignin
 ACR_LOGIN_SERVER=$registry_server
 ACR_NAME=$registry_name
 CONTAINER_APP_NAME=$container_app
+WORKER_APP_NAME=$worker_app
 RESOURCE_GROUP=$rg_name
 EOF
 
@@ -361,10 +364,11 @@ push_image() {
   local env_file="$REPO_ROOT/backend/.env.$ENV"
   [[ -f "$env_file" ]] || error "Env file not found: $env_file  Run --infra-only first."
 
-  local registry_server registry_name container_app rg_name
+  local registry_server registry_name container_app worker_app rg_name
   registry_server=$(grep "^ACR_LOGIN_SERVER=" "$env_file" | cut -d= -f2)
   registry_name=$(grep   "^ACR_NAME="         "$env_file" | cut -d= -f2)
   container_app=$(grep   "^CONTAINER_APP_NAME=" "$env_file" | cut -d= -f2)
+  worker_app=$(grep      "^WORKER_APP_NAME="    "$env_file" | cut -d= -f2)
   rg_name=$(grep         "^RESOURCE_GROUP="   "$env_file" | cut -d= -f2)
 
   [[ -z "$registry_server" ]] && error "ACR_LOGIN_SERVER missing from $env_file"
@@ -387,14 +391,32 @@ push_image() {
   docker push "$image_latest"
   success "Image pushed: $image_tag"
 
-  info "Updating Container App image to: $image_latest"
+  info "Updating API Container App image to: $image_latest"
   az containerapp update \
     --name "$container_app" \
     --resource-group "$rg_name" \
     --image "$image_latest" \
     --output table
 
-  success "Container App updated. API is live at: $(grep '^# API URL' "$env_file" || echo "(see Azure portal)")"
+  # Worker Container App shares the same image — different process started by
+  # the bicep `command/args` override (`python -m app.workers.document_ingestion`).
+  if [[ -n "$worker_app" ]]; then
+    info "Updating Worker Container App image to: $image_latest"
+    az containerapp update \
+      --name "$worker_app" \
+      --resource-group "$rg_name" \
+      --image "$image_latest" \
+      --output table
+    success "Worker app updated: $worker_app"
+  else
+    warn "WORKER_APP_NAME missing from $env_file — worker not redeployed."
+    warn "Re-run with --infra-only after the bicep changes land to populate it."
+  fi
+
+  local api_fqdn
+  api_fqdn=$(az containerapp show --name "$container_app" -g "$rg_name" \
+              --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || echo "")
+  success "Deploy complete. API URL: ${api_fqdn:+https://$api_fqdn}"
 }
 
 # ── Entry point ───────────────────────────────────────────────────────────────

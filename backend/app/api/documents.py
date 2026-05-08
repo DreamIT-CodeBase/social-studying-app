@@ -4,6 +4,7 @@ Routes are nested under workspaces so the workspace_id is always present
 in the path, making access checks straightforward.
 """
 
+import logging
 import mimetypes
 from typing import Annotated
 from uuid import uuid4
@@ -14,9 +15,12 @@ from app.core.auth import get_current_user, require_role
 from app.core.database import DOCUMENTS, get_collection
 from app.core.exceptions import ForbiddenError, NotFoundError, ValidationError
 from app.models.base import utc_now
-from app.models.document import Document, DocumentResponse, DocumentType
+from app.models.document import Document, DocumentResponse, DocumentStatus, DocumentType
 from app.models.user import User, UserRole
-from app.services import blob_storage
+from app.services import blob_storage, document_queue
+from app.services.document_queue import ExtractionMessage
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/documents", tags=["documents"])
 
@@ -62,6 +66,14 @@ async def upload_document(
     document_id = f"doc_{uuid4().hex}"
     filename = file.filename or f"{document_id}.bin"
 
+    # Blob path matches the layout in app/services/blob_storage._blob_path.
+    # Recomputed here (not extracted from the URL) so the queue payload stays
+    # decoupled from the public URL format.
+    blob_path = (
+        f"{current_user.tenant_id}/{workspace_id}/"
+        f"{current_user.id}/{document_id}/{filename}"
+    )
+
     blob_url = await blob_storage.upload_document(
         tenant_id=current_user.tenant_id,
         workspace_id=workspace_id,
@@ -84,6 +96,39 @@ async def upload_document(
     )
     col = get_collection(current_user.tenant_id, DOCUMENTS)
     await col.insert_one(doc.model_dump(by_alias=True))
+
+    # Hand off to the ingestion worker. If publish fails, mark the document
+    # failed in Cosmos so the admin sees a clear error instead of a phantom
+    # 'pending' that never progresses. The 503 surfaces back to the client
+    # so the upload retries land on a fresh document_id.
+    try:
+        await document_queue.publish_extraction_message(
+            ExtractionMessage(
+                document_id=document_id,
+                tenant_id=current_user.tenant_id,
+                workspace_id=workspace_id,
+                blob_path=blob_path,
+                content_type=content_type,
+                uploaded_by=current_user.id,
+                uploaded_at=doc.created_at,
+            )
+        )
+    except Exception as exc:
+        logger.exception("Failed to publish extraction message for %s", document_id)
+        await col.update_one(
+            {"_id": document_id, "workspace_id": workspace_id},
+            {
+                "$set": {
+                    "status": DocumentStatus.failed.value,
+                    "processing_error": f"Failed to enqueue for processing: {exc}",
+                    "updated_at": utc_now(),
+                }
+            },
+        )
+        raise ValidationError(
+            "Document was uploaded but could not be queued for processing. "
+            "Please try again."
+        ) from exc
 
     return DocumentResponse.from_doc(doc)
 

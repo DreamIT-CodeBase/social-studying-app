@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "15297219064111606010"
+      "templateHash": "15577960268419214907"
     }
   },
   "parameters": {
@@ -1419,7 +1419,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "9301122415095375944"
+              "templateHash": "7470203010602413915"
             }
           },
           "parameters": {
@@ -1502,7 +1502,8 @@
           },
           "variables": {
             "envName": "[format('cae-socialstudyapp-{0}', parameters('environment'))]",
-            "appName": "[format('ca-api-{0}', parameters('environment'))]"
+            "appName": "[format('ca-api-{0}', parameters('environment'))]",
+            "workerAppName": "[format('ca-worker-{0}', parameters('environment'))]"
           },
           "resources": [
             {
@@ -1753,6 +1754,143 @@
               "dependsOn": [
                 "[resourceId('Microsoft.App/managedEnvironments', variables('envName'))]"
               ]
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2024-03-01",
+              "name": "[variables('workerAppName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('managedIdentityId'))]": {}
+                }
+              },
+              "properties": {
+                "environmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('envName'))]",
+                "configuration": {
+                  "registries": [
+                    {
+                      "server": "[parameters('registryLoginServer')]",
+                      "identity": "[parameters('managedIdentityId')]"
+                    }
+                  ],
+                  "secrets": [
+                    {
+                      "name": "cosmos-connection-string",
+                      "keyVaultUrl": "[parameters('cosmosConnectionSecretUri')]",
+                      "identity": "[parameters('managedIdentityId')]"
+                    },
+                    {
+                      "name": "service-bus-connection-string",
+                      "keyVaultUrl": "[parameters('serviceBusConnectionSecretUri')]",
+                      "identity": "[parameters('managedIdentityId')]"
+                    },
+                    {
+                      "name": "storage-connection-string",
+                      "keyVaultUrl": "[parameters('storageConnectionSecretUri')]",
+                      "identity": "[parameters('managedIdentityId')]"
+                    },
+                    {
+                      "name": "document-intelligence-key",
+                      "keyVaultUrl": "[parameters('documentIntelligenceKeySecretUri')]",
+                      "identity": "[parameters('managedIdentityId')]"
+                    },
+                    {
+                      "name": "content-safety-key",
+                      "keyVaultUrl": "[parameters('contentSafetyKeySecretUri')]",
+                      "identity": "[parameters('managedIdentityId')]"
+                    }
+                  ]
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "worker",
+                      "image": "[parameters('apiImage')]",
+                      "command": [
+                        "python"
+                      ],
+                      "args": [
+                        "-m",
+                        "app.workers.document_ingestion"
+                      ],
+                      "resources": {
+                        "cpu": "[json(if(equals(parameters('environment'), 'prod'), '1.0', '0.5'))]",
+                        "memory": "[if(equals(parameters('environment'), 'prod'), '2Gi', '1Gi')]"
+                      },
+                      "env": [
+                        {
+                          "name": "ENVIRONMENT",
+                          "value": "[parameters('environment')]"
+                        },
+                        {
+                          "name": "COSMOS_CONNECTION_STRING",
+                          "secretRef": "cosmos-connection-string"
+                        },
+                        {
+                          "name": "SERVICE_BUS_CONNECTION",
+                          "secretRef": "service-bus-connection-string"
+                        },
+                        {
+                          "name": "STORAGE_CONNECTION_STRING",
+                          "secretRef": "storage-connection-string"
+                        },
+                        {
+                          "name": "STORAGE_ENDPOINT",
+                          "value": "[parameters('storageEndpoint')]"
+                        },
+                        {
+                          "name": "DOCUMENT_INTELLIGENCE_ENDPOINT",
+                          "value": "[parameters('documentIntelligenceEndpoint')]"
+                        },
+                        {
+                          "name": "DOCUMENT_INTELLIGENCE_KEY",
+                          "secretRef": "document-intelligence-key"
+                        },
+                        {
+                          "name": "CONTENT_SAFETY_ENDPOINT",
+                          "value": "[parameters('contentSafetyEndpoint')]"
+                        },
+                        {
+                          "name": "CONTENT_SAFETY_KEY",
+                          "secretRef": "content-safety-key"
+                        },
+                        {
+                          "name": "MANAGED_IDENTITY_CLIENT_ID",
+                          "value": "[parameters('managedIdentityClientId')]"
+                        }
+                      ]
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": "[if(equals(parameters('environment'), 'prod'), 1, 0)]",
+                    "maxReplicas": "[if(equals(parameters('environment'), 'prod'), 10, 3)]",
+                    "rules": [
+                      {
+                        "name": "queue-depth",
+                        "custom": {
+                          "type": "azure-servicebus",
+                          "metadata": {
+                            "queueName": "document-ingestion",
+                            "messageCount": "5"
+                          },
+                          "auth": [
+                            {
+                              "secretRef": "service-bus-connection-string",
+                              "triggerParameter": "connection"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.App/managedEnvironments', variables('envName'))]"
+              ]
             }
           ],
           "outputs": {
@@ -1767,6 +1905,10 @@
             "containerAppEnvName": {
               "type": "string",
               "value": "[variables('envName')]"
+            },
+            "workerAppName": {
+              "type": "string",
+              "value": "[variables('workerAppName')]"
             }
           }
         }
@@ -1798,6 +1940,10 @@
     "containerAppName": {
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'container-apps'), '2025-04-01').outputs.containerAppName.value]"
+    },
+    "workerAppName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'container-apps'), '2025-04-01').outputs.workerAppName.value]"
     },
     "registryLoginServer": {
       "type": "string",

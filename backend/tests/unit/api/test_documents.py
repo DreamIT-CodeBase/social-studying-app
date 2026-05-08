@@ -78,6 +78,10 @@ def test_upload_document_happy_path(client):
             "app.api.documents.blob_storage.upload_document",
             AsyncMock(return_value=blob_url),
         ) as mock_upload,
+        patch(
+            "app.api.documents.document_queue.publish_extraction_message",
+            AsyncMock(return_value=None),
+        ) as mock_publish,
     ):
         response = client.post(
             "/api/v1/workspaces/wsp_test001/documents",
@@ -91,7 +95,15 @@ def test_upload_document_happy_path(client):
     assert data["status"] == "pending"
     assert data["id"].startswith("doc_")
     mock_upload.assert_awaited_once()
+    mock_publish.assert_awaited_once()
     col.insert_one.assert_awaited_once()
+
+    # Verify the queue message carries every field the worker needs.
+    sent_msg = mock_publish.await_args.args[0]
+    assert sent_msg.document_id == data["id"]
+    assert sent_msg.workspace_id == "wsp_test001"
+    assert sent_msg.content_type == "application/pdf"
+    assert sent_msg.blob_path.endswith("/study.pdf")
 
 
 def test_upload_document_as_workspace_admin_member_succeeds(client):
@@ -108,6 +120,10 @@ def test_upload_document_as_workspace_admin_member_succeeds(client):
         patch(
             "app.api.documents.blob_storage.upload_document",
             AsyncMock(return_value="https://x.blob/study.pdf"),
+        ),
+        patch(
+            "app.api.documents.document_queue.publish_extraction_message",
+            AsyncMock(return_value=None),
         ),
     ):
         response = client.post(
@@ -185,6 +201,41 @@ def test_upload_document_oversized_returns_422(client):
 
     assert response.status_code == 422
     assert "size limit" in response.json()["detail"].lower()
+
+
+def test_upload_marks_document_failed_when_publish_raises(client):
+    """If Service Bus publish fails, the doc is marked failed and the API 422s.
+
+    Without this, a publish outage would leave docs stuck in 'pending' forever
+    with the admin none the wiser.
+    """
+    admin = make_user(role=UserRole.tenant_admin)
+    app.dependency_overrides[get_current_user] = lambda: admin
+    col = _col_with_docs([])
+
+    with (
+        patch("app.api.documents.get_collection", return_value=col),
+        patch(
+            "app.api.documents.blob_storage.upload_document",
+            AsyncMock(return_value="https://x.blob/study.pdf"),
+        ),
+        patch(
+            "app.api.documents.document_queue.publish_extraction_message",
+            AsyncMock(side_effect=RuntimeError("service bus down")),
+        ),
+    ):
+        response = client.post(
+            "/api/v1/workspaces/wsp_test001/documents",
+            files={"file": ("study.pdf", b"%PDF-1.4 fake", "application/pdf")},
+        )
+
+    assert response.status_code == 422
+    # insert_one ran (doc was created); update_one ran (doc was marked failed).
+    col.insert_one.assert_awaited_once()
+    col.update_one.assert_awaited_once()
+    update_call = col.update_one.await_args
+    assert update_call.args[1]["$set"]["status"] == "failed"
+    assert "could not be queued" in response.json()["detail"]
 
 
 # ── GET /api/v1/workspaces/{ws}/documents ─────────────────────────────────────
