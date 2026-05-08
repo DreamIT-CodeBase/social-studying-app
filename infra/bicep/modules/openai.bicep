@@ -12,7 +12,7 @@ param keyVaultName string
 @description('Tokens-per-minute capacity for GPT-4o (in thousands). 0 = skip model deployment (no quota yet).')
 param gpt4oCapacity int = 0
 
-var accountName = 'oai-socialstudyapp-${environment}'
+var accountName = 'oai-ssa-${environment}-ddjopeut37ed2'
 var hasQuota = gpt4oCapacity > 0
 
 resource openAiAccount 'Microsoft.CognitiveServices/accounts@2024-04-01-preview' = {

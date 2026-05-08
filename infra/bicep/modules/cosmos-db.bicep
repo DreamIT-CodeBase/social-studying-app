@@ -5,7 +5,7 @@ param environment string
 param tags object
 param keyVaultName string
 
-var accountName = 'cosmos-socialstudyapp-${environment}'
+var accountName = 'cosmos-ssa-${environment}-ddjopeut37ed2'
 
 resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
   name: accountName

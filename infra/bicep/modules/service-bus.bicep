@@ -5,7 +5,7 @@ param environment string
 param tags object
 param keyVaultName string
 
-var namespaceName = 'sb-socialstudyapp-${environment}'
+var namespaceName = 'sb-ssa-${environment}-ddjopeut37ed2'
 
 resource namespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
   name: namespaceName

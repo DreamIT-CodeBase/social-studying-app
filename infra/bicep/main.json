@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.42.1.51946",
-      "templateHash": "15577960268419214907"
+      "templateHash": "12124650996067673664"
     }
   },
   "parameters": {
@@ -188,7 +188,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "5873956014609050364"
+              "templateHash": "9689717590305195591"
             }
           },
           "parameters": {
@@ -215,7 +215,7 @@
             }
           },
           "variables": {
-            "vaultName": "[format('kv-ssa-{0}-{1}', parameters('environment'), uniqueString(resourceGroup().id, 'v2'))]",
+            "vaultName": "[format('kv-ssa-{0}-ddjopeut37ed2', parameters('environment'))]",
             "kvSecretsOfficerRoleId": "b86a8fe4-44ce-4948-aee5-eccb2c155cd7",
             "kvSecretsUserRoleId": "4633458b-17de-408a-b874-0445c86b69e6"
           },
@@ -319,7 +319,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "16915746603128696841"
+              "templateHash": "3446452369438875184"
             }
           },
           "parameters": {
@@ -337,7 +337,7 @@
             }
           },
           "variables": {
-            "registryName": "[format('acrssa{0}{1}', parameters('environment'), uniqueString(resourceGroup().id))]",
+            "registryName": "[format('acrssa{0}ddjopeut37ed2', parameters('environment'))]",
             "acrPullRoleId": "7f951dda-4ed3-4680-a7ca-43fe172d538d"
           },
           "resources": [
@@ -418,7 +418,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "275545068735506806"
+              "templateHash": "15504357283751533054"
             }
           },
           "parameters": {
@@ -436,7 +436,7 @@
             }
           },
           "variables": {
-            "accountName": "[format('cosmos-ssa-{0}-{1}', parameters('environment'), uniqueString(resourceGroup().id))]"
+            "accountName": "[format('cosmos-ssa-{0}-ddjopeut37ed2', parameters('environment'))]"
           },
           "resources": [
             {
@@ -574,7 +574,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "9357745988501971216"
+              "templateHash": "15146255164805551355"
             }
           },
           "parameters": {
@@ -592,7 +592,7 @@
             }
           },
           "variables": {
-            "redisName": "[format('redis-ssa-{0}-{1}', parameters('environment'), uniqueString(resourceGroup().id))]"
+            "redisName": "[format('redis-ssa-{0}-ddjopeut37ed2', parameters('environment'))]"
           },
           "resources": [
             {
@@ -678,7 +678,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "16429470818623657415"
+              "templateHash": "5493318578410873818"
             }
           },
           "parameters": {
@@ -696,7 +696,7 @@
             }
           },
           "variables": {
-            "searchName": "[format('srch-ssa-{0}-{1}', parameters('environment'), uniqueString(resourceGroup().id))]"
+            "searchName": "[format('srch-ssa-{0}-ddjopeut37ed2', parameters('environment'))]"
           },
           "resources": [
             {
@@ -783,7 +783,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "3529886792813568570"
+              "templateHash": "6773147548734904701"
             }
           },
           "parameters": {
@@ -804,7 +804,7 @@
             }
           },
           "variables": {
-            "storageAccountName": "[format('stssa{0}{1}', parameters('environment'), uniqueString(resourceGroup().id))]",
+            "storageAccountName": "[format('stssa{0}ddjopeut37ed2', parameters('environment'))]",
             "storageBlobDataContributorRoleId": "ba92f5b4-2d11-453d-a403-e96b0029c9fe"
           },
           "resources": [
@@ -915,7 +915,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "16639449366393234636"
+              "templateHash": "12412128093506780019"
             }
           },
           "parameters": {
@@ -933,7 +933,7 @@
             }
           },
           "variables": {
-            "namespaceName": "[format('sb-ssa-{0}-{1}', parameters('environment'), uniqueString(resourceGroup().id))]"
+            "namespaceName": "[format('sb-ssa-{0}-ddjopeut37ed2', parameters('environment'))]"
           },
           "resources": [
             {
@@ -1041,7 +1041,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "7008448212235273378"
+              "templateHash": "16459222812366081382"
             }
           },
           "parameters": {
@@ -1066,7 +1066,7 @@
             }
           },
           "variables": {
-            "accountName": "[format('oai-ssa-{0}-{1}', parameters('environment'), uniqueString(resourceGroup().id))]",
+            "accountName": "[format('oai-ssa-{0}-ddjopeut37ed2', parameters('environment'))]",
             "hasQuota": "[greater(parameters('gpt4oCapacity'), 0)]"
           },
           "resources": [
@@ -1170,7 +1170,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "6940728905795293410"
+              "templateHash": "8956448817581886011"
             }
           },
           "parameters": {
@@ -1188,7 +1188,7 @@
             }
           },
           "variables": {
-            "accountName": "[format('cs-ssa-{0}-{1}', parameters('environment'), uniqueString(resourceGroup().id))]"
+            "accountName": "[format('cs-ssa-{0}-ddjopeut37ed2', parameters('environment'))]"
           },
           "resources": [
             {
@@ -1266,7 +1266,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.42.1.51946",
-              "templateHash": "13419766682605911999"
+              "templateHash": "9143006615066831246"
             }
           },
           "parameters": {
@@ -1284,7 +1284,7 @@
             }
           },
           "variables": {
-            "accountName": "[format('di-ssa-{0}-{1}', parameters('environment'), uniqueString(resourceGroup().id))]"
+            "accountName": "[format('di-ssa-{0}-ddjopeut37ed2', parameters('environment'))]"
           },
           "resources": [
             {

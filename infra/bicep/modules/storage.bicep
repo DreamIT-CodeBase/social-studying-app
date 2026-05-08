@@ -6,7 +6,7 @@ param tags object
 param keyVaultName string
 param managedIdentityPrincipalId string
 
-var storageAccountName = 'stssa${environment}${uniqueString(resourceGroup().id)}'
+var storageAccountName = 'stssa${environment}ddjopeut37ed2'
 var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {

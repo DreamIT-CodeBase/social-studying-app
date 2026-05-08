@@ -8,7 +8,7 @@ param environment string
 param tags object
 param keyVaultName string
 
-var accountName = 'di-ssa-${environment}-${uniqueString(resourceGroup().id)}'
+var accountName = 'di-ssa-${environment}-ddjopeut37ed2'
 
 resource documentIntelligence 'Microsoft.CognitiveServices/accounts@2024-04-01-preview' = {
   name: accountName

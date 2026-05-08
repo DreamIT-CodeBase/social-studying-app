@@ -5,7 +5,7 @@ param environment string
 param tags object
 param keyVaultName string
 
-var accountName = 'cs-socialstudyapp-${environment}'
+var accountName = 'cs-ssa-${environment}-ddjopeut37ed2'
 
 resource contentSafety 'Microsoft.CognitiveServices/accounts@2024-04-01-preview' = {
   name: accountName

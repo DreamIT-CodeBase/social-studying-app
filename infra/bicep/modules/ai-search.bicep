@@ -5,7 +5,7 @@ param environment string
 param tags object
 param keyVaultName string
 
-var searchName = 'search-socialstudyapp-${environment}'
+var searchName = 'srch-ssa-${environment}-ddjopeut37ed2'
 
 resource aiSearch 'Microsoft.Search/searchServices@2024-03-01-preview' = {
   name: searchName

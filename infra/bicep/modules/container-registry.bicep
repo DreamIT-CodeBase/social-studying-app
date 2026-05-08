@@ -5,7 +5,7 @@ param environment string
 param tags object
 param managedIdentityPrincipalId string
 
-var registryName = 'acrsocialstudyapp${environment}'
+var registryName = 'acrssa${environment}ddjopeut37ed2'
 
 var acrPullRoleId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 

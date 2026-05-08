@@ -5,7 +5,7 @@ param environment string
 param tags object
 param keyVaultName string
 
-var redisName = 'redis-socialstudyapp-${environment}'
+var redisName = 'redis-ssa-${environment}-ddjopeut37ed2'
 
 resource redisCache 'Microsoft.Cache/redis@2024-03-01' = {
   name: redisName
