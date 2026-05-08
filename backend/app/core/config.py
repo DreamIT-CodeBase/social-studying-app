@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379"
 
+    # Azure Blob Storage
+    storage_connection_string: str = ""
+    storage_container: str = "documents"
+
     # Azure AI Document Intelligence (formerly Form Recognizer)
     document_intelligence_endpoint: str = ""
     document_intelligence_key: str = ""
