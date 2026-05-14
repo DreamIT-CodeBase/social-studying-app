@@ -31,6 +31,22 @@ resource documentIngestionQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-
   }
 }
 
+// Sprint 2.5 — topic extraction. Longer lock (10 min) since GPT-4o calls
+// can take 30s+ on long documents and we don't want premature redelivery
+// re-running an in-flight model call. maxDelivery=3 (not 5) — model calls
+// are expensive and a doc that fails three times almost certainly has a
+// structural issue, not a transient one.
+resource topicExtractionQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+  parent: namespace
+  name: 'topic-extraction'
+  properties: {
+    lockDuration: 'PT10M'
+    maxDeliveryCount: 3
+    defaultMessageTimeToLive: 'P1D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
 resource knowledgeStateQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
   parent: namespace
   name: 'knowledge-state-recalc'

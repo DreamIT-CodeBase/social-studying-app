@@ -12,20 +12,23 @@ class DocumentStatus(StrEnum):
 
     Owned by Sprint 2.3:        pending → extracting → text_extracted | failed
     Owned by Sprint 2.4:        extracting → flagged (terminal, admin review)
-    Owned by 2.5/2.8/2.9 (TBD): text_extracted → processing → ready
+    Owned by Sprint 2.5:        text_extracted → extracting_topics → topics_extracted | failed
+    Owned by 2.8/2.9 (TBD):     topics_extracted → processing → ready
 
     `pending` is the upload-time state (queued for worker pickup). Kept the
     name `pending` (not `queued`) for backwards compatibility with Sprint 1
     tests; semantically identical.
     """
 
-    pending = "pending"                  # 2.2: uploaded, queued for the extractor
-    extracting = "extracting"            # 2.3: worker has the message, DI call in flight
-    text_extracted = "text_extracted"    # 2.3+2.4: text persisted AND screened clean
-    processing = "processing"            # 2.5+: chunking / embedding (placeholder for now)
-    ready = "ready"                      # final: questions can be generated
-    flagged = "flagged"                  # 2.4: content safety flagged — awaiting admin review
-    failed = "failed"                    # terminal failure
+    pending = "pending"                          # 2.2: uploaded, queued for the extractor
+    extracting = "extracting"                    # 2.3: worker has the message, DI call in flight
+    text_extracted = "text_extracted"            # 2.3+2.4: text persisted AND screened clean
+    extracting_topics = "extracting_topics"      # 2.5: topic worker has the doc, GPT-4o in flight
+    topics_extracted = "topics_extracted"        # 2.5: topics persisted, awaiting chunking
+    processing = "processing"                    # 2.8+: chunking / embedding (placeholder for now)
+    ready = "ready"                              # final: questions can be generated
+    flagged = "flagged"                          # 2.4: content safety flagged — admin review
+    failed = "failed"                            # terminal failure
 
 
 class DocumentType(StrEnum):
@@ -36,9 +39,22 @@ class DocumentType(StrEnum):
 
 
 class TopicTag(CosmosDocument.__base__):
+    """A topic identified within a single document.
+
+    Sprint 2.5 fills the rich fields (description, complexity_level, page_refs)
+    from the GPT-4o extraction call. Sprint 2.6's taxonomy merge then maps a
+    document's TopicTags onto the workspace-level canonical taxonomy.
+    """
+
     name: str
-    confidence: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     source: str = "ai"  # "ai" or "admin"
+
+    # Sprint 2.5 — populated by the topic extraction worker.
+    description: str | None = None
+    # 1 = elementary, 5 = advanced. Reflects depth of treatment in THIS source.
+    complexity_level: int | None = Field(default=None, ge=1, le=5)
+    page_refs: list[int] = Field(default_factory=list)
 
 
 class Document(CosmosDocument):

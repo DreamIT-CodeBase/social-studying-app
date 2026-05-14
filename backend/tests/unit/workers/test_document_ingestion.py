@@ -113,6 +113,10 @@ async def test_handle_happy_path_transitions_pending_to_text_extracted():
             "app.workers.document_ingestion.content_safety.analyze_extracted_text",
             AsyncMock(return_value=_clean_verdict()),
         ) as mock_scan,
+        patch(
+            "app.workers.document_ingestion.publish_topic_message",
+            AsyncMock(),
+        ) as mock_publish,
     ):
         await document_ingestion._handle(msg)
 
@@ -145,6 +149,14 @@ async def test_handle_happy_path_transitions_pending_to_text_extracted():
     assert log_doc["target_id"] == msg.payload.document_id
     assert log_doc["flagged_categories"] == []
     assert log_doc["severities"] == {"Hate": 0, "SelfHarm": 0, "Sexual": 0, "Violence": 0}
+
+    # Sprint 2.5 hand-off — clean docs trigger the topic worker.
+    mock_publish.assert_awaited_once()
+    handoff = mock_publish.await_args.args[0]
+    assert handoff.document_id == msg.payload.document_id
+    assert handoff.tenant_id == msg.payload.tenant_id
+    assert handoff.workspace_id == msg.payload.workspace_id
+    assert handoff.extracted_text_blob_path == "ten_abc/wsp_abc/extracted-text/doc_abc.txt"
 
 
 # ── Permanent failure: unsupported content → dead-letter + status=failed ─────
@@ -300,8 +312,15 @@ async def test_handle_content_safety_flagged_sets_status_flagged_and_logs():
             "app.workers.document_ingestion.content_safety.analyze_extracted_text",
             AsyncMock(return_value=flagged),
         ),
+        patch(
+            "app.workers.document_ingestion.publish_topic_message",
+            AsyncMock(),
+        ) as mock_publish,
     ):
         await document_ingestion._handle(msg)
+
+    # Flagged docs do NOT advance to topic extraction.
+    mock_publish.assert_not_awaited()
 
     statuses = [
         call.args[1]["$set"]["status"]

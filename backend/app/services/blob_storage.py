@@ -115,6 +115,21 @@ async def upload_extracted_text(
     return result
 
 
+async def download_extracted_text(blob_path: str) -> str:
+    """Download a previously persisted extracted-text blob as a UTF-8 string.
+
+    Sprint 2.5 topic extraction calls this to read the output of Sprint 2.3's
+    Document Intelligence step. Falls back to ``replace`` on decode errors so
+    a single bad byte doesn't kill the whole document's pipeline.
+
+    Raises:
+        ResourceNotFoundError: text blob was deleted/purged between status
+            update and worker pickup.
+    """
+    content = await download_document(blob_path)
+    return content.decode("utf-8", errors="replace")
+
+
 async def delete_document(
     *,
     tenant_id: str,

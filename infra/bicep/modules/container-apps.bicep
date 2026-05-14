@@ -38,6 +38,7 @@ param registryLoginServer string
 var envName = 'cae-socialstudyapp-${environment}'
 var appName = 'ca-api-${environment}'
 var workerAppName = 'ca-worker-${environment}'
+var topicWorkerAppName = 'ca-topic-extractor-${environment}'
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: 'log-socialstudyapp-${environment}'
@@ -415,7 +416,137 @@ resource workerApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+// ── Topic Extractor Container App (Sprint 2.5) ────────────────────────────────
+// Second worker. Consumes the `topic-extraction` queue, runs GPT-4o over the
+// extracted text, and writes per-document topic tags. Scales independently of
+// the text extractor: topic mining is slow (10–30s/doc on GPT-4o) and we don't
+// want a backlog here to starve text extraction or vice versa.
+//
+// Same image as the API/worker — entrypoint is `python -m app.workers.topic_extraction`.
+
+resource topicWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
+  name: topicWorkerAppName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${managedIdentityId}': {}
+    }
+  }
+  properties: {
+    environmentId: containerAppEnv.id
+    configuration: {
+      registries: [
+        {
+          server: registryLoginServer
+          identity: managedIdentityId
+        }
+      ]
+      secrets: [
+        {
+          name: 'cosmos-connection-string'
+          keyVaultUrl: cosmosConnectionSecretUri
+          identity: managedIdentityId
+        }
+        {
+          name: 'service-bus-connection-string'
+          keyVaultUrl: serviceBusConnectionSecretUri
+          identity: managedIdentityId
+        }
+        {
+          name: 'storage-connection-string'
+          keyVaultUrl: storageConnectionSecretUri
+          identity: managedIdentityId
+        }
+        {
+          name: 'azure-openai-key'
+          keyVaultUrl: openAiKeySecretUri
+          identity: managedIdentityId
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'topic-extractor'
+          image: apiImage
+          command: ['python']
+          args: ['-m', 'app.workers.topic_extraction']
+          resources: {
+            cpu: json(environment == 'prod' ? '1.0' : '0.5')
+            memory: environment == 'prod' ? '2Gi' : '1Gi'
+          }
+          env: [
+            {
+              name: 'ENVIRONMENT'
+              value: environment
+            }
+            {
+              name: 'COSMOS_CONNECTION_STRING'
+              secretRef: 'cosmos-connection-string'
+            }
+            {
+              name: 'SERVICE_BUS_CONNECTION'
+              secretRef: 'service-bus-connection-string'
+            }
+            {
+              name: 'STORAGE_CONNECTION_STRING'
+              secretRef: 'storage-connection-string'
+            }
+            {
+              name: 'STORAGE_ENDPOINT'
+              value: storageEndpoint
+            }
+            {
+              name: 'AZURE_OPENAI_ENDPOINT'
+              value: openAiEndpoint
+            }
+            {
+              name: 'AZURE_OPENAI_KEY'
+              secretRef: 'azure-openai-key'
+            }
+            {
+              name: 'AZURE_OPENAI_DEPLOYMENT'
+              value: openAiDeploymentName
+            }
+            {
+              name: 'MANAGED_IDENTITY_CLIENT_ID'
+              value: managedIdentityClientId
+            }
+          ]
+        }
+      ]
+      scale: {
+        // Topic mining is slower per message — keep maxReplicas low to avoid
+        // hammering the GPT-4o deployment's TPM budget in parallel.
+        minReplicas: environment == 'prod' ? 1 : 0
+        maxReplicas: environment == 'prod' ? 5 : 2
+        rules: [
+          {
+            name: 'topic-queue-depth'
+            custom: {
+              type: 'azure-servicebus'
+              metadata: {
+                queueName: 'topic-extraction'
+                messageCount: '3'
+              }
+              auth: [
+                {
+                  secretRef: 'service-bus-connection-string'
+                  triggerParameter: 'connection'
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+
 output apiUrl string = 'https://${apiApp.properties.configuration.ingress.fqdn}'
 output containerAppName string = apiApp.name
 output containerAppEnvName string = containerAppEnv.name
 output workerAppName string = workerApp.name
+output topicWorkerAppName string = topicWorkerApp.name

@@ -51,6 +51,13 @@ class Settings(BaseSettings):
     # Azure Service Bus
     service_bus_connection: str = ""
     service_bus_documents_queue: str = "document-ingestion"
+    service_bus_topics_queue: str = "topic-extraction"
+
+    # Azure OpenAI tuning knobs for topic extraction (Sprint 2.5).
+    # Token cap protects against runaway prompts; very long textbooks get
+    # auto-summarized to ~60K chars before the call (see topic_extraction.py).
+    openai_topic_extraction_max_input_chars: int = 60_000
+    openai_topic_extraction_max_output_tokens: int = 4_000
 
 
 settings = Settings()
