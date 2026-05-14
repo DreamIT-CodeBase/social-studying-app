@@ -36,6 +36,18 @@ class Settings(BaseSettings):
     document_intelligence_endpoint: str = ""
     document_intelligence_key: str = ""
 
+    # Azure AI Content Safety
+    # Profile: "educational lenient" — strict on Hate/SelfHarm/Sexual (≥2 flags),
+    # lenient on Violence (≥4 flags) so historical content (wars, conflicts)
+    # doesn't trip the scanner. See knowledge.md §10.
+    # Severities use the FOUR_SEVERITY_LEVELS scale: 0, 2, 4, 6.
+    content_safety_endpoint: str = ""
+    content_safety_key: str = ""
+    content_safety_hate_threshold: int = 2
+    content_safety_self_harm_threshold: int = 2
+    content_safety_sexual_threshold: int = 2
+    content_safety_violence_threshold: int = 4
+
     # Azure Service Bus
     service_bus_connection: str = ""
     service_bus_documents_queue: str = "document-ingestion"

@@ -11,6 +11,7 @@ class DocumentStatus(StrEnum):
     """State machine for the ingestion pipeline.
 
     Owned by Sprint 2.3:        pending → extracting → text_extracted | failed
+    Owned by Sprint 2.4:        extracting → flagged (terminal, admin review)
     Owned by 2.5/2.8/2.9 (TBD): text_extracted → processing → ready
 
     `pending` is the upload-time state (queued for worker pickup). Kept the
@@ -20,9 +21,10 @@ class DocumentStatus(StrEnum):
 
     pending = "pending"                  # 2.2: uploaded, queued for the extractor
     extracting = "extracting"            # 2.3: worker has the message, DI call in flight
-    text_extracted = "text_extracted"    # 2.3: text persisted, awaiting topic extraction
+    text_extracted = "text_extracted"    # 2.3+2.4: text persisted AND screened clean
     processing = "processing"            # 2.5+: chunking / embedding (placeholder for now)
     ready = "ready"                      # final: questions can be generated
+    flagged = "flagged"                  # 2.4: content safety flagged — awaiting admin review
     failed = "failed"                    # terminal failure
 
 

@@ -14,17 +14,26 @@ State machine owned by this worker
 ----------------------------------
 ``pending``         (set by upload API)
     → ``extracting``        (this worker takes lock + records start time)
-        → ``text_extracted``    (DI succeeded; text persisted; metadata updated)
+        → ``text_extracted``    (DI succeeded; text persisted; content safety clean)
+        → ``flagged``           (DI succeeded but content safety flagged it)
         → ``failed``            (permanent: malformed file / unsupported content)
         → (retry)              (transient: blob 404 / DI 503 / Cosmos timeout)
+
+Content safety (Sprint 2.4)
+---------------------------
+After Document Intelligence returns text, the worker runs Azure Content
+Safety over it. If any harm category crosses its configured threshold, the
+document transitions to ``flagged`` (terminal — awaits admin review). Either
+way an entry is written to the ``moderation_log`` collection so admins have
+a full audit trail.
 
 Permanent vs transient classification
 -------------------------------------
 ``UnsupportedContent`` from Document Intelligence and ``KeyError`` while parsing
 the message are permanent — dead-letter immediately so we don't waste 5 retries.
-Everything else (transport, timeout, DI 503) is transient — abandon the message
-and let Service Bus redeliver up to ``maxDeliveryCount`` (5) times before
-auto-DLQing.
+Everything else (transport, timeout, DI 503, Content Safety 503) is transient
+— abandon the message and let Service Bus redeliver up to ``maxDeliveryCount``
+(5) times before auto-DLQing.
 """
 
 from __future__ import annotations
@@ -60,12 +69,16 @@ def _bootstrap_env() -> None:
 
 _bootstrap_env()
 
+from uuid import uuid4  # noqa: E402
+
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError  # noqa: E402
 
-from app.core.database import DOCUMENTS, get_collection  # noqa: E402
+from app.core.database import DOCUMENTS, MODERATION_LOG, get_collection  # noqa: E402
 from app.models.base import utc_now  # noqa: E402
 from app.models.document import DocumentStatus  # noqa: E402
-from app.services import blob_storage, document_intelligence  # noqa: E402
+from app.models.moderation import ModerationAction, ModerationLog, ModerationTarget  # noqa: E402
+from app.services import blob_storage, content_safety, document_intelligence  # noqa: E402
+from app.services.content_safety import SafetyVerdict  # noqa: E402
 from app.services.document_queue import (  # noqa: E402
     ExtractionMessage,
     ReceivedExtractionMessage,
@@ -158,7 +171,8 @@ async def _handle(msg: ReceivedExtractionMessage) -> None:
         # Transient — let Service Bus redeliver.
         raise
 
-    # 3. Persist extracted text.
+    # 3. Persist extracted text — always written to blob, even if flagged, so
+    #    admins reviewing a flagged document can read what tripped the scanner.
     blob_path = await blob_storage.upload_extracted_text(
         tenant_id=payload.tenant_id,
         workspace_id=payload.workspace_id,
@@ -166,27 +180,53 @@ async def _handle(msg: ReceivedExtractionMessage) -> None:
         text=extracted.text,
     )
 
-    # 4. Mark document text_extracted with metadata.
+    # 4. Content safety scan (Sprint 2.4). Transient failures propagate so
+    #    Service Bus retries — we don't ship a document past the moderation
+    #    gate just because the scanner is having a bad day.
+    verdict = await content_safety.analyze_extracted_text(extracted.text)
+
+    common_extra: dict[str, object] = {
+        "extracted_text_blob_path": blob_path,
+        "text_char_count": len(extracted.text),
+        "page_count": extracted.page_count,
+        "languages": extracted.languages,
+        "processing_completed_at": utc_now(),
+        "processing_error": None,
+    }
+
+    if verdict.flagged:
+        await _set_status(
+            tenant_id=payload.tenant_id,
+            workspace_id=payload.workspace_id,
+            document_id=payload.document_id,
+            status=DocumentStatus.flagged,
+            extra={**common_extra, "moderation_flagged": True},
+        )
+        await _write_moderation_log(payload, verdict, action=ModerationAction.flagged)
+        logger.warning(
+            "Flagged doc=%s categories=%s severities=%s",
+            payload.document_id,
+            verdict.flagged_categories,
+            verdict.severities,
+        )
+        return
+
+    # 5. Clean — advance to text_extracted and audit-log the auto-approval.
     await _set_status(
         tenant_id=payload.tenant_id,
         workspace_id=payload.workspace_id,
         document_id=payload.document_id,
         status=DocumentStatus.text_extracted,
-        extra={
-            "extracted_text_blob_path": blob_path,
-            "text_char_count": len(extracted.text),
-            "page_count": extracted.page_count,
-            "languages": extracted.languages,
-            "processing_completed_at": utc_now(),
-            "processing_error": None,
-        },
+        extra=common_extra,
     )
+    await _write_moderation_log(payload, verdict, action=ModerationAction.auto_approved)
     logger.info(
-        "Extracted doc=%s pages=%d chars=%d langs=%s",
+        "Extracted doc=%s pages=%d chars=%d langs=%s severities=%s",
         payload.document_id,
         extracted.page_count,
         len(extracted.text),
         extracted.languages or ["unknown"],
+        verdict.severities,
     )
 
 
@@ -201,6 +241,52 @@ async def _mark_failed(payload: ExtractionMessage, reason: str) -> None:
             "processing_completed_at": utc_now(),
         },
     )
+
+
+async def _write_moderation_log(
+    payload: ExtractionMessage,
+    verdict: SafetyVerdict,
+    *,
+    action: ModerationAction,
+) -> None:
+    """Append a content-safety audit entry to the tenant's moderation_log.
+
+    Write happens AFTER the document status update so a transient log-write
+    failure can't leave the document in an undefined state. The log is
+    append-only by design; reconstructing a missing entry from worker logs
+    is acceptable for compliance.
+
+    Errors are caught and logged rather than re-raised. A failed audit write
+    must not regress a finished document back into the retry queue — the
+    scan already happened and Service Bus would re-charge us for it.
+    """
+    reason = (
+        ", ".join(verdict.flagged_categories)
+        if verdict.flagged_categories
+        else "clean"
+    )
+    entry = ModerationLog(
+        id=f"mod_{uuid4().hex}",
+        tenant_id=payload.tenant_id,
+        workspace_id=payload.workspace_id,
+        target_type=ModerationTarget.document,
+        target_id=payload.document_id,
+        action=action,
+        performed_by="system",
+        reason=reason,
+        azure_safety_score=verdict.max_severity_normalized,
+        severities=verdict.severities,
+        flagged_categories=verdict.flagged_categories,
+    )
+    try:
+        col = get_collection(payload.tenant_id, MODERATION_LOG)
+        await col.insert_one(entry.model_dump(by_alias=True))
+    except Exception:
+        logger.exception(
+            "Failed to write moderation_log entry for doc=%s action=%s",
+            payload.document_id,
+            action.value,
+        )
 
 
 def _is_permanent(exc: HttpResponseError) -> bool:
