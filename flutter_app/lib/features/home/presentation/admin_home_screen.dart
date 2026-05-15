@@ -4,6 +4,7 @@ import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/features/documents/presentation/documents_list_screen.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 
 class AdminHomeScreen extends ConsumerStatefulWidget {
@@ -31,6 +32,13 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
           orElse: () => 'Admin',
         ) ??
         'Admin';
+    final workspaceId = authAsync.valueOrNull?.maybeWhen(
+      authenticated: (user) =>
+          user.workspaceMemberships.isNotEmpty
+              ? user.workspaceMemberships.first.workspaceId
+              : null,
+      orElse: () => null,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -62,7 +70,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
         index: _selectedIndex,
         children: [
           _DashboardTab(displayName: displayName),
-          const _DocumentsTab(),
+          _DocumentsTab(workspaceId: workspaceId),
           const _StudentsTab(),
           _SettingsTab(onSignOut: () => _signOut()),
         ],
@@ -351,21 +359,21 @@ class _GetStartedCard extends StatelessWidget {
 }
 
 class _DocumentsTab extends StatelessWidget {
-  const _DocumentsTab();
+  const _DocumentsTab({required this.workspaceId});
+
+  final String? workspaceId;
 
   @override
   Widget build(BuildContext context) {
-    return EmptyStateView(
-      icon: Icons.description_rounded,
-      title: 'No documents yet',
-      subtitle:
-          'Upload PDFs, Word documents, or images to generate AI-powered study questions.',
-      action: FilledButton.icon(
-        onPressed: () {},
-        icon: const Icon(Icons.upload_file_rounded),
-        label: const Text('Upload Document'),
-      ),
-    );
+    if (workspaceId == null) {
+      return const EmptyStateView(
+        icon: Icons.workspaces_outline,
+        title: 'No workspace yet',
+        subtitle:
+            'You need to create or join a workspace before uploading documents.',
+      );
+    }
+    return DocumentsListScreen(workspaceId: workspaceId!);
   }
 }
 

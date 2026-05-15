@@ -1,0 +1,264 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:social_study_app/core/constants/spacing.dart';
+import 'package:social_study_app/core/extensions/context_extensions.dart';
+import 'package:social_study_app/core/routing/routes.dart';
+import 'package:social_study_app/features/documents/data/demo_documents_repository.dart';
+import 'package:social_study_app/features/documents/presentation/documents_notifier.dart';
+import 'package:social_study_app/features/documents/presentation/upload_controller.dart';
+import 'package:social_study_app/features/documents/presentation/widgets/status_chip.dart';
+import 'package:social_study_app/shared/models/document.dart';
+import 'package:social_study_app/shared/widgets/empty_state_view.dart';
+import 'package:social_study_app/shared/widgets/error_view.dart';
+import 'package:social_study_app/shared/widgets/loading_indicator.dart';
+
+/// Workspace documents list. Shows every doc with its current status
+/// chip; tapping a row pushes the polling/details screen.
+///
+/// Renders inside the Documents tab of the admin home Scaffold, so it
+/// has no AppBar of its own. The parent Scaffold already provides one
+/// titled "Documents".
+class DocumentsListScreen extends ConsumerWidget {
+  const DocumentsListScreen({super.key, required this.workspaceId});
+
+  final String workspaceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final docsAsync = ref.watch(documentsListProvider(workspaceId));
+    final uploadState = ref.watch(uploadControllerProvider);
+    final isUploading = uploadState.isLoading;
+
+    // Surface upload errors via SnackBar so the list view stays put.
+    ref.listen<AsyncValue<Document?>>(uploadControllerProvider, (prev, next) {
+      next.whenOrNull(
+        error: (error, _) => _showUploadError(context, error),
+      );
+    });
+
+    return Stack(
+      children: [
+        RefreshIndicator(
+          onRefresh: () async {
+            ref.read(documentsListProvider(workspaceId).notifier).refresh();
+            await ref.read(documentsListProvider(workspaceId).future);
+          },
+          child: docsAsync.when(
+            data: (docs) => docs.isEmpty
+                ? _EmptyState(
+                    onUpload: isUploading
+                        ? null
+                        : () => _handleUpload(context, ref),
+                  )
+                : _DocsList(
+                    docs: docs,
+                    workspaceId: workspaceId,
+                  ),
+            loading: () => const LoadingIndicator(),
+            error: (error, _) => ErrorView(
+              message: error.toString(),
+              onRetry: () =>
+                  ref.read(documentsListProvider(workspaceId).notifier).refresh(),
+            ),
+          ),
+        ),
+        // FAB only shows once we've rendered a list (so it doesn't
+        // overlap the empty-state CTA).
+        if (docsAsync.valueOrNull?.isNotEmpty ?? false)
+          Positioned(
+            bottom: Spacing.lg,
+            right: Spacing.lg,
+            child: FloatingActionButton.extended(
+              onPressed: isUploading ? null : () => _handleUpload(context, ref),
+              icon: isUploading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.upload_file_rounded),
+              label: Text(isUploading ? 'Uploading…' : 'Upload'),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _handleUpload(BuildContext context, WidgetRef ref) async {
+    final doc = await ref
+        .read(uploadControllerProvider.notifier)
+        .pickAndUpload(workspaceId: workspaceId);
+    if (doc != null) {
+      // List view should reflect the new doc; provider invalidate
+      // re-runs the list fetch.
+      ref.read(documentsListProvider(workspaceId).notifier).refresh();
+      if (context.mounted) {
+        context.push(_pollingRouteFor(workspaceId, doc.id));
+      }
+    }
+  }
+
+  void _showUploadError(BuildContext context, Object error) {
+    final message = switch (error) {
+      EmptyUploadException() => 'That file is empty.',
+      UnsupportedFileTypeException() =>
+        'That file type isn\'t supported. '
+            'Try a PDF, DOCX, image, or plain text file.',
+      _ => 'Upload failed: $error',
+    };
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+String _pollingRouteFor(String workspaceId, String documentId) =>
+    '${AppRoutes.adminDocuments}/$workspaceId/$documentId';
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({required this.onUpload});
+
+  final VoidCallback? onUpload;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      // ListView so RefreshIndicator can pull-to-refresh on the empty state.
+      children: [
+        SizedBox(
+          height: context.screenHeight * 0.7,
+          child: EmptyStateView(
+            icon: Icons.description_rounded,
+            title: 'No documents yet',
+            subtitle:
+                'Upload PDFs, Word documents, or images to generate '
+                'AI-powered study questions.',
+            action: FilledButton.icon(
+              onPressed: onUpload,
+              icon: const Icon(Icons.upload_file_rounded),
+              label: const Text('Upload Document'),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DocsList extends StatelessWidget {
+  const _DocsList({required this.docs, required this.workspaceId});
+
+  final List<Document> docs;
+  final String workspaceId;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(
+        Spacing.lg,
+        Spacing.lg,
+        Spacing.lg,
+        // Bottom padding leaves room for the floating Upload button so
+        // the last row isn't covered.
+        96,
+      ),
+      itemCount: docs.length,
+      separatorBuilder: (_, __) => const SizedBox(height: Spacing.sm),
+      itemBuilder: (_, i) => _DocRow(doc: docs[i], workspaceId: workspaceId),
+    );
+  }
+}
+
+class _DocRow extends StatelessWidget {
+  const _DocRow({required this.doc, required this.workspaceId});
+
+  final Document doc;
+  final String workspaceId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () =>
+            context.push(_pollingRouteFor(workspaceId, doc.id)),
+        child: Padding(
+          padding: const EdgeInsets.all(Spacing.lg),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _DocTypeIcon(type: doc.docType),
+              const SizedBox(width: Spacing.lg),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      doc.filename,
+                      style: context.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: Spacing.xs),
+                    Text(
+                      _detailLine(doc),
+                      style: context.textTheme.bodySmall?.copyWith(
+                        color: context.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: Spacing.sm),
+                    StatusChip(status: doc.status),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: context.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _detailLine(Document doc) {
+    final parts = <String>[];
+    if (doc.pageCount != null) parts.add('${doc.pageCount} pages');
+    if (doc.chunkCount > 0) parts.add('${doc.chunkCount} chunks');
+    if (doc.topicTags.isNotEmpty) parts.add('${doc.topicTags.length} topics');
+    if (parts.isEmpty) return doc.docType.name.toUpperCase();
+    return parts.join(' • ');
+  }
+}
+
+class _DocTypeIcon extends StatelessWidget {
+  const _DocTypeIcon({required this.type});
+
+  final DocumentType type;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = switch (type) {
+      DocumentType.pdf => Icons.picture_as_pdf_rounded,
+      DocumentType.docx => Icons.description_rounded,
+      DocumentType.image => Icons.image_rounded,
+      DocumentType.text => Icons.notes_rounded,
+    };
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: context.colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Icon(icon, color: context.colorScheme.onPrimaryContainer),
+    );
+  }
+}

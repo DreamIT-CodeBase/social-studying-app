@@ -151,6 +151,35 @@ async def list_documents(
     return [DocumentResponse.from_doc(Document.model_validate(d)) async for d in cursor]
 
 
+@router.get("/{document_id}", response_model=DocumentResponse)
+async def get_document(
+    workspace_id: str,
+    document_id: str,
+    current_user: User = Depends(get_current_user),
+) -> DocumentResponse:
+    """Fetch a single document's current state.
+
+    Sprint 2.10's Flutter polling screen calls this every couple of seconds
+    while the doc walks the ingestion state machine
+    (``pending → … → ready | failed | flagged``). Filter includes
+    ``deleted_at: None`` so a soft-deleted doc returns 404 — the polling
+    UI should stop polling, not show stale state.
+    """
+    _assert_workspace_access(current_user, workspace_id)
+    col = get_collection(current_user.tenant_id, DOCUMENTS)
+    raw = await col.find_one(
+        {
+            "_id": document_id,
+            "workspace_id": workspace_id,
+            "tenant_id": current_user.tenant_id,
+            "deleted_at": None,
+        }
+    )
+    if raw is None:
+        raise NotFoundError("Document", document_id)
+    return DocumentResponse.from_doc(Document.model_validate(raw))
+
+
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(
     workspace_id: str,

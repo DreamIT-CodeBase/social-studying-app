@@ -289,6 +289,91 @@ def test_list_documents_as_non_member_student_is_forbidden(client):
     assert response.status_code == 403
 
 
+# ── GET /api/v1/workspaces/{ws}/documents/{id} ───────────────────────────────
+
+
+def test_get_document_happy_path(client):
+    admin = make_user(role=UserRole.tenant_admin)
+    app.dependency_overrides[get_current_user] = lambda: admin
+    col = MagicMock()
+    col.find_one = AsyncMock(
+        return_value=_document_doc(status_=DocumentStatus.vectorizing)
+    )
+
+    with patch("app.api.documents.get_collection", return_value=col):
+        response = client.get(
+            "/api/v1/workspaces/wsp_test001/documents/doc_test001"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == "doc_test001"
+    assert data["status"] == "vectorizing"
+    # Filter scopes to id + workspace + tenant + soft-delete guard.
+    find_filter = col.find_one.await_args.args[0]
+    assert find_filter["_id"] == "doc_test001"
+    assert find_filter["workspace_id"] == "wsp_test001"
+    assert find_filter["tenant_id"] == admin.tenant_id
+    assert find_filter["deleted_at"] is None
+
+
+def test_get_document_not_found_returns_404(client):
+    admin = make_user(role=UserRole.tenant_admin)
+    app.dependency_overrides[get_current_user] = lambda: admin
+    col = MagicMock()
+    col.find_one = AsyncMock(return_value=None)
+
+    with patch("app.api.documents.get_collection", return_value=col):
+        response = client.get(
+            "/api/v1/workspaces/wsp_test001/documents/doc_missing"
+        )
+
+    assert response.status_code == 404
+
+
+def test_get_document_soft_deleted_returns_404(client):
+    """Soft-deleted docs should not be visible to the polling UI."""
+    admin = make_user(role=UserRole.tenant_admin)
+    app.dependency_overrides[get_current_user] = lambda: admin
+    col = MagicMock()
+    # The find filter includes deleted_at: None, so the DB returns None for
+    # soft-deleted rows. We assert the same shape as missing.
+    col.find_one = AsyncMock(return_value=None)
+
+    with patch("app.api.documents.get_collection", return_value=col):
+        response = client.get(
+            "/api/v1/workspaces/wsp_test001/documents/doc_test001"
+        )
+
+    assert response.status_code == 404
+
+
+def test_get_document_as_member_student_succeeds(client):
+    """Students who belong to the workspace can poll docs (read-only)."""
+    student = make_user(role=UserRole.student, workspace_ids=["wsp_test001"])
+    app.dependency_overrides[get_current_user] = lambda: student
+    col = MagicMock()
+    col.find_one = AsyncMock(return_value=_document_doc())
+
+    with patch("app.api.documents.get_collection", return_value=col):
+        response = client.get(
+            "/api/v1/workspaces/wsp_test001/documents/doc_test001"
+        )
+
+    assert response.status_code == 200
+
+
+def test_get_document_as_non_member_student_is_forbidden(client):
+    student = make_user(role=UserRole.student, workspace_ids=[])
+    app.dependency_overrides[get_current_user] = lambda: student
+
+    response = client.get(
+        "/api/v1/workspaces/wsp_test001/documents/doc_test001"
+    )
+
+    assert response.status_code == 403
+
+
 # ── DELETE /api/v1/workspaces/{ws}/documents/{id} ────────────────────────────
 
 

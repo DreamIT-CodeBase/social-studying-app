@@ -5,6 +5,7 @@ import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/auth/presentation/login_screen.dart';
+import 'package:social_study_app/features/documents/presentation/document_polling_screen.dart';
 import 'package:social_study_app/features/home/presentation/admin_home_screen.dart';
 import 'package:social_study_app/features/home/presentation/student_home_screen.dart';
 
@@ -61,6 +62,13 @@ GoRouter router(RouterRef ref) {
       GoRoute(
         path: AppRoutes.adminDashboard,
         builder: (_, __) => const AdminHomeScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.adminDocumentPolling,
+        builder: (_, state) => DocumentPollingScreen(
+          workspaceId: state.pathParameters['workspaceId']!,
+          documentId: state.pathParameters['documentId']!,
+        ),
       ),
       GoRoute(
         path: AppRoutes.studentHome,
