@@ -23,6 +23,41 @@ class InviteCode(CosmosDocument.__base__):
     is_active: bool = True
 
 
+# ── Taxonomy (Sprint 2.6) ─────────────────────────────────────────────────────
+
+
+class CanonicalTopic(CosmosDocument.__base__):
+    """A merged topic in the workspace's canonical taxonomy.
+
+    Sprint 2.6 builds these by merging per-document TopicTags. Sprint 2.7
+    refines them with prerequisite edges (``parent_id``). Sprint 3+ uses them
+    as the unit the adaptive learning engine reasons about.
+    """
+
+    id: str  # tpc_<uuid> — assigned at first-time merge
+    name: str  # canonical Title Case name
+    aliases: list[str] = Field(default_factory=list)
+    description: str | None = None
+    # Average of source-doc complexities, rounded. Float so callers can see
+    # halves until a re-merge re-quantizes.
+    complexity_level: float | None = Field(default=None, ge=1.0, le=5.0)
+    parent_id: str | None = None  # set by 2.7 dependency-graph inference
+    source_document_ids: list[str] = Field(default_factory=list)
+
+
+class Taxonomy(CosmosDocument.__base__):
+    """The workspace's canonical merged taxonomy.
+
+    Lives inside the Workspace document — read every time a doc is merged in
+    and written back atomically with ``taxonomy_version`` bumped. The
+    optimistic-concurrency story is documented in
+    ``app/services/taxonomy.py``.
+    """
+
+    topics: list[CanonicalTopic] = Field(default_factory=list)
+    last_merged_at: str | None = None
+
+
 class Workspace(CosmosDocument):
     """Partition key: workspace_id (self).
 
@@ -38,6 +73,12 @@ class Workspace(CosmosDocument):
     invite_codes: list[InviteCode] = Field(default_factory=list)
     document_count: int = 0
     is_active: bool = True
+
+    # Sprint 2.6 — canonical taxonomy merged from per-document TopicTags.
+    # ``taxonomy_version`` increments on every successful merge and acts as
+    # the optimistic-concurrency token (Cosmos MongoDB compare-and-swap).
+    taxonomy: Taxonomy = Field(default_factory=Taxonomy)
+    taxonomy_version: int = 0
 
 
 # ── Request / Response schemas ────────────────────────────────────────────────

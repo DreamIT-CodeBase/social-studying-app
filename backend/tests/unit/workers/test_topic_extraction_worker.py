@@ -12,8 +12,18 @@ from azure.core.exceptions import ResourceNotFoundError
 
 from app.core.exceptions import ServiceUnavailableError
 from app.models.document import DocumentStatus, TopicTag
+from app.services.taxonomy import MergeOutcome, TaxonomyMergeError
 from app.services.topic_queue import ReceivedTopicMessage, TopicExtractionMessage
 from app.workers import topic_extraction as worker
+
+
+def _merge_outcome(*, version: int = 1, total: int = 2, added: int = 2, seeded: bool = True):
+    return MergeOutcome(
+        taxonomy_version=version,
+        topics_total=total,
+        topics_added=added,
+        seeded=seeded,
+    )
 
 
 def _payload(**overrides) -> TopicExtractionMessage:
@@ -70,11 +80,23 @@ async def test_handle_happy_path_writes_topics_and_advances_status():
             "app.workers.topic_extraction.topic_extraction.extract_topics",
             AsyncMock(return_value=topics),
         ) as mock_extract,
+        patch(
+            "app.workers.topic_extraction.taxonomy.merge_into_workspace",
+            AsyncMock(return_value=_merge_outcome()),
+        ) as mock_merge,
     ):
         await worker._handle(msg)
 
     mock_download.assert_awaited_once_with(msg.payload.extracted_text_blob_path)
     mock_extract.assert_awaited_once_with("hello world")
+
+    # Sprint 2.6 — merge_into_workspace runs between extract and final write.
+    mock_merge.assert_awaited_once()
+    merge_kwargs = mock_merge.await_args.kwargs
+    assert merge_kwargs["tenant_id"] == "ten_abc"
+    assert merge_kwargs["workspace_id"] == "wsp_abc"
+    assert merge_kwargs["document_id"] == "doc_abc"
+    assert merge_kwargs["new_topics"] == topics
 
     # Two updates: extracting_topics, then topics_extracted.
     assert col.update_one.await_count == 2
@@ -115,6 +137,10 @@ async def test_handle_empty_topics_list_still_advances_to_topics_extracted():
         patch(
             "app.workers.topic_extraction.topic_extraction.extract_topics",
             AsyncMock(return_value=[]),
+        ),
+        patch(
+            "app.workers.topic_extraction.taxonomy.merge_into_workspace",
+            AsyncMock(return_value=_merge_outcome(version=0, total=0, added=0, seeded=False)),
         ),
     ):
         await worker._handle(msg)
@@ -224,6 +250,48 @@ async def test_handle_transient_openai_error_propagates():
     assert statuses == [DocumentStatus.extracting_topics.value]
 
 
+# ── Sprint 2.6 — merge failure must not crash the worker ────────────────────
+
+
+@pytest.mark.asyncio
+async def test_handle_taxonomy_merge_failure_still_advances_doc():
+    """If merge_into_workspace raises, the doc still lands at topics_extracted.
+
+    Workspace taxonomy is left stale (admin can regenerate via 2.11), but
+    the per-doc TopicTags must persist so Sprint 2.8 chunking has them.
+    """
+    msg = _msg()
+    col = _mock_collection()
+
+    topics = [TopicTag(name="Photosynthesis", complexity_level=3)]
+
+    with (
+        patch("app.workers.topic_extraction.get_collection", return_value=col),
+        patch(
+            "app.workers.topic_extraction.blob_storage.download_document",
+            AsyncMock(return_value=b"hello"),
+        ),
+        patch(
+            "app.workers.topic_extraction.topic_extraction.extract_topics",
+            AsyncMock(return_value=topics),
+        ),
+        patch(
+            "app.workers.topic_extraction.taxonomy.merge_into_workspace",
+            AsyncMock(side_effect=TaxonomyMergeError("CAS exhausted")),
+        ) as mock_merge,
+    ):
+        await worker._handle(msg)  # must NOT raise
+
+    mock_merge.assert_awaited_once()
+    statuses = [
+        call.args[1]["$set"]["status"]
+        for call in col.update_one.await_args_list
+    ]
+    assert statuses[-1] == DocumentStatus.topics_extracted.value
+    final_update = col.update_one.await_args_list[-1].args[1]["$set"]
+    assert final_update["topic_tags"][0]["name"] == "Photosynthesis"
+
+
 # ── Decode of non-UTF8 bytes uses errors="replace" (doesn't crash) ──────────
 
 
@@ -244,6 +312,10 @@ async def test_handle_non_utf8_blob_does_not_crash():
             "app.workers.topic_extraction.topic_extraction.extract_topics",
             AsyncMock(return_value=[]),
         ) as mock_extract,
+        patch(
+            "app.workers.topic_extraction.taxonomy.merge_into_workspace",
+            AsyncMock(return_value=_merge_outcome(version=0, total=0, added=0, seeded=False)),
+        ),
     ):
         await worker._handle(msg)
 

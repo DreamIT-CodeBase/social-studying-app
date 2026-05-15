@@ -68,7 +68,7 @@ from app.core.database import DOCUMENTS, get_collection  # noqa: E402
 from app.core.exceptions import ServiceUnavailableError  # noqa: E402
 from app.models.base import utc_now  # noqa: E402
 from app.models.document import DocumentStatus, TopicTag  # noqa: E402
-from app.services import blob_storage, topic_extraction  # noqa: E402
+from app.services import blob_storage, taxonomy, topic_extraction  # noqa: E402
 from app.services.topic_queue import (  # noqa: E402
     ReceivedTopicMessage,
     TopicExtractionMessage,
@@ -186,7 +186,34 @@ async def _handle(msg: ReceivedTopicMessage) -> None:
         # Transient — re-raise so the run loop abandons + retries.
         raise
 
-    # 3. Persist topics + advance status.
+    # 3. Merge into the workspace canonical taxonomy (Sprint 2.6).
+    #    Best-effort: a merge failure logs loudly but the doc still advances
+    #    to topics_extracted. The per-doc TopicTags are useful for 2.8
+    #    chunking even without a fresh workspace taxonomy, and the admin
+    #    "regenerate taxonomy" endpoint (2.11) can rebuild from scratch.
+    try:
+        outcome = await taxonomy.merge_into_workspace(
+            tenant_id=payload.tenant_id,
+            workspace_id=payload.workspace_id,
+            document_id=payload.document_id,
+            new_topics=topics,
+        )
+        logger.info(
+            "Taxonomy merge doc=%s workspace_version=%d total=%d added=%d seeded=%s",
+            payload.document_id,
+            outcome.taxonomy_version,
+            outcome.topics_total,
+            outcome.topics_added,
+            outcome.seeded,
+        )
+    except Exception:
+        logger.exception(
+            "Taxonomy merge failed for doc=%s — workspace taxonomy left stale, "
+            "document will still advance to topics_extracted",
+            payload.document_id,
+        )
+
+    # 4. Persist topics + advance status.
     await _set_status(
         tenant_id=payload.tenant_id,
         workspace_id=payload.workspace_id,

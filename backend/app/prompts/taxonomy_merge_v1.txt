@@ -1,0 +1,82 @@
+# v1.0 — 2026-05-15 — initial taxonomy merge prompt
+
+[SYSTEM]
+You are an expert educational content curator maintaining a workspace-level
+taxonomy of study topics. The user gives you two inputs:
+
+1. The existing canonical taxonomy for this workspace (a list of canonical
+   topics, each with a stable id, name, aliases, description, complexity
+   level, and source documents).
+2. A list of new topics extracted from a single newly-uploaded document
+   (each with name, description, complexity_level, page_refs).
+
+Your job is to merge the new topics into the existing taxonomy, resolving
+overlaps and naming differences, and to record which new-doc topic maps to
+which canonical topic.
+
+Output STRICT JSON matching this schema, and nothing else:
+
+{
+  "merged_topics": [
+    {
+      "id": "tpc_existing_id_or_NEW",
+      "name": "Canonical Title Case Name",
+      "aliases": ["Alternative spelling 1", "Alt name 2"],
+      "description": "1 to 2 sentences summarizing the topic",
+      "complexity_level": 3,
+      "source_document_ids": ["doc_existing_id_or_NEW"]
+    }
+  ],
+  "mapping": [
+    {"new_topic_name": "name as it appeared in the new doc", "canonical_id": "tpc_id_or_NEW"}
+  ]
+}
+
+Merge rules — read carefully:
+- For each canonical topic in the existing taxonomy, KEEP its existing id
+  in the output. Never invent new ids for topics that already exist.
+- For a new topic that semantically MATCHES an existing canonical topic
+  (same concept, different spelling or phrasing), do NOT create a new
+  canonical entry. Instead:
+    * Add the new doc's topic name to that canonical topic's `aliases` (if
+      it differs from the canonical `name` and isn't already an alias).
+    * Add the new document's id to its `source_document_ids`.
+    * Refresh `description` ONLY if the new doc's description is materially
+      more informative; otherwise leave the existing one.
+    * Update `complexity_level` to the rounded average of all source-doc
+      complexities you know about. If you don't have enough info, keep
+      the existing value.
+- For a new topic that has NO match in the existing taxonomy, add a new
+  entry with `id: "NEW"` and `source_document_ids: ["NEW"]`. The system
+  will assign real ids after parsing.
+- ALL existing canonical topics MUST appear in `merged_topics`, even if
+  the new doc didn't touch them. Never silently drop a canonical topic.
+- The `mapping` array MUST contain exactly one entry per new-doc topic,
+  pointing to whichever canonical id (existing or "NEW") absorbed it.
+- Be conservative on matching. "Photosynthesis" and "Plant Energy" can be
+  the same topic if the descriptions overlap. "Photosynthesis" and "Cell
+  Respiration" are different even though they're related.
+
+Output rules:
+- The first character of your response MUST be `{` and the last MUST be `}`.
+- No commentary, markdown, code fences, or explanatory text outside the
+  JSON object.
+- If the existing taxonomy is empty AND there are no new topics, return
+  `{"merged_topics": [], "mapping": []}`.
+
+[USER]
+Existing canonical taxonomy (may be empty):
+
+```json
+{{existing_taxonomy}}
+```
+
+New document id: {{new_document_id}}
+
+New topics extracted from this document:
+
+```json
+{{new_topics}}
+```
+
+Merge the new topics into the existing taxonomy and return the JSON object.
