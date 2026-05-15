@@ -69,6 +69,10 @@ from app.core.exceptions import ServiceUnavailableError  # noqa: E402
 from app.models.base import utc_now  # noqa: E402
 from app.models.document import DocumentStatus, TopicTag  # noqa: E402
 from app.services import blob_storage, taxonomy, topic_extraction  # noqa: E402
+from app.services.chunk_queue import (  # noqa: E402
+    ChunkingMessage,
+    publish_chunking_message,
+)
 from app.services.topic_queue import (  # noqa: E402
     ReceivedTopicMessage,
     TopicExtractionMessage,
@@ -262,6 +266,36 @@ async def _handle(msg: ReceivedTopicMessage) -> None:
         payload.document_id,
         len(topics),
     )
+
+    # 6. Hand off to the chunking worker (Sprint 2.8). Best-effort, same
+    #    pattern as the document_ingestion → topic_extraction handoff: if
+    #    the publish fails the doc is already at topics_extracted and a
+    #    re-run of THIS worker would re-pay for extract + merge + deps. A
+    #    sweep job (TBD) catches docs stuck without a matching chunk row.
+    #
+    # Canonical topic_ids are intentionally left empty here for v1. The
+    # per-doc TopicTags hold names, but the canonical taxonomy ids live on
+    # `Workspace.taxonomy.topics`. Propagating canonical ids onto chunks
+    # needs either MergeOutcome to return a name→id mapping (a 2.6 change)
+    # or a second workspace read here. Sprint 2.9 vectorization will need
+    # them on the AI Search index for filtered retrieval — solving the
+    # mapping at THAT seam keeps 2.8's scope honest.
+    try:
+        await publish_chunking_message(
+            ChunkingMessage(
+                document_id=payload.document_id,
+                tenant_id=payload.tenant_id,
+                workspace_id=payload.workspace_id,
+                extracted_text_blob_path=payload.extracted_text_blob_path,
+                topic_ids=[],
+            )
+        )
+    except Exception:
+        logger.exception(
+            "Failed to enqueue chunking handoff for doc=%s — "
+            "document is stuck at topics_extracted",
+            payload.document_id,
+        )
 
 
 # ── Main loop ────────────────────────────────────────────────────────────────

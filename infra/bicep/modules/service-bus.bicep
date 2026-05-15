@@ -47,6 +47,21 @@ resource topicExtractionQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01
   }
 }
 
+// Sprint 2.8 — chunking. Deterministic CPU work (no AI call), runs in
+// seconds even for textbook-size docs. 5-min lock matches document
+// ingestion; maxDelivery=5 because transient Cosmos writes deserve more
+// retries than expensive model calls.
+resource chunkingQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+  parent: namespace
+  name: 'chunking'
+  properties: {
+    lockDuration: 'PT5M'
+    maxDeliveryCount: 5
+    defaultMessageTimeToLive: 'P1D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
 resource knowledgeStateQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
   parent: namespace
   name: 'knowledge-state-recalc'

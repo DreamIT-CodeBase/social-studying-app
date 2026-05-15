@@ -12,8 +12,9 @@ class DocumentStatus(StrEnum):
 
     Owned by Sprint 2.3:        pending → extracting → text_extracted | failed
     Owned by Sprint 2.4:        extracting → flagged (terminal, admin review)
-    Owned by Sprint 2.5:        text_extracted → extracting_topics → topics_extracted | failed
-    Owned by 2.8/2.9 (TBD):     topics_extracted → processing → ready
+    Owned by Sprint 2.5/2.6/2.7: text_extracted → extracting_topics → topics_extracted | failed
+    Owned by Sprint 2.8:        topics_extracted → chunking → chunked | failed
+    Owned by Sprint 2.9 (TBD):  chunked → vectorizing → ready | failed
 
     `pending` is the upload-time state (queued for worker pickup). Kept the
     name `pending` (not `queued`) for backwards compatibility with Sprint 1
@@ -25,7 +26,9 @@ class DocumentStatus(StrEnum):
     text_extracted = "text_extracted"            # 2.3+2.4: text persisted AND screened clean
     extracting_topics = "extracting_topics"      # 2.5: topic worker has the doc, GPT-4o in flight
     topics_extracted = "topics_extracted"        # 2.5: topics persisted, awaiting chunking
-    processing = "processing"                    # 2.8+: chunking / embedding (placeholder for now)
+    chunking = "chunking"                        # 2.8: chunker has the doc, splitting in progress
+    chunked = "chunked"                          # 2.8: chunks persisted, awaiting vectorization
+    processing = "processing"                    # 2.9+: vectorization (placeholder for now)
     ready = "ready"                              # final: questions can be generated
     flagged = "flagged"                          # 2.4: content safety flagged — admin review
     failed = "failed"                            # terminal failure

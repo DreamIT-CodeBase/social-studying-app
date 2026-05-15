@@ -112,6 +112,10 @@ async def test_handle_happy_path_writes_topics_and_advances_status():
             "app.workers.topic_extraction.taxonomy.infer_dependencies",
             AsyncMock(return_value=_deps_outcome()),
         ) as mock_deps,
+        patch(
+            "app.workers.topic_extraction.publish_chunking_message",
+            AsyncMock(),
+        ) as mock_publish_chunk,
     ):
         await worker._handle(msg)
 
@@ -131,6 +135,16 @@ async def test_handle_happy_path_writes_topics_and_advances_status():
     deps_kwargs = mock_deps.await_args.kwargs
     assert deps_kwargs["tenant_id"] == "ten_abc"
     assert deps_kwargs["workspace_id"] == "wsp_abc"
+
+    # Sprint 2.8 — chunking handoff fires last with the blob path.
+    mock_publish_chunk.assert_awaited_once()
+    chunk_msg = mock_publish_chunk.await_args.args[0]
+    assert chunk_msg.document_id == "doc_abc"
+    assert chunk_msg.tenant_id == "ten_abc"
+    assert chunk_msg.workspace_id == "wsp_abc"
+    assert chunk_msg.extracted_text_blob_path == msg.payload.extracted_text_blob_path
+    # v1 ships empty topic_ids — see comment in topic_extraction worker.
+    assert chunk_msg.topic_ids == []
 
     # Two updates: extracting_topics, then topics_extracted.
     assert col.update_one.await_count == 2

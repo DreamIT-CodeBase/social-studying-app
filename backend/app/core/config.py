@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     service_bus_connection: str = ""
     service_bus_documents_queue: str = "document-ingestion"
     service_bus_topics_queue: str = "topic-extraction"
+    service_bus_chunks_queue: str = "chunking"
+
+    # Sprint 2.8 — chunker tuning. Character-based for simplicity (no
+    # tokenizer dependency). 2000 chars ≈ 500 tokens at the GPT-4o
+    # ~4-char/token average for English educational content.
+    chunk_target_chars: int = 2_000
+    chunk_overlap_chars: int = 200
+    chunk_min_chars: int = 200      # below this and we'd be emitting too-small chunks
 
     # Azure OpenAI tuning knobs for topic extraction (Sprint 2.5).
     # Token cap protects against runaway prompts; very long textbooks get

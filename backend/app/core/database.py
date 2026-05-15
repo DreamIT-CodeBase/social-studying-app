@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 USERS = "users"
 WORKSPACES = "workspaces"
 DOCUMENTS = "documents"
+CHUNKS = "chunks"  # Sprint 2.8 — per-document text chunks; partition by document_id
 KNOWLEDGE_STATES = "knowledge_states"
 INTERACTIONS = "interactions"
 GAMIFICATION = "gamification"

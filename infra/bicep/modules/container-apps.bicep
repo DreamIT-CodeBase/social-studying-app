@@ -39,6 +39,7 @@ var envName = 'cae-socialstudyapp-${environment}'
 var appName = 'ca-api-${environment}'
 var workerAppName = 'ca-worker-${environment}'
 var topicWorkerAppName = 'ca-topic-extractor-${environment}'
+var chunkerAppName = 'ca-chunker-${environment}'
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: 'log-socialstudyapp-${environment}'
@@ -545,8 +546,121 @@ resource topicWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+// ── Chunker Container App (Sprint 2.8) ────────────────────────────────────────
+// Third worker. Consumes the `chunking` queue, splits each document's
+// extracted text into ~500-token overlapping chunks, and writes them to the
+// `chunks` Cosmos collection. Pure CPU — no AI call — so it scales tighter
+// than the topic extractor and doesn't need an OpenAI secret.
+//
+// Same image; entrypoint is `python -m app.workers.chunking`.
+
+resource chunkerApp 'Microsoft.App/containerApps@2024-03-01' = {
+  name: chunkerAppName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${managedIdentityId}': {}
+    }
+  }
+  properties: {
+    environmentId: containerAppEnv.id
+    configuration: {
+      registries: [
+        {
+          server: registryLoginServer
+          identity: managedIdentityId
+        }
+      ]
+      secrets: [
+        {
+          name: 'cosmos-connection-string'
+          keyVaultUrl: cosmosConnectionSecretUri
+          identity: managedIdentityId
+        }
+        {
+          name: 'service-bus-connection-string'
+          keyVaultUrl: serviceBusConnectionSecretUri
+          identity: managedIdentityId
+        }
+        {
+          name: 'storage-connection-string'
+          keyVaultUrl: storageConnectionSecretUri
+          identity: managedIdentityId
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'chunker'
+          image: apiImage
+          command: ['python']
+          args: ['-m', 'app.workers.chunking']
+          resources: {
+            cpu: json(environment == 'prod' ? '0.5' : '0.25')
+            memory: environment == 'prod' ? '1Gi' : '0.5Gi'
+          }
+          env: [
+            {
+              name: 'ENVIRONMENT'
+              value: environment
+            }
+            {
+              name: 'COSMOS_CONNECTION_STRING'
+              secretRef: 'cosmos-connection-string'
+            }
+            {
+              name: 'SERVICE_BUS_CONNECTION'
+              secretRef: 'service-bus-connection-string'
+            }
+            {
+              name: 'STORAGE_CONNECTION_STRING'
+              secretRef: 'storage-connection-string'
+            }
+            {
+              name: 'STORAGE_ENDPOINT'
+              value: storageEndpoint
+            }
+            {
+              name: 'MANAGED_IDENTITY_CLIENT_ID'
+              value: managedIdentityClientId
+            }
+          ]
+        }
+      ]
+      scale: {
+        // Chunking is fast (sub-second per chunk write) — keep replicas low
+        // to avoid Cosmos write contention on the same partition.
+        minReplicas: environment == 'prod' ? 1 : 0
+        maxReplicas: environment == 'prod' ? 3 : 2
+        rules: [
+          {
+            name: 'chunk-queue-depth'
+            custom: {
+              type: 'azure-servicebus'
+              metadata: {
+                queueName: 'chunking'
+                messageCount: '5'
+              }
+              auth: [
+                {
+                  secretRef: 'service-bus-connection-string'
+                  triggerParameter: 'connection'
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+
 output apiUrl string = 'https://${apiApp.properties.configuration.ingress.fqdn}'
 output containerAppName string = apiApp.name
 output containerAppEnvName string = containerAppEnv.name
 output workerAppName string = workerApp.name
 output topicWorkerAppName string = topicWorkerApp.name
+output chunkerAppName string = chunkerApp.name
