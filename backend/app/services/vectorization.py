@@ -1,0 +1,285 @@
+"""Vectorization orchestration — Sprint 2.9.
+
+The vectorizer worker calls :func:`vectorize_document` once per chunked
+document. This module owns the end-to-end flow:
+
+1. Read chunks from the ``chunks`` Cosmos collection.
+2. Resolve canonical ``topic_ids`` for each chunk by joining the document's
+   per-doc TopicTags (set by Sprint 2.5) against the workspace's canonical
+   taxonomy (set by Sprint 2.6). The 2.8 chunker shipped chunks with
+   ``topic_ids: []`` and explicitly deferred this resolution to the
+   vectorization seam.
+3. Embed each chunk's text via Azure OpenAI text-embedding-3-small.
+4. Push delete-then-upsert into the tenant's per-tenant AI Search index.
+
+State writes are owned by the worker (status flips, error fields) — this
+module stays pure orchestration so unit tests can drive it without standing
+up the worker loop.
+
+Topic id resolution
+-------------------
+- Workspace canonical topics carry ``name`` and ``aliases``. We build a
+  case-insensitive lookup ``name → tpc_id`` covering both.
+- Per-doc TopicTags carry only ``name``. We map each one through the
+  lookup; misses log a debug line and drop. (A miss means the merge
+  produced an alias the doc's name doesn't match — rare, and the doc still
+  gets vectorized without a topic filter.)
+- Every chunk in the document gets the same resolved topic id list. The
+  Sprint 2.8 memo flagged page-keyed precision as future work.
+
+Best-effort vs hard failures
+----------------------------
+- Cosmos read failures are transient — the worker re-raises and SB
+  redelivers.
+- OpenAI embedding failures (``ServiceUnavailableError``) are transient.
+- Workspace not found (deleted between chunking and vectorization) is
+  permanent — we still vectorize, just without topic ids. We do not fail.
+- Document not found is permanent — caller dead-letters.
+- AI Search write failures are transient — re-raise so SB redelivers.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+
+from app.core.config import settings
+from app.core.database import DOCUMENTS, get_collection
+from app.models.chunk import Chunk
+from app.models.document import Document
+from app.models.workspace import Workspace
+from app.services import azure_ai_search, azure_openai, chunk_storage
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class VectorizeOutcome:
+    """Result handed back to the worker for logging + status writes."""
+
+    chunks_read: int
+    chunks_indexed: int          # how many made it into AI Search
+    deleted_stale: int           # how many old chunks the upfront delete cleaned
+    embedding_model: str
+    topic_ids_resolved: int      # canonical ids resolved for this document
+    workspace_missing: bool      # taxonomy lookup found no workspace
+
+
+class DocumentNotFound(LookupError):
+    """The document record vanished between chunking and vectorization."""
+
+
+# ── Public entry point ──────────────────────────────────────────────────────
+
+
+async def vectorize_document(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    document_id: str,
+) -> VectorizeOutcome:
+    """Embed the document's chunks and push them to AI Search.
+
+    Raises:
+        DocumentNotFound: the document record is gone — worker dead-letters.
+        ServiceUnavailableError: embedding or Search transport failure —
+            worker abandons so SB redelivers.
+    """
+    document = await _read_document(
+        tenant_id=tenant_id, workspace_id=workspace_id, document_id=document_id
+    )
+    if document is None:
+        raise DocumentNotFound(
+            f"Document {document_id} not found in workspace {workspace_id}"
+        )
+
+    chunks = await chunk_storage.find_for_document(
+        tenant_id=tenant_id, document_id=document_id
+    )
+
+    workspace = await _read_workspace(tenant_id=tenant_id, workspace_id=workspace_id)
+    workspace_missing = workspace is None
+    topic_ids = _resolve_topic_ids(document=document, workspace=workspace)
+
+    # Make sure the index exists before we start writing. ensure_index is
+    # idempotent and cached so this is a single HTTP head per process per
+    # tenant.
+    await azure_ai_search.ensure_index(tenant_id)
+
+    # Always run the delete, even on first vectorization. If the index just
+    # got created the call short-circuits to 0 deletes.
+    deleted = await azure_ai_search.delete_for_document(
+        tenant_id=tenant_id, document_id=document_id
+    )
+
+    if not chunks:
+        # A doc with zero chunks (cover page → chunker emitted []) is still
+        # a valid terminal state. Nothing to embed, nothing to upsert; we
+        # cleared any stale Search rows above for safety.
+        logger.info(
+            "Vectorize doc=%s: no chunks to embed, advancing as ready",
+            document_id,
+        )
+        return VectorizeOutcome(
+            chunks_read=0,
+            chunks_indexed=0,
+            deleted_stale=deleted,
+            embedding_model=settings.azure_openai_embedding_deployment,
+            topic_ids_resolved=len(topic_ids),
+            workspace_missing=workspace_missing,
+        )
+
+    texts = [c.text for c in chunks]
+    vectors = await azure_openai.embed_texts(texts=texts)
+    embedding_model = settings.azure_openai_embedding_deployment
+
+    documents = _build_index_docs(
+        chunks=chunks,
+        vectors=vectors,
+        topic_ids=topic_ids,
+        embedding_model=embedding_model,
+    )
+    indexed = await azure_ai_search.upsert_chunks(
+        tenant_id=tenant_id, documents=documents
+    )
+
+    logger.info(
+        "Vectorize doc=%s: read=%d indexed=%d deleted_stale=%d topics=%d "
+        "workspace_missing=%s",
+        document_id,
+        len(chunks),
+        indexed,
+        deleted,
+        len(topic_ids),
+        workspace_missing,
+    )
+
+    return VectorizeOutcome(
+        chunks_read=len(chunks),
+        chunks_indexed=indexed,
+        deleted_stale=deleted,
+        embedding_model=embedding_model,
+        topic_ids_resolved=len(topic_ids),
+        workspace_missing=workspace_missing,
+    )
+
+
+# ── Cosmos reads ────────────────────────────────────────────────────────────
+
+
+async def _read_document(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    document_id: str,
+) -> Document | None:
+    col = get_collection(tenant_id, DOCUMENTS)
+    raw = await col.find_one({"_id": document_id, "workspace_id": workspace_id})
+    if raw is None:
+        return None
+    return Document.model_validate(raw)
+
+
+async def _read_workspace(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+) -> Workspace | None:
+    from app.core.database import WORKSPACES
+
+    col = get_collection(tenant_id, WORKSPACES)
+    raw = await col.find_one({"_id": workspace_id})
+    if raw is None:
+        return None
+    return Workspace.model_validate(raw)
+
+
+# ── Topic id resolution ─────────────────────────────────────────────────────
+
+
+def _resolve_topic_ids(
+    *,
+    document: Document,
+    workspace: Workspace | None,
+) -> list[str]:
+    """Map per-doc TopicTag names → canonical ``tpc_<uuid>`` ids.
+
+    Returns the unique, order-preserving list of canonical ids the document
+    touched. Empty list if the workspace has no taxonomy (first doc still
+    in flight elsewhere) or the per-doc tags don't align with any canonical
+    name/alias.
+
+    Lookup is case-insensitive — the merge prompt sometimes title-cases
+    inputs and the per-doc extractor may not. Aliases are included because
+    the merge step rolls synonyms into a single canonical topic with
+    aliases listing the source-doc spellings.
+    """
+    if workspace is None or not workspace.taxonomy.topics:
+        return []
+    if not document.topic_tags:
+        return []
+
+    name_to_id: dict[str, str] = {}
+    for canonical in workspace.taxonomy.topics:
+        name_to_id.setdefault(canonical.name.casefold(), canonical.id)
+        for alias in canonical.aliases:
+            name_to_id.setdefault(alias.casefold(), canonical.id)
+
+    resolved: list[str] = []
+    seen: set[str] = set()
+    for tag in document.topic_tags:
+        canonical_id = name_to_id.get(tag.name.casefold())
+        if canonical_id is None:
+            logger.debug(
+                "Vectorize: topic name %r did not match any canonical "
+                "topic/alias for doc=%s",
+                tag.name,
+                document.id,
+            )
+            continue
+        if canonical_id in seen:
+            continue
+        seen.add(canonical_id)
+        resolved.append(canonical_id)
+    return resolved
+
+
+# ── Search document construction ────────────────────────────────────────────
+
+
+def _build_index_docs(
+    *,
+    chunks: list[Chunk],
+    vectors: list[list[float]],
+    topic_ids: list[str],
+    embedding_model: str,
+) -> list[dict]:
+    """Zip chunks with their vectors into Search index docs.
+
+    Length mismatch is impossible here because ``embed_texts`` already
+    enforces it, but we re-assert defensively — silent misalignment would
+    be the worst kind of bug (wrong vector for wrong chunk).
+    """
+    if len(chunks) != len(vectors):
+        raise RuntimeError(
+            f"Vector count {len(vectors)} does not match chunk count {len(chunks)}"
+        )
+
+    out: list[dict] = []
+    for chunk, vector in zip(chunks, vectors, strict=True):
+        out.append(
+            azure_ai_search.chunk_to_index_doc(
+                chunk_id=chunk.id,
+                tenant_id=chunk.tenant_id,
+                workspace_id=chunk.workspace_id,
+                document_id=chunk.document_id,
+                chunk_index=chunk.chunk_index,
+                text=chunk.text,
+                topic_ids=topic_ids,
+                chunker_version=chunk.chunker_version,
+                embedding_model=embedding_model,
+                embedding=vector,
+                created_at=chunk.created_at,
+            )
+        )
+    return out

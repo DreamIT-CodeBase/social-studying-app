@@ -9,6 +9,7 @@
     "b2cTenantId":       { "value": "" },
     "b2cClientId":       { "value": "" },
     "b2cPolicyName":     { "value": "B2C_1_signupsignin" },
-    "gpt4oCapacity":     { "value": 20 }
+    "gpt4oCapacity":     { "value": 20 },
+    "embeddingCapacity": { "value": 50 }
   }
 }

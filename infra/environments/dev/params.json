@@ -25,6 +25,9 @@
     },
     "gpt4oCapacity": {
       "value": 0
+    },
+    "embeddingCapacity": {
+      "value": 0
     }
   }
 }

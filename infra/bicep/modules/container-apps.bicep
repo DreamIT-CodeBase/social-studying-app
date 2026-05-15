@@ -20,6 +20,7 @@ param documentIntelligenceKeySecretUri string
 // Plain-text configuration values
 param openAiEndpoint string
 param openAiDeploymentName string
+param openAiEmbeddingDeploymentName string = ''
 param searchEndpoint string
 param contentSafetyEndpoint string
 param storageEndpoint string
@@ -40,6 +41,7 @@ var appName = 'ca-api-${environment}'
 var workerAppName = 'ca-worker-${environment}'
 var topicWorkerAppName = 'ca-topic-extractor-${environment}'
 var chunkerAppName = 'ca-chunker-${environment}'
+var vectorizerAppName = 'ca-vectorizer-${environment}'
 
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: 'log-socialstudyapp-${environment}'
@@ -658,9 +660,146 @@ resource chunkerApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+// ── Vectorizer Container App (Sprint 2.9) ─────────────────────────────────────
+// Fourth worker. Consumes the `vectorization` queue, reads chunks from Cosmos,
+// embeds via Azure OpenAI text-embedding-3-small, and pushes to a per-tenant
+// Azure AI Search index. Needs both the OpenAI key (for embeddings) and the
+// Search key (for index management + upserts). Cosmos for reading chunks +
+// document/workspace metadata.
+//
+// Same image; entrypoint is `python -m app.workers.vectorization`.
+
+resource vectorizerApp 'Microsoft.App/containerApps@2024-03-01' = {
+  name: vectorizerAppName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${managedIdentityId}': {}
+    }
+  }
+  properties: {
+    environmentId: containerAppEnv.id
+    configuration: {
+      registries: [
+        {
+          server: registryLoginServer
+          identity: managedIdentityId
+        }
+      ]
+      secrets: [
+        {
+          name: 'cosmos-connection-string'
+          keyVaultUrl: cosmosConnectionSecretUri
+          identity: managedIdentityId
+        }
+        {
+          name: 'service-bus-connection-string'
+          keyVaultUrl: serviceBusConnectionSecretUri
+          identity: managedIdentityId
+        }
+        {
+          name: 'azure-openai-key'
+          keyVaultUrl: openAiKeySecretUri
+          identity: managedIdentityId
+        }
+        {
+          name: 'ai-search-key'
+          keyVaultUrl: searchKeySecretUri
+          identity: managedIdentityId
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'vectorizer'
+          image: apiImage
+          command: ['python']
+          args: ['-m', 'app.workers.vectorization']
+          resources: {
+            cpu: json(environment == 'prod' ? '0.5' : '0.25')
+            memory: environment == 'prod' ? '1Gi' : '0.5Gi'
+          }
+          env: [
+            {
+              name: 'ENVIRONMENT'
+              value: environment
+            }
+            {
+              name: 'COSMOS_CONNECTION_STRING'
+              secretRef: 'cosmos-connection-string'
+            }
+            {
+              name: 'SERVICE_BUS_CONNECTION'
+              secretRef: 'service-bus-connection-string'
+            }
+            {
+              name: 'AZURE_OPENAI_ENDPOINT'
+              value: openAiEndpoint
+            }
+            {
+              name: 'AZURE_OPENAI_KEY'
+              secretRef: 'azure-openai-key'
+            }
+            {
+              name: 'AZURE_OPENAI_DEPLOYMENT'
+              value: openAiDeploymentName
+            }
+            {
+              name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT'
+              value: openAiEmbeddingDeploymentName
+            }
+            {
+              name: 'SEARCH_ENDPOINT'
+              value: searchEndpoint
+            }
+            {
+              name: 'SEARCH_KEY'
+              secretRef: 'ai-search-key'
+            }
+            {
+              name: 'MANAGED_IDENTITY_CLIENT_ID'
+              value: managedIdentityClientId
+            }
+          ]
+        }
+      ]
+      scale: {
+        // Embeddings are I/O-bound at our scale — small replica count keeps
+        // OpenAI TPM under the embedding quota when multiple docs land in
+        // sequence. Bumps cap is the right knob if throughput becomes an
+        // issue rather than scaling replicas first.
+        minReplicas: environment == 'prod' ? 1 : 0
+        maxReplicas: environment == 'prod' ? 5 : 2
+        rules: [
+          {
+            name: 'vectorization-queue-depth'
+            custom: {
+              type: 'azure-servicebus'
+              metadata: {
+                queueName: 'vectorization'
+                messageCount: '3'
+              }
+              auth: [
+                {
+                  secretRef: 'service-bus-connection-string'
+                  triggerParameter: 'connection'
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+
 output apiUrl string = 'https://${apiApp.properties.configuration.ingress.fqdn}'
 output containerAppName string = apiApp.name
 output containerAppEnvName string = containerAppEnv.name
 output workerAppName string = workerApp.name
 output topicWorkerAppName string = topicWorkerApp.name
 output chunkerAppName string = chunkerApp.name
+output vectorizerAppName string = vectorizerApp.name

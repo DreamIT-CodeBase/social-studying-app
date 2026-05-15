@@ -34,6 +34,9 @@ param b2cPolicyName string = 'B2C_1_signupsignin'
 @description('GPT-4o tokens-per-minute capacity (thousands). 10 = 10K TPM.')
 param gpt4oCapacity int = 10
 
+@description('text-embedding-3-small TPM capacity (thousands). 0 = skip embedding deployment until quota is granted.')
+param embeddingCapacity int = 50
+
 var resourceGroupName = 'rg-${tenantName}-${environment}'
 var tags = {
   app: 'social-study-app'
@@ -151,6 +154,7 @@ module openAi 'modules/openai.bicep' = {
     tags: tags
     keyVaultName: keyVault.outputs.keyVaultName
     gpt4oCapacity: gpt4oCapacity
+    embeddingCapacity: embeddingCapacity
   }
 }
 
@@ -197,6 +201,7 @@ module containerApp 'modules/container-apps.bicep' = {
     documentIntelligenceKeySecretUri: documentIntelligence.outputs.documentIntelligenceKeySecretUri
     openAiEndpoint: openAi.outputs.openAiEndpoint
     openAiDeploymentName: openAi.outputs.deploymentName
+    openAiEmbeddingDeploymentName: openAi.outputs.embeddingDeploymentName
     searchEndpoint: aiSearch.outputs.searchEndpoint
     contentSafetyEndpoint: contentSafety.outputs.contentSafetyEndpoint
     storageEndpoint: storage.outputs.storageEndpoint
@@ -216,6 +221,7 @@ output containerAppName string = containerApp.outputs.containerAppName
 output workerAppName string = containerApp.outputs.workerAppName
 output topicWorkerAppName string = containerApp.outputs.topicWorkerAppName
 output chunkerAppName string = containerApp.outputs.chunkerAppName
+output vectorizerAppName string = containerApp.outputs.vectorizerAppName
 output registryLoginServer string = acr.outputs.registryLoginServer
 output registryName string = acr.outputs.registryName
 output keyVaultName string = keyVault.outputs.keyVaultName

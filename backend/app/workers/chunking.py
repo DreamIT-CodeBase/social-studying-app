@@ -73,6 +73,10 @@ from app.services.chunk_queue import (  # noqa: E402
     ReceivedChunkingMessage,
     consume_chunking_messages,
 )
+from app.services.vectorization_queue import (  # noqa: E402
+    VectorizationMessage,
+    publish_vectorization_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +224,27 @@ async def _handle(msg: ReceivedChunkingMessage) -> None:
         inserted,
         sum(c.char_count for c in chunks),
     )
+
+    # 5. Hand off to the vectorizer (Sprint 2.9). Best-effort, same pattern
+    #    as the topic_extraction → chunking handoff: if publish fails the
+    #    doc is already at `chunked` and a re-run of THIS worker would
+    #    re-pay for the (cheap) chunker pass — acceptable cost. A sweep
+    #    job (TBD) catches docs stuck without a matching vector row.
+    try:
+        await publish_vectorization_message(
+            VectorizationMessage(
+                document_id=payload.document_id,
+                tenant_id=payload.tenant_id,
+                workspace_id=payload.workspace_id,
+                chunk_count=inserted,
+            )
+        )
+    except Exception:
+        logger.exception(
+            "Failed to enqueue vectorization handoff for doc=%s — "
+            "document is stuck at chunked",
+            payload.document_id,
+        )
 
 
 # ── Main loop ────────────────────────────────────────────────────────────────

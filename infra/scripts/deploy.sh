@@ -245,19 +245,26 @@ extract_outputs() {
     --query "properties.outputs" \
     -o json)
 
-  local api_url registry_server registry_name kv_name container_app worker_app rg_name
+  local api_url registry_server registry_name kv_name container_app worker_app
+  local topic_worker_app chunker_app vectorizer_app rg_name
   api_url=$(echo "$outputs"        | jq -r '.apiUrl.value // ""')
   registry_server=$(echo "$outputs" | jq -r '.registryLoginServer.value // ""')
   registry_name=$(echo "$outputs"  | jq -r '.registryName.value // ""')
   kv_name=$(echo "$outputs"        | jq -r '.keyVaultName.value // ""')
   container_app=$(echo "$outputs"  | jq -r '.containerAppName.value // ""')
   worker_app=$(echo "$outputs"     | jq -r '.workerAppName.value // ""')
+  topic_worker_app=$(echo "$outputs" | jq -r '.topicWorkerAppName.value // ""')
+  chunker_app=$(echo "$outputs"    | jq -r '.chunkerAppName.value // ""')
+  vectorizer_app=$(echo "$outputs" | jq -r '.vectorizerAppName.value // ""')
   rg_name=$(echo "$outputs"        | jq -r '.resourceGroupName.value // ""')
-  info "  - Resource group: $rg_name"
-  info "  - Key Vault:      $kv_name"
-  info "  - Container app:  $container_app"
-  info "  - Worker app:     ${worker_app:-(none — older deployment without Sprint 2.3)}"
-  info "  - API URL:        $api_url"
+  info "  - Resource group:   $rg_name"
+  info "  - Key Vault:        $kv_name"
+  info "  - Container app:    $container_app"
+  info "  - Worker app:       ${worker_app:-(none — older deployment without Sprint 2.3)}"
+  info "  - Topic worker app: ${topic_worker_app:-(none — older deployment without Sprint 2.5)}"
+  info "  - Chunker app:      ${chunker_app:-(none — older deployment without Sprint 2.8)}"
+  info "  - Vectorizer app:   ${vectorizer_app:-(none — older deployment without Sprint 2.9)}"
+  info "  - API URL:          $api_url"
 
   # Pull secrets from Key Vault to write a local .env
   info "Reading secrets from Key Vault: $kv_name"
@@ -356,6 +363,9 @@ ACR_LOGIN_SERVER=$registry_server
 ACR_NAME=$registry_name
 CONTAINER_APP_NAME=$container_app
 WORKER_APP_NAME=$worker_app
+TOPIC_WORKER_APP_NAME=$topic_worker_app
+CHUNKER_APP_NAME=$chunker_app
+VECTORIZER_APP_NAME=$vectorizer_app
 RESOURCE_GROUP=$rg_name
 EOF
 
@@ -382,12 +392,16 @@ push_image() {
   local env_file="$REPO_ROOT/backend/.env.$ENV"
   [[ -f "$env_file" ]] || error "Env file not found: $env_file  Run --infra-only first."
 
-  local registry_server registry_name container_app worker_app rg_name
-  registry_server=$(grep "^ACR_LOGIN_SERVER=" "$env_file" | cut -d= -f2)
-  registry_name=$(grep   "^ACR_NAME="         "$env_file" | cut -d= -f2)
-  container_app=$(grep   "^CONTAINER_APP_NAME=" "$env_file" | cut -d= -f2)
-  worker_app=$(grep      "^WORKER_APP_NAME="    "$env_file" | cut -d= -f2)
-  rg_name=$(grep         "^RESOURCE_GROUP="   "$env_file" | cut -d= -f2)
+  local registry_server registry_name container_app worker_app
+  local topic_worker_app chunker_app vectorizer_app rg_name
+  registry_server=$(grep "^ACR_LOGIN_SERVER="     "$env_file" | cut -d= -f2)
+  registry_name=$(grep   "^ACR_NAME="             "$env_file" | cut -d= -f2)
+  container_app=$(grep   "^CONTAINER_APP_NAME="   "$env_file" | cut -d= -f2)
+  worker_app=$(grep      "^WORKER_APP_NAME="      "$env_file" | cut -d= -f2)
+  topic_worker_app=$(grep "^TOPIC_WORKER_APP_NAME=" "$env_file" | cut -d= -f2 || echo "")
+  chunker_app=$(grep     "^CHUNKER_APP_NAME="     "$env_file" | cut -d= -f2 || echo "")
+  vectorizer_app=$(grep  "^VECTORIZER_APP_NAME="  "$env_file" | cut -d= -f2 || echo "")
+  rg_name=$(grep         "^RESOURCE_GROUP="       "$env_file" | cut -d= -f2)
 
   [[ -z "$registry_server" ]] && error "ACR_LOGIN_SERVER missing from $env_file"
 
@@ -416,20 +430,31 @@ push_image() {
     --image "$image_latest" \
     --output table
 
-  # Worker Container App shares the same image — different process started by
-  # the bicep `command/args` override (`python -m app.workers.document_ingestion`).
-  if [[ -n "$worker_app" ]]; then
-    info "Updating Worker Container App image to: $image_latest"
-    az containerapp update \
-      --name "$worker_app" \
-      --resource-group "$rg_name" \
-      --image "$image_latest" \
-      --output table
-    success "Worker app updated: $worker_app"
-  else
-    warn "WORKER_APP_NAME missing from $env_file — worker not redeployed."
-    warn "Re-run with --infra-only after the bicep changes land to populate it."
-  fi
+  # All worker Container Apps share the API image — different processes started
+  # by per-app `command/args` overrides in the bicep template. Updating any
+  # subset would silently leave a worker running stale code, which has bitten
+  # us before, so we update every worker that the deployment created.
+  update_worker_app() {
+    local app_name="$1"
+    local sprint_label="$2"
+    if [[ -n "$app_name" ]]; then
+      info "Updating $sprint_label Container App image to: $image_latest"
+      az containerapp update \
+        --name "$app_name" \
+        --resource-group "$rg_name" \
+        --image "$image_latest" \
+        --output table
+      success "$sprint_label app updated: $app_name"
+    else
+      warn "$sprint_label app name missing from $env_file — not redeployed."
+      warn "Re-run with --infra-only after bicep changes land to populate it."
+    fi
+  }
+
+  update_worker_app "$worker_app"        "Document worker (Sprint 2.3)"
+  update_worker_app "$topic_worker_app"  "Topic extractor (Sprint 2.5)"
+  update_worker_app "$chunker_app"       "Chunker (Sprint 2.8)"
+  update_worker_app "$vectorizer_app"    "Vectorizer (Sprint 2.9)"
 
   local api_fqdn
   api_fqdn=$(az containerapp show --name "$container_app" -g "$rg_name" \

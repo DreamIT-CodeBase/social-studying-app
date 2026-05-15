@@ -14,7 +14,7 @@ class DocumentStatus(StrEnum):
     Owned by Sprint 2.4:        extracting → flagged (terminal, admin review)
     Owned by Sprint 2.5/2.6/2.7: text_extracted → extracting_topics → topics_extracted | failed
     Owned by Sprint 2.8:        topics_extracted → chunking → chunked | failed
-    Owned by Sprint 2.9 (TBD):  chunked → vectorizing → ready | failed
+    Owned by Sprint 2.9:        chunked → vectorizing → ready | failed
 
     `pending` is the upload-time state (queued for worker pickup). Kept the
     name `pending` (not `queued`) for backwards compatibility with Sprint 1
@@ -28,7 +28,7 @@ class DocumentStatus(StrEnum):
     topics_extracted = "topics_extracted"        # 2.5: topics persisted, awaiting chunking
     chunking = "chunking"                        # 2.8: chunker has the doc, splitting in progress
     chunked = "chunked"                          # 2.8: chunks persisted, awaiting vectorization
-    processing = "processing"                    # 2.9+: vectorization (placeholder for now)
+    vectorizing = "vectorizing"                  # 2.9: vectorizer has the doc, embeddings in flight
     ready = "ready"                              # final: questions can be generated
     flagged = "flagged"                          # 2.4: content safety flagged — admin review
     failed = "failed"                            # terminal failure
@@ -86,6 +86,15 @@ class Document(CosmosDocument):
     languages: list[str] = Field(default_factory=list)
     processing_started_at: str | None = None     # ISO 8601 UTC
     processing_completed_at: str | None = None   # ISO 8601 UTC
+
+    # ── Sprint 2.9: vectorization outputs ─────────────────────────────────────
+    # vector_count is the number of chunks pushed to Azure AI Search. Differs
+    # from chunk_count only on partial failure during a re-vectorize. Always
+    # equals chunk_count on a clean ready transition.
+    vector_count: int = 0
+    embedding_model: str | None = None           # e.g. "text-embedding-3-small"
+    vectorization_started_at: str | None = None  # ISO 8601 UTC
+    vectorization_completed_at: str | None = None  # ISO 8601 UTC
 
 
 class DocumentResponse(CosmosDocument.__base__):

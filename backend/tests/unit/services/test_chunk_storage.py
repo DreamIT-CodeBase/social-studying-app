@@ -130,3 +130,65 @@ async def test_count_for_document_filters_by_document_id():
 
     assert n == 42
     col.count_documents.assert_awaited_once_with({"document_id": "doc_abc"})
+
+
+# ── find_for_document ──────────────────────────────────────────────────────
+
+
+class _FakeCursor:
+    """Tiny async-iterable stand-in for motor's find() cursor.
+
+    We can't use AsyncMock here because the real cursor's `.sort(...)`
+    returns the cursor itself (so the chain is `find(...).sort(...)` →
+    iterable). Mirroring that shape keeps the tests honest.
+    """
+
+    def __init__(self, docs: list[dict]):
+        self._docs = docs
+        self.sort_called_with: tuple | None = None
+
+    def sort(self, key: str, direction: int) -> "_FakeCursor":
+        self.sort_called_with = (key, direction)
+        return self
+
+    def __aiter__(self):
+        async def gen():
+            for doc in self._docs:
+                yield doc
+
+        return gen()
+
+
+@pytest.mark.asyncio
+async def test_find_for_document_returns_chunks_sorted_by_index():
+    raw_docs = [
+        {**_chunk(chunk_index=i, id=f"chk_{i}").model_dump(by_alias=True)}
+        for i in range(3)
+    ]
+    cursor = _FakeCursor(raw_docs)
+    col = MagicMock()
+    col.find = MagicMock(return_value=cursor)
+
+    with patch("app.services.chunk_storage.get_collection", return_value=col):
+        chunks = await chunk_storage.find_for_document(
+            tenant_id="ten_abc", document_id="doc_abc"
+        )
+
+    col.find.assert_called_once_with({"document_id": "doc_abc"})
+    assert cursor.sort_called_with == ("chunk_index", 1)
+    assert [c.id for c in chunks] == ["chk_0", "chk_1", "chk_2"]
+    assert all(c.document_id == "doc_abc" for c in chunks)
+
+
+@pytest.mark.asyncio
+async def test_find_for_document_returns_empty_list_when_no_chunks():
+    cursor = _FakeCursor([])
+    col = MagicMock()
+    col.find = MagicMock(return_value=cursor)
+
+    with patch("app.services.chunk_storage.get_collection", return_value=col):
+        chunks = await chunk_storage.find_for_document(
+            tenant_id="ten_abc", document_id="doc_missing"
+        )
+
+    assert chunks == []

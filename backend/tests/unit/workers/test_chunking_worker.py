@@ -79,6 +79,10 @@ async def test_handle_happy_path_persists_chunks_and_advances_status():
             "app.workers.chunking.chunk_storage.replace_chunks",
             AsyncMock(return_value=3),
         ) as mock_replace,
+        patch(
+            "app.workers.chunking.publish_vectorization_message",
+            AsyncMock(),
+        ) as mock_publish_vec,
     ):
         await worker._handle(msg)
 
@@ -109,6 +113,14 @@ async def test_handle_happy_path_persists_chunks_and_advances_status():
     assert "chunking_completed_at" in final_update
     assert final_update["processing_error"] is None
 
+    # Sprint 2.9 — handoff to vectorizer with the chunk count.
+    mock_publish_vec.assert_awaited_once()
+    vec_msg = mock_publish_vec.await_args.args[0]
+    assert vec_msg.document_id == "doc_abc"
+    assert vec_msg.tenant_id == "ten_abc"
+    assert vec_msg.workspace_id == "wsp_abc"
+    assert vec_msg.chunk_count == 3
+
 
 # ── Topic ids propagate to chunks ────────────────────────────────────────────
 
@@ -132,6 +144,10 @@ async def test_handle_propagates_topic_ids_onto_every_chunk():
             "app.workers.chunking.chunk_storage.replace_chunks",
             AsyncMock(return_value=2),
         ) as mock_replace,
+        patch(
+            "app.workers.chunking.publish_vectorization_message",
+            AsyncMock(),
+        ),
     ):
         await worker._handle(msg)
 
@@ -163,6 +179,10 @@ async def test_handle_empty_chunker_output_still_advances():
             "app.workers.chunking.chunk_storage.replace_chunks",
             AsyncMock(return_value=0),
         ),
+        patch(
+            "app.workers.chunking.publish_vectorization_message",
+            AsyncMock(),
+        ) as mock_publish_vec,
     ):
         await worker._handle(msg)
 
@@ -173,6 +193,11 @@ async def test_handle_empty_chunker_output_still_advances():
     assert statuses[-1] == DocumentStatus.chunked.value
     final_update = col.update_one.await_args_list[-1].args[1]["$set"]
     assert final_update["chunk_count"] == 0
+
+    # Even with zero chunks, the handoff still fires — vectorizer will
+    # short-circuit to ready with vector_count=0.
+    mock_publish_vec.assert_awaited_once()
+    assert mock_publish_vec.await_args.args[0].chunk_count == 0
 
 
 # ── Permanent failure: blob missing → DLQ + status=failed ────────────────────
@@ -271,3 +296,43 @@ async def test_handle_transient_cosmos_failure_propagates():
         for call in col.update_one.await_args_list
     ]
     assert statuses == [DocumentStatus.chunking.value]
+
+
+# ── Sprint 2.9 — vectorization handoff failure must not crash worker ────────
+
+
+@pytest.mark.asyncio
+async def test_handle_vectorization_handoff_failure_does_not_crash():
+    """If publish_vectorization_message raises, the doc still lands at
+    chunked. Worker logs but doesn't surface — re-running the chunker would
+    pay for the chunker pass again, acceptable for the cheap CPU stage.
+    """
+    msg = _msg()
+    col = _mock_collection()
+
+    with (
+        patch("app.workers.chunking.get_collection", return_value=col),
+        patch(
+            "app.workers.chunking.blob_storage.download_extracted_text",
+            AsyncMock(return_value="text"),
+        ),
+        patch(
+            "app.workers.chunking.text_chunker.chunk_text",
+            return_value=_raw_chunks(2),
+        ),
+        patch(
+            "app.workers.chunking.chunk_storage.replace_chunks",
+            AsyncMock(return_value=2),
+        ),
+        patch(
+            "app.workers.chunking.publish_vectorization_message",
+            AsyncMock(side_effect=RuntimeError("SB unreachable")),
+        ),
+    ):
+        await worker._handle(msg)  # must NOT raise
+
+    statuses = [
+        call.args[1]["$set"]["status"]
+        for call in col.update_one.await_args_list
+    ]
+    assert statuses[-1] == DocumentStatus.chunked.value

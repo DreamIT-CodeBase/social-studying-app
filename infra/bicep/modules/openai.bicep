@@ -12,8 +12,12 @@ param keyVaultName string
 @description('Tokens-per-minute capacity for GPT-4o (in thousands). 0 = skip model deployment (no quota yet).')
 param gpt4oCapacity int = 0
 
+@description('Tokens-per-minute capacity for text-embedding-3-small (in thousands). 0 = skip deployment.')
+param embeddingCapacity int = 0
+
 var accountName = 'oai-ssa-${environment}-ddjopeut37ed2'
 var hasQuota = gpt4oCapacity > 0
+var hasEmbeddingQuota = embeddingCapacity > 0
 
 resource openAiAccount 'Microsoft.CognitiveServices/accounts@2024-04-01-preview' = {
   name: accountName
@@ -47,6 +51,34 @@ resource gpt4oDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-
   }
 }
 
+// Sprint 2.9 — text-embedding-3-small. 1536 dimensions, 5x cheaper than -large
+// while still handling our K-12 retrieval workload. Deployed under the same
+// account as GPT-4o so the existing key + endpoint cover both. Conditional on
+// embeddingCapacity so a fresh subscription without embedding quota can still
+// deploy the rest of the infra.
+//
+// Sequenced after gpt4oDeployment via dependsOn — Azure rejects parallel
+// deployment ops on the same Cognitive Services account.
+resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-04-01-preview' = if (hasEmbeddingQuota) {
+  parent: openAiAccount
+  name: 'text-embedding-3-small'
+  sku: {
+    name: 'Standard'
+    capacity: embeddingCapacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: 'text-embedding-3-small'
+      version: '1'
+    }
+    versionUpgradeOption: 'OnceCurrentVersionExpired'
+  }
+  dependsOn: [
+    gpt4oDeployment
+  ]
+}
+
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: keyVaultName
 }
@@ -63,3 +95,4 @@ output openAiEndpoint string = openAiAccount.properties.endpoint
 output openAiKeySecretUri string = openAiKeySecret.properties.secretUriWithVersion
 // Empty string when no deployment exists — Container App env var will be blank until quota is granted
 output deploymentName string = hasQuota ? gpt4oDeployment.name : ''
+output embeddingDeploymentName string = hasEmbeddingQuota ? embeddingDeployment.name : ''

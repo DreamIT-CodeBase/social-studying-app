@@ -62,6 +62,22 @@ resource chunkingQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-previe
   }
 }
 
+// Sprint 2.9 — vectorization. text-embedding-3-small calls finish in 1–3s
+// per batch even for full documents (16 inputs/batch), but AI Search
+// upsert can stretch on long docs. 10-min lock matches the topic queue's
+// model-call profile. maxDelivery=3 — embeddings are cheap but not free,
+// and a doc that fails three times has a structural issue.
+resource vectorizationQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+  parent: namespace
+  name: 'vectorization'
+  properties: {
+    lockDuration: 'PT10M'
+    maxDeliveryCount: 3
+    defaultMessageTimeToLive: 'P1D'
+    deadLetteringOnMessageExpiration: true
+  }
+}
+
 resource knowledgeStateQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
   parent: namespace
   name: 'knowledge-state-recalc'

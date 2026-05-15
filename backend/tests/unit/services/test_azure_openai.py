@@ -197,3 +197,134 @@ async def test_chat_json_roundtrips_complex_payload():
             system_prompt="be json", user_prompt="hi", max_output_tokens=500
         )
     assert result == payload
+
+
+# ── embed_texts: Sprint 2.9 ──────────────────────────────────────────────────
+
+
+def _fake_embeddings(vectors: list[list[float]], *, prompt_tokens: int = 5):
+    """Build a fake embeddings response with the SDK shape (data + usage)."""
+    response = MagicMock()
+    items = []
+    for v in vectors:
+        item = MagicMock()
+        item.embedding = v
+        items.append(item)
+    response.data = items
+    response.usage = MagicMock(prompt_tokens=prompt_tokens)
+    return response
+
+
+def _patched_embeddings(responses: list):
+    """Mock _client() to return responses sequentially across batches."""
+    fake_client = MagicMock()
+    fake_client.embeddings = MagicMock()
+    fake_client.embeddings.create = AsyncMock(side_effect=responses)
+    fake_client.__aenter__ = AsyncMock(return_value=fake_client)
+    fake_client.__aexit__ = AsyncMock(return_value=False)
+    return patch.object(azure_openai, "_client", return_value=fake_client), fake_client
+
+
+@pytest.mark.asyncio
+async def test_embed_texts_single_batch_returns_vectors_in_order():
+    vectors = [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]
+    patched, fake_client = _patched_embeddings([_fake_embeddings(vectors)])
+    with patched:
+        out = await azure_openai.embed_texts(
+            texts=["a", "b", "c"], batch_size=16
+        )
+    assert out == vectors
+    fake_client.embeddings.create.assert_awaited_once()
+    call = fake_client.embeddings.create.await_args
+    assert call.kwargs["input"] == ["a", "b", "c"]
+
+
+@pytest.mark.asyncio
+async def test_embed_texts_uses_settings_deployment_by_default(monkeypatch):
+    monkeypatch.setattr(
+        azure_openai.settings, "azure_openai_embedding_deployment", "embed-default"
+    )
+    patched, fake_client = _patched_embeddings([_fake_embeddings([[0.0]])])
+    with patched:
+        await azure_openai.embed_texts(texts=["x"])
+    assert fake_client.embeddings.create.await_args.kwargs["model"] == "embed-default"
+
+
+@pytest.mark.asyncio
+async def test_embed_texts_deployment_override():
+    patched, fake_client = _patched_embeddings([_fake_embeddings([[0.0]])])
+    with patched:
+        await azure_openai.embed_texts(texts=["x"], deployment="embed-override")
+    assert fake_client.embeddings.create.await_args.kwargs["model"] == "embed-override"
+
+
+@pytest.mark.asyncio
+async def test_embed_texts_batches_and_preserves_input_order():
+    """5 inputs with batch_size=2 → 3 API calls (2,2,1), output stays ordered."""
+    responses = [
+        _fake_embeddings([[1.0], [2.0]]),
+        _fake_embeddings([[3.0], [4.0]]),
+        _fake_embeddings([[5.0]]),
+    ]
+    patched, fake_client = _patched_embeddings(responses)
+    with patched:
+        out = await azure_openai.embed_texts(
+            texts=["a", "b", "c", "d", "e"], batch_size=2
+        )
+    assert out == [[1.0], [2.0], [3.0], [4.0], [5.0]]
+    assert fake_client.embeddings.create.await_count == 3
+    sent_inputs = [
+        c.kwargs["input"]
+        for c in fake_client.embeddings.create.await_args_list
+    ]
+    assert sent_inputs == [["a", "b"], ["c", "d"], ["e"]]
+
+
+@pytest.mark.asyncio
+async def test_embed_texts_empty_input_short_circuits_no_api_call():
+    """Empty input list returns [] without contacting the model."""
+    fake_client = MagicMock()
+    fake_client.embeddings = MagicMock()
+    fake_client.embeddings.create = AsyncMock()
+    fake_client.__aenter__ = AsyncMock(return_value=fake_client)
+    fake_client.__aexit__ = AsyncMock(return_value=False)
+    with patch.object(azure_openai, "_client", return_value=fake_client):
+        out = await azure_openai.embed_texts(texts=[])
+    assert out == []
+    fake_client.embeddings.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_embed_texts_transport_error_becomes_service_unavailable():
+    fake_client = MagicMock()
+    fake_client.embeddings = MagicMock()
+    fake_client.embeddings.create = AsyncMock(side_effect=RuntimeError("503"))
+    fake_client.__aenter__ = AsyncMock(return_value=fake_client)
+    fake_client.__aexit__ = AsyncMock(return_value=False)
+    with patch.object(azure_openai, "_client", return_value=fake_client):
+        with pytest.raises(ServiceUnavailableError, match="embeddings request failed"):
+            await azure_openai.embed_texts(texts=["x"])
+
+
+@pytest.mark.asyncio
+async def test_embed_texts_count_mismatch_raises_service_unavailable():
+    """If the SDK returns fewer vectors than inputs, refuse to misalign."""
+    # Asked for 2, response has 1 — would silently drop a chunk's embedding.
+    patched, _ = _patched_embeddings([_fake_embeddings([[1.0]])])
+    with patched:
+        with pytest.raises(ServiceUnavailableError, match="shape mismatch"):
+            await azure_openai.embed_texts(texts=["a", "b"], batch_size=16)
+
+
+@pytest.mark.asyncio
+async def test_embed_texts_invalid_batch_size_raises_value_error():
+    with pytest.raises(ValueError):
+        await azure_openai.embed_texts(texts=["x"], batch_size=0)
+
+
+@pytest.mark.asyncio
+async def test_embed_texts_missing_credentials_raises_service_unavailable(monkeypatch):
+    monkeypatch.setattr(azure_openai.settings, "azure_openai_endpoint", "")
+    monkeypatch.setattr(azure_openai.settings, "azure_openai_key", "")
+    with pytest.raises(ServiceUnavailableError):
+        await azure_openai.embed_texts(texts=["x"])

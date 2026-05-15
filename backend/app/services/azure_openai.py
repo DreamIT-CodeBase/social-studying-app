@@ -133,3 +133,108 @@ async def chat_json(
         # transport failures (ServiceUnavailableError).
         logger.error("OpenAI returned non-JSON despite JSON mode: %r", content)
         raise ValueError(f"OpenAI returned invalid JSON: {exc}") from exc
+
+
+async def embed_texts(
+    *,
+    texts: list[str],
+    deployment: str | None = None,
+    batch_size: int | None = None,
+) -> list[list[float]]:
+    """Return one embedding vector per input text.
+
+    Sprint 2.9 vectorization. Input ordering is preserved across batches —
+    callers can zip ``texts`` with the returned vectors directly.
+
+    Why batched
+    -----------
+    Azure OpenAI's embedding endpoint caps inputs per call (16 by default for
+    text-embedding-3 deployments). Larger batches get a 400. We chunk inputs
+    here so callers don't have to think about it; each batch is one API call
+    with shared connection / TLS handshake overhead.
+
+    Empty list short-circuits without an API call (matches the upstream
+    contract — no work, no spend).
+
+    Args:
+        texts: Strings to embed. Empty strings are passed through to the API
+            (which returns a zero-ish vector); callers that want to skip them
+            should filter before calling.
+        deployment: Override the embedding deployment name. Defaults to
+            ``settings.azure_openai_embedding_deployment``.
+        batch_size: Override the inputs-per-call cap. Defaults to
+            ``settings.azure_openai_embedding_batch_size`` (16).
+
+    Returns:
+        Vectors in the same order as ``texts``. Each vector has length
+        ``settings.azure_openai_embedding_dim`` (1536 for the small model).
+
+    Raises:
+        ServiceUnavailableError: model not reachable / not configured /
+            transport failure mid-batch. The whole call fails — partial
+            vectors aren't returned because the caller would have no way to
+            know which texts succeeded.
+    """
+    chunk_size = (
+        batch_size
+        if batch_size is not None
+        else settings.azure_openai_embedding_batch_size
+    )
+    if chunk_size < 1:
+        raise ValueError(f"batch_size must be >= 1, got {chunk_size}")
+
+    if not texts:
+        return []
+
+    deployment_name = deployment or settings.azure_openai_embedding_deployment
+
+    out: list[list[float]] = []
+    start = time.perf_counter()
+    total_prompt_tokens = 0
+
+    async with _client() as client:
+        for offset in range(0, len(texts), chunk_size):
+            batch = texts[offset : offset + chunk_size]
+            try:
+                response = await client.embeddings.create(
+                    model=deployment_name,
+                    input=batch,
+                )
+            except Exception as exc:
+                logger.exception(
+                    "Azure OpenAI embeddings call failed at offset=%d batch_size=%d",
+                    offset,
+                    len(batch),
+                )
+                raise ServiceUnavailableError(
+                    f"Azure OpenAI embeddings request failed: {exc}"
+                ) from exc
+
+            # The SDK returns Embedding objects in input order. Pull them in
+            # that order to preserve the text<->vector mapping the caller
+            # relies on.
+            for item in response.data:
+                out.append(list(item.embedding))
+
+            if response.usage:
+                total_prompt_tokens += response.usage.prompt_tokens
+
+    duration_ms = int((time.perf_counter() - start) * 1000)
+    logger.info(
+        "OpenAI embeddings deployment=%s inputs=%d batches=%d prompt_tokens=%d duration_ms=%d",
+        deployment_name,
+        len(texts),
+        (len(texts) + chunk_size - 1) // chunk_size,
+        total_prompt_tokens,
+        duration_ms,
+    )
+
+    if len(out) != len(texts):
+        # The API contract is one vector per input; anything else means the
+        # SDK or service returned a malformed batch and we'd silently misalign
+        # vectors with their source texts. Refuse to return.
+        raise ServiceUnavailableError(
+            f"Embeddings response shape mismatch: requested {len(texts)} got {len(out)}"
+        )
+
+    return out

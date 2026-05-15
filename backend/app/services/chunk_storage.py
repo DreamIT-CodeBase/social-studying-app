@@ -93,3 +93,23 @@ async def count_for_document(*, tenant_id: str, document_id: str) -> int:
     """
     col = get_collection(tenant_id, CHUNKS)
     return await col.count_documents({"document_id": document_id})
+
+
+async def find_for_document(
+    *,
+    tenant_id: str,
+    document_id: str,
+) -> list[Chunk]:
+    """Return every chunk for ``document_id`` ordered by ``chunk_index``.
+
+    Used by Sprint 2.9's vectorizer to pull a document's chunk set as a
+    single ordered batch for embedding. Sorted at the DB layer so callers
+    don't have to re-sort. Filter scopes to ``document_id`` only — that's
+    the partition key and ensures the read stays inside one partition.
+    """
+    col = get_collection(tenant_id, CHUNKS)
+    cursor = col.find({"document_id": document_id}).sort("chunk_index", 1)
+    out: list[Chunk] = []
+    async for raw in cursor:
+        out.append(Chunk.model_validate(raw))
+    return out
