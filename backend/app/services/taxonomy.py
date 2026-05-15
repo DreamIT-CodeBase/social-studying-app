@@ -53,6 +53,7 @@ from app.services import azure_openai
 logger = logging.getLogger(__name__)
 
 TAXONOMY_MERGE_PROMPT_VERSION = "taxonomy_merge_v1"
+DEPENDENCY_INFERENCE_PROMPT_VERSION = "dependency_inference_v1"
 
 # Bounded retries on optimistic-concurrency conflict. Three is enough — if
 # we lose three races in a row, something pathological is happening.
@@ -62,9 +63,20 @@ _MAX_MERGE_RETRIES = 3
 # tokens comfortably; we cap at 6K to leave headroom for very long taxonomies.
 _MERGE_MAX_OUTPUT_TOKENS = 6_000
 
+# Tokens budget for the dependency inference response. Smaller than merge —
+# each row is just {topic_id, parent_id}, much tighter than full topic JSON.
+_INFER_DEPS_MAX_OUTPUT_TOKENS = 3_000
+
 
 class TaxonomyMergeError(RuntimeError):
     """Raised when the merge AI call returns an unusable response.
+
+    Worker treats this as a soft failure — log + advance the doc anyway.
+    """
+
+
+class DependencyInferenceError(RuntimeError):
+    """Raised when the dep-inference AI call returns an unusable response.
 
     Worker treats this as a soft failure — log + advance the doc anyway.
     """
@@ -387,3 +399,262 @@ async def _conditional_write(
         },
     )
     return result.matched_count == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sprint 2.7 — Dependency Graph Inference
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class InferDepsOutcome:
+    """Result of running the dep-inference pass."""
+
+    taxonomy_version: int
+    topics_total: int
+    edges_set: int             # canonical topics with a non-None parent_id after the pass
+    edges_changed: int         # rows whose parent_id differs from before the pass
+    edges_dropped_invalid: int # rows the validator threw out (self-ref, unknown id, cycle)
+    skipped: bool              # True when taxonomy had <2 topics → no AI call
+
+
+async def infer_dependencies(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+) -> InferDepsOutcome:
+    """Infer single-parent prerequisite edges for every topic in a workspace.
+
+    Reads the current canonical taxonomy, calls GPT-4o with the dependency
+    inference prompt, validates the response (drops self-refs / unknown ids
+    / cycles), and writes the new ``parent_id`` values back under
+    optimistic-concurrency control.
+
+    The worker calls this AFTER ``merge_into_workspace``. We don't take a
+    Workspace argument because we need a fresh read inside the CAS loop —
+    a stale workspace passed in from the caller would race against any
+    sibling worker that also bumped the version between merge and deps.
+
+    Raises:
+        DependencyInferenceError: model returned an unparseable shape OR
+            CAS retries exhausted. Worker logs and advances doc anyway.
+    """
+    for attempt in range(1, _MAX_MERGE_RETRIES + 1):
+        workspace = await _read_workspace(tenant_id, workspace_id)
+        if workspace is None:
+            raise DependencyInferenceError(
+                f"Workspace {workspace_id} not found in tenant {tenant_id}"
+            )
+
+        topics = workspace.taxonomy.topics
+        # No edges are possible with <2 topics. Skip the AI call entirely —
+        # saves money on workspaces that have only one document with one topic.
+        if len(topics) < 2:
+            logger.info(
+                "Dep inference skipped (taxonomy size=%d) workspace=%s",
+                len(topics),
+                workspace_id,
+            )
+            return InferDepsOutcome(
+                taxonomy_version=workspace.taxonomy_version,
+                topics_total=len(topics),
+                edges_set=sum(1 for t in topics if t.parent_id is not None),
+                edges_changed=0,
+                edges_dropped_invalid=0,
+                skipped=True,
+            )
+
+        edges = await _ai_infer_dependencies(
+            topics=topics,
+            workspace_id=workspace_id,
+        )
+
+        # Validate against the actual id set + drop self-refs + drop cycles.
+        valid_ids = {t.id for t in topics}
+        clean_edges, dropped = _sanitize_edges(edges, valid_ids=valid_ids)
+
+        # Build new topic list with parent_id filled in.
+        before_parents = {t.id: t.parent_id for t in topics}
+        new_topics: list[CanonicalTopic] = []
+        for t in topics:
+            new_parent = clean_edges.get(t.id)
+            new_topics.append(t.model_copy(update={"parent_id": new_parent}))
+        new_taxonomy = Taxonomy(
+            topics=new_topics,
+            last_merged_at=workspace.taxonomy.last_merged_at,
+        )
+        edges_set = sum(1 for t in new_topics if t.parent_id is not None)
+        edges_changed = sum(
+            1 for t in new_topics
+            if t.parent_id != before_parents.get(t.id)
+        )
+
+        wrote = await _conditional_write(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            expected_version=workspace.taxonomy_version,
+            new_taxonomy=new_taxonomy,
+        )
+        if wrote:
+            logger.info(
+                "Dep inference committed workspace=%s version=%d "
+                "topics=%d edges_set=%d edges_changed=%d dropped=%d attempt=%d",
+                workspace_id,
+                workspace.taxonomy_version + 1,
+                len(new_topics),
+                edges_set,
+                edges_changed,
+                dropped,
+                attempt,
+            )
+            return InferDepsOutcome(
+                taxonomy_version=workspace.taxonomy_version + 1,
+                topics_total=len(new_topics),
+                edges_set=edges_set,
+                edges_changed=edges_changed,
+                edges_dropped_invalid=dropped,
+                skipped=False,
+            )
+
+        logger.info(
+            "Dep inference CAS conflict workspace=%s attempt=%d/%d",
+            workspace_id,
+            attempt,
+            _MAX_MERGE_RETRIES,
+        )
+
+    raise DependencyInferenceError(
+        f"Could not commit dep inference for {workspace_id} "
+        f"after {_MAX_MERGE_RETRIES} attempts"
+    )
+
+
+async def _ai_infer_dependencies(
+    *,
+    topics: list[CanonicalTopic],
+    workspace_id: str,
+) -> dict[str, str | None]:
+    """Call GPT-4o to infer parent_id for each topic.
+
+    Returns a dict mapping topic_id → parent_id (or None). May include
+    bogus entries — caller MUST run :func:`_sanitize_edges` before trusting
+    the result.
+
+    Raises:
+        DependencyInferenceError: if the response is unparseable.
+    """
+    template = load_prompt(DEPENDENCY_INFERENCE_PROMPT_VERSION)
+    system_prompt, user_prompt_tpl = split_system_user(template)
+    user_prompt = render(
+        user_prompt_tpl,
+        workspace_id=workspace_id,
+        taxonomy_topics=json.dumps(
+            [
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "description": t.description,
+                    "complexity_level": t.complexity_level,
+                }
+                for t in topics
+            ],
+            indent=2,
+        ),
+    )
+
+    response = await azure_openai.chat_json(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        max_output_tokens=_INFER_DEPS_MAX_OUTPUT_TOKENS,
+    )
+
+    raw_edges = response.get("edges")
+    if not isinstance(raw_edges, list):
+        raise DependencyInferenceError(
+            f"Dep inference response missing 'edges' array; keys={list(response)}"
+        )
+
+    out: dict[str, str | None] = {}
+    for row in raw_edges:
+        if not isinstance(row, dict):
+            continue
+        topic_id = row.get("topic_id")
+        parent_id = row.get("parent_id")
+        if not isinstance(topic_id, str) or not topic_id:
+            continue
+        # parent_id can be None or a string. Anything else (int, dict, etc.) is bad.
+        if parent_id is not None and not isinstance(parent_id, str):
+            continue
+        out[topic_id] = parent_id or None  # collapse empty-string to None
+    return out
+
+
+def _sanitize_edges(
+    proposed: dict[str, str | None],
+    *,
+    valid_ids: set[str],
+) -> tuple[dict[str, str | None], int]:
+    """Filter a proposed parent-edge map down to the trustworthy subset.
+
+    Drops:
+    - Edges whose topic_id isn't in the current taxonomy (model hallucination).
+    - Edges whose parent_id isn't in the current taxonomy.
+    - Self-loops (topic_id == parent_id).
+    - Edges that would create a cycle (DFS check below).
+
+    Returns ``(clean_edges, dropped_count)``. Edges where the proposed
+    parent is None pass through unchanged (None is always valid).
+    """
+    candidates: dict[str, str | None] = {}
+    dropped = 0
+
+    for topic_id, parent_id in proposed.items():
+        if topic_id not in valid_ids:
+            logger.debug("Dep inference: dropping unknown topic_id=%s", topic_id)
+            dropped += 1
+            continue
+        if parent_id is None:
+            candidates[topic_id] = None
+            continue
+        if parent_id == topic_id:
+            logger.debug("Dep inference: dropping self-ref topic_id=%s", topic_id)
+            dropped += 1
+            continue
+        if parent_id not in valid_ids:
+            logger.debug(
+                "Dep inference: dropping unknown parent_id=%s for topic=%s",
+                parent_id,
+                topic_id,
+            )
+            dropped += 1
+            continue
+        candidates[topic_id] = parent_id
+
+    # Cycle detection. Walk each topic's parent chain; if we revisit any
+    # node, the edge that closed the cycle is dropped. We process topics
+    # in a stable order (sorted by id) so the same cycle drops the same
+    # edge on every run — important for idempotency across worker retries.
+    final: dict[str, str | None] = dict(candidates)
+    for topic_id in sorted(candidates):
+        parent = final.get(topic_id)
+        if parent is None:
+            continue
+        seen = {topic_id}
+        cursor = parent
+        while cursor is not None:
+            if cursor in seen:
+                # Cycle. Drop the edge from `topic_id` to break it.
+                logger.debug(
+                    "Dep inference: dropping edge topic=%s parent=%s "
+                    "(would close cycle through %s)",
+                    topic_id,
+                    parent,
+                    cursor,
+                )
+                final[topic_id] = None
+                dropped += 1
+                break
+            seen.add(cursor)
+            cursor = final.get(cursor)
+
+    return final, dropped

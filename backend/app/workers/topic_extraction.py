@@ -191,6 +191,7 @@ async def _handle(msg: ReceivedTopicMessage) -> None:
     #    to topics_extracted. The per-doc TopicTags are useful for 2.8
     #    chunking even without a fresh workspace taxonomy, and the admin
     #    "regenerate taxonomy" endpoint (2.11) can rebuild from scratch.
+    merge_ok = False
     try:
         outcome = await taxonomy.merge_into_workspace(
             tenant_id=payload.tenant_id,
@@ -198,6 +199,7 @@ async def _handle(msg: ReceivedTopicMessage) -> None:
             document_id=payload.document_id,
             new_topics=topics,
         )
+        merge_ok = True
         logger.info(
             "Taxonomy merge doc=%s workspace_version=%d total=%d added=%d seeded=%s",
             payload.document_id,
@@ -213,7 +215,37 @@ async def _handle(msg: ReceivedTopicMessage) -> None:
             payload.document_id,
         )
 
-    # 4. Persist topics + advance status.
+    # 4. Infer prerequisite edges over the workspace's canonical taxonomy
+    #    (Sprint 2.7). Eager trigger on every successful merge — cost is one
+    #    extra GPT-4o call per upload, accepted for demo phase. Skipped when
+    #    the merge above failed (the taxonomy didn't change, so re-inferring
+    #    deps is wasted money). Best-effort: failure logs but doesn't crash
+    #    the doc.
+    if merge_ok:
+        try:
+            deps_outcome = await taxonomy.infer_dependencies(
+                tenant_id=payload.tenant_id,
+                workspace_id=payload.workspace_id,
+            )
+            logger.info(
+                "Dep inference doc=%s workspace_version=%d topics=%d "
+                "edges_set=%d edges_changed=%d dropped=%d skipped=%s",
+                payload.document_id,
+                deps_outcome.taxonomy_version,
+                deps_outcome.topics_total,
+                deps_outcome.edges_set,
+                deps_outcome.edges_changed,
+                deps_outcome.edges_dropped_invalid,
+                deps_outcome.skipped,
+            )
+        except Exception:
+            logger.exception(
+                "Dep inference failed for doc=%s — workspace deps left stale, "
+                "document will still advance to topics_extracted",
+                payload.document_id,
+            )
+
+    # 5. Persist topics + advance status.
     await _set_status(
         tenant_id=payload.tenant_id,
         workspace_id=payload.workspace_id,

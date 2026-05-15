@@ -12,7 +12,12 @@ from azure.core.exceptions import ResourceNotFoundError
 
 from app.core.exceptions import ServiceUnavailableError
 from app.models.document import DocumentStatus, TopicTag
-from app.services.taxonomy import MergeOutcome, TaxonomyMergeError
+from app.services.taxonomy import (
+    DependencyInferenceError,
+    InferDepsOutcome,
+    MergeOutcome,
+    TaxonomyMergeError,
+)
 from app.services.topic_queue import ReceivedTopicMessage, TopicExtractionMessage
 from app.workers import topic_extraction as worker
 
@@ -23,6 +28,25 @@ def _merge_outcome(*, version: int = 1, total: int = 2, added: int = 2, seeded: 
         topics_total=total,
         topics_added=added,
         seeded=seeded,
+    )
+
+
+def _deps_outcome(
+    *,
+    version: int = 2,
+    total: int = 2,
+    edges_set: int = 1,
+    edges_changed: int = 1,
+    dropped: int = 0,
+    skipped: bool = False,
+):
+    return InferDepsOutcome(
+        taxonomy_version=version,
+        topics_total=total,
+        edges_set=edges_set,
+        edges_changed=edges_changed,
+        edges_dropped_invalid=dropped,
+        skipped=skipped,
     )
 
 
@@ -84,6 +108,10 @@ async def test_handle_happy_path_writes_topics_and_advances_status():
             "app.workers.topic_extraction.taxonomy.merge_into_workspace",
             AsyncMock(return_value=_merge_outcome()),
         ) as mock_merge,
+        patch(
+            "app.workers.topic_extraction.taxonomy.infer_dependencies",
+            AsyncMock(return_value=_deps_outcome()),
+        ) as mock_deps,
     ):
         await worker._handle(msg)
 
@@ -97,6 +125,12 @@ async def test_handle_happy_path_writes_topics_and_advances_status():
     assert merge_kwargs["workspace_id"] == "wsp_abc"
     assert merge_kwargs["document_id"] == "doc_abc"
     assert merge_kwargs["new_topics"] == topics
+
+    # Sprint 2.7 — infer_dependencies runs after a successful merge.
+    mock_deps.assert_awaited_once()
+    deps_kwargs = mock_deps.await_args.kwargs
+    assert deps_kwargs["tenant_id"] == "ten_abc"
+    assert deps_kwargs["workspace_id"] == "wsp_abc"
 
     # Two updates: extracting_topics, then topics_extracted.
     assert col.update_one.await_count == 2
@@ -141,6 +175,11 @@ async def test_handle_empty_topics_list_still_advances_to_topics_extracted():
         patch(
             "app.workers.topic_extraction.taxonomy.merge_into_workspace",
             AsyncMock(return_value=_merge_outcome(version=0, total=0, added=0, seeded=False)),
+        ),
+        patch(
+            "app.workers.topic_extraction.taxonomy.infer_dependencies",
+            AsyncMock(return_value=_deps_outcome(version=0, total=0, edges_set=0,
+                                                  edges_changed=0, skipped=True)),
         ),
     ):
         await worker._handle(msg)
@@ -279,10 +318,64 @@ async def test_handle_taxonomy_merge_failure_still_advances_doc():
             "app.workers.topic_extraction.taxonomy.merge_into_workspace",
             AsyncMock(side_effect=TaxonomyMergeError("CAS exhausted")),
         ) as mock_merge,
+        patch(
+            "app.workers.topic_extraction.taxonomy.infer_dependencies",
+            AsyncMock(),
+        ) as mock_deps,
     ):
         await worker._handle(msg)  # must NOT raise
 
     mock_merge.assert_awaited_once()
+    # Sprint 2.7 — when merge fails, deps inference should be skipped (the
+    # taxonomy didn't change, so re-inferring deps is wasted money).
+    mock_deps.assert_not_awaited()
+
+    statuses = [
+        call.args[1]["$set"]["status"]
+        for call in col.update_one.await_args_list
+    ]
+    assert statuses[-1] == DocumentStatus.topics_extracted.value
+    final_update = col.update_one.await_args_list[-1].args[1]["$set"]
+    assert final_update["topic_tags"][0]["name"] == "Photosynthesis"
+
+
+# ── Sprint 2.7 — deps inference failure must not crash the worker ───────────
+
+
+@pytest.mark.asyncio
+async def test_handle_dep_inference_failure_still_advances_doc():
+    """If infer_dependencies raises after a successful merge, the doc still
+    lands at topics_extracted. The workspace taxonomy is correct (merge
+    succeeded), just lacking edges — next document will trigger inference
+    again.
+    """
+    msg = _msg()
+    col = _mock_collection()
+    topics = [TopicTag(name="Photosynthesis", complexity_level=3)]
+
+    with (
+        patch("app.workers.topic_extraction.get_collection", return_value=col),
+        patch(
+            "app.workers.topic_extraction.blob_storage.download_document",
+            AsyncMock(return_value=b"hello"),
+        ),
+        patch(
+            "app.workers.topic_extraction.topic_extraction.extract_topics",
+            AsyncMock(return_value=topics),
+        ),
+        patch(
+            "app.workers.topic_extraction.taxonomy.merge_into_workspace",
+            AsyncMock(return_value=_merge_outcome()),
+        ) as mock_merge,
+        patch(
+            "app.workers.topic_extraction.taxonomy.infer_dependencies",
+            AsyncMock(side_effect=DependencyInferenceError("CAS exhausted")),
+        ) as mock_deps,
+    ):
+        await worker._handle(msg)  # must NOT raise
+
+    mock_merge.assert_awaited_once()
+    mock_deps.assert_awaited_once()
     statuses = [
         call.args[1]["$set"]["status"]
         for call in col.update_one.await_args_list
@@ -315,6 +408,11 @@ async def test_handle_non_utf8_blob_does_not_crash():
         patch(
             "app.workers.topic_extraction.taxonomy.merge_into_workspace",
             AsyncMock(return_value=_merge_outcome(version=0, total=0, added=0, seeded=False)),
+        ),
+        patch(
+            "app.workers.topic_extraction.taxonomy.infer_dependencies",
+            AsyncMock(return_value=_deps_outcome(version=0, total=0, edges_set=0,
+                                                  edges_changed=0, skipped=True)),
         ),
     ):
         await worker._handle(msg)

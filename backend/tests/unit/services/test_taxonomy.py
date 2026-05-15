@@ -18,7 +18,7 @@ import pytest
 from app.models.document import TopicTag
 from app.models.workspace import CanonicalTopic, Taxonomy, Workspace, WorkspaceSettings
 from app.services import taxonomy
-from app.services.taxonomy import TaxonomyMergeError
+from app.services.taxonomy import DependencyInferenceError, TaxonomyMergeError
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -488,3 +488,400 @@ async def test_out_of_range_complexity_dropped_to_none():
 
     written = col.update_one.await_args.args[1]["$set"]["taxonomy"]["topics"]
     assert written[0]["complexity_level"] is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sprint 2.7 — Dependency inference tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _ws_with(*, version: int = 0, topics: list[CanonicalTopic]) -> Workspace:
+    """Same as _ws but topics is mandatory — used by deps tests."""
+    return _ws(version=version, topics=topics)
+
+
+# ── Skip path: <2 topics ─────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_infer_deps_skipped_on_empty_taxonomy():
+    workspace = _ws_with(version=3, topics=[])
+    col = _mock_collection(workspace.model_dump(by_alias=True))
+
+    with (
+        patch("app.services.taxonomy.get_collection", return_value=col),
+        patch("app.services.taxonomy.azure_openai.chat_json", AsyncMock()) as openai,
+    ):
+        outcome = await taxonomy.infer_dependencies(
+            tenant_id="ten_abc", workspace_id="wsp_abc"
+        )
+
+    openai.assert_not_awaited()
+    col.update_one.assert_not_awaited()
+    assert outcome.skipped is True
+    assert outcome.topics_total == 0
+    assert outcome.taxonomy_version == 3
+
+
+@pytest.mark.asyncio
+async def test_infer_deps_skipped_on_single_topic():
+    workspace = _ws_with(version=5, topics=[
+        CanonicalTopic(id="tpc_a", name="Only"),
+    ])
+    col = _mock_collection(workspace.model_dump(by_alias=True))
+
+    with (
+        patch("app.services.taxonomy.get_collection", return_value=col),
+        patch("app.services.taxonomy.azure_openai.chat_json", AsyncMock()) as openai,
+    ):
+        outcome = await taxonomy.infer_dependencies(
+            tenant_id="ten_abc", workspace_id="wsp_abc"
+        )
+
+    openai.assert_not_awaited()
+    col.update_one.assert_not_awaited()
+    assert outcome.skipped is True
+    assert outcome.topics_total == 1
+
+
+# ── Happy path: edges set on multi-topic taxonomy ────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_infer_deps_happy_path_writes_parent_ids():
+    topics = [
+        CanonicalTopic(id="tpc_root", name="Cells", complexity_level=1.0),
+        CanonicalTopic(
+            id="tpc_mid",
+            name="Photosynthesis",
+            complexity_level=3.0,
+        ),
+        CanonicalTopic(
+            id="tpc_top",
+            name="Plant Biology",
+            complexity_level=5.0,
+        ),
+    ]
+    workspace = _ws_with(version=2, topics=topics)
+    col = _mock_collection(workspace.model_dump(by_alias=True))
+
+    response = {
+        "edges": [
+            {"topic_id": "tpc_root", "parent_id": None},
+            {"topic_id": "tpc_mid", "parent_id": "tpc_root"},
+            {"topic_id": "tpc_top", "parent_id": "tpc_mid"},
+        ]
+    }
+
+    with (
+        patch("app.services.taxonomy.get_collection", return_value=col),
+        patch(
+            "app.services.taxonomy.azure_openai.chat_json",
+            AsyncMock(return_value=response),
+        ) as openai,
+    ):
+        outcome = await taxonomy.infer_dependencies(
+            tenant_id="ten_abc", workspace_id="wsp_abc"
+        )
+
+    openai.assert_awaited_once()
+    assert outcome.skipped is False
+    assert outcome.topics_total == 3
+    assert outcome.edges_set == 2          # tpc_mid, tpc_top
+    assert outcome.edges_changed == 2      # both went None → real id
+    assert outcome.edges_dropped_invalid == 0
+    assert outcome.taxonomy_version == 3   # bumped from 2
+
+    written = col.update_one.await_args.args[1]["$set"]["taxonomy"]["topics"]
+    by_id = {t["id"]: t for t in written}
+    assert by_id["tpc_root"]["parent_id"] is None
+    assert by_id["tpc_mid"]["parent_id"] == "tpc_root"
+    assert by_id["tpc_top"]["parent_id"] == "tpc_mid"
+
+
+# ── Sanitization: unknown ids dropped ────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_infer_deps_drops_unknown_parent_id():
+    topics = [
+        CanonicalTopic(id="tpc_a", name="A"),
+        CanonicalTopic(id="tpc_b", name="B"),
+    ]
+    workspace = _ws_with(version=0, topics=topics)
+    col = _mock_collection(workspace.model_dump(by_alias=True))
+
+    response = {
+        "edges": [
+            {"topic_id": "tpc_a", "parent_id": None},
+            # Model hallucinated a parent that isn't in the taxonomy.
+            {"topic_id": "tpc_b", "parent_id": "tpc_hallucinated"},
+        ]
+    }
+
+    with (
+        patch("app.services.taxonomy.get_collection", return_value=col),
+        patch(
+            "app.services.taxonomy.azure_openai.chat_json",
+            AsyncMock(return_value=response),
+        ),
+    ):
+        outcome = await taxonomy.infer_dependencies(
+            tenant_id="ten_abc", workspace_id="wsp_abc"
+        )
+
+    written = col.update_one.await_args.args[1]["$set"]["taxonomy"]["topics"]
+    by_id = {t["id"]: t for t in written}
+    assert by_id["tpc_a"]["parent_id"] is None
+    assert by_id["tpc_b"]["parent_id"] is None   # hallucination scrubbed
+    assert outcome.edges_set == 0
+    assert outcome.edges_dropped_invalid == 1
+
+
+@pytest.mark.asyncio
+async def test_infer_deps_drops_self_reference():
+    topics = [
+        CanonicalTopic(id="tpc_a", name="A"),
+        CanonicalTopic(id="tpc_b", name="B"),
+    ]
+    workspace = _ws_with(version=0, topics=topics)
+    col = _mock_collection(workspace.model_dump(by_alias=True))
+
+    response = {
+        "edges": [
+            {"topic_id": "tpc_a", "parent_id": "tpc_a"},   # self-loop
+            {"topic_id": "tpc_b", "parent_id": "tpc_a"},
+        ]
+    }
+
+    with (
+        patch("app.services.taxonomy.get_collection", return_value=col),
+        patch(
+            "app.services.taxonomy.azure_openai.chat_json",
+            AsyncMock(return_value=response),
+        ),
+    ):
+        outcome = await taxonomy.infer_dependencies(
+            tenant_id="ten_abc", workspace_id="wsp_abc"
+        )
+
+    written = col.update_one.await_args.args[1]["$set"]["taxonomy"]["topics"]
+    by_id = {t["id"]: t for t in written}
+    assert by_id["tpc_a"]["parent_id"] is None        # self-ref dropped
+    assert by_id["tpc_b"]["parent_id"] == "tpc_a"     # valid edge kept
+    assert outcome.edges_dropped_invalid == 1
+
+
+# ── Cycle detection ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_infer_deps_breaks_two_node_cycle():
+    """A ↔ B is a cycle. Stable processing order (sorted ids) means we drop
+    the edge from the alphabetically-first node (tpc_a → tpc_b)."""
+    topics = [
+        CanonicalTopic(id="tpc_a", name="A"),
+        CanonicalTopic(id="tpc_b", name="B"),
+    ]
+    workspace = _ws_with(version=0, topics=topics)
+    col = _mock_collection(workspace.model_dump(by_alias=True))
+
+    response = {
+        "edges": [
+            {"topic_id": "tpc_a", "parent_id": "tpc_b"},
+            {"topic_id": "tpc_b", "parent_id": "tpc_a"},
+        ]
+    }
+
+    with (
+        patch("app.services.taxonomy.get_collection", return_value=col),
+        patch(
+            "app.services.taxonomy.azure_openai.chat_json",
+            AsyncMock(return_value=response),
+        ),
+    ):
+        outcome = await taxonomy.infer_dependencies(
+            tenant_id="ten_abc", workspace_id="wsp_abc"
+        )
+
+    written = col.update_one.await_args.args[1]["$set"]["taxonomy"]["topics"]
+    by_id = {t["id"]: t for t in written}
+    # We process topics in sorted order, so tpc_a is examined first. At that
+    # point tpc_b→tpc_a is still in place, and walking tpc_a→tpc_b→tpc_a
+    # detects the cycle. tpc_a's edge is dropped.
+    assert by_id["tpc_a"]["parent_id"] is None
+    assert by_id["tpc_b"]["parent_id"] == "tpc_a"
+    assert outcome.edges_dropped_invalid == 1
+
+
+@pytest.mark.asyncio
+async def test_infer_deps_breaks_three_node_cycle():
+    """A → B → C → A. One edge must be dropped; the tree must be valid after."""
+    topics = [
+        CanonicalTopic(id="tpc_a", name="A"),
+        CanonicalTopic(id="tpc_b", name="B"),
+        CanonicalTopic(id="tpc_c", name="C"),
+    ]
+    workspace = _ws_with(version=0, topics=topics)
+    col = _mock_collection(workspace.model_dump(by_alias=True))
+
+    response = {
+        "edges": [
+            {"topic_id": "tpc_a", "parent_id": "tpc_b"},
+            {"topic_id": "tpc_b", "parent_id": "tpc_c"},
+            {"topic_id": "tpc_c", "parent_id": "tpc_a"},
+        ]
+    }
+
+    with (
+        patch("app.services.taxonomy.get_collection", return_value=col),
+        patch(
+            "app.services.taxonomy.azure_openai.chat_json",
+            AsyncMock(return_value=response),
+        ),
+    ):
+        outcome = await taxonomy.infer_dependencies(
+            tenant_id="ten_abc", workspace_id="wsp_abc"
+        )
+
+    written = col.update_one.await_args.args[1]["$set"]["taxonomy"]["topics"]
+    parents = {t["id"]: t["parent_id"] for t in written}
+    # Exactly one edge dropped; the other two form a valid chain.
+    none_count = sum(1 for v in parents.values() if v is None)
+    assert none_count == 1
+    assert outcome.edges_dropped_invalid == 1
+
+    # Final state must be acyclic — walk every chain and confirm no revisit.
+    for topic_id in parents:
+        seen = {topic_id}
+        cursor = parents[topic_id]
+        while cursor is not None:
+            assert cursor not in seen, f"cycle through {topic_id}"
+            seen.add(cursor)
+            cursor = parents.get(cursor)
+
+
+# ── CAS retry on conflict ────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_infer_deps_retries_on_version_conflict():
+    topics = [
+        CanonicalTopic(id="tpc_a", name="A"),
+        CanonicalTopic(id="tpc_b", name="B"),
+    ]
+    workspace_v0 = _ws_with(version=0, topics=topics).model_dump(by_alias=True)
+    workspace_v1 = _ws_with(version=1, topics=topics).model_dump(by_alias=True)
+    col = MagicMock()
+    col.find_one = AsyncMock(side_effect=[workspace_v0, workspace_v1])
+    col.update_one = AsyncMock(
+        side_effect=[
+            MagicMock(matched_count=0),     # lost the race
+            MagicMock(matched_count=1),     # won on retry
+        ]
+    )
+
+    response = {
+        "edges": [
+            {"topic_id": "tpc_a", "parent_id": None},
+            {"topic_id": "tpc_b", "parent_id": "tpc_a"},
+        ]
+    }
+
+    with (
+        patch("app.services.taxonomy.get_collection", return_value=col),
+        patch(
+            "app.services.taxonomy.azure_openai.chat_json",
+            AsyncMock(return_value=response),
+        ),
+    ):
+        outcome = await taxonomy.infer_dependencies(
+            tenant_id="ten_abc", workspace_id="wsp_abc"
+        )
+
+    assert col.find_one.await_count == 2
+    assert col.update_one.await_count == 2
+    assert outcome.taxonomy_version == 2  # 1 + 1
+
+
+# ── CAS exhaustion ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_infer_deps_cas_exhaustion_raises():
+    topics = [
+        CanonicalTopic(id="tpc_a", name="A"),
+        CanonicalTopic(id="tpc_b", name="B"),
+    ]
+    workspace = _ws_with(version=0, topics=topics).model_dump(by_alias=True)
+    col = MagicMock()
+    col.find_one = AsyncMock(return_value=workspace)
+    col.update_one = AsyncMock(return_value=MagicMock(matched_count=0))
+
+    response = {"edges": [
+        {"topic_id": "tpc_a", "parent_id": None},
+        {"topic_id": "tpc_b", "parent_id": "tpc_a"},
+    ]}
+
+    with (
+        patch("app.services.taxonomy.get_collection", return_value=col),
+        patch(
+            "app.services.taxonomy.azure_openai.chat_json",
+            AsyncMock(return_value=response),
+        ),
+        pytest.raises(DependencyInferenceError),
+    ):
+        await taxonomy.infer_dependencies(
+            tenant_id="ten_abc", workspace_id="wsp_abc"
+        )
+
+    assert col.update_one.await_count == 3
+
+
+# ── Malformed response ───────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_infer_deps_missing_edges_array_raises():
+    topics = [
+        CanonicalTopic(id="tpc_a", name="A"),
+        CanonicalTopic(id="tpc_b", name="B"),
+    ]
+    workspace = _ws_with(version=0, topics=topics).model_dump(by_alias=True)
+    col = MagicMock()
+    col.find_one = AsyncMock(return_value=workspace)
+    col.update_one = AsyncMock()
+
+    with (
+        patch("app.services.taxonomy.get_collection", return_value=col),
+        patch(
+            "app.services.taxonomy.azure_openai.chat_json",
+            AsyncMock(return_value={"oops": "no edges here"}),
+        ),
+        pytest.raises(DependencyInferenceError),
+    ):
+        await taxonomy.infer_dependencies(
+            tenant_id="ten_abc", workspace_id="wsp_abc"
+        )
+
+    col.update_one.assert_not_awaited()
+
+
+# ── Missing workspace ────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_infer_deps_missing_workspace_raises():
+    col = MagicMock()
+    col.find_one = AsyncMock(return_value=None)
+    col.update_one = AsyncMock()
+
+    with (
+        patch("app.services.taxonomy.get_collection", return_value=col),
+        pytest.raises(DependencyInferenceError),
+    ):
+        await taxonomy.infer_dependencies(
+            tenant_id="ten_abc", workspace_id="wsp_nope"
+        )
+
+    col.update_one.assert_not_awaited()
