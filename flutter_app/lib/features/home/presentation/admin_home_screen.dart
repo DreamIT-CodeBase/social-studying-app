@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
+import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/documents/presentation/documents_list_screen.dart';
@@ -40,6 +42,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
       orElse: () => null,
     );
 
+    final isDocumentsTab = _tabs[_selectedIndex].label == 'Documents';
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -47,6 +50,17 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
         actions: [
+          // Sprint 2.13 — taxonomy viewer entry point. Only meaningful
+          // inside the Documents tab and only when the user has a
+          // workspace; tucked into the AppBar to avoid stealing space
+          // from the documents FAB.
+          if (isDocumentsTab && workspaceId != null)
+            IconButton(
+              tooltip: 'Topic taxonomy',
+              icon: const Icon(Icons.account_tree_outlined),
+              onPressed: () =>
+                  context.push('${AppRoutes.adminTaxonomy}/$workspaceId'),
+            ),
           Padding(
             padding: const EdgeInsets.only(right: Spacing.lg),
             child: GestureDetector(

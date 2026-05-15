@@ -8,6 +8,7 @@ import 'package:social_study_app/features/auth/presentation/login_screen.dart';
 import 'package:social_study_app/features/documents/presentation/document_polling_screen.dart';
 import 'package:social_study_app/features/home/presentation/admin_home_screen.dart';
 import 'package:social_study_app/features/home/presentation/student_home_screen.dart';
+import 'package:social_study_app/features/taxonomy/presentation/taxonomy_viewer_screen.dart';
 
 part 'router.g.dart';
 
@@ -68,6 +69,12 @@ GoRouter router(RouterRef ref) {
         builder: (_, state) => DocumentPollingScreen(
           workspaceId: state.pathParameters['workspaceId']!,
           documentId: state.pathParameters['documentId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.adminTaxonomyViewer,
+        builder: (_, state) => TaxonomyViewerScreen(
+          workspaceId: state.pathParameters['workspaceId']!,
         ),
       ),
       GoRoute(
