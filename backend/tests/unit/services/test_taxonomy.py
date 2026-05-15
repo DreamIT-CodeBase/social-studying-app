@@ -18,7 +18,12 @@ import pytest
 from app.models.document import TopicTag
 from app.models.workspace import CanonicalTopic, Taxonomy, Workspace, WorkspaceSettings
 from app.services import taxonomy
-from app.services.taxonomy import DependencyInferenceError, TaxonomyMergeError
+from app.services.taxonomy import (
+    DependencyInferenceError,
+    TaxonomyMergeError,
+    TaxonomyValidationError,
+    TaxonomyVersionConflict,
+)
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -885,3 +890,432 @@ async def test_infer_deps_missing_workspace_raises():
         )
 
     col.update_one.assert_not_awaited()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sprint 2.11 — validate_taxonomy_shape
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_validate_empty_taxonomy_is_allowed():
+    # POST /regenerate resets to empty before replay — must not throw.
+    taxonomy.validate_taxonomy_shape([])
+
+
+def test_validate_happy_path():
+    taxonomy.validate_taxonomy_shape([
+        CanonicalTopic(id="tpc_a", name="Cells"),
+        CanonicalTopic(id="tpc_b", name="Photosynthesis", parent_id="tpc_a"),
+        CanonicalTopic(id="tpc_c", name="Mitosis", parent_id="tpc_a"),
+    ])
+
+
+def test_validate_rejects_duplicate_ids():
+    with pytest.raises(TaxonomyValidationError, match="Duplicate topic id"):
+        taxonomy.validate_taxonomy_shape([
+            CanonicalTopic(id="tpc_a", name="One"),
+            CanonicalTopic(id="tpc_a", name="Two"),  # same id
+        ])
+
+
+def test_validate_rejects_dangling_parent_id():
+    with pytest.raises(TaxonomyValidationError, match="unknown parent_id"):
+        taxonomy.validate_taxonomy_shape([
+            CanonicalTopic(id="tpc_a", name="One", parent_id="tpc_ghost"),
+        ])
+
+
+def test_validate_rejects_self_parent():
+    with pytest.raises(TaxonomyValidationError, match="cannot be its own parent"):
+        taxonomy.validate_taxonomy_shape([
+            CanonicalTopic(id="tpc_a", name="One", parent_id="tpc_a"),
+        ])
+
+
+def test_validate_rejects_two_node_cycle():
+    with pytest.raises(TaxonomyValidationError, match="Cycle"):
+        taxonomy.validate_taxonomy_shape([
+            CanonicalTopic(id="tpc_a", name="A", parent_id="tpc_b"),
+            CanonicalTopic(id="tpc_b", name="B", parent_id="tpc_a"),
+        ])
+
+
+def test_validate_rejects_three_node_cycle():
+    with pytest.raises(TaxonomyValidationError, match="Cycle"):
+        taxonomy.validate_taxonomy_shape([
+            CanonicalTopic(id="tpc_a", name="A", parent_id="tpc_b"),
+            CanonicalTopic(id="tpc_b", name="B", parent_id="tpc_c"),
+            CanonicalTopic(id="tpc_c", name="C", parent_id="tpc_a"),
+        ])
+
+
+def test_validate_rejects_case_insensitive_duplicate_names():
+    with pytest.raises(TaxonomyValidationError, match="Duplicate topic name"):
+        taxonomy.validate_taxonomy_shape([
+            CanonicalTopic(id="tpc_a", name="Photosynthesis"),
+            CanonicalTopic(id="tpc_b", name="photosynthesis"),  # case differs
+        ])
+
+
+def test_validate_rejects_empty_name():
+    with pytest.raises(TaxonomyValidationError, match="empty name"):
+        taxonomy.validate_taxonomy_shape([
+            CanonicalTopic(id="tpc_a", name="   "),  # whitespace only
+        ])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sprint 2.11 — replace_taxonomy (PUT seam)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_replace_taxonomy_happy_path_writes_and_returns_refreshed():
+    initial = _ws(version=4, topics=[
+        CanonicalTopic(id="tpc_old", name="Old"),
+    ])
+    refreshed = _ws(version=5, topics=[
+        CanonicalTopic(id="tpc_new", name="Renamed"),
+    ])
+    col = MagicMock()
+    col.find_one = AsyncMock(side_effect=[
+        initial.model_dump(by_alias=True),    # initial read
+        refreshed.model_dump(by_alias=True),  # post-write re-read
+    ])
+    col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
+
+    with patch("app.services.taxonomy.get_collection", return_value=col):
+        result = await taxonomy.replace_taxonomy(
+            tenant_id="ten_abc",
+            workspace_id="wsp_abc",
+            expected_version=4,
+            topics=[CanonicalTopic(id="tpc_new", name="Renamed")],
+        )
+
+    assert result.taxonomy_version == 5
+    assert result.taxonomy.topics[0].name == "Renamed"
+    # CAS filter must include the expected version.
+    update_args = col.update_one.await_args.args
+    assert update_args[0]["taxonomy_version"] == 4
+
+
+@pytest.mark.asyncio
+async def test_replace_taxonomy_propagates_validation_error_before_read():
+    """Validation must run BEFORE Cosmos reads to avoid a wasted round trip."""
+    col = MagicMock()
+    col.find_one = AsyncMock()
+    col.update_one = AsyncMock()
+
+    with (
+        patch("app.services.taxonomy.get_collection", return_value=col),
+        pytest.raises(TaxonomyValidationError),
+    ):
+        await taxonomy.replace_taxonomy(
+            tenant_id="ten_abc",
+            workspace_id="wsp_abc",
+            expected_version=0,
+            topics=[
+                CanonicalTopic(id="tpc_a", name="A", parent_id="tpc_a"),  # self-loop
+            ],
+        )
+
+    col.find_one.assert_not_awaited()
+    col.update_one.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_replace_taxonomy_version_conflict_raises():
+    initial = _ws(version=4, topics=[])
+    col = MagicMock()
+    col.find_one = AsyncMock(return_value=initial.model_dump(by_alias=True))
+    col.update_one = AsyncMock(return_value=MagicMock(matched_count=0))
+
+    with (
+        patch("app.services.taxonomy.get_collection", return_value=col),
+        pytest.raises(TaxonomyVersionConflict),
+    ):
+        await taxonomy.replace_taxonomy(
+            tenant_id="ten_abc",
+            workspace_id="wsp_abc",
+            expected_version=4,
+            topics=[CanonicalTopic(id="tpc_a", name="A")],
+        )
+
+
+@pytest.mark.asyncio
+async def test_replace_taxonomy_missing_workspace_raises():
+    col = MagicMock()
+    col.find_one = AsyncMock(return_value=None)
+    col.update_one = AsyncMock()
+
+    with (
+        patch("app.services.taxonomy.get_collection", return_value=col),
+        pytest.raises(RuntimeError, match="not found"),
+    ):
+        await taxonomy.replace_taxonomy(
+            tenant_id="ten_abc",
+            workspace_id="wsp_missing",
+            expected_version=0,
+            topics=[CanonicalTopic(id="tpc_a", name="A")],
+        )
+
+    col.update_one.assert_not_awaited()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sprint 2.11 — regenerate_from_documents
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _doc_row(doc_id: str, *, created_at: str, topic_names: list[str]) -> dict:
+    """Stub the Cosmos document row shape with topic_tags populated."""
+    return {
+        "_id": doc_id,
+        "tenant_id": "ten_abc",
+        "workspace_id": "wsp_abc",
+        "uploaded_by": "usr_abc",
+        "filename": f"{doc_id}.pdf",
+        "blob_url": "https://blob/x",
+        "file_size_bytes": 100,
+        "doc_type": "pdf",
+        "status": "ready",
+        "chunk_count": 0,
+        "moderation_flagged": False,
+        "topic_tags": [
+            {"name": n, "confidence": 1.0, "source": "ai"} for n in topic_names
+        ],
+        "created_at": created_at,
+        "updated_at": created_at,
+    }
+
+
+def _cursor(rows: list[dict]) -> MagicMock:
+    """Pseudo-cursor with chained .sort().to_list() like Motor."""
+    cursor = MagicMock()
+    cursor.sort = MagicMock(return_value=cursor)
+    cursor.to_list = AsyncMock(return_value=rows)
+    return cursor
+
+
+def _route_collections(
+    *,
+    workspace_states: list[dict],
+    doc_rows: list[dict],
+):
+    """Build a get_collection side_effect that returns separate mocks for
+    DOCUMENTS (chunk find for topic resolution) vs WORKSPACES (taxonomy
+    state). Workspaces' find_one cycles through ``workspace_states`` so
+    the test can simulate the rolling state machine across writes.
+    """
+    from app.core.database import DOCUMENTS, WORKSPACES
+
+    docs_col = MagicMock()
+    docs_col.find = MagicMock(return_value=_cursor(doc_rows))
+    docs_col.find_one = AsyncMock(return_value=doc_rows[0] if doc_rows else None)
+
+    ws_col = MagicMock()
+    ws_col.find_one = AsyncMock(side_effect=list(workspace_states))
+    ws_col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
+
+    def _route(_tenant_id, collection):
+        if collection == DOCUMENTS:
+            return docs_col
+        if collection == WORKSPACES:
+            return ws_col
+        raise AssertionError(f"Unexpected collection: {collection}")
+
+    return docs_col, ws_col, _route
+
+
+@pytest.mark.asyncio
+async def test_regenerate_with_no_docs_clears_taxonomy_and_skips_replay():
+    """Workspace with zero documents → taxonomy reset only, no merge calls."""
+    initial = _ws(version=4, topics=[
+        CanonicalTopic(id="tpc_old", name="Stale"),
+    ])
+    reset = _ws(version=5, topics=[])
+    _docs_col, ws_col, route = _route_collections(
+        workspace_states=[
+            initial.model_dump(by_alias=True),   # initial read
+            reset.model_dump(by_alias=True),     # final read
+        ],
+        doc_rows=[],
+    )
+
+    with (
+        patch("app.services.taxonomy.get_collection", side_effect=route),
+        patch(
+            "app.services.taxonomy.merge_into_workspace", AsyncMock()
+        ) as mock_merge,
+        patch(
+            "app.services.taxonomy.infer_dependencies", AsyncMock()
+        ) as mock_deps,
+    ):
+        outcome = await taxonomy.regenerate_from_documents(
+            tenant_id="ten_abc", workspace_id="wsp_abc"
+        )
+
+    # Taxonomy was wiped via update_one with the existing version filter.
+    ws_col.update_one.assert_awaited_once()
+    update_args = ws_col.update_one.await_args.args
+    assert update_args[0]["taxonomy_version"] == 4
+    assert update_args[1]["$set"]["taxonomy_version"] == 5
+    assert update_args[1]["$set"]["taxonomy"]["topics"] == []
+
+    # Empty workspace: no merges happen, but deps still runs (it'll
+    # short-circuit on <2 topics internally — tested elsewhere).
+    mock_merge.assert_not_awaited()
+    mock_deps.assert_awaited_once()
+
+    assert outcome.documents_merged == 0
+    assert outcome.topics_total == 0
+    assert outcome.final_version == 5
+
+
+@pytest.mark.asyncio
+async def test_regenerate_replays_docs_in_upload_order():
+    """Each doc's topic_tags should get merged exactly once, in created_at
+    order, before final dep inference."""
+    initial = _ws(version=2, topics=[CanonicalTopic(id="tpc_old", name="Stale")])
+    final = _ws(version=5, topics=[
+        CanonicalTopic(id="tpc_new1", name="Cells"),
+        CanonicalTopic(id="tpc_new2", name="Photosynthesis"),
+    ])
+
+    docs = [
+        _doc_row("doc_a", created_at="2026-05-01T00:00:00+00:00",
+                 topic_names=["Cells"]),
+        _doc_row("doc_b", created_at="2026-05-02T00:00:00+00:00",
+                 topic_names=["Photosynthesis"]),
+    ]
+    # regenerate_from_documents reads workspace twice: once at start
+    # (initial), once at the end after merge+deps (final). Merges + deps
+    # are mocked so they don't trigger their own workspace reads.
+    _docs_col, _ws_col, route = _route_collections(
+        workspace_states=[
+            initial.model_dump(by_alias=True),
+            final.model_dump(by_alias=True),
+        ],
+        doc_rows=docs,
+    )
+
+    with (
+        patch("app.services.taxonomy.get_collection", side_effect=route),
+        patch(
+            "app.services.taxonomy.merge_into_workspace", AsyncMock()
+        ) as mock_merge,
+        patch(
+            "app.services.taxonomy.infer_dependencies", AsyncMock()
+        ) as mock_deps,
+    ):
+        outcome = await taxonomy.regenerate_from_documents(
+            tenant_id="ten_abc", workspace_id="wsp_abc"
+        )
+
+    # Exactly two merge calls in the docs' created_at order.
+    assert mock_merge.await_count == 2
+    first_call_doc = mock_merge.await_args_list[0].kwargs["document_id"]
+    second_call_doc = mock_merge.await_args_list[1].kwargs["document_id"]
+    assert first_call_doc == "doc_a"
+    assert second_call_doc == "doc_b"
+    # Dep inference runs once, after all merges.
+    mock_deps.assert_awaited_once()
+
+    assert outcome.documents_merged == 2
+    assert outcome.topics_total == 2
+    assert outcome.final_version == 5
+
+
+@pytest.mark.asyncio
+async def test_regenerate_continues_when_one_docs_merge_fails():
+    """A bad merge response for ONE doc should not abort the whole regen."""
+    initial = _ws(version=0, topics=[])
+    final = _ws(version=2, topics=[CanonicalTopic(id="tpc_only", name="Cells")])
+    docs = [
+        _doc_row("doc_a", created_at="2026-05-01T00:00:00+00:00",
+                 topic_names=["Cells"]),
+        _doc_row("doc_b", created_at="2026-05-02T00:00:00+00:00",
+                 topic_names=["Bogus"]),
+    ]
+    _docs_col, _ws_col, route = _route_collections(
+        workspace_states=[
+            initial.model_dump(by_alias=True),
+            final.model_dump(by_alias=True),
+        ],
+        doc_rows=docs,
+    )
+
+    merge_results = [None, TaxonomyMergeError("model glitch")]
+
+    async def _merge_side(*args, **kwargs):
+        r = merge_results.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    with (
+        patch("app.services.taxonomy.get_collection", side_effect=route),
+        patch(
+            "app.services.taxonomy.merge_into_workspace",
+            AsyncMock(side_effect=_merge_side),
+        ) as mock_merge,
+        patch(
+            "app.services.taxonomy.infer_dependencies", AsyncMock()
+        ) as mock_deps,
+    ):
+        outcome = await taxonomy.regenerate_from_documents(
+            tenant_id="ten_abc", workspace_id="wsp_abc"
+        )
+
+    # Both merge attempts ran; deps inference still ran at the end.
+    assert mock_merge.await_count == 2
+    mock_deps.assert_awaited_once()
+    # Only the successful doc counted toward documents_merged.
+    assert outcome.documents_merged == 1
+
+
+@pytest.mark.asyncio
+async def test_regenerate_continues_when_dep_inference_fails():
+    """A deps inference failure leaves the taxonomy intact (parent-less)."""
+    initial = _ws(version=0, topics=[])
+    final = _ws(version=2, topics=[CanonicalTopic(id="tpc_only", name="X")])
+    docs = [
+        _doc_row("doc_a", created_at="2026-05-01T00:00:00+00:00",
+                 topic_names=["X"]),
+    ]
+    _docs_col, _ws_col, route = _route_collections(
+        workspace_states=[
+            initial.model_dump(by_alias=True),
+            final.model_dump(by_alias=True),
+        ],
+        doc_rows=docs,
+    )
+
+    with (
+        patch("app.services.taxonomy.get_collection", side_effect=route),
+        patch("app.services.taxonomy.merge_into_workspace", AsyncMock()),
+        patch(
+            "app.services.taxonomy.infer_dependencies",
+            AsyncMock(side_effect=DependencyInferenceError("model glitch")),
+        ),
+    ):
+        outcome = await taxonomy.regenerate_from_documents(
+            tenant_id="ten_abc", workspace_id="wsp_abc"
+        )
+
+    assert outcome.documents_merged == 1
+    assert outcome.topics_total == 1
+
+
+@pytest.mark.asyncio
+async def test_regenerate_missing_workspace_raises():
+    col = MagicMock()
+    col.find_one = AsyncMock(return_value=None)
+
+    with (
+        patch("app.services.taxonomy.get_collection", return_value=col),
+        pytest.raises(RuntimeError, match="not found"),
+    ):
+        await taxonomy.regenerate_from_documents(
+            tenant_id="ten_abc", workspace_id="wsp_missing"
+        )

@@ -121,3 +121,38 @@ class WorkspaceResponse(CosmosDocument.__base__):
             is_active=doc.is_active,
             created_at=doc.created_at,
         )
+
+
+# ── Taxonomy request / response schemas (Sprint 2.11) ─────────────────────────
+
+
+class TaxonomyUpdate(CosmosDocument.__base__):
+    """Payload for ``PUT /workspaces/{id}/taxonomy``.
+
+    Admin sends the full new shape of the taxonomy plus the version they
+    read. Optimistic concurrency: server CAS-writes only if the
+    workspace's stored ``taxonomy_version`` still matches; otherwise
+    returns 409 so the UI can re-fetch and merge.
+    """
+
+    topics: list[CanonicalTopic]
+    taxonomy_version: int = Field(
+        ge=0,
+        description="The taxonomy_version the admin started editing against",
+    )
+
+
+class TaxonomyResponse(CosmosDocument.__base__):
+    """Returned by GET and PUT. Mirrors the on-disk shape plus version."""
+
+    topics: list[CanonicalTopic]
+    taxonomy_version: int
+    last_merged_at: str | None = None
+
+    @classmethod
+    def from_workspace(cls, workspace: Workspace) -> "TaxonomyResponse":
+        return cls(
+            topics=workspace.taxonomy.topics,
+            taxonomy_version=workspace.taxonomy_version,
+            last_merged_at=workspace.taxonomy.last_merged_at,
+        )

@@ -43,9 +43,9 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
-from app.core.database import WORKSPACES, get_collection
+from app.core.database import DOCUMENTS, WORKSPACES, get_collection
 from app.models.base import utc_now
-from app.models.document import TopicTag
+from app.models.document import Document, TopicTag
 from app.models.workspace import CanonicalTopic, Taxonomy, Workspace
 from app.prompts import load_prompt, render, split_system_user
 from app.services import azure_openai
@@ -658,3 +658,292 @@ def _sanitize_edges(
             cursor = final.get(cursor)
 
     return final, dropped
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sprint 2.11 — Admin CRUD + regenerate
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TaxonomyValidationError(ValueError):
+    """Admin's PUT payload failed shape validation.
+
+    Raised by :func:`validate_taxonomy_shape`. API layer maps to HTTP 422.
+    """
+
+
+class TaxonomyVersionConflict(RuntimeError):
+    """Admin's PUT lost the CAS race against another writer.
+
+    Caller (API layer) maps to HTTP 409 so the UI can re-fetch and merge.
+    """
+
+
+def validate_taxonomy_shape(topics: list[CanonicalTopic]) -> None:
+    """Reject taxonomies the admin shouldn't be allowed to save.
+
+    Cheaper than letting Cosmos accept a broken graph that then poisons
+    every downstream Sprint 3 retrieval. Four checks:
+
+    1. Every topic id is unique (no Cosmos confusion on $set).
+    2. parent_id, if set, points to a topic in the same payload (no
+       dangling refs that would orphan-render in the Flutter tree view).
+    3. No cycles. DFS up the parent chain from each node; revisit = cycle.
+       Catches both 2-node and N-node cycles.
+    4. Names are case-insensitively unique. Two topics named "Photosynthesis"
+       and "photosynthesis" would both be valid distinct rows in Cosmos
+       but the alias map in 2.9 would collapse them, so we block at write.
+
+    Empty taxonomy (zero topics) is legal — used by ``POST /regenerate``
+    as the first step before replay.
+    """
+    if not topics:
+        return
+
+    # 1. Unique ids
+    ids = [t.id for t in topics]
+    if len(ids) != len(set(ids)):
+        seen: set[str] = set()
+        for tid in ids:
+            if tid in seen:
+                raise TaxonomyValidationError(f"Duplicate topic id: {tid}")
+            seen.add(tid)
+
+    # 2. parent_id refs exist
+    id_set = set(ids)
+    for t in topics:
+        if t.parent_id is not None and t.parent_id not in id_set:
+            raise TaxonomyValidationError(
+                f"Topic {t.id} references unknown parent_id {t.parent_id}"
+            )
+        if t.parent_id == t.id:
+            raise TaxonomyValidationError(
+                f"Topic {t.id} cannot be its own parent"
+            )
+
+    # 3. No cycles. Walk up from each node.
+    parent_map = {t.id: t.parent_id for t in topics}
+    for start in topics:
+        visited = {start.id}
+        cursor = parent_map.get(start.id)
+        while cursor is not None:
+            if cursor in visited:
+                raise TaxonomyValidationError(
+                    f"Cycle detected starting at {start.id} (through {cursor})"
+                )
+            visited.add(cursor)
+            cursor = parent_map.get(cursor)
+
+    # 4. Case-insensitive name uniqueness
+    name_lookup: dict[str, str] = {}
+    for t in topics:
+        if not t.name.strip():
+            raise TaxonomyValidationError(f"Topic {t.id} has empty name")
+        key = t.name.casefold()
+        if key in name_lookup:
+            raise TaxonomyValidationError(
+                f"Duplicate topic name {t.name!r} on {t.id} and {name_lookup[key]}"
+            )
+        name_lookup[key] = t.id
+
+
+async def replace_taxonomy(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    expected_version: int,
+    topics: list[CanonicalTopic],
+) -> Workspace:
+    """Admin-driven full replacement of a workspace's taxonomy.
+
+    Validates the payload, runs the CAS write, returns the refreshed
+    Workspace on success. Caller (API layer) is responsible for auth.
+
+    Raises:
+        TaxonomyValidationError: payload shape rejected.
+        TaxonomyVersionConflict: another writer bumped the version
+            between admin's GET and PUT.
+        RuntimeError: workspace_id not found in tenant.
+    """
+    validate_taxonomy_shape(topics)
+
+    workspace = await _read_workspace(tenant_id, workspace_id)
+    if workspace is None:
+        raise RuntimeError(
+            f"Workspace {workspace_id} not found in tenant {tenant_id}"
+        )
+
+    new_taxonomy = Taxonomy(
+        topics=topics,
+        # Reuse the existing timestamp — admin's PUT isn't a merge, but
+        # blanking it would lose audit info. Sprint 2.11 leaves this as
+        # "last time the system updated the taxonomy."
+        last_merged_at=workspace.taxonomy.last_merged_at,
+    )
+
+    wrote = await _conditional_write(
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        expected_version=expected_version,
+        new_taxonomy=new_taxonomy,
+    )
+    if not wrote:
+        raise TaxonomyVersionConflict(
+            f"taxonomy_version conflict on {workspace_id}: "
+            f"client sent {expected_version}, server has different value"
+        )
+    # Re-read so the caller sees the bumped version + persisted state.
+    refreshed = await _read_workspace(tenant_id, workspace_id)
+    assert refreshed is not None, "workspace vanished mid-write"
+    return refreshed
+
+
+@dataclass(frozen=True, slots=True)
+class RegenerateOutcome:
+    """Telemetry from a regenerate run, surfaced via the API's 202 body."""
+
+    documents_merged: int      # how many docs replayed through merge
+    topics_total: int          # canonical topics after replay
+    final_version: int         # taxonomy_version on disk after replay
+
+
+async def regenerate_from_documents(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+) -> RegenerateOutcome:
+    """Rebuild a workspace's canonical taxonomy by replaying each document's
+    persisted ``TopicTag`` list through the merge + dep-inference pipeline.
+
+    Triggered by ``POST /workspaces/{id}/taxonomy/regenerate``. Use cases:
+    - Admin manually edited the taxonomy badly and wants a clean rebuild.
+    - The merge prompt was updated and existing taxonomies are stale.
+    - A workspace's docs were re-uploaded out of order and aliases drifted.
+
+    Reuses per-doc ``TopicTag`` lists (already populated by 2.5). Does
+    NOT re-run topic extraction — that would re-pay for GPT-4o and 2.5's
+    output is the ground truth per document. Only the cross-doc merge +
+    dep inference happen here.
+
+    Replay order is by ``created_at`` ascending so the same set of
+    documents always produces the same canonical taxonomy on rebuild —
+    important for idempotency under retry.
+
+    Note: This is a long-running operation (one GPT-4o merge per
+    document + one dep inference at the end). API layer schedules it as
+    a BackgroundTask and returns 202; this function logs progress so an
+    operator can tail the worker logs to watch it run.
+    """
+    workspace = await _read_workspace(tenant_id, workspace_id)
+    if workspace is None:
+        raise RuntimeError(
+            f"Workspace {workspace_id} not found in tenant {tenant_id}"
+        )
+
+    # Wipe the existing taxonomy under CAS so no concurrent merge can
+    # interleave with the replay. Retry once on conflict — concurrent
+    # extraction workers should be rare relative to admin actions.
+    reset_attempts = 0
+    while True:
+        wrote = await _conditional_write(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            expected_version=workspace.taxonomy_version,
+            new_taxonomy=Taxonomy(),
+        )
+        if wrote:
+            break
+        reset_attempts += 1
+        if reset_attempts >= _MAX_MERGE_RETRIES:
+            raise RuntimeError(
+                f"regenerate could not reset taxonomy for {workspace_id} "
+                f"after {_MAX_MERGE_RETRIES} attempts"
+            )
+        workspace = await _read_workspace(tenant_id, workspace_id)
+        if workspace is None:
+            raise RuntimeError(
+                f"Workspace {workspace_id} vanished during regenerate"
+            )
+
+    logger.info(
+        "Regenerate: reset taxonomy on workspace=%s (was version=%d)",
+        workspace_id,
+        workspace.taxonomy_version,
+    )
+
+    # Pull docs that have made it to at least topics_extracted — they have
+    # the topic_tags we need to replay. Sort by upload order for
+    # deterministic alias resolution.
+    docs = await _docs_with_topics(tenant_id=tenant_id, workspace_id=workspace_id)
+    logger.info(
+        "Regenerate: replaying %d documents for workspace=%s",
+        len(docs),
+        workspace_id,
+    )
+
+    merged_count = 0
+    for doc in docs:
+        if not doc.topic_tags:
+            continue
+        try:
+            await merge_into_workspace(
+                tenant_id=tenant_id,
+                workspace_id=workspace_id,
+                document_id=doc.id,
+                new_topics=doc.topic_tags,
+            )
+            merged_count += 1
+        except TaxonomyMergeError:
+            # A bad merge prompt response for one doc shouldn't kill the
+            # whole regen. Log and continue — the operator will see the
+            # error and can manually edit the taxonomy after.
+            logger.exception(
+                "Regenerate: merge failed for doc=%s, continuing",
+                doc.id,
+            )
+
+    # Final dep inference. Best-effort, same as the worker path — a deps
+    # failure leaves a parent-less but otherwise valid taxonomy.
+    try:
+        await infer_dependencies(
+            tenant_id=tenant_id, workspace_id=workspace_id
+        )
+    except DependencyInferenceError:
+        logger.exception(
+            "Regenerate: dep inference failed for workspace=%s, "
+            "taxonomy persists without parent edges",
+            workspace_id,
+        )
+
+    final = await _read_workspace(tenant_id, workspace_id)
+    assert final is not None, "workspace vanished mid-regenerate"
+    return RegenerateOutcome(
+        documents_merged=merged_count,
+        topics_total=len(final.taxonomy.topics),
+        final_version=final.taxonomy_version,
+    )
+
+
+async def _docs_with_topics(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+) -> list[Document]:
+    """Return non-deleted docs that have ``topic_tags`` populated.
+
+    Filter is intentionally loose on status: any doc past ``topics_extracted``
+    has tags. Docs in ``failed`` may still have partial tags if extraction
+    succeeded before downstream failure, and including them helps admins
+    rebuild over flaky historical data.
+    """
+    col = get_collection(tenant_id, DOCUMENTS)
+    cursor = col.find(
+        {
+            "workspace_id": workspace_id,
+            "tenant_id": tenant_id,
+            "deleted_at": None,
+            "topic_tags.0": {"$exists": True},
+        }
+    ).sort("created_at", 1)
+    rows = await cursor.to_list(length=None)
+    return [Document.model_validate(r) for r in rows]
