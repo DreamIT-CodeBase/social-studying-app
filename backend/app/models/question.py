@@ -8,9 +8,19 @@ from app.models.base import CosmosDocument
 
 
 class QuestionType(StrEnum):
-    mcq = "mcq"                    # multiple choice
-    short_answer = "short_answer"
-    true_false = "true_false"
+    """Question formats the generator can produce.
+
+    Sprint 3.7 calibrated five prompts: MCQ + short_answer + long_answer +
+    true_false + mathematical. Adding a new type means a new prompt file
+    in ``app/prompts/`` AND a new dispatch row in
+    :mod:`app.services.question_generation`.
+    """
+
+    mcq = "mcq"                       # multiple choice (4 options, 1 correct)
+    short_answer = "short_answer"     # 1-10 word factual recall
+    long_answer = "long_answer"       # essay-style, show your reasoning
+    true_false = "true_false"         # boolean with explanation
+    mathematical = "mathematical"     # LaTeX-aware computational, with solution steps
 
 
 class DifficultyLevel(StrEnum):
@@ -44,9 +54,18 @@ class Question(CosmosDocument):
     question_type: QuestionType
     difficulty: DifficultyLevel
     body: str
-    options: list[McqOption] = Field(default_factory=list)  # populated for MCQ
-    answer: str                    # correct answer text (or key for MCQ)
+    options: list[McqOption] = Field(default_factory=list)  # populated for MCQ only
+    answer: str                    # correct answer text (or key for MCQ; "true"/"false" for T/F)
     explanation: str = ""
+    # ── Per-type grading hints (Sprint 3.7) ──────────────────────────────────
+    # Generic list whose semantics depend on ``question_type``:
+    #   - short_answer: acceptable case-insensitive answer variants for matching
+    #   - long_answer:  rubric key points the evaluator looks for
+    #   - mathematical: solution steps (LaTeX-aware) the evaluator can check
+    #   - mcq / true_false: empty (the option list / boolean is the full grading rubric)
+    # Single field keeps Cosmos schema flat; Sprint 3.10's evaluator
+    # branches on question_type to interpret the contents.
+    grading_hints: list[str] = Field(default_factory=list)
     source_chunk_ids: list[str] = Field(default_factory=list)
     status: QuestionStatus = QuestionStatus.pending_review
     prompt_version: str = "v1.0"   # tracks which prompt generated this question

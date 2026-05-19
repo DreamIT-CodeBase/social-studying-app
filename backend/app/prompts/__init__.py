@@ -1,11 +1,14 @@
-"""Prompt files for the ingestion pipeline.
+"""Prompt files for the ingestion + question-generation pipelines.
 
 Per ``.claude/rules/ai-prompts.md`` every prompt lives in its own ``.txt``
 file with a version header. This package exposes a small loader so callers
 don't have to know the on-disk path or hand-roll Jinja-style substitution.
 
-Question-generation prompts (Sprint 3+) live in ``mcp-server/prompts/`` —
-they're tools called by the MCP server, not by the backend workers.
+Sprint 3.7 kept the question-generation prompts here (alongside the
+Sprint 2 ingestion prompts) rather than in a separate MCP server. The
+hybrid MCP layer (see ``app/mcp_tools/``) calls into them in-process;
+when we lift to a standalone MCP server later, this directory moves
+with the tools.
 """
 
 from __future__ import annotations
