@@ -117,9 +117,8 @@ async def test_ensure_index_propagates_non_409_http_error(monkeypatch):
     err = HttpResponseError(message="server boom")
     err.status_code = 500
     patched, _ = _patched_index_client(create_side_effect=err)
-    with patched:
-        with pytest.raises(ServiceUnavailableError, match="Could not create"):
-            await azure_ai_search.ensure_index("ten_abc")
+    with patched, pytest.raises(ServiceUnavailableError, match="Could not create"):
+        await azure_ai_search.ensure_index("ten_abc")
     assert azure_ai_search.index_name_for("ten_abc") not in azure_ai_search._KNOWN_INDEXES
 
 
@@ -201,12 +200,11 @@ async def test_upsert_chunks_partial_failure_raises(monkeypatch):
     patched, _ = _patched_data_client(
         upload_results=[_success("chk_a"), _failure("chk_b", "rate")]
     )
-    with patched:
-        with pytest.raises(ServiceUnavailableError, match="1/2 succeeded"):
-            await azure_ai_search.upsert_chunks(
-                tenant_id="ten_x",
-                documents=[{"id": "chk_a"}, {"id": "chk_b"}],
-            )
+    with patched, pytest.raises(ServiceUnavailableError, match="1/2 succeeded"):
+        await azure_ai_search.upsert_chunks(
+            tenant_id="ten_x",
+            documents=[{"id": "chk_a"}, {"id": "chk_b"}],
+        )
 
 
 @pytest.mark.asyncio
@@ -314,11 +312,10 @@ async def test_delete_for_document_partial_failure_raises(monkeypatch):
         search_results=[{"id": "chk_a"}, {"id": "chk_b"}],
         delete_results=[_success("chk_a"), _failure("chk_b")],
     )
-    with patched:
-        with pytest.raises(ServiceUnavailableError, match="1/2 succeeded"):
-            await azure_ai_search.delete_for_document(
-                tenant_id="ten_x", document_id="doc_abc"
-            )
+    with patched, pytest.raises(ServiceUnavailableError, match="1/2 succeeded"):
+        await azure_ai_search.delete_for_document(
+            tenant_id="ten_x", document_id="doc_abc"
+        )
 
 
 # ── chunk_to_index_doc ──────────────────────────────────────────────────────
@@ -380,3 +377,211 @@ def test_escape_odata_doubles_single_quotes():
 
 def test_escape_odata_passthrough_when_safe():
     assert azure_ai_search._escape_odata("doc_abc123") == "doc_abc123"
+
+
+# ── search_chunks (Sprint 3.5) ──────────────────────────────────────────────
+
+
+class _AsyncIter:
+    """Async-iterable stand-in for the SDK's paged search results."""
+
+    def __init__(self, rows: list[dict]):
+        self._rows = rows
+
+    def __aiter__(self):
+        async def _gen():
+            for r in self._rows:
+                yield r
+
+        return _gen()
+
+
+def _hit(idx: int, score: float = 1.0, doc: str = "doc_a") -> dict:
+    """Build a fake AI Search hit. The ``@search.score`` key is what the
+    SDK actually returns for relevance — our search_chunks reader must
+    project it onto RetrievedChunk.score.
+    """
+    return {
+        "id": f"chk_{idx}",
+        "chunk_index": idx,
+        "document_id": doc,
+        "text": f"chunk {idx}",
+        "topic_ids": [f"tpc_{idx}"],
+        "@search.score": score,
+    }
+
+
+def _client_returning(rows: list[dict]):
+    """Build a mock SearchClient that ``_data_client`` will hand back.
+
+    The client is used as an async context manager (``async with``),
+    then ``.search(**kwargs)`` returns the async iterable of rows.
+    """
+    client = MagicMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    client.search = AsyncMock(return_value=_AsyncIter(rows))
+    return client
+
+
+@pytest.mark.asyncio
+async def test_search_chunks_returns_empty_when_no_query_inputs():
+    """No text and no vector = refuse to wildcard-search the index.
+    The tool layer (Sprint 3.5) already short-circuits this case, but
+    the service must also be safe to call directly.
+    """
+    out = await azure_ai_search.search_chunks(
+        tenant_id="ten_a", workspace_id="wsp_a"
+    )
+    assert out == []
+
+
+@pytest.mark.asyncio
+async def test_search_chunks_text_only_runs_bm25_and_projects_score():
+    rows = [_hit(0, score=0.7), _hit(1, score=0.55)]
+    client = _client_returning(rows)
+    with patch(
+        "app.services.azure_ai_search._data_client", return_value=client
+    ):
+        result = await azure_ai_search.search_chunks(
+            tenant_id="ten_a",
+            workspace_id="wsp_a",
+            query_text="newton",
+            top_k=4,
+        )
+
+    client.search.assert_awaited_once()
+    kwargs = client.search.await_args.kwargs
+    assert kwargs["search_text"] == "newton"
+    assert "vector_queries" not in kwargs
+    assert kwargs["top"] == 4
+    assert kwargs["filter"] == "workspace_id eq 'wsp_a'"
+    assert [c.chunk_id for c in result] == ["chk_0", "chk_1"]
+    assert result[0].score == 0.7
+
+
+@pytest.mark.asyncio
+async def test_search_chunks_topic_filter_uses_or_composition():
+    """Two topic_ids → OData ``topic_ids/any(t: t eq '..' or t eq '..')``."""
+    client = _client_returning([])
+    with patch(
+        "app.services.azure_ai_search._data_client", return_value=client
+    ):
+        await azure_ai_search.search_chunks(
+            tenant_id="ten_a",
+            workspace_id="wsp_a",
+            topic_ids=["tpc_1", "tpc_2"],
+            query_text="x",
+        )
+
+    flt = client.search.await_args.kwargs["filter"]
+    assert flt.startswith("workspace_id eq 'wsp_a'")
+    assert "topic_ids/any(t:" in flt
+    assert "t eq 'tpc_1'" in flt
+    assert "t eq 'tpc_2'" in flt
+    assert " or " in flt
+
+
+@pytest.mark.asyncio
+async def test_search_chunks_hybrid_passes_vector_query_to_sdk():
+    client = _client_returning([_hit(0)])
+    vec = [0.1, 0.2, 0.3]
+    with patch(
+        "app.services.azure_ai_search._data_client", return_value=client
+    ):
+        await azure_ai_search.search_chunks(
+            tenant_id="ten_a",
+            workspace_id="wsp_a",
+            query_text="x",
+            query_vector=vec,
+            top_k=3,
+        )
+
+    kwargs = client.search.await_args.kwargs
+    assert "vector_queries" in kwargs
+    vq = kwargs["vector_queries"][0]
+    assert list(vq.vector) == vec
+    assert vq.fields == "embedding"
+
+
+@pytest.mark.asyncio
+async def test_search_chunks_returns_empty_on_index_not_found():
+    """A workspace whose chunks index hasn't been created yet is the
+    normal "empty workspace" state. Don't propagate as an error.
+    """
+    client = MagicMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    client.search = AsyncMock(side_effect=ResourceNotFoundError("no index"))
+    with patch(
+        "app.services.azure_ai_search._data_client", return_value=client
+    ):
+        out = await azure_ai_search.search_chunks(
+            tenant_id="ten_a", workspace_id="wsp_a", query_text="x"
+        )
+    assert out == []
+
+
+@pytest.mark.asyncio
+async def test_search_chunks_treats_404_http_error_as_empty():
+    """Some SDK paths surface "index not found" as an HttpResponseError
+    with status_code=404 rather than ResourceNotFoundError. Handle both
+    paths the same way.
+    """
+    err = HttpResponseError(message="not found")
+    err.status_code = 404
+    client = MagicMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    client.search = AsyncMock(side_effect=err)
+    with patch(
+        "app.services.azure_ai_search._data_client", return_value=client
+    ):
+        out = await azure_ai_search.search_chunks(
+            tenant_id="ten_a", workspace_id="wsp_a", query_text="x"
+        )
+    assert out == []
+
+
+@pytest.mark.asyncio
+async def test_search_chunks_wraps_other_http_errors_as_service_unavailable():
+    """Non-404 transport failures should be retryable from the caller's
+    point of view — surface as ServiceUnavailableError so the worker /
+    endpoint layer can decide whether to retry or fail the request.
+    """
+    err = HttpResponseError(message="500 internal")
+    err.status_code = 500
+    client = MagicMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    client.search = AsyncMock(side_effect=err)
+    with patch(
+        "app.services.azure_ai_search._data_client", return_value=client
+    ), pytest.raises(ServiceUnavailableError):
+        await azure_ai_search.search_chunks(
+            tenant_id="ten_a", workspace_id="wsp_a", query_text="x"
+        )
+
+
+# ── _build_filter ───────────────────────────────────────────────────────────
+
+
+def test_build_filter_workspace_only():
+    assert (
+        azure_ai_search._build_filter(workspace_id="wsp_a", topic_ids=[])
+        == "workspace_id eq 'wsp_a'"
+    )
+
+
+def test_build_filter_escapes_workspace_quote():
+    f = azure_ai_search._build_filter(workspace_id="wsp_o'reilly", topic_ids=[])
+    assert "'wsp_o''reilly'" in f
+
+
+def test_build_filter_with_topics_uses_or_composition():
+    f = azure_ai_search._build_filter(
+        workspace_id="wsp_a", topic_ids=["tpc_1", "tpc_2"]
+    )
+    assert f == (
+        "workspace_id eq 'wsp_a' and topic_ids/any(t: t eq 'tpc_1' or t eq 'tpc_2')"
+    )

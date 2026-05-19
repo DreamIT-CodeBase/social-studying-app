@@ -389,6 +389,196 @@ def _escape_odata(value: str) -> str:
     return value.replace("'", "''")
 
 
+# ── Retrieval (Sprint 3.5) ──────────────────────────────────────────────────
+
+
+from dataclasses import dataclass  # noqa: E402  — kept near the dataclass it defines
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievedChunk:
+    """One chunk returned by :func:`search_chunks` with its relevance score.
+
+    Field names match the index schema (see :func:`_build_index_definition`)
+    so a caller can serialize this straight into a tool response or LLM
+    grounding payload.
+    """
+
+    chunk_id: str
+    chunk_index: int
+    document_id: str
+    text: str
+    topic_ids: list[str]
+    score: float
+
+
+async def search_chunks(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    topic_ids: list[str] | None = None,
+    query_text: str | None = None,
+    query_vector: list[float] | None = None,
+    top_k: int = 5,
+) -> list[RetrievedChunk]:
+    """Search the tenant's chunks index, returning the top relevance hits.
+
+    Search mode is chosen by which inputs are populated:
+
+    - ``query_vector`` only          → pure vector k-NN (semantic).
+    - ``query_text`` only            → BM25 keyword search (lexical fallback,
+      useful for exact-phrase questions Sprint 3 may want).
+    - Both                           → hybrid: AI Search combines text +
+      vector scores via the index's default fusion. Best default for
+      open-ended student queries.
+    - Neither                        → returns ``[]`` immediately. Refusing
+      to issue a wildcard ``*`` search is intentional — it would return
+      arbitrary chunks and is almost always a caller bug.
+
+    Filters are AND-composed against the index. ``workspace_id`` is
+    ALWAYS applied (defence in depth even though the index is per-tenant).
+    ``topic_ids`` are OR-composed via ``topic_ids/any(t: t eq '...')`` —
+    a chunk that touches ANY of the requested topics is a match.
+
+    Args:
+        tenant_id: routes to the tenant's per-tenant chunks index.
+        workspace_id: hard filter — only this workspace's chunks come back.
+        topic_ids: optional subset of canonical topic ids to constrain to.
+            Empty / None = no topic constraint.
+        query_text: optional. If set, runs BM25 over the ``text`` field.
+        query_vector: optional. If set, runs k-NN over the ``embedding``
+            field. Length MUST match the index dim
+            (``settings.azure_openai_embedding_dim``) — Search rejects
+            mismatches with a 400.
+        top_k: how many hits to return. Capped at 50 by the SDK; we bound
+            at 50 here too for predictability.
+
+    Returns:
+        List of :class:`RetrievedChunk` ordered by relevance (highest
+        score first). Empty list if no inputs are provided OR if the
+        index doesn't exist yet (e.g. workspace has had no documents
+        successfully vectorize).
+
+    Raises:
+        ServiceUnavailableError: Search not configured or transport
+            failure on the search call. ``ResourceNotFoundError`` (index
+            doesn't exist) is caught and converted to an empty list — that's
+            a normal "empty workspace" state, not an error.
+    """
+    if not query_text and not query_vector:
+        return []
+    if top_k < 1:
+        return []
+    top_k = min(top_k, 50)
+
+    name = index_name_for(tenant_id)
+    filter_expr = _build_filter(workspace_id=workspace_id, topic_ids=topic_ids or [])
+
+    try:
+        async with _data_client(name) as client:
+            kwargs: dict[str, Any] = {
+                "filter": filter_expr,
+                "select": [
+                    "id",
+                    "chunk_index",
+                    "document_id",
+                    "text",
+                    "topic_ids",
+                ],
+                "top": top_k,
+            }
+            if query_text:
+                kwargs["search_text"] = query_text
+            if query_vector is not None:
+                # Import locally so module import doesn't require the model
+                # being present (eases unit testing of error paths).
+                from azure.search.documents.models import VectorizedQuery
+
+                kwargs["vector_queries"] = [
+                    VectorizedQuery(
+                        vector=list(query_vector),
+                        k_nearest_neighbors=top_k,
+                        fields="embedding",
+                    )
+                ]
+
+            paged = await client.search(**kwargs)
+            out: list[RetrievedChunk] = []
+            async for raw in paged:
+                out.append(_row_to_chunk(raw))
+            logger.info(
+                "AI Search query: index=%s topics=%d text=%s vector=%s hits=%d",
+                name,
+                len(topic_ids or []),
+                bool(query_text),
+                query_vector is not None,
+                len(out),
+            )
+            return out
+    except ResourceNotFoundError:
+        logger.debug(
+            "AI Search retrieval: index %s does not exist yet — returning []",
+            name,
+        )
+        return []
+    except HttpResponseError as exc:
+        if getattr(exc, "status_code", None) == 404:
+            logger.debug(
+                "AI Search retrieval (404): index %s does not exist yet", name
+            )
+            return []
+        logger.exception("AI Search retrieval failed: index=%s", name)
+        raise ServiceUnavailableError(
+            f"AI Search retrieval failed for index {name}: {exc}"
+        ) from exc
+
+
+def _row_to_chunk(raw: Any) -> RetrievedChunk:
+    """Project one AI Search hit (dict-like or object) into a RetrievedChunk.
+
+    The SDK returns both shapes depending on serialization mode — guard
+    against both rather than assuming dict access works. AI Search puts
+    the relevance score under the special ``@search.score`` key.
+    """
+    if hasattr(raw, "get"):
+
+        def field(name: str, default: Any = None) -> Any:
+            return raw.get(name, default)
+
+    else:
+
+        def field(name: str, default: Any = None) -> Any:
+            return getattr(raw, name, default)
+
+    score = field("@search.score", 0.0) or 0.0
+    return RetrievedChunk(
+        chunk_id=field("id"),
+        chunk_index=int(field("chunk_index", 0) or 0),
+        document_id=field("document_id"),
+        text=field("text") or "",
+        topic_ids=list(field("topic_ids") or []),
+        score=float(score),
+    )
+
+
+def _build_filter(*, workspace_id: str, topic_ids: list[str]) -> str:
+    """Assemble the OData filter for :func:`search_chunks`.
+
+    Pulled out so unit tests can verify the filter shape without standing
+    up the whole search call. ``workspace_id`` is always present; the
+    ``topic_ids`` clause is appended only when ids are supplied.
+    """
+    parts = [f"workspace_id eq '{_escape_odata(workspace_id)}'"]
+    if topic_ids:
+        # OData ``any`` over a collection field. Build one ``t eq '<id>'``
+        # disjunct per requested topic.
+        ored = " or ".join(
+            f"t eq '{_escape_odata(tid)}'" for tid in topic_ids
+        )
+        parts.append(f"topic_ids/any(t: {ored})")
+    return " and ".join(parts)
+
+
 # ── Helpers used by the vectorization service ───────────────────────────────
 
 
