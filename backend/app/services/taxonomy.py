@@ -944,6 +944,10 @@ async def _docs_with_topics(
             "deleted_at": None,
             "topic_tags.0": {"$exists": True},
         }
-    ).sort("created_at", 1)
+    )
     rows = await cursor.to_list(length=None)
+    # Client-side sort: Cosmos MongoDB API rejects $sort without a backing
+    # index, and our documents collection doesn't define one on created_at.
+    # See chunk_storage.find_for_document for the same workaround.
+    rows.sort(key=lambda r: r.get("created_at") or "")
     return [Document.model_validate(r) for r in rows]

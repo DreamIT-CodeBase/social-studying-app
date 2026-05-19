@@ -33,10 +33,17 @@ _USER_TTL_SECONDS = 300       # 5 min — role/membership changes should propaga
 
 
 def _jwks_url() -> str:
+    """Return the JWKS endpoint for our Entra External ID (CIAM) tenant.
+
+    Project is on Entra External ID, not classic B2C — the URL form is
+    ``{tenant_id}.ciamlogin.com/{tenant_id}/discovery/v2.0/keys`` with no
+    .onmicrosoft.com domain and no policy segment. (Classic B2C used
+    ``b2clogin.com`` and a policy-scoped path; that form returns DNS
+    failures against our tenant. See memory/auth_provider_decision.md.)
+    """
     return (
-        f"https://{settings.b2c_tenant_id}.b2clogin.com/"
-        f"{settings.b2c_tenant_id}.onmicrosoft.com/"
-        f"{settings.b2c_policy_name}/discovery/v2.0/keys"
+        f"https://{settings.b2c_tenant_id}.ciamlogin.com/"
+        f"{settings.b2c_tenant_id}/discovery/v2.0/keys"
     )
 
 

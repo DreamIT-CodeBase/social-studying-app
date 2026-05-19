@@ -57,13 +57,19 @@ resource gpt4oDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-
 // embeddingCapacity so a fresh subscription without embedding quota can still
 // deploy the rest of the infra.
 //
+// SKU is GlobalStandard (not Standard) because new subscriptions ship with
+// 1000 TPM of quota under GlobalStandard.text-embedding-3-small and zero
+// under regional Standard. Using Standard fails the deployment with a
+// SKU-not-available error. GlobalStandard is region-agnostic; the
+// embedding endpoint we hit is the same.
+//
 // Sequenced after gpt4oDeployment via dependsOn — Azure rejects parallel
 // deployment ops on the same Cognitive Services account.
 resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-04-01-preview' = if (hasEmbeddingQuota) {
   parent: openAiAccount
   name: 'text-embedding-3-small'
   sku: {
-    name: 'Standard'
+    name: 'GlobalStandard'
     capacity: embeddingCapacity
   }
   properties: {

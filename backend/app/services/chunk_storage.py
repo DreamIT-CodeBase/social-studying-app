@@ -103,13 +103,20 @@ async def find_for_document(
     """Return every chunk for ``document_id`` ordered by ``chunk_index``.
 
     Used by Sprint 2.9's vectorizer to pull a document's chunk set as a
-    single ordered batch for embedding. Sorted at the DB layer so callers
-    don't have to re-sort. Filter scopes to ``document_id`` only — that's
-    the partition key and ensures the read stays inside one partition.
+    single ordered batch for embedding. Filter scopes to ``document_id``
+    only — that's the partition key and ensures the read stays inside
+    one partition.
+
+    Sort runs CLIENT-SIDE rather than via ``cursor.sort(...)`` because
+    Cosmos MongoDB API rejects sort operations unless an explicit index
+    exists on the sort field, and our chunks collection ships without
+    one. ``O(n log n)`` on ~30 chunks/doc is free; the index would need a
+    collection-creation hook we don't have today.
     """
     col = get_collection(tenant_id, CHUNKS)
-    cursor = col.find({"document_id": document_id}).sort("chunk_index", 1)
+    cursor = col.find({"document_id": document_id})
     out: list[Chunk] = []
     async for raw in cursor:
         out.append(Chunk.model_validate(raw))
+    out.sort(key=lambda c: c.chunk_index)
     return out

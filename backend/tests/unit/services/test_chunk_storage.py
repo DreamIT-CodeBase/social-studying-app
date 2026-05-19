@@ -161,9 +161,14 @@ class _FakeCursor:
 
 @pytest.mark.asyncio
 async def test_find_for_document_returns_chunks_sorted_by_index():
+    """Sort happens CLIENT-SIDE — Cosmos MongoDB rejects $sort without an
+    explicit index on chunk_index, so the service does the ordering after
+    pulling the unsorted batch. Feed the fake an out-of-order list to
+    verify the ordering is enforced by the service, not by the cursor.
+    """
     raw_docs = [
         {**_chunk(chunk_index=i, id=f"chk_{i}").model_dump(by_alias=True)}
-        for i in range(3)
+        for i in (2, 0, 1)
     ]
     cursor = _FakeCursor(raw_docs)
     col = MagicMock()
@@ -175,7 +180,8 @@ async def test_find_for_document_returns_chunks_sorted_by_index():
         )
 
     col.find.assert_called_once_with({"document_id": "doc_abc"})
-    assert cursor.sort_called_with == ("chunk_index", 1)
+    # The service must NOT call cursor.sort() — Cosmos would reject it.
+    assert cursor.sort_called_with is None
     assert [c.id for c in chunks] == ["chk_0", "chk_1", "chk_2"]
     assert all(c.document_id == "doc_abc" for c in chunks)
 
