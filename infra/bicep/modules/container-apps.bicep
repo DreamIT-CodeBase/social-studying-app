@@ -133,7 +133,7 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = {
       ]
       ingress: {
         external: true
-        targetPort: 8000
+        targetPort: 8080
         transport: 'http'
         corsPolicy: {
           allowedOrigins: ['*']
@@ -235,7 +235,7 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = {
               type: 'Liveness'
               httpGet: {
                 path: '/health'
-                port: 8000
+                port: 8080
               }
               initialDelaySeconds: 10
               periodSeconds: 30
@@ -245,7 +245,7 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = {
               type: 'Readiness'
               httpGet: {
                 path: '/health'
-                port: 8000
+                port: 8080
               }
               initialDelaySeconds: 5
               periodSeconds: 10

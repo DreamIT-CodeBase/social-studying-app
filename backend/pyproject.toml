@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
-    "pydantic>=2.7",
+    "pydantic[email]>=2.7",            # [email] pulls email-validator, required by EmailStr in user/tenant models
     "pydantic-settings>=2.3",
     "motor>=3.4",                        # async MongoDB driver for Cosmos DB MongoDB API
     "azure-storage-blob>=12.19",

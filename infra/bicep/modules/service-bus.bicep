@@ -31,16 +31,17 @@ resource documentIngestionQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-
   }
 }
 
-// Sprint 2.5 — topic extraction. Longer lock (10 min) since GPT-4o calls
-// can take 30s+ on long documents and we don't want premature redelivery
-// re-running an in-flight model call. maxDelivery=3 (not 5) — model calls
-// are expensive and a doc that fails three times almost certainly has a
-// structural issue, not a transient one.
+// Sprint 2.5 — topic extraction. lockDuration=PT5M is the Service Bus
+// hard cap (all SKUs). GPT-4o topic extraction normally finishes in
+// 5–30s; if a pathologically long doc exceeds 5 min, SB redelivers and
+// the worker's status-machine idempotency handles the retry. maxDelivery=3
+// (not 5) — model calls are expensive and a doc that fails three times
+// almost certainly has a structural issue, not a transient one.
 resource topicExtractionQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
   parent: namespace
   name: 'topic-extraction'
   properties: {
-    lockDuration: 'PT10M'
+    lockDuration: 'PT5M'
     maxDeliveryCount: 3
     defaultMessageTimeToLive: 'P1D'
     deadLetteringOnMessageExpiration: true
@@ -63,15 +64,16 @@ resource chunkingQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-previe
 }
 
 // Sprint 2.9 — vectorization. text-embedding-3-small calls finish in 1–3s
-// per batch even for full documents (16 inputs/batch), but AI Search
-// upsert can stretch on long docs. 10-min lock matches the topic queue's
-// model-call profile. maxDelivery=3 — embeddings are cheap but not free,
-// and a doc that fails three times has a structural issue.
+// per batch even for full documents (16 inputs/batch), and AI Search
+// upsert tops out at a few seconds. PT5M is the Service Bus hard cap;
+// if a redeliver fires the worker's delete-then-upsert keeps the index
+// state correct. maxDelivery=3 — embeddings are cheap but not free, and
+// a doc that fails three times has a structural issue.
 resource vectorizationQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
   parent: namespace
   name: 'vectorization'
   properties: {
-    lockDuration: 'PT10M'
+    lockDuration: 'PT5M'
     maxDeliveryCount: 3
     defaultMessageTimeToLive: 'P1D'
     deadLetteringOnMessageExpiration: true
