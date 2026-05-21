@@ -1,0 +1,505 @@
+"""Question generation + answer endpoints.
+
+Sprint 3.9 (this file) — ``POST /questions/next``: the orchestrator that
+ties every Sprint 3 service together to produce one adaptively-chosen,
+safety-reviewed, persisted question for the calling student.
+
+Pipeline executed per request
+-----------------------------
+1. Auth + workspace access check.
+2. Read workspace settings to find enabled question_types.
+3. Learning Path Engine (3.3) → ranked list of topic candidates.
+4. retrieve_student_context (3.6) → mastery + recently-seen question ids.
+5. Pick a question type from workspace settings, biased toward variety
+   across the student's recent interactions.
+6. For each topic candidate, up to ``_MAX_ATTEMPTS`` times:
+   a. Calibrate difficulty (3.4) from the student's per-topic mastery.
+   b. retrieve_content (3.5) using the canonical topic id as filter.
+   c. generate_question (3.7).
+   d. review_question (3.8).
+   e. ``approved`` → persist with status=approved, return to student.
+   f. ``flagged``  → persist with status=pending_review +
+      moderation_flagged + moderation_log entry. Do NOT serve. Try
+      next candidate.
+   g. ``rejected`` → log, do NOT persist. Try next candidate.
+   h. ``InsufficientSource`` from the generator → log, try next candidate.
+7. Exhausted candidates without an approved question → 503 with a
+   retry-after hint.
+
+What this endpoint deliberately does NOT do
+-------------------------------------------
+- Prefetching (Sprint 3.13 will add a background worker that
+  pre-populates the question_queue so /next can sometimes be a Cosmos
+  read instead of a full pipeline run).
+- Answer evaluation (Sprint 3.10 / 3.11 — ``POST /questions/{id}/answer``).
+- Flashcards (Sprint 3.12 — separate endpoint pair).
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends
+
+from app.core.auth import get_current_user
+from app.core.database import (
+    MODERATION_LOG,
+    QUESTION_QUEUE,
+    WORKSPACES,
+    get_collection,
+)
+from app.core.exceptions import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
+from app.mcp_tools import invoke
+from app.mcp_tools.retrieve_content import (
+    RetrieveContentInput,
+    RetrieveContentOutput,
+)
+from app.mcp_tools.retrieve_student_context import (
+    RetrieveStudentContextInput,
+    RetrieveStudentContextOutput,
+)
+from app.models.moderation import (
+    ModerationAction,
+    ModerationLog,
+    ModerationTarget,
+)
+from app.models.question import (
+    Question,
+    QuestionForStudent,
+    QuestionStatus,
+    QuestionType,
+)
+from app.models.user import User
+from app.models.workspace import Workspace
+from app.services import question_generation, question_safety
+from app.services.difficulty import calibrate_difficulty
+from app.services.learning_path import (
+    NoTopicsAvailable,
+    TopicScore,
+    WorkspaceNotFound,
+    select_next_topic,
+)
+from app.services.question_generation import (
+    GeneratedQuestion,
+    InsufficientSource,
+)
+from app.services.question_safety import QuestionReview, ReviewVerdict
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/workspaces/{workspace_id}/questions", tags=["questions"])
+
+
+# How many distinct topic candidates we'll try before giving up. Each
+# candidate is one full generation + review round; 3 is the sweet spot
+# between user wait time (~3-9 seconds total) and not punishing the
+# student for one bad GPT-4o roll.
+_MAX_ATTEMPTS = 3
+
+# How many grounding chunks to retrieve per generation attempt. 5 is
+# enough to give the prompt context across a textbook section without
+# blowing the prompt token budget.
+_GROUNDING_CHUNK_LIMIT = 5
+
+
+# ── Endpoint ────────────────────────────────────────────────────────────────
+
+
+@router.post("/next", response_model=QuestionForStudent)
+async def next_question(
+    workspace_id: str,
+    current_user: User = Depends(get_current_user),
+) -> QuestionForStudent:
+    """Generate and return the next adaptive question for the calling student.
+
+    Returns the question stripped of its answer + explanation
+    (:class:`QuestionForStudent`). The full answer is revealed by
+    ``POST /questions/{id}/answer`` after the student submits.
+
+    Raises:
+        404: Workspace not found (or caller has no access).
+        409: Workspace has no canonical topics yet — admin needs to
+            upload material before the engine can pick anything.
+        503: All retry attempts produced unservable results (the
+            grounding can't sustain a fair question right now, OR the
+            model output keeps being malformed). Client should retry
+            after ``Retry-After`` seconds.
+    """
+    _assert_workspace_access(current_user, workspace_id)
+    workspace = await _read_workspace(current_user.tenant_id, workspace_id)
+    enabled_types = _resolve_enabled_types(workspace)
+
+    try:
+        selection = await select_next_topic(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            student_id=current_user.id,
+        )
+    except NoTopicsAvailable as exc:
+        raise ConflictError(
+            "This workspace has no topics yet. Ask an admin to upload "
+            "study material before requesting questions."
+        ) from exc
+    except WorkspaceNotFound as exc:
+        # Workspace existed at the access check above but vanished
+        # before the engine read it — race against an admin delete.
+        # Same 404 as access denial, no need to distinguish.
+        raise NotFoundError("Workspace", workspace_id) from exc
+
+    context = await _fetch_student_context(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=current_user.id,
+    )
+
+    # One question type per request — see module docstring for why we
+    # don't switch types mid-retry.
+    question_type = _pick_question_type(enabled_types, context)
+
+    candidates = selection.candidates[:_MAX_ATTEMPTS]
+    attempt_log: list[str] = []
+
+    for attempt_index, candidate in enumerate(candidates, start=1):
+        outcome = await _try_candidate(
+            current_user=current_user,
+            workspace_id=workspace_id,
+            candidate=candidate,
+            context=context,
+            question_type=question_type,
+        )
+        if isinstance(outcome, _Persisted):
+            return outcome.for_student
+
+        attempt_log.append(
+            f"attempt={attempt_index} topic={candidate.topic_name!r} → "
+            f"{outcome.reason}"
+        )
+
+    logger.warning(
+        "next_question exhausted attempts workspace=%s student=%s log=%s",
+        workspace_id,
+        current_user.id,
+        " | ".join(attempt_log),
+    )
+    # Retry-After is a hint; pick 30s — long enough that a transient
+    # model hiccup probably cleared, short enough not to feel broken.
+    raise ServiceUnavailableError(
+        "Couldn't generate a clean question right now after "
+        f"{len(candidates)} attempts. Please retry in a moment.",
+        headers={"Retry-After": "30"},
+    )
+
+
+# ── Per-candidate inner loop ───────────────────────────────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class _Persisted:
+    """Successful candidate — question stored, ready to serve."""
+
+    for_student: QuestionForStudent
+
+
+@dataclass(frozen=True, slots=True)
+class _Skip:
+    """Candidate failed (insufficient source, flagged, rejected). Try next."""
+
+    reason: str
+
+
+async def _try_candidate(
+    *,
+    current_user: User,
+    workspace_id: str,
+    candidate: TopicScore,
+    context: RetrieveStudentContextOutput,
+    question_type: QuestionType,
+) -> _Persisted | _Skip:
+    """One full attempt: calibrate → retrieve → generate → review → persist.
+
+    Returns :class:`_Persisted` on the happy path; :class:`_Skip` on any
+    of the recoverable failure modes (the outer loop will move on to
+    the next candidate). Non-recoverable failures propagate.
+    """
+    mastery = _mastery_for_topic(candidate.topic_name, context)
+    calibration = calibrate_difficulty(mastery=mastery)
+    difficulty = calibration.difficulty
+
+    retrieved = await invoke(
+        "retrieve_content",
+        RetrieveContentInput(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            topic_ids=[candidate.topic_id],
+            query_text=candidate.topic_name,
+            top_k=_GROUNDING_CHUNK_LIMIT,
+        ),
+    )
+    assert isinstance(retrieved, RetrieveContentOutput)
+    if not retrieved.chunks:
+        return _Skip(
+            f"no grounding chunks (mode={retrieved.mode}) — topic "
+            "indexed but search returned nothing"
+        )
+
+    try:
+        generated = await question_generation.generate_question(
+            topic=candidate.topic_name,
+            difficulty=difficulty,
+            question_type=question_type,
+            grounding_chunks=retrieved.chunks,
+            seen_question_bodies=None,  # repeat suppression hooked up via 3.13
+        )
+    except InsufficientSource as exc:
+        return _Skip(f"generator: insufficient_source ({exc})")
+    except question_generation.QuestionShapeError as exc:
+        return _Skip(f"generator: shape error ({exc})")
+
+    review = await question_safety.review_question(generated)
+    persisted = await _persist_question(
+        current_user=current_user,
+        workspace_id=workspace_id,
+        candidate=candidate,
+        retrieved=retrieved,
+        generated=generated,
+        review=review,
+    )
+
+    if review.verdict == ReviewVerdict.approved:
+        return _Persisted(for_student=QuestionForStudent.from_doc(persisted))
+
+    if review.verdict == ReviewVerdict.flagged:
+        # Persisted for admin review; don't serve.
+        return _Skip(
+            f"safety flagged ({', '.join(review.safety.flagged_categories)})"
+        )
+
+    # Rejected — never persisted (see _persist_question). Skip.
+    return _Skip(f"review rejected: {review.reason}")
+
+
+# ── Persistence ─────────────────────────────────────────────────────────────
+
+
+async def _persist_question(
+    *,
+    current_user: User,
+    workspace_id: str,
+    candidate: TopicScore,
+    retrieved: RetrieveContentOutput,
+    generated: GeneratedQuestion,
+    review: QuestionReview,
+) -> Question:
+    """Write the question to ``question_queue`` if the review allows it.
+
+    Returns the Question (which the caller projects to either student
+    or admin view depending on context). For ``rejected`` verdicts the
+    function returns the in-memory Question WITHOUT persisting — the
+    orchestrator inspects ``review.verdict`` and skips it.
+
+    For ``flagged`` verdicts the question is persisted AND a
+    moderation_log entry is written so the admin moderation dashboard
+    surfaces it.
+    """
+    status_value = (
+        QuestionStatus.approved
+        if review.verdict == ReviewVerdict.approved
+        else QuestionStatus.pending_review
+    )
+    document_id = (
+        retrieved.chunks[0].document_id if retrieved.chunks else "unknown"
+    )
+    question_id = f"qst_{uuid4().hex}"
+
+    question = Question(
+        **{"_id": question_id},
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        document_id=document_id,
+        topic=candidate.topic_name,
+        question_type=generated.question_type,
+        difficulty=generated.difficulty,
+        body=generated.body,
+        options=generated.options,
+        answer=generated.answer,
+        explanation=generated.explanation,
+        grading_hints=generated.grading_hints,
+        source_chunk_ids=[c.chunk_id for c in retrieved.chunks],
+        status=status_value,
+        prompt_version=generated.prompt_version,
+        moderation_flagged=review.verdict == ReviewVerdict.flagged,
+    )
+
+    if review.verdict == ReviewVerdict.rejected:
+        # Never store rejected questions — they'd just clog the moderation
+        # queue with structurally-broken garbage no admin can fix.
+        logger.warning(
+            "Discarding rejected question topic=%s type=%s reason=%s",
+            candidate.topic_name,
+            generated.question_type.value,
+            review.reason,
+        )
+        return question
+
+    col = get_collection(current_user.tenant_id, QUESTION_QUEUE)
+    await col.insert_one(question.model_dump(by_alias=True))
+
+    if review.verdict == ReviewVerdict.flagged:
+        await _write_moderation_log(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            question=question,
+            review=review,
+        )
+
+    return question
+
+
+async def _write_moderation_log(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    question: Question,
+    review: QuestionReview,
+) -> None:
+    """Append a moderation_log row for a flagged AI-generated question.
+
+    Best-effort: a failed audit write must NOT regress the question's
+    persisted state — the same policy Sprint 2.4 uses for documents.
+    The Content Safety call already succeeded; refusing to serve the
+    question is the user-facing outcome regardless.
+    """
+    entry = ModerationLog(
+        id=f"mod_{uuid4().hex}",
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        target_type=ModerationTarget.question,
+        target_id=question.id,
+        action=ModerationAction.flagged,
+        performed_by="system",
+        reason=review.reason,
+        azure_safety_score=review.safety.max_severity_normalized,
+        severities=review.safety.severities,
+        flagged_categories=review.safety.flagged_categories,
+    )
+    try:
+        col = get_collection(tenant_id, MODERATION_LOG)
+        await col.insert_one(entry.model_dump(by_alias=True))
+    except Exception:
+        logger.exception(
+            "Failed to write moderation_log entry for question=%s",
+            question.id,
+        )
+
+
+# ── Cosmos reads ────────────────────────────────────────────────────────────
+
+
+async def _read_workspace(tenant_id: str, workspace_id: str) -> Workspace:
+    col = get_collection(tenant_id, WORKSPACES)
+    raw = await col.find_one({"_id": workspace_id, "deleted_at": None})
+    if raw is None:
+        raise NotFoundError("Workspace", workspace_id)
+    return Workspace.model_validate(raw)
+
+
+async def _fetch_student_context(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    student_id: str,
+) -> RetrieveStudentContextOutput:
+    result = await invoke(
+        "retrieve_student_context",
+        RetrieveStudentContextInput(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            student_id=student_id,
+        ),
+    )
+    assert isinstance(result, RetrieveStudentContextOutput)
+    return result
+
+
+# ── Selection helpers ──────────────────────────────────────────────────────
+
+
+def _resolve_enabled_types(workspace: Workspace) -> list[QuestionType]:
+    """Project workspace.settings.question_types to validated enum values.
+
+    Admins set string question types in workspace settings; this function
+    drops anything that isn't a valid :class:`QuestionType` (a misconfig
+    shouldn't 500 the endpoint, but should be loud in the logs) and
+    falls back to MCQ when the list ends up empty.
+    """
+    valid: list[QuestionType] = []
+    for raw in workspace.settings.question_types:
+        try:
+            valid.append(QuestionType(raw))
+        except ValueError:
+            logger.warning(
+                "Workspace %s has unknown question_type %r in settings — ignoring",
+                workspace.id,
+                raw,
+            )
+    if not valid:
+        logger.warning(
+            "Workspace %s has no valid question_types configured; "
+            "defaulting to MCQ",
+            workspace.id,
+        )
+        return [QuestionType.mcq]
+    return valid
+
+
+def _pick_question_type(
+    enabled: list[QuestionType],
+    context: RetrieveStudentContextOutput,
+) -> QuestionType:
+    """Pick a type from ``enabled``, biased toward variety.
+
+    Deterministic: rotates by ``len(recent_interactions) % len(enabled)``.
+    A student with no history gets ``enabled[0]``; after each answered
+    question the index rotates. Avoids stickiness (same type N times in
+    a row) without needing per-question_type history.
+    """
+    if len(enabled) == 1:
+        return enabled[0]
+    idx = len(context.recent_interactions) % len(enabled)
+    return enabled[idx]
+
+
+def _mastery_for_topic(
+    topic_name: str,
+    context: RetrieveStudentContextOutput,
+) -> float:
+    """Look up a student's mastery on ``topic_name``.
+
+    Case-fold match — student-side topics are keyed by display name
+    (the question's ``topic`` string), which may differ from the
+    canonical taxonomy name on case alone. Returns 0.0 for unseen
+    topics, which is the cold-start mastery the calibrator expects.
+    """
+    target = topic_name.casefold()
+    for m in context.topic_mastery:
+        if m.topic.casefold() == target:
+            return m.mastery_score
+    return 0.0
+
+
+def _assert_workspace_access(user: User, workspace_id: str) -> None:
+    """Same access check pattern as :mod:`app.api.documents`."""
+    from app.models.user import UserRole
+
+    if user.role == UserRole.tenant_admin:
+        return
+    ids = {m.workspace_id for m in user.workspace_memberships}
+    if workspace_id not in ids:
+        raise ForbiddenError("You are not a member of this workspace")

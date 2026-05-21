@@ -30,5 +30,13 @@ class ValidationError(HTTPException):
 
 
 class ServiceUnavailableError(HTTPException):
-    def __init__(self, detail: str) -> None:
-        super().__init__(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
+    def __init__(self, detail: str, *, headers: dict[str, str] | None = None) -> None:
+        # ``headers`` is the FastAPI-native way to attach response headers
+        # to an error. Sprint 3.9 uses it for Retry-After on the
+        # "couldn't generate a question right now" path so the client
+        # can back off intelligently.
+        super().__init__(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=detail,
+            headers=headers,
+        )

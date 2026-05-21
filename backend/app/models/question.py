@@ -73,7 +73,63 @@ class Question(CosmosDocument):
     times_served: int = 0
 
 
+class StudentMcqOption(CosmosDocument.__base__):
+    """MCQ option as the student sees it — ``is_correct`` removed.
+
+    A trivial projection of :class:`McqOption` with the answer-revealing
+    field stripped. The /questions/next endpoint uses this so the
+    correct answer isn't shipped to the client before the student
+    submits their attempt.
+    """
+
+    key: str
+    text: str
+
+
+class QuestionForStudent(CosmosDocument.__base__):
+    """The student-facing view of a question.
+
+    Excludes the fields that would reveal the answer before the student
+    submits their attempt:
+
+    - ``answer``, ``explanation``, ``grading_hints`` — the answer +
+      reasoning, surfaced only by ``POST /questions/{id}/answer``.
+    - ``McqOption.is_correct`` per-option — replaced by
+      :class:`StudentMcqOption` which omits that field.
+
+    Includes everything the UI legitimately needs: stem, options,
+    topic + difficulty labels, type for rendering.
+    """
+
+    id: str
+    topic: str
+    question_type: QuestionType
+    difficulty: DifficultyLevel
+    body: str
+    options: list[StudentMcqOption] = Field(default_factory=list)
+
+    @classmethod
+    def from_doc(cls, doc: "Question") -> "QuestionForStudent":
+        return cls(
+            id=doc.id,
+            topic=doc.topic,
+            question_type=doc.question_type,
+            difficulty=doc.difficulty,
+            body=doc.body,
+            options=[
+                StudentMcqOption(key=o.key, text=o.text) for o in doc.options
+            ],
+        )
+
+
 class QuestionResponse(CosmosDocument.__base__):
+    """Admin-facing question view — includes the answer + explanation.
+
+    Used by admin endpoints (moderation review, question queue listing)
+    where the answer is legitimately viewable. NEVER returned from
+    student-facing endpoints — use :class:`QuestionForStudent` instead.
+    """
+
     id: str
     workspace_id: str
     topic: str

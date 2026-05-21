@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import documents, taxonomy, tenants, users, workspaces
+from app.api import documents, questions, taxonomy, tenants, users, workspaces
 from app.core.config import settings
 from app.core.database import ping as db_ping
 from app.core.redis_client import close_redis, get_redis
@@ -37,6 +37,7 @@ app.include_router(workspaces.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(documents.router, prefix="/api/v1")
 app.include_router(taxonomy.router, prefix="/api/v1")
+app.include_router(questions.router, prefix="/api/v1")
 
 
 @app.get("/health")
