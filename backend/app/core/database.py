@@ -19,6 +19,8 @@ INTERACTIONS = "interactions"
 GAMIFICATION = "gamification"
 MODERATION_LOG = "moderation_log"
 QUESTION_QUEUE = "question_queue"
+FLASHCARDS = "flashcards"                       # Sprint 3.12 — per-card store
+FLASHCARD_RATINGS = "flashcard_ratings"         # Sprint 3.12 — append-only rating events
 
 
 @lru_cache(maxsize=1)
