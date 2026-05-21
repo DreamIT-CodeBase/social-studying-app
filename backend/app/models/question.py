@@ -122,6 +122,44 @@ class QuestionForStudent(CosmosDocument.__base__):
         )
 
 
+class AnswerSubmission(CosmosDocument.__base__):
+    """Request body for ``POST /questions/{question_id}/answer``.
+
+    ``answer`` is the student's response in the type-specific format:
+    - mcq:           option key — ``"A"``, ``"B"``, ``"C"``, or ``"D"``
+    - true_false:    ``"true"`` or ``"false"`` (case-insensitive)
+    - short_answer:  the 1-10 word recall response
+    - long_answer:   the essay-style response
+    - mathematical:  the final answer (LaTeX OK)
+
+    ``time_spent_seconds`` is optional and feeds the gamification XP
+    boost in Sprint 5. Defaults to 0 when the client doesn't track it.
+    """
+
+    answer: str = Field(min_length=1, max_length=4000)
+    time_spent_seconds: int = Field(default=0, ge=0, le=3600)
+
+
+class AnswerFeedback(CosmosDocument.__base__):
+    """Response body for ``POST /questions/{question_id}/answer``.
+
+    Surfaces correctness, the canonical answer, the explanation
+    (revealed only AFTER submission), the XP awarded, and — for the
+    rubric-scored types — a 0.0-1.0 rubric score plus the list of
+    grading hints that matched in the student's response.
+    """
+
+    question_id: str
+    is_correct: bool
+    canonical_answer: str
+    explanation: str
+    xp_earned: int = Field(ge=0)
+    new_topic_mastery: float = Field(ge=0.0, le=1.0)
+    new_overall_mastery: float = Field(ge=0.0, le=1.0)
+    rubric_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    matched_hints: list[str] = Field(default_factory=list)
+
+
 class QuestionResponse(CosmosDocument.__base__):
     """Admin-facing question view — includes the answer + explanation.
 

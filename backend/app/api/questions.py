@@ -45,6 +45,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.auth import get_current_user
 from app.core.database import (
+    INTERACTIONS,
     MODERATION_LOG,
     QUESTION_QUEUE,
     WORKSPACES,
@@ -65,12 +66,17 @@ from app.mcp_tools.retrieve_student_context import (
     RetrieveStudentContextInput,
     RetrieveStudentContextOutput,
 )
+from app.models.base import utc_now
+from app.models.interaction import Interaction
 from app.models.moderation import (
     ModerationAction,
     ModerationLog,
     ModerationTarget,
 )
 from app.models.question import (
+    AnswerFeedback,
+    AnswerSubmission,
+    DifficultyLevel,
     Question,
     QuestionForStudent,
     QuestionStatus,
@@ -78,7 +84,14 @@ from app.models.question import (
 )
 from app.models.user import User
 from app.models.workspace import Workspace
-from app.services import question_generation, question_safety
+from app.services import (
+    answer_evaluation,
+    question_generation,
+    question_safety,
+)
+from app.services import (
+    knowledge_state as knowledge_state_service,
+)
 from app.services.difficulty import calibrate_difficulty
 from app.services.learning_path import (
     NoTopicsAvailable,
@@ -503,3 +516,200 @@ def _assert_workspace_access(user: User, workspace_id: str) -> None:
     ids = {m.workspace_id for m in user.workspace_memberships}
     if workspace_id not in ids:
         raise ForbiddenError("You are not a member of this workspace")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sprint 3.10 + 3.11 — POST /questions/{question_id}/answer
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# Per-difficulty XP awarded on a correct answer. Constant attempt XP
+# (10) goes to everyone for trying; the bonus rewards effort on harder
+# questions. Sprint 5 gamification will layer streak bonuses on top.
+_ATTEMPT_XP = 10
+_CORRECT_BONUS_XP: dict[DifficultyLevel, int] = {
+    DifficultyLevel.beginner: 5,
+    DifficultyLevel.intermediate: 10,
+    DifficultyLevel.advanced: 20,
+}
+
+
+@router.post("/{question_id}/answer", response_model=AnswerFeedback)
+async def submit_answer(
+    workspace_id: str,
+    question_id: str,
+    submission: AnswerSubmission,
+    current_user: User = Depends(get_current_user),
+) -> AnswerFeedback:
+    """Evaluate a student's submitted answer and update their mastery.
+
+    Pipeline:
+        1. Auth + workspace access.
+        2. Load the persisted Question (must belong to this workspace).
+        3. answer_evaluation.evaluate() → correctness + canonical answer.
+        4. Compute XP (constant attempt + difficulty-weighted correct bonus).
+        5. Append to the interactions collection.
+        6. knowledge_state.record_attempt() → bumps mastery, writes back.
+        7. Return :class:`AnswerFeedback` with feedback + new mastery scores.
+
+    Raises:
+        404: Question not found in this workspace.
+        409: Question is in pending_review status (admin hasn't approved
+            yet — shouldn't be served, must not be answerable).
+        403: Caller is not a member of the workspace.
+    """
+    _assert_workspace_access(current_user, workspace_id)
+
+    question = await _load_question(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        question_id=question_id,
+    )
+    if question.status != QuestionStatus.approved:
+        # Questions in pending_review / rejected / etc. never reached
+        # the student through /next, but a probing client might POST
+        # an id from the moderation dashboard. Refuse.
+        raise ConflictError(
+            f"Question {question_id} is not in an answerable state "
+            f"(status={question.status.value})."
+        )
+
+    evaluation = answer_evaluation.evaluate(question, submission.answer)
+    xp_earned = _compute_xp(
+        is_correct=evaluation.is_correct,
+        difficulty=question.difficulty,
+    )
+    timestamp = utc_now()
+
+    await _record_interaction(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=current_user.id,
+        question=question,
+        submission=submission,
+        is_correct=evaluation.is_correct,
+        xp_earned=xp_earned,
+        timestamp=timestamp,
+    )
+
+    state = await knowledge_state_service.record_attempt(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=current_user.id,
+        topic=question.topic,
+        difficulty=question.difficulty,
+        is_correct=evaluation.is_correct,
+        now=timestamp,
+    )
+    topic_mastery = _topic_mastery_for(state, question.topic)
+
+    logger.info(
+        "Answer submitted question=%s student=%s correct=%s xp=%d "
+        "topic_mastery=%.3f overall=%.3f",
+        question.id,
+        current_user.id,
+        evaluation.is_correct,
+        xp_earned,
+        topic_mastery,
+        state.overall_mastery,
+    )
+
+    return AnswerFeedback(
+        question_id=question.id,
+        is_correct=evaluation.is_correct,
+        canonical_answer=evaluation.canonical_answer,
+        explanation=question.explanation,
+        xp_earned=xp_earned,
+        new_topic_mastery=topic_mastery,
+        new_overall_mastery=state.overall_mastery,
+        rubric_score=evaluation.rubric_score,
+        matched_hints=evaluation.matched_hints,
+    )
+
+
+# ── Per-endpoint helpers ────────────────────────────────────────────────────
+
+
+async def _load_question(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    question_id: str,
+) -> Question:
+    """Read the question doc, enforcing workspace scope at the DB layer.
+
+    The workspace_id filter is defence-in-depth on top of the route's
+    access check — even a bug in the access check shouldn't let a
+    student from workspace A submit answers to workspace B's questions.
+    """
+    col = get_collection(tenant_id, QUESTION_QUEUE)
+    raw = await col.find_one(
+        {
+            "_id": question_id,
+            "workspace_id": workspace_id,
+            "deleted_at": None,
+        }
+    )
+    if raw is None:
+        raise NotFoundError("Question", question_id)
+    return Question.model_validate(raw)
+
+
+def _compute_xp(*, is_correct: bool, difficulty: DifficultyLevel) -> int:
+    """Attempt XP + (on correct) difficulty-weighted bonus."""
+    if not is_correct:
+        return _ATTEMPT_XP
+    return _ATTEMPT_XP + _CORRECT_BONUS_XP[difficulty]
+
+
+async def _record_interaction(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    student_id: str,
+    question: Question,
+    submission: AnswerSubmission,
+    is_correct: bool,
+    xp_earned: int,
+    timestamp: str,
+) -> None:
+    """Append to the append-only ``interactions`` collection.
+
+    Append-only by design — interactions are the source of truth from
+    which knowledge_states could be re-derived if needed. No
+    ``deleted_at`` updates; if the interaction was a mistake, the admin
+    layer (Sprint 5+) can soft-delete by writing a ``deleted_at`` value
+    explicitly, but no production code path mutates an existing row.
+    """
+    interaction = Interaction(
+        **{"_id": f"itx_{uuid4().hex}"},
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        student_id=student_id,
+        question_id=question.id,
+        topic=question.topic,
+        is_correct=is_correct,
+        answer_given=submission.answer,
+        time_spent_seconds=submission.time_spent_seconds,
+        xp_earned=xp_earned,
+        answered_at=timestamp,
+    )
+    col = get_collection(tenant_id, INTERACTIONS)
+    await col.insert_one(interaction.model_dump(by_alias=True))
+
+
+def _topic_mastery_for(state, topic: str) -> float:
+    """Find the post-update mastery for ``topic`` on ``state``.
+
+    ``record_attempt`` guarantees the row exists (it appended one if
+    missing), so this is a straight lookup. Case-insensitive to match
+    the appender's name-comparison rule.
+    """
+    target = topic.casefold()
+    for row in state.topics:
+        if row.topic.casefold() == target:
+            return row.mastery_score
+    # Defensive fallback — record_attempt is contractually supposed
+    # to leave the row present, but don't crash the response if it
+    # didn't.
+    return 0.0
