@@ -71,6 +71,13 @@ class Question(CosmosDocument):
     prompt_version: str = "v1.0"   # tracks which prompt generated this question
     moderation_flagged: bool = False
     times_served: int = 0
+    # ── Sprint 3.13: prefetch ─────────────────────────────────────────────────
+    # When non-null, this question was generated in advance for the named
+    # student via the answer-endpoint's background-task prefetch. The /next
+    # endpoint pops the field (atomic find-and-update to null) before
+    # serving so two concurrent /next calls can't both consume the same
+    # prefetched row. None = live-generated, no reserved consumer.
+    prefetched_for: str | None = None
 
 
 class StudentMcqOption(CosmosDocument.__base__):

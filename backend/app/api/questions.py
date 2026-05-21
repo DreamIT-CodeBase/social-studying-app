@@ -41,7 +41,7 @@ import logging
 from dataclasses import dataclass
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 
 from app.core.auth import get_current_user
 from app.core.database import (
@@ -146,6 +146,25 @@ async def next_question(
             after ``Retry-After`` seconds.
     """
     _assert_workspace_access(current_user, workspace_id)
+
+    # Sprint 3.13: check the prefetch slot first. If a prior /answer
+    # call queued a question for this student, claim it atomically and
+    # serve immediately — skipping the full generation pipeline. The
+    # find-one-and-update ensures two concurrent /next calls can't
+    # both consume the same row.
+    prefetched = await _claim_prefetched_question(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=current_user.id,
+    )
+    if prefetched is not None:
+        logger.info(
+            "next_question served prefetched question=%s student=%s",
+            prefetched.id,
+            current_user.id,
+        )
+        return QuestionForStudent.from_doc(prefetched)
+
     workspace = await _read_workspace(current_user.tenant_id, workspace_id)
     enabled_types = _resolve_enabled_types(workspace)
 
@@ -539,6 +558,7 @@ async def submit_answer(
     workspace_id: str,
     question_id: str,
     submission: AnswerSubmission,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
 ) -> AnswerFeedback:
     """Evaluate a student's submitted answer and update their mastery.
@@ -612,6 +632,18 @@ async def submit_answer(
         xp_earned,
         topic_mastery,
         state.overall_mastery,
+    )
+
+    # Sprint 3.13 prefetch: kick off background generation of the
+    # student's NEXT question so the next /next call can be served
+    # from the prefetch slot (no live pipeline run). Fire-and-forget
+    # via FastAPI's BackgroundTasks — a prefetch failure must NOT
+    # affect the answer response the student is about to receive.
+    background_tasks.add_task(
+        prefetch_next_question,
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=current_user.id,
     )
 
     return AnswerFeedback(
@@ -713,3 +745,190 @@ def _topic_mastery_for(state, topic: str) -> float:
     # to leave the row present, but don't crash the response if it
     # didn't.
     return 0.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sprint 3.13 — prefetch
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def _claim_prefetched_question(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    student_id: str,
+) -> Question | None:
+    """Atomically claim a prefetched question reserved for ``student_id``.
+
+    Uses Mongo's ``find_one_and_update`` so two concurrent /next calls
+    can't both consume the same row — only one of them will see the
+    pre-claim state where ``prefetched_for == student_id``; the other
+    finds nothing and falls through to live generation.
+
+    Returns the question (already projected with prefetched_for=None)
+    or None if no prefetched row is available.
+    """
+    col = get_collection(tenant_id, QUESTION_QUEUE)
+    raw = await col.find_one_and_update(
+        {
+            "workspace_id": workspace_id,
+            "prefetched_for": student_id,
+            "status": QuestionStatus.approved.value,
+            "deleted_at": None,
+        },
+        {"$set": {"prefetched_for": None}},
+        return_document=False,  # we want the pre-update doc so we can
+        # use its fields verbatim; the in-memory copy we hand back has
+        # prefetched_for set to None too via the assignment below.
+    )
+    if raw is None:
+        return None
+    raw["prefetched_for"] = None
+    return Question.model_validate(raw)
+
+
+async def prefetch_next_question(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    student_id: str,
+) -> None:
+    """Generate one question in advance and stash it for ``student_id``.
+
+    Triggered by ``/answer`` via FastAPI BackgroundTasks. Fire-and-
+    forget — every exception is caught and logged. A failed prefetch
+    is invisible to the student (next /next call just runs live
+    generation as it would have anyway).
+
+    Single attempt by design — the user is not waiting on this, so
+    burning multiple GPT-4o calls on a speculative prefetch isn't
+    worth the cost. If the first attempt fails for any reason, the
+    next /answer submission triggers a fresh prefetch.
+
+    Reads workspace + student context with their own DB calls (not
+    shared with the answer-endpoint's reads) because BackgroundTasks
+    runs after the response is sent — the original request scope is
+    gone.
+    """
+    try:
+        await _prefetch_impl(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            student_id=student_id,
+        )
+    except Exception:
+        logger.exception(
+            "prefetch_next_question failed student=%s workspace=%s "
+            "— student will fall back to live generation",
+            student_id,
+            workspace_id,
+        )
+
+
+async def _prefetch_impl(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    student_id: str,
+) -> None:
+    """Body of the prefetch. Mirrors /next's pipeline but:
+
+    - SINGLE candidate attempt (not 3) — keep prefetch cheap.
+    - Persists with ``prefetched_for=student_id`` so /next can claim it.
+    - Returns None — nothing is served back to a caller.
+
+    A prefetch slot already exists (e.g. from a prior prefetch the
+    student hasn't consumed yet) is fine; the next /next call gets
+    the older one, this newer one waits.
+    """
+    workspace = await _read_workspace(tenant_id, workspace_id)
+    enabled_types = _resolve_enabled_types(workspace)
+
+    selection = await select_next_topic(
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        student_id=student_id,
+    )
+    if not selection.candidates:
+        return
+
+    # Fetch context once for the type-rotation decision + the
+    # ``seen_question_bodies`` hint to the generator.
+    context_result = await invoke(
+        "retrieve_student_context",
+        RetrieveStudentContextInput(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            student_id=student_id,
+        ),
+    )
+    assert isinstance(context_result, RetrieveStudentContextOutput)
+    question_type = _pick_question_type(enabled_types, context_result)
+
+    candidate = selection.candidates[0]
+    mastery = _mastery_for_topic(candidate.topic_name, context_result)
+    difficulty = calibrate_difficulty(mastery=mastery).difficulty
+
+    retrieved = await invoke(
+        "retrieve_content",
+        RetrieveContentInput(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            topic_ids=[candidate.topic_id],
+            query_text=candidate.topic_name,
+            top_k=_GROUNDING_CHUNK_LIMIT,
+        ),
+    )
+    assert isinstance(retrieved, RetrieveContentOutput)
+    if not retrieved.chunks:
+        return
+
+    try:
+        generated = await question_generation.generate_question(
+            topic=candidate.topic_name,
+            difficulty=difficulty,
+            question_type=question_type,
+            grounding_chunks=retrieved.chunks,
+            seen_question_bodies=None,
+        )
+    except (InsufficientSource, question_generation.QuestionShapeError):
+        return
+
+    review = await question_safety.review_question(generated)
+    if review.verdict != ReviewVerdict.approved:
+        # Don't pollute the prefetch slot with flagged/rejected cards.
+        # /answer will trigger another prefetch on the student's next
+        # submission anyway.
+        return
+
+    document_id = (
+        retrieved.chunks[0].document_id if retrieved.chunks else "unknown"
+    )
+    question = Question(
+        **{"_id": f"qst_{uuid4().hex}"},
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        document_id=document_id,
+        topic=candidate.topic_name,
+        question_type=generated.question_type,
+        difficulty=generated.difficulty,
+        body=generated.body,
+        options=generated.options,
+        answer=generated.answer,
+        explanation=generated.explanation,
+        grading_hints=generated.grading_hints,
+        source_chunk_ids=[c.chunk_id for c in retrieved.chunks],
+        status=QuestionStatus.approved,
+        prompt_version=generated.prompt_version,
+        moderation_flagged=False,
+        prefetched_for=student_id,
+    )
+    col = get_collection(tenant_id, QUESTION_QUEUE)
+    await col.insert_one(question.model_dump(by_alias=True))
+    logger.info(
+        "Prefetched question=%s topic=%s difficulty=%s student=%s",
+        question.id,
+        candidate.topic_name,
+        difficulty.value,
+        student_id,
+    )

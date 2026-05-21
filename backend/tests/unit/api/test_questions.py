@@ -233,6 +233,7 @@ def _patches(
     review_side_effect=None,
     select_side_effect=None,
     generate_mock: AsyncMock | None = None,
+    prefetched: dict | None = None,
 ):
     """Bundle the most common per-test mock setup.
 
@@ -247,6 +248,11 @@ def _patches(
     docs_col.insert_one = AsyncMock(
         side_effect=lambda d: persisted.append(d) or MagicMock(inserted_id=d["_id"])
     )
+    # Sprint 3.13: /next claims a prefetched question via
+    # find_one_and_update BEFORE falling through to live generation.
+    # Tests that set ``prefetched`` get back the pre-update doc; the
+    # default (None) exercises the live-generation path.
+    docs_col.find_one_and_update = AsyncMock(return_value=prefetched)
     mod_col = MagicMock()
     mod_col.insert_one = AsyncMock(
         side_effect=lambda d: moderation.append(d) or MagicMock(inserted_id=d["_id"])
@@ -549,6 +555,7 @@ def test_empty_retrieval_skips_candidate_without_calling_generator(
     docs_col.insert_one = AsyncMock(
         side_effect=lambda d: persisted.append(d) or MagicMock(inserted_id=d["_id"])
     )
+    docs_col.find_one_and_update = AsyncMock(return_value=None)
 
     def _factory(_tid, collection):
         from app.core.database import WORKSPACES
@@ -587,12 +594,19 @@ def test_no_topics_available_returns_409(client, student):
     workspaces_col.find_one = AsyncMock(
         return_value=_workspace().model_dump(by_alias=True)
     )
+    # Sprint 3.13: /next claims a prefetched row before falling through
+    # to the workspace + LPE reads, so the question_queue mock must
+    # return None for find_one_and_update.
+    questions_col = MagicMock()
+    questions_col.find_one_and_update = AsyncMock(return_value=None)
 
     def _factory(_tid, collection):
-        from app.core.database import WORKSPACES
+        from app.core.database import QUESTION_QUEUE, WORKSPACES
 
         if collection == WORKSPACES:
             return workspaces_col
+        if collection == QUESTION_QUEUE:
+            return questions_col
         return MagicMock()
 
     with (
@@ -788,3 +802,386 @@ def test_unknown_topic_mastery_defaults_to_zero(client, student):
         client.post("/api/v1/workspaces/wsp_a/questions/next")
 
     assert calibrate_calls == [0.0]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sprint 3.13 — prefetch
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _prefetched_doc(*, id_: str = "qst_pre", student_id: str = "stu_a") -> dict:
+    """Build a Cosmos Question doc with ``prefetched_for`` set, as
+    ``find_one_and_update`` would return the PRE-update version.
+    """
+    from app.models.question import Question, QuestionStatus
+
+    return Question(
+        **{"_id": id_},
+        tenant_id="ten_test001",
+        workspace_id="wsp_a",
+        document_id="doc_a",
+        topic="Photosynthesis",
+        question_type=QuestionType.mcq,
+        difficulty=DifficultyLevel.beginner,
+        body="Prefetched: which organelle?",
+        options=[
+            McqOption(key="A", text="Mitochondria", is_correct=False),
+            McqOption(key="B", text="Chloroplast", is_correct=True),
+            McqOption(key="C", text="Ribosome", is_correct=False),
+            McqOption(key="D", text="Nucleus", is_correct=False),
+        ],
+        answer="B",
+        explanation="...",
+        status=QuestionStatus.approved,
+        prefetched_for=student_id,
+    ).model_dump(by_alias=True)
+
+
+def test_next_serves_prefetched_question_without_running_pipeline(
+    client, student
+):
+    """When a prefetched row exists for this student, /next returns it
+    immediately — no LPE call, no generation, no review.
+    """
+    mocks, persisted, _, generate_mock, review_mock = _patches(
+        workspace=_workspace(),
+        selection=_selection(_topic_score()),
+        context=_context(),
+        retrieved=_retrieved("source"),
+        prefetched=_prefetched_doc(),
+    )
+    # Patch select_next_topic too so we can prove it wasn't called.
+    select_mock = AsyncMock(return_value=_selection(_topic_score()))
+    mocks_with_select = []
+    for m in mocks:
+        # Swap the existing select patch with our spy.
+        if "select_next_topic" in str(m):
+            mocks_with_select.append(
+                patch("app.api.questions.select_next_topic", select_mock)
+            )
+        else:
+            mocks_with_select.append(m)
+
+    with _enter(mocks_with_select):
+        response = client.post("/api/v1/workspaces/wsp_a/questions/next")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "qst_pre"
+    assert response.json()["body"].startswith("Prefetched")
+    # Critical: the pipeline did NOT run.
+    select_mock.assert_not_awaited()
+    generate_mock.assert_not_awaited()
+    review_mock.assert_not_awaited()
+    # And /next didn't insert a new question — it claimed an existing row.
+    assert persisted == []
+
+
+def test_next_falls_through_to_pipeline_when_no_prefetched_row(client, student):
+    """No prefetched row → existing live-generation flow runs as before."""
+    mocks, persisted, *_ = _patches(
+        workspace=_workspace(),
+        selection=_selection(_topic_score()),
+        context=_context(),
+        retrieved=_retrieved("source"),
+        prefetched=None,
+    )
+    with _enter(mocks):
+        response = client.post("/api/v1/workspaces/wsp_a/questions/next")
+    assert response.status_code == 200
+    assert len(persisted) == 1
+
+
+def test_submit_answer_schedules_prefetch_for_next_question(client, student):
+    """After /answer responds, a background task should fire to
+    pre-generate the student's next question. With FastAPI's
+    TestClient, BackgroundTasks run synchronously after the response,
+    so we can assert the prefetch ran via a mock.
+    """
+    questions_col = MagicMock()
+    questions_col.find_one = AsyncMock(
+        return_value={
+            "_id": "qst_target",
+            "tenant_id": "ten_test001",
+            "workspace_id": "wsp_a",
+            "document_id": "doc_a",
+            "topic": "Photosynthesis",
+            "question_type": "mcq",
+            "difficulty": "beginner",
+            "body": "Q?",
+            "options": [
+                {"key": "A", "text": "...", "is_correct": False},
+                {"key": "B", "text": "...", "is_correct": True},
+                {"key": "C", "text": "...", "is_correct": False},
+                {"key": "D", "text": "...", "is_correct": False},
+            ],
+            "answer": "B",
+            "explanation": "...",
+            "status": "approved",
+            "grading_hints": [],
+            "source_chunk_ids": [],
+            "moderation_flagged": False,
+            "prompt_version": "question_mcq_v1",
+            "times_served": 0,
+            "prefetched_for": None,
+            "created_at": "2026-05-21T00:00:00+00:00",
+            "updated_at": "2026-05-21T00:00:00+00:00",
+            "deleted_at": None,
+        }
+    )
+    interactions_col = MagicMock()
+    interactions_col.insert_one = AsyncMock(return_value=MagicMock())
+
+    def _factory(_tid, collection):
+        from app.core.database import INTERACTIONS, QUESTION_QUEUE
+
+        if collection == QUESTION_QUEUE:
+            return questions_col
+        if collection == INTERACTIONS:
+            return interactions_col
+        raise AssertionError(collection)
+
+    from app.models.knowledge_state import KnowledgeState, TopicMastery
+
+    record_state = KnowledgeState(
+        **{"_id": "ks_a"},
+        tenant_id="ten_test001",
+        workspace_id="wsp_a",
+        student_id="stu_a",
+        topics=[
+            TopicMastery(
+                topic="Photosynthesis",
+                mastery_score=0.1,
+                questions_attempted=1,
+                questions_correct=1,
+            )
+        ],
+        overall_mastery=0.1,
+    )
+
+    prefetch_mock = AsyncMock()
+    with (
+        patch("app.api.questions.get_collection", side_effect=_factory),
+        patch(
+            "app.api.questions.knowledge_state_service.record_attempt",
+            AsyncMock(return_value=record_state),
+        ),
+        patch(
+            "app.api.questions.prefetch_next_question",
+            prefetch_mock,
+        ),
+    ):
+        response = client.post(
+            "/api/v1/workspaces/wsp_a/questions/qst_target/answer",
+            json={"answer": "B"},
+        )
+
+    assert response.status_code == 200
+    # Background task fired — BackgroundTasks execute after the
+    # response is sent but BEFORE TestClient returns control.
+    prefetch_mock.assert_awaited_once_with(
+        tenant_id="ten_test001",
+        workspace_id="wsp_a",
+        student_id="stu_a",
+    )
+
+
+@pytest.mark.asyncio
+async def test_prefetch_next_question_persists_with_prefetched_for_set():
+    """Calling the prefetch function directly should persist a Question
+    with ``prefetched_for`` set to the target student so /next can
+    claim it.
+    """
+    from app.api.questions import prefetch_next_question
+
+    workspaces_col = MagicMock()
+    workspaces_col.find_one = AsyncMock(
+        return_value=_workspace().model_dump(by_alias=True)
+    )
+    persisted: list[dict] = []
+    questions_col = MagicMock()
+    questions_col.insert_one = AsyncMock(
+        side_effect=lambda d: persisted.append(d) or MagicMock(inserted_id=d["_id"])
+    )
+
+    def _factory(_tid, collection):
+        from app.core.database import QUESTION_QUEUE, WORKSPACES
+
+        if collection == WORKSPACES:
+            return workspaces_col
+        if collection == QUESTION_QUEUE:
+            return questions_col
+        raise AssertionError(collection)
+
+    async def _invoke(name, params):
+        if name == "retrieve_student_context":
+            return _context()
+        if name == "retrieve_content":
+            return _retrieved("source")
+        raise AssertionError(name)
+
+    with (
+        patch("app.api.questions.get_collection", side_effect=_factory),
+        patch(
+            "app.api.questions.select_next_topic",
+            AsyncMock(return_value=_selection(_topic_score())),
+        ),
+        patch("app.api.questions.invoke", _invoke),
+        patch(
+            "app.api.questions.question_generation.generate_question",
+            AsyncMock(return_value=_generated_mcq()),
+        ),
+        patch(
+            "app.api.questions.question_safety.review_question",
+            AsyncMock(return_value=_review(ReviewVerdict.approved)),
+        ),
+    ):
+        await prefetch_next_question(
+            tenant_id="ten_test001",
+            workspace_id="wsp_a",
+            student_id="stu_a",
+        )
+
+    assert len(persisted) == 1
+    saved = persisted[0]
+    assert saved["prefetched_for"] == "stu_a"
+    assert saved["status"] == "approved"
+    assert saved["moderation_flagged"] is False
+
+
+@pytest.mark.asyncio
+async def test_prefetch_skips_persistence_on_empty_retrieval():
+    """Prefetch with no grounding chunks must NOT persist a placeholder —
+    /next will live-generate next call as if nothing was prefetched.
+    """
+    from app.api.questions import prefetch_next_question
+
+    workspaces_col = MagicMock()
+    workspaces_col.find_one = AsyncMock(
+        return_value=_workspace().model_dump(by_alias=True)
+    )
+    persisted: list[dict] = []
+    questions_col = MagicMock()
+    questions_col.insert_one = AsyncMock(
+        side_effect=lambda d: persisted.append(d) or MagicMock(inserted_id=d["_id"])
+    )
+
+    def _factory(_tid, collection):
+        from app.core.database import QUESTION_QUEUE, WORKSPACES
+
+        if collection == WORKSPACES:
+            return workspaces_col
+        if collection == QUESTION_QUEUE:
+            return questions_col
+        raise AssertionError(collection)
+
+    async def _invoke(name, params):
+        if name == "retrieve_student_context":
+            return _context()
+        if name == "retrieve_content":
+            return RetrieveContentOutput(chunks=[], mode="empty")
+        raise AssertionError(name)
+
+    generate_mock = AsyncMock()
+    with (
+        patch("app.api.questions.get_collection", side_effect=_factory),
+        patch(
+            "app.api.questions.select_next_topic",
+            AsyncMock(return_value=_selection(_topic_score())),
+        ),
+        patch("app.api.questions.invoke", _invoke),
+        patch(
+            "app.api.questions.question_generation.generate_question",
+            generate_mock,
+        ),
+    ):
+        await prefetch_next_question(
+            tenant_id="ten_test001",
+            workspace_id="wsp_a",
+            student_id="stu_a",
+        )
+
+    # Empty retrieval — never even reached the generator.
+    generate_mock.assert_not_awaited()
+    assert persisted == []
+
+
+@pytest.mark.asyncio
+async def test_prefetch_skips_persistence_on_flagged_review():
+    """A safety-flagged question must NOT end up in the prefetch slot —
+    we'd serve it from /next without a fresh safety check otherwise.
+    """
+    from app.api.questions import prefetch_next_question
+
+    workspaces_col = MagicMock()
+    workspaces_col.find_one = AsyncMock(
+        return_value=_workspace().model_dump(by_alias=True)
+    )
+    persisted: list[dict] = []
+    questions_col = MagicMock()
+    questions_col.insert_one = AsyncMock(
+        side_effect=lambda d: persisted.append(d) or MagicMock(inserted_id=d["_id"])
+    )
+
+    def _factory(_tid, collection):
+        from app.core.database import QUESTION_QUEUE, WORKSPACES
+
+        if collection == WORKSPACES:
+            return workspaces_col
+        if collection == QUESTION_QUEUE:
+            return questions_col
+        raise AssertionError(collection)
+
+    async def _invoke(name, params):
+        if name == "retrieve_student_context":
+            return _context()
+        if name == "retrieve_content":
+            return _retrieved("source")
+        raise AssertionError(name)
+
+    with (
+        patch("app.api.questions.get_collection", side_effect=_factory),
+        patch(
+            "app.api.questions.select_next_topic",
+            AsyncMock(return_value=_selection(_topic_score())),
+        ),
+        patch("app.api.questions.invoke", _invoke),
+        patch(
+            "app.api.questions.question_generation.generate_question",
+            AsyncMock(return_value=_generated_mcq()),
+        ),
+        patch(
+            "app.api.questions.question_safety.review_question",
+            AsyncMock(
+                return_value=_review(
+                    ReviewVerdict.flagged, safety=_flagged_safety()
+                )
+            ),
+        ),
+    ):
+        await prefetch_next_question(
+            tenant_id="ten_test001",
+            workspace_id="wsp_a",
+            student_id="stu_a",
+        )
+
+    assert persisted == []
+
+
+@pytest.mark.asyncio
+async def test_prefetch_swallows_exceptions_silently():
+    """A prefetch failure must NOT propagate — it would crash the
+    BackgroundTask runner and (worse) might surface on a future /next
+    that touches the same student. The wrapper logs and returns.
+    """
+    from app.api.questions import prefetch_next_question
+
+    with patch(
+        "app.api.questions._read_workspace",
+        AsyncMock(side_effect=RuntimeError("Cosmos down")),
+    ):
+        # Must not raise.
+        await prefetch_next_question(
+            tenant_id="ten_test001",
+            workspace_id="wsp_a",
+            student_id="stu_a",
+        )
