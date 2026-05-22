@@ -20,9 +20,13 @@ WorkspaceMembership _$WorkspaceMembershipFromJson(Map<String, dynamic> json) {
 
 /// @nodoc
 mixin _$WorkspaceMembership {
+  @JsonKey(name: 'workspace_id')
   String get workspaceId => throw _privateConstructorUsedError;
-  String get workspaceName => throw _privateConstructorUsedError;
   UserRole get role => throw _privateConstructorUsedError;
+  @JsonKey(name: 'workspace_name')
+  String? get workspaceName => throw _privateConstructorUsedError;
+  @JsonKey(name: 'joined_at')
+  DateTime? get joinedAt => throw _privateConstructorUsedError;
 
   /// Serializes this WorkspaceMembership to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -40,7 +44,11 @@ abstract class $WorkspaceMembershipCopyWith<$Res> {
           WorkspaceMembership value, $Res Function(WorkspaceMembership) then) =
       _$WorkspaceMembershipCopyWithImpl<$Res, WorkspaceMembership>;
   @useResult
-  $Res call({String workspaceId, String workspaceName, UserRole role});
+  $Res call(
+      {@JsonKey(name: 'workspace_id') String workspaceId,
+      UserRole role,
+      @JsonKey(name: 'workspace_name') String? workspaceName,
+      @JsonKey(name: 'joined_at') DateTime? joinedAt});
 }
 
 /// @nodoc
@@ -59,22 +67,27 @@ class _$WorkspaceMembershipCopyWithImpl<$Res, $Val extends WorkspaceMembership>
   @override
   $Res call({
     Object? workspaceId = null,
-    Object? workspaceName = null,
     Object? role = null,
+    Object? workspaceName = freezed,
+    Object? joinedAt = freezed,
   }) {
     return _then(_value.copyWith(
       workspaceId: null == workspaceId
           ? _value.workspaceId
           : workspaceId // ignore: cast_nullable_to_non_nullable
               as String,
-      workspaceName: null == workspaceName
-          ? _value.workspaceName
-          : workspaceName // ignore: cast_nullable_to_non_nullable
-              as String,
       role: null == role
           ? _value.role
           : role // ignore: cast_nullable_to_non_nullable
               as UserRole,
+      workspaceName: freezed == workspaceName
+          ? _value.workspaceName
+          : workspaceName // ignore: cast_nullable_to_non_nullable
+              as String?,
+      joinedAt: freezed == joinedAt
+          ? _value.joinedAt
+          : joinedAt // ignore: cast_nullable_to_non_nullable
+              as DateTime?,
     ) as $Val);
   }
 }
@@ -87,7 +100,11 @@ abstract class _$$WorkspaceMembershipImplCopyWith<$Res>
       __$$WorkspaceMembershipImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({String workspaceId, String workspaceName, UserRole role});
+  $Res call(
+      {@JsonKey(name: 'workspace_id') String workspaceId,
+      UserRole role,
+      @JsonKey(name: 'workspace_name') String? workspaceName,
+      @JsonKey(name: 'joined_at') DateTime? joinedAt});
 }
 
 /// @nodoc
@@ -104,22 +121,27 @@ class __$$WorkspaceMembershipImplCopyWithImpl<$Res>
   @override
   $Res call({
     Object? workspaceId = null,
-    Object? workspaceName = null,
     Object? role = null,
+    Object? workspaceName = freezed,
+    Object? joinedAt = freezed,
   }) {
     return _then(_$WorkspaceMembershipImpl(
       workspaceId: null == workspaceId
           ? _value.workspaceId
           : workspaceId // ignore: cast_nullable_to_non_nullable
               as String,
-      workspaceName: null == workspaceName
-          ? _value.workspaceName
-          : workspaceName // ignore: cast_nullable_to_non_nullable
-              as String,
       role: null == role
           ? _value.role
           : role // ignore: cast_nullable_to_non_nullable
               as UserRole,
+      workspaceName: freezed == workspaceName
+          ? _value.workspaceName
+          : workspaceName // ignore: cast_nullable_to_non_nullable
+              as String?,
+      joinedAt: freezed == joinedAt
+          ? _value.joinedAt
+          : joinedAt // ignore: cast_nullable_to_non_nullable
+              as DateTime?,
     ));
   }
 }
@@ -128,23 +150,29 @@ class __$$WorkspaceMembershipImplCopyWithImpl<$Res>
 @JsonSerializable()
 class _$WorkspaceMembershipImpl implements _WorkspaceMembership {
   const _$WorkspaceMembershipImpl(
-      {required this.workspaceId,
-      required this.workspaceName,
-      required this.role});
+      {@JsonKey(name: 'workspace_id') required this.workspaceId,
+      required this.role,
+      @JsonKey(name: 'workspace_name') this.workspaceName,
+      @JsonKey(name: 'joined_at') this.joinedAt});
 
   factory _$WorkspaceMembershipImpl.fromJson(Map<String, dynamic> json) =>
       _$$WorkspaceMembershipImplFromJson(json);
 
   @override
+  @JsonKey(name: 'workspace_id')
   final String workspaceId;
   @override
-  final String workspaceName;
-  @override
   final UserRole role;
+  @override
+  @JsonKey(name: 'workspace_name')
+  final String? workspaceName;
+  @override
+  @JsonKey(name: 'joined_at')
+  final DateTime? joinedAt;
 
   @override
   String toString() {
-    return 'WorkspaceMembership(workspaceId: $workspaceId, workspaceName: $workspaceName, role: $role)';
+    return 'WorkspaceMembership(workspaceId: $workspaceId, role: $role, workspaceName: $workspaceName, joinedAt: $joinedAt)';
   }
 
   @override
@@ -154,15 +182,17 @@ class _$WorkspaceMembershipImpl implements _WorkspaceMembership {
             other is _$WorkspaceMembershipImpl &&
             (identical(other.workspaceId, workspaceId) ||
                 other.workspaceId == workspaceId) &&
+            (identical(other.role, role) || other.role == role) &&
             (identical(other.workspaceName, workspaceName) ||
                 other.workspaceName == workspaceName) &&
-            (identical(other.role, role) || other.role == role));
+            (identical(other.joinedAt, joinedAt) ||
+                other.joinedAt == joinedAt));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   int get hashCode =>
-      Object.hash(runtimeType, workspaceId, workspaceName, role);
+      Object.hash(runtimeType, workspaceId, role, workspaceName, joinedAt);
 
   /// Create a copy of WorkspaceMembership
   /// with the given fields replaced by the non-null parameter values.
@@ -183,19 +213,26 @@ class _$WorkspaceMembershipImpl implements _WorkspaceMembership {
 
 abstract class _WorkspaceMembership implements WorkspaceMembership {
   const factory _WorkspaceMembership(
-      {required final String workspaceId,
-      required final String workspaceName,
-      required final UserRole role}) = _$WorkspaceMembershipImpl;
+          {@JsonKey(name: 'workspace_id') required final String workspaceId,
+          required final UserRole role,
+          @JsonKey(name: 'workspace_name') final String? workspaceName,
+          @JsonKey(name: 'joined_at') final DateTime? joinedAt}) =
+      _$WorkspaceMembershipImpl;
 
   factory _WorkspaceMembership.fromJson(Map<String, dynamic> json) =
       _$WorkspaceMembershipImpl.fromJson;
 
   @override
+  @JsonKey(name: 'workspace_id')
   String get workspaceId;
   @override
-  String get workspaceName;
-  @override
   UserRole get role;
+  @override
+  @JsonKey(name: 'workspace_name')
+  String? get workspaceName;
+  @override
+  @JsonKey(name: 'joined_at')
+  DateTime? get joinedAt;
 
   /// Create a copy of WorkspaceMembership
   /// with the given fields replaced by the non-null parameter values.
@@ -213,16 +250,27 @@ User _$UserFromJson(Map<String, dynamic> json) {
 mixin _$User {
   String get id => throw _privateConstructorUsedError;
   String get email => throw _privateConstructorUsedError;
+  @JsonKey(name: 'display_name')
   String get displayName => throw _privateConstructorUsedError;
+  @JsonKey(name: 'tenant_id')
   String get tenantId => throw _privateConstructorUsedError;
   UserRole get role => throw _privateConstructorUsedError;
+  @JsonKey(name: 'workspace_memberships')
   List<WorkspaceMembership> get workspaceMemberships =>
       throw _privateConstructorUsedError;
+  @JsonKey(name: 'avatar_url')
   String? get avatarUrl => throw _privateConstructorUsedError;
+  @JsonKey(name: 'grade_level')
   int? get gradeLevel => throw _privateConstructorUsedError;
+  @JsonKey(name: 'created_at')
   DateTime get createdAt => throw _privateConstructorUsedError;
-  DateTime get lastLogin => throw _privateConstructorUsedError;
-  bool get isDeleted => throw _privateConstructorUsedError;
+  @JsonKey(name: 'last_login_at')
+  DateTime? get lastLogin => throw _privateConstructorUsedError;
+
+  /// False once the account has been soft-deleted (`is_active` on the
+  /// backend).
+  @JsonKey(name: 'is_active')
+  bool get isActive => throw _privateConstructorUsedError;
 
   /// Serializes this User to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -241,15 +289,16 @@ abstract class $UserCopyWith<$Res> {
   $Res call(
       {String id,
       String email,
-      String displayName,
-      String tenantId,
+      @JsonKey(name: 'display_name') String displayName,
+      @JsonKey(name: 'tenant_id') String tenantId,
       UserRole role,
+      @JsonKey(name: 'workspace_memberships')
       List<WorkspaceMembership> workspaceMemberships,
-      String? avatarUrl,
-      int? gradeLevel,
-      DateTime createdAt,
-      DateTime lastLogin,
-      bool isDeleted});
+      @JsonKey(name: 'avatar_url') String? avatarUrl,
+      @JsonKey(name: 'grade_level') int? gradeLevel,
+      @JsonKey(name: 'created_at') DateTime createdAt,
+      @JsonKey(name: 'last_login_at') DateTime? lastLogin,
+      @JsonKey(name: 'is_active') bool isActive});
 }
 
 /// @nodoc
@@ -276,8 +325,8 @@ class _$UserCopyWithImpl<$Res, $Val extends User>
     Object? avatarUrl = freezed,
     Object? gradeLevel = freezed,
     Object? createdAt = null,
-    Object? lastLogin = null,
-    Object? isDeleted = null,
+    Object? lastLogin = freezed,
+    Object? isActive = null,
   }) {
     return _then(_value.copyWith(
       id: null == id
@@ -316,13 +365,13 @@ class _$UserCopyWithImpl<$Res, $Val extends User>
           ? _value.createdAt
           : createdAt // ignore: cast_nullable_to_non_nullable
               as DateTime,
-      lastLogin: null == lastLogin
+      lastLogin: freezed == lastLogin
           ? _value.lastLogin
           : lastLogin // ignore: cast_nullable_to_non_nullable
-              as DateTime,
-      isDeleted: null == isDeleted
-          ? _value.isDeleted
-          : isDeleted // ignore: cast_nullable_to_non_nullable
+              as DateTime?,
+      isActive: null == isActive
+          ? _value.isActive
+          : isActive // ignore: cast_nullable_to_non_nullable
               as bool,
     ) as $Val);
   }
@@ -338,15 +387,16 @@ abstract class _$$UserImplCopyWith<$Res> implements $UserCopyWith<$Res> {
   $Res call(
       {String id,
       String email,
-      String displayName,
-      String tenantId,
+      @JsonKey(name: 'display_name') String displayName,
+      @JsonKey(name: 'tenant_id') String tenantId,
       UserRole role,
+      @JsonKey(name: 'workspace_memberships')
       List<WorkspaceMembership> workspaceMemberships,
-      String? avatarUrl,
-      int? gradeLevel,
-      DateTime createdAt,
-      DateTime lastLogin,
-      bool isDeleted});
+      @JsonKey(name: 'avatar_url') String? avatarUrl,
+      @JsonKey(name: 'grade_level') int? gradeLevel,
+      @JsonKey(name: 'created_at') DateTime createdAt,
+      @JsonKey(name: 'last_login_at') DateTime? lastLogin,
+      @JsonKey(name: 'is_active') bool isActive});
 }
 
 /// @nodoc
@@ -370,8 +420,8 @@ class __$$UserImplCopyWithImpl<$Res>
     Object? avatarUrl = freezed,
     Object? gradeLevel = freezed,
     Object? createdAt = null,
-    Object? lastLogin = null,
-    Object? isDeleted = null,
+    Object? lastLogin = freezed,
+    Object? isActive = null,
   }) {
     return _then(_$UserImpl(
       id: null == id
@@ -410,13 +460,13 @@ class __$$UserImplCopyWithImpl<$Res>
           ? _value.createdAt
           : createdAt // ignore: cast_nullable_to_non_nullable
               as DateTime,
-      lastLogin: null == lastLogin
+      lastLogin: freezed == lastLogin
           ? _value.lastLogin
           : lastLogin // ignore: cast_nullable_to_non_nullable
-              as DateTime,
-      isDeleted: null == isDeleted
-          ? _value.isDeleted
-          : isDeleted // ignore: cast_nullable_to_non_nullable
+              as DateTime?,
+      isActive: null == isActive
+          ? _value.isActive
+          : isActive // ignore: cast_nullable_to_non_nullable
               as bool,
     ));
   }
@@ -428,15 +478,17 @@ class _$UserImpl implements _User {
   const _$UserImpl(
       {required this.id,
       required this.email,
-      required this.displayName,
-      required this.tenantId,
+      @JsonKey(name: 'display_name') required this.displayName,
+      @JsonKey(name: 'tenant_id') required this.tenantId,
       required this.role,
-      final List<WorkspaceMembership> workspaceMemberships = const [],
-      this.avatarUrl,
-      this.gradeLevel,
-      required this.createdAt,
-      required this.lastLogin,
-      this.isDeleted = false})
+      @JsonKey(name: 'workspace_memberships')
+      final List<WorkspaceMembership> workspaceMemberships =
+          const <WorkspaceMembership>[],
+      @JsonKey(name: 'avatar_url') this.avatarUrl,
+      @JsonKey(name: 'grade_level') this.gradeLevel,
+      @JsonKey(name: 'created_at') required this.createdAt,
+      @JsonKey(name: 'last_login_at') this.lastLogin,
+      @JsonKey(name: 'is_active') this.isActive = true})
       : _workspaceMemberships = workspaceMemberships;
 
   factory _$UserImpl.fromJson(Map<String, dynamic> json) =>
@@ -447,14 +499,16 @@ class _$UserImpl implements _User {
   @override
   final String email;
   @override
+  @JsonKey(name: 'display_name')
   final String displayName;
   @override
+  @JsonKey(name: 'tenant_id')
   final String tenantId;
   @override
   final UserRole role;
   final List<WorkspaceMembership> _workspaceMemberships;
   @override
-  @JsonKey()
+  @JsonKey(name: 'workspace_memberships')
   List<WorkspaceMembership> get workspaceMemberships {
     if (_workspaceMemberships is EqualUnmodifiableListView)
       return _workspaceMemberships;
@@ -463,20 +517,27 @@ class _$UserImpl implements _User {
   }
 
   @override
+  @JsonKey(name: 'avatar_url')
   final String? avatarUrl;
   @override
+  @JsonKey(name: 'grade_level')
   final int? gradeLevel;
   @override
+  @JsonKey(name: 'created_at')
   final DateTime createdAt;
   @override
-  final DateTime lastLogin;
+  @JsonKey(name: 'last_login_at')
+  final DateTime? lastLogin;
+
+  /// False once the account has been soft-deleted (`is_active` on the
+  /// backend).
   @override
-  @JsonKey()
-  final bool isDeleted;
+  @JsonKey(name: 'is_active')
+  final bool isActive;
 
   @override
   String toString() {
-    return 'User(id: $id, email: $email, displayName: $displayName, tenantId: $tenantId, role: $role, workspaceMemberships: $workspaceMemberships, avatarUrl: $avatarUrl, gradeLevel: $gradeLevel, createdAt: $createdAt, lastLogin: $lastLogin, isDeleted: $isDeleted)';
+    return 'User(id: $id, email: $email, displayName: $displayName, tenantId: $tenantId, role: $role, workspaceMemberships: $workspaceMemberships, avatarUrl: $avatarUrl, gradeLevel: $gradeLevel, createdAt: $createdAt, lastLogin: $lastLogin, isActive: $isActive)';
   }
 
   @override
@@ -501,8 +562,8 @@ class _$UserImpl implements _User {
                 other.createdAt == createdAt) &&
             (identical(other.lastLogin, lastLogin) ||
                 other.lastLogin == lastLogin) &&
-            (identical(other.isDeleted, isDeleted) ||
-                other.isDeleted == isDeleted));
+            (identical(other.isActive, isActive) ||
+                other.isActive == isActive));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -519,7 +580,7 @@ class _$UserImpl implements _User {
       gradeLevel,
       createdAt,
       lastLogin,
-      isDeleted);
+      isActive);
 
   /// Create a copy of User
   /// with the given fields replaced by the non-null parameter values.
@@ -541,15 +602,16 @@ abstract class _User implements User {
   const factory _User(
       {required final String id,
       required final String email,
-      required final String displayName,
-      required final String tenantId,
+      @JsonKey(name: 'display_name') required final String displayName,
+      @JsonKey(name: 'tenant_id') required final String tenantId,
       required final UserRole role,
+      @JsonKey(name: 'workspace_memberships')
       final List<WorkspaceMembership> workspaceMemberships,
-      final String? avatarUrl,
-      final int? gradeLevel,
-      required final DateTime createdAt,
-      required final DateTime lastLogin,
-      final bool isDeleted}) = _$UserImpl;
+      @JsonKey(name: 'avatar_url') final String? avatarUrl,
+      @JsonKey(name: 'grade_level') final int? gradeLevel,
+      @JsonKey(name: 'created_at') required final DateTime createdAt,
+      @JsonKey(name: 'last_login_at') final DateTime? lastLogin,
+      @JsonKey(name: 'is_active') final bool isActive}) = _$UserImpl;
 
   factory _User.fromJson(Map<String, dynamic> json) = _$UserImpl.fromJson;
 
@@ -558,23 +620,34 @@ abstract class _User implements User {
   @override
   String get email;
   @override
+  @JsonKey(name: 'display_name')
   String get displayName;
   @override
+  @JsonKey(name: 'tenant_id')
   String get tenantId;
   @override
   UserRole get role;
   @override
+  @JsonKey(name: 'workspace_memberships')
   List<WorkspaceMembership> get workspaceMemberships;
   @override
+  @JsonKey(name: 'avatar_url')
   String? get avatarUrl;
   @override
+  @JsonKey(name: 'grade_level')
   int? get gradeLevel;
   @override
+  @JsonKey(name: 'created_at')
   DateTime get createdAt;
   @override
-  DateTime get lastLogin;
+  @JsonKey(name: 'last_login_at')
+  DateTime? get lastLogin;
+
+  /// False once the account has been soft-deleted (`is_active` on the
+  /// backend).
   @override
-  bool get isDeleted;
+  @JsonKey(name: 'is_active')
+  bool get isActive;
 
   /// Create a copy of User
   /// with the given fields replaced by the non-null parameter values.
