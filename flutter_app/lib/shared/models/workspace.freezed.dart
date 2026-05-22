@@ -20,10 +20,27 @@ WorkspaceSettings _$WorkspaceSettingsFromJson(Map<String, dynamic> json) {
 
 /// @nodoc
 mixin _$WorkspaceSettings {
-  int get dailyQuestionGoal => throw _privateConstructorUsedError;
-  bool get gamificationEnabled => throw _privateConstructorUsedError;
+  /// How many questions a student is expected to answer per day.
+  @JsonKey(name: 'questions_per_day')
+  int get questionsPerDay => throw _privateConstructorUsedError;
+
+  /// Which question formats the generator may produce. Values are the
+  /// snake_case `QuestionType` wire strings (`mcq`, `short_answer`, …).
+  @JsonKey(name: 'question_types')
+  List<String> get questionTypes => throw _privateConstructorUsedError;
+
+  /// When true, AI-generated content that passes safety is auto-served;
+  /// when false it lands in the moderation queue for admin review.
+  @JsonKey(name: 'auto_approve_content')
+  bool get autoApproveContent => throw _privateConstructorUsedError;
+
+  /// Whether the workspace leaderboard is visible to students.
+  @JsonKey(name: 'leaderboard_visible')
   bool get leaderboardVisible => throw _privateConstructorUsedError;
-  double get moderationThreshold => throw _privateConstructorUsedError;
+
+  /// Whether difficulty calibration adapts to each student's mastery.
+  @JsonKey(name: 'adaptive_difficulty')
+  bool get adaptiveDifficulty => throw _privateConstructorUsedError;
 
   /// Serializes this WorkspaceSettings to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -42,10 +59,11 @@ abstract class $WorkspaceSettingsCopyWith<$Res> {
       _$WorkspaceSettingsCopyWithImpl<$Res, WorkspaceSettings>;
   @useResult
   $Res call(
-      {int dailyQuestionGoal,
-      bool gamificationEnabled,
-      bool leaderboardVisible,
-      double moderationThreshold});
+      {@JsonKey(name: 'questions_per_day') int questionsPerDay,
+      @JsonKey(name: 'question_types') List<String> questionTypes,
+      @JsonKey(name: 'auto_approve_content') bool autoApproveContent,
+      @JsonKey(name: 'leaderboard_visible') bool leaderboardVisible,
+      @JsonKey(name: 'adaptive_difficulty') bool adaptiveDifficulty});
 }
 
 /// @nodoc
@@ -63,28 +81,33 @@ class _$WorkspaceSettingsCopyWithImpl<$Res, $Val extends WorkspaceSettings>
   @pragma('vm:prefer-inline')
   @override
   $Res call({
-    Object? dailyQuestionGoal = null,
-    Object? gamificationEnabled = null,
+    Object? questionsPerDay = null,
+    Object? questionTypes = null,
+    Object? autoApproveContent = null,
     Object? leaderboardVisible = null,
-    Object? moderationThreshold = null,
+    Object? adaptiveDifficulty = null,
   }) {
     return _then(_value.copyWith(
-      dailyQuestionGoal: null == dailyQuestionGoal
-          ? _value.dailyQuestionGoal
-          : dailyQuestionGoal // ignore: cast_nullable_to_non_nullable
+      questionsPerDay: null == questionsPerDay
+          ? _value.questionsPerDay
+          : questionsPerDay // ignore: cast_nullable_to_non_nullable
               as int,
-      gamificationEnabled: null == gamificationEnabled
-          ? _value.gamificationEnabled
-          : gamificationEnabled // ignore: cast_nullable_to_non_nullable
+      questionTypes: null == questionTypes
+          ? _value.questionTypes
+          : questionTypes // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      autoApproveContent: null == autoApproveContent
+          ? _value.autoApproveContent
+          : autoApproveContent // ignore: cast_nullable_to_non_nullable
               as bool,
       leaderboardVisible: null == leaderboardVisible
           ? _value.leaderboardVisible
           : leaderboardVisible // ignore: cast_nullable_to_non_nullable
               as bool,
-      moderationThreshold: null == moderationThreshold
-          ? _value.moderationThreshold
-          : moderationThreshold // ignore: cast_nullable_to_non_nullable
-              as double,
+      adaptiveDifficulty: null == adaptiveDifficulty
+          ? _value.adaptiveDifficulty
+          : adaptiveDifficulty // ignore: cast_nullable_to_non_nullable
+              as bool,
     ) as $Val);
   }
 }
@@ -98,10 +121,11 @@ abstract class _$$WorkspaceSettingsImplCopyWith<$Res>
   @override
   @useResult
   $Res call(
-      {int dailyQuestionGoal,
-      bool gamificationEnabled,
-      bool leaderboardVisible,
-      double moderationThreshold});
+      {@JsonKey(name: 'questions_per_day') int questionsPerDay,
+      @JsonKey(name: 'question_types') List<String> questionTypes,
+      @JsonKey(name: 'auto_approve_content') bool autoApproveContent,
+      @JsonKey(name: 'leaderboard_visible') bool leaderboardVisible,
+      @JsonKey(name: 'adaptive_difficulty') bool adaptiveDifficulty});
 }
 
 /// @nodoc
@@ -117,28 +141,33 @@ class __$$WorkspaceSettingsImplCopyWithImpl<$Res>
   @pragma('vm:prefer-inline')
   @override
   $Res call({
-    Object? dailyQuestionGoal = null,
-    Object? gamificationEnabled = null,
+    Object? questionsPerDay = null,
+    Object? questionTypes = null,
+    Object? autoApproveContent = null,
     Object? leaderboardVisible = null,
-    Object? moderationThreshold = null,
+    Object? adaptiveDifficulty = null,
   }) {
     return _then(_$WorkspaceSettingsImpl(
-      dailyQuestionGoal: null == dailyQuestionGoal
-          ? _value.dailyQuestionGoal
-          : dailyQuestionGoal // ignore: cast_nullable_to_non_nullable
+      questionsPerDay: null == questionsPerDay
+          ? _value.questionsPerDay
+          : questionsPerDay // ignore: cast_nullable_to_non_nullable
               as int,
-      gamificationEnabled: null == gamificationEnabled
-          ? _value.gamificationEnabled
-          : gamificationEnabled // ignore: cast_nullable_to_non_nullable
+      questionTypes: null == questionTypes
+          ? _value._questionTypes
+          : questionTypes // ignore: cast_nullable_to_non_nullable
+              as List<String>,
+      autoApproveContent: null == autoApproveContent
+          ? _value.autoApproveContent
+          : autoApproveContent // ignore: cast_nullable_to_non_nullable
               as bool,
       leaderboardVisible: null == leaderboardVisible
           ? _value.leaderboardVisible
           : leaderboardVisible // ignore: cast_nullable_to_non_nullable
               as bool,
-      moderationThreshold: null == moderationThreshold
-          ? _value.moderationThreshold
-          : moderationThreshold // ignore: cast_nullable_to_non_nullable
-              as double,
+      adaptiveDifficulty: null == adaptiveDifficulty
+          ? _value.adaptiveDifficulty
+          : adaptiveDifficulty // ignore: cast_nullable_to_non_nullable
+              as bool,
     ));
   }
 }
@@ -147,30 +176,55 @@ class __$$WorkspaceSettingsImplCopyWithImpl<$Res>
 @JsonSerializable()
 class _$WorkspaceSettingsImpl implements _WorkspaceSettings {
   const _$WorkspaceSettingsImpl(
-      {this.dailyQuestionGoal = 5,
-      this.gamificationEnabled = true,
-      this.leaderboardVisible = true,
-      this.moderationThreshold = 0.7});
+      {@JsonKey(name: 'questions_per_day') this.questionsPerDay = 5,
+      @JsonKey(name: 'question_types')
+      final List<String> questionTypes = const <String>['mcq', 'short_answer'],
+      @JsonKey(name: 'auto_approve_content') this.autoApproveContent = true,
+      @JsonKey(name: 'leaderboard_visible') this.leaderboardVisible = true,
+      @JsonKey(name: 'adaptive_difficulty') this.adaptiveDifficulty = true})
+      : _questionTypes = questionTypes;
 
   factory _$WorkspaceSettingsImpl.fromJson(Map<String, dynamic> json) =>
       _$$WorkspaceSettingsImplFromJson(json);
 
+  /// How many questions a student is expected to answer per day.
   @override
-  @JsonKey()
-  final int dailyQuestionGoal;
+  @JsonKey(name: 'questions_per_day')
+  final int questionsPerDay;
+
+  /// Which question formats the generator may produce. Values are the
+  /// snake_case `QuestionType` wire strings (`mcq`, `short_answer`, …).
+  final List<String> _questionTypes;
+
+  /// Which question formats the generator may produce. Values are the
+  /// snake_case `QuestionType` wire strings (`mcq`, `short_answer`, …).
   @override
-  @JsonKey()
-  final bool gamificationEnabled;
+  @JsonKey(name: 'question_types')
+  List<String> get questionTypes {
+    if (_questionTypes is EqualUnmodifiableListView) return _questionTypes;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_questionTypes);
+  }
+
+  /// When true, AI-generated content that passes safety is auto-served;
+  /// when false it lands in the moderation queue for admin review.
   @override
-  @JsonKey()
+  @JsonKey(name: 'auto_approve_content')
+  final bool autoApproveContent;
+
+  /// Whether the workspace leaderboard is visible to students.
+  @override
+  @JsonKey(name: 'leaderboard_visible')
   final bool leaderboardVisible;
+
+  /// Whether difficulty calibration adapts to each student's mastery.
   @override
-  @JsonKey()
-  final double moderationThreshold;
+  @JsonKey(name: 'adaptive_difficulty')
+  final bool adaptiveDifficulty;
 
   @override
   String toString() {
-    return 'WorkspaceSettings(dailyQuestionGoal: $dailyQuestionGoal, gamificationEnabled: $gamificationEnabled, leaderboardVisible: $leaderboardVisible, moderationThreshold: $moderationThreshold)';
+    return 'WorkspaceSettings(questionsPerDay: $questionsPerDay, questionTypes: $questionTypes, autoApproveContent: $autoApproveContent, leaderboardVisible: $leaderboardVisible, adaptiveDifficulty: $adaptiveDifficulty)';
   }
 
   @override
@@ -178,20 +232,27 @@ class _$WorkspaceSettingsImpl implements _WorkspaceSettings {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$WorkspaceSettingsImpl &&
-            (identical(other.dailyQuestionGoal, dailyQuestionGoal) ||
-                other.dailyQuestionGoal == dailyQuestionGoal) &&
-            (identical(other.gamificationEnabled, gamificationEnabled) ||
-                other.gamificationEnabled == gamificationEnabled) &&
+            (identical(other.questionsPerDay, questionsPerDay) ||
+                other.questionsPerDay == questionsPerDay) &&
+            const DeepCollectionEquality()
+                .equals(other._questionTypes, _questionTypes) &&
+            (identical(other.autoApproveContent, autoApproveContent) ||
+                other.autoApproveContent == autoApproveContent) &&
             (identical(other.leaderboardVisible, leaderboardVisible) ||
                 other.leaderboardVisible == leaderboardVisible) &&
-            (identical(other.moderationThreshold, moderationThreshold) ||
-                other.moderationThreshold == moderationThreshold));
+            (identical(other.adaptiveDifficulty, adaptiveDifficulty) ||
+                other.adaptiveDifficulty == adaptiveDifficulty));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(runtimeType, dailyQuestionGoal,
-      gamificationEnabled, leaderboardVisible, moderationThreshold);
+  int get hashCode => Object.hash(
+      runtimeType,
+      questionsPerDay,
+      const DeepCollectionEquality().hash(_questionTypes),
+      autoApproveContent,
+      leaderboardVisible,
+      adaptiveDifficulty);
 
   /// Create a copy of WorkspaceSettings
   /// with the given fields replaced by the non-null parameter values.
@@ -212,22 +273,42 @@ class _$WorkspaceSettingsImpl implements _WorkspaceSettings {
 
 abstract class _WorkspaceSettings implements WorkspaceSettings {
   const factory _WorkspaceSettings(
-      {final int dailyQuestionGoal,
-      final bool gamificationEnabled,
-      final bool leaderboardVisible,
-      final double moderationThreshold}) = _$WorkspaceSettingsImpl;
+      {@JsonKey(name: 'questions_per_day') final int questionsPerDay,
+      @JsonKey(name: 'question_types') final List<String> questionTypes,
+      @JsonKey(name: 'auto_approve_content') final bool autoApproveContent,
+      @JsonKey(name: 'leaderboard_visible') final bool leaderboardVisible,
+      @JsonKey(name: 'adaptive_difficulty')
+      final bool adaptiveDifficulty}) = _$WorkspaceSettingsImpl;
 
   factory _WorkspaceSettings.fromJson(Map<String, dynamic> json) =
       _$WorkspaceSettingsImpl.fromJson;
 
+  /// How many questions a student is expected to answer per day.
   @override
-  int get dailyQuestionGoal;
+  @JsonKey(name: 'questions_per_day')
+  int get questionsPerDay;
+
+  /// Which question formats the generator may produce. Values are the
+  /// snake_case `QuestionType` wire strings (`mcq`, `short_answer`, …).
   @override
-  bool get gamificationEnabled;
+  @JsonKey(name: 'question_types')
+  List<String> get questionTypes;
+
+  /// When true, AI-generated content that passes safety is auto-served;
+  /// when false it lands in the moderation queue for admin review.
   @override
+  @JsonKey(name: 'auto_approve_content')
+  bool get autoApproveContent;
+
+  /// Whether the workspace leaderboard is visible to students.
+  @override
+  @JsonKey(name: 'leaderboard_visible')
   bool get leaderboardVisible;
+
+  /// Whether difficulty calibration adapts to each student's mastery.
   @override
-  double get moderationThreshold;
+  @JsonKey(name: 'adaptive_difficulty')
+  bool get adaptiveDifficulty;
 
   /// Create a copy of WorkspaceSettings
   /// with the given fields replaced by the non-null parameter values.
@@ -244,12 +325,29 @@ Workspace _$WorkspaceFromJson(Map<String, dynamic> json) {
 /// @nodoc
 mixin _$Workspace {
   String get id => throw _privateConstructorUsedError;
+  @JsonKey(name: 'tenant_id')
   String get tenantId => throw _privateConstructorUsedError;
   String get name => throw _privateConstructorUsedError;
-  String? get description => throw _privateConstructorUsedError;
+  String get description => throw _privateConstructorUsedError;
+
+  /// Number of workspace admins (teachers / parents).
+  @JsonKey(name: 'admin_count')
+  int get adminCount => throw _privateConstructorUsedError;
+
+  /// Number of enrolled students.
+  @JsonKey(name: 'student_count')
+  int get studentCount => throw _privateConstructorUsedError;
+
+  /// Number of uploaded study documents.
+  @JsonKey(name: 'document_count')
+  int get documentCount => throw _privateConstructorUsedError;
   WorkspaceSettings get settings => throw _privateConstructorUsedError;
+
+  /// False once the workspace has been soft-deleted.
+  @JsonKey(name: 'is_active')
+  bool get isActive => throw _privateConstructorUsedError;
+  @JsonKey(name: 'created_at')
   DateTime get createdAt => throw _privateConstructorUsedError;
-  bool get isDeleted => throw _privateConstructorUsedError;
 
   /// Serializes this Workspace to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -268,12 +366,15 @@ abstract class $WorkspaceCopyWith<$Res> {
   @useResult
   $Res call(
       {String id,
-      String tenantId,
+      @JsonKey(name: 'tenant_id') String tenantId,
       String name,
-      String? description,
+      String description,
+      @JsonKey(name: 'admin_count') int adminCount,
+      @JsonKey(name: 'student_count') int studentCount,
+      @JsonKey(name: 'document_count') int documentCount,
       WorkspaceSettings settings,
-      DateTime createdAt,
-      bool isDeleted});
+      @JsonKey(name: 'is_active') bool isActive,
+      @JsonKey(name: 'created_at') DateTime createdAt});
 
   $WorkspaceSettingsCopyWith<$Res> get settings;
 }
@@ -296,10 +397,13 @@ class _$WorkspaceCopyWithImpl<$Res, $Val extends Workspace>
     Object? id = null,
     Object? tenantId = null,
     Object? name = null,
-    Object? description = freezed,
+    Object? description = null,
+    Object? adminCount = null,
+    Object? studentCount = null,
+    Object? documentCount = null,
     Object? settings = null,
+    Object? isActive = null,
     Object? createdAt = null,
-    Object? isDeleted = null,
   }) {
     return _then(_value.copyWith(
       id: null == id
@@ -314,22 +418,34 @@ class _$WorkspaceCopyWithImpl<$Res, $Val extends Workspace>
           ? _value.name
           : name // ignore: cast_nullable_to_non_nullable
               as String,
-      description: freezed == description
+      description: null == description
           ? _value.description
           : description // ignore: cast_nullable_to_non_nullable
-              as String?,
+              as String,
+      adminCount: null == adminCount
+          ? _value.adminCount
+          : adminCount // ignore: cast_nullable_to_non_nullable
+              as int,
+      studentCount: null == studentCount
+          ? _value.studentCount
+          : studentCount // ignore: cast_nullable_to_non_nullable
+              as int,
+      documentCount: null == documentCount
+          ? _value.documentCount
+          : documentCount // ignore: cast_nullable_to_non_nullable
+              as int,
       settings: null == settings
           ? _value.settings
           : settings // ignore: cast_nullable_to_non_nullable
               as WorkspaceSettings,
+      isActive: null == isActive
+          ? _value.isActive
+          : isActive // ignore: cast_nullable_to_non_nullable
+              as bool,
       createdAt: null == createdAt
           ? _value.createdAt
           : createdAt // ignore: cast_nullable_to_non_nullable
               as DateTime,
-      isDeleted: null == isDeleted
-          ? _value.isDeleted
-          : isDeleted // ignore: cast_nullable_to_non_nullable
-              as bool,
     ) as $Val);
   }
 
@@ -354,12 +470,15 @@ abstract class _$$WorkspaceImplCopyWith<$Res>
   @useResult
   $Res call(
       {String id,
-      String tenantId,
+      @JsonKey(name: 'tenant_id') String tenantId,
       String name,
-      String? description,
+      String description,
+      @JsonKey(name: 'admin_count') int adminCount,
+      @JsonKey(name: 'student_count') int studentCount,
+      @JsonKey(name: 'document_count') int documentCount,
       WorkspaceSettings settings,
-      DateTime createdAt,
-      bool isDeleted});
+      @JsonKey(name: 'is_active') bool isActive,
+      @JsonKey(name: 'created_at') DateTime createdAt});
 
   @override
   $WorkspaceSettingsCopyWith<$Res> get settings;
@@ -381,10 +500,13 @@ class __$$WorkspaceImplCopyWithImpl<$Res>
     Object? id = null,
     Object? tenantId = null,
     Object? name = null,
-    Object? description = freezed,
+    Object? description = null,
+    Object? adminCount = null,
+    Object? studentCount = null,
+    Object? documentCount = null,
     Object? settings = null,
+    Object? isActive = null,
     Object? createdAt = null,
-    Object? isDeleted = null,
   }) {
     return _then(_$WorkspaceImpl(
       id: null == id
@@ -399,22 +521,34 @@ class __$$WorkspaceImplCopyWithImpl<$Res>
           ? _value.name
           : name // ignore: cast_nullable_to_non_nullable
               as String,
-      description: freezed == description
+      description: null == description
           ? _value.description
           : description // ignore: cast_nullable_to_non_nullable
-              as String?,
+              as String,
+      adminCount: null == adminCount
+          ? _value.adminCount
+          : adminCount // ignore: cast_nullable_to_non_nullable
+              as int,
+      studentCount: null == studentCount
+          ? _value.studentCount
+          : studentCount // ignore: cast_nullable_to_non_nullable
+              as int,
+      documentCount: null == documentCount
+          ? _value.documentCount
+          : documentCount // ignore: cast_nullable_to_non_nullable
+              as int,
       settings: null == settings
           ? _value.settings
           : settings // ignore: cast_nullable_to_non_nullable
               as WorkspaceSettings,
+      isActive: null == isActive
+          ? _value.isActive
+          : isActive // ignore: cast_nullable_to_non_nullable
+              as bool,
       createdAt: null == createdAt
           ? _value.createdAt
           : createdAt // ignore: cast_nullable_to_non_nullable
               as DateTime,
-      isDeleted: null == isDeleted
-          ? _value.isDeleted
-          : isDeleted // ignore: cast_nullable_to_non_nullable
-              as bool,
     ));
   }
 }
@@ -424,12 +558,15 @@ class __$$WorkspaceImplCopyWithImpl<$Res>
 class _$WorkspaceImpl implements _Workspace {
   const _$WorkspaceImpl(
       {required this.id,
-      required this.tenantId,
+      @JsonKey(name: 'tenant_id') required this.tenantId,
       required this.name,
-      this.description,
+      this.description = '',
+      @JsonKey(name: 'admin_count') this.adminCount = 0,
+      @JsonKey(name: 'student_count') this.studentCount = 0,
+      @JsonKey(name: 'document_count') this.documentCount = 0,
       required this.settings,
-      required this.createdAt,
-      this.isDeleted = false});
+      @JsonKey(name: 'is_active') this.isActive = true,
+      @JsonKey(name: 'created_at') required this.createdAt});
 
   factory _$WorkspaceImpl.fromJson(Map<String, dynamic> json) =>
       _$$WorkspaceImplFromJson(json);
@@ -437,22 +574,42 @@ class _$WorkspaceImpl implements _Workspace {
   @override
   final String id;
   @override
+  @JsonKey(name: 'tenant_id')
   final String tenantId;
   @override
   final String name;
   @override
-  final String? description;
+  @JsonKey()
+  final String description;
+
+  /// Number of workspace admins (teachers / parents).
+  @override
+  @JsonKey(name: 'admin_count')
+  final int adminCount;
+
+  /// Number of enrolled students.
+  @override
+  @JsonKey(name: 'student_count')
+  final int studentCount;
+
+  /// Number of uploaded study documents.
+  @override
+  @JsonKey(name: 'document_count')
+  final int documentCount;
   @override
   final WorkspaceSettings settings;
+
+  /// False once the workspace has been soft-deleted.
   @override
+  @JsonKey(name: 'is_active')
+  final bool isActive;
+  @override
+  @JsonKey(name: 'created_at')
   final DateTime createdAt;
-  @override
-  @JsonKey()
-  final bool isDeleted;
 
   @override
   String toString() {
-    return 'Workspace(id: $id, tenantId: $tenantId, name: $name, description: $description, settings: $settings, createdAt: $createdAt, isDeleted: $isDeleted)';
+    return 'Workspace(id: $id, tenantId: $tenantId, name: $name, description: $description, adminCount: $adminCount, studentCount: $studentCount, documentCount: $documentCount, settings: $settings, isActive: $isActive, createdAt: $createdAt)';
   }
 
   @override
@@ -466,18 +623,24 @@ class _$WorkspaceImpl implements _Workspace {
             (identical(other.name, name) || other.name == name) &&
             (identical(other.description, description) ||
                 other.description == description) &&
+            (identical(other.adminCount, adminCount) ||
+                other.adminCount == adminCount) &&
+            (identical(other.studentCount, studentCount) ||
+                other.studentCount == studentCount) &&
+            (identical(other.documentCount, documentCount) ||
+                other.documentCount == documentCount) &&
             (identical(other.settings, settings) ||
                 other.settings == settings) &&
+            (identical(other.isActive, isActive) ||
+                other.isActive == isActive) &&
             (identical(other.createdAt, createdAt) ||
-                other.createdAt == createdAt) &&
-            (identical(other.isDeleted, isDeleted) ||
-                other.isDeleted == isDeleted));
+                other.createdAt == createdAt));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   int get hashCode => Object.hash(runtimeType, id, tenantId, name, description,
-      settings, createdAt, isDeleted);
+      adminCount, studentCount, documentCount, settings, isActive, createdAt);
 
   /// Create a copy of Workspace
   /// with the given fields replaced by the non-null parameter values.
@@ -497,13 +660,17 @@ class _$WorkspaceImpl implements _Workspace {
 
 abstract class _Workspace implements Workspace {
   const factory _Workspace(
-      {required final String id,
-      required final String tenantId,
-      required final String name,
-      final String? description,
-      required final WorkspaceSettings settings,
-      required final DateTime createdAt,
-      final bool isDeleted}) = _$WorkspaceImpl;
+          {required final String id,
+          @JsonKey(name: 'tenant_id') required final String tenantId,
+          required final String name,
+          final String description,
+          @JsonKey(name: 'admin_count') final int adminCount,
+          @JsonKey(name: 'student_count') final int studentCount,
+          @JsonKey(name: 'document_count') final int documentCount,
+          required final WorkspaceSettings settings,
+          @JsonKey(name: 'is_active') final bool isActive,
+          @JsonKey(name: 'created_at') required final DateTime createdAt}) =
+      _$WorkspaceImpl;
 
   factory _Workspace.fromJson(Map<String, dynamic> json) =
       _$WorkspaceImpl.fromJson;
@@ -511,17 +678,37 @@ abstract class _Workspace implements Workspace {
   @override
   String get id;
   @override
+  @JsonKey(name: 'tenant_id')
   String get tenantId;
   @override
   String get name;
   @override
-  String? get description;
+  String get description;
+
+  /// Number of workspace admins (teachers / parents).
+  @override
+  @JsonKey(name: 'admin_count')
+  int get adminCount;
+
+  /// Number of enrolled students.
+  @override
+  @JsonKey(name: 'student_count')
+  int get studentCount;
+
+  /// Number of uploaded study documents.
+  @override
+  @JsonKey(name: 'document_count')
+  int get documentCount;
   @override
   WorkspaceSettings get settings;
+
+  /// False once the workspace has been soft-deleted.
   @override
+  @JsonKey(name: 'is_active')
+  bool get isActive;
+  @override
+  @JsonKey(name: 'created_at')
   DateTime get createdAt;
-  @override
-  bool get isDeleted;
 
   /// Create a copy of Workspace
   /// with the given fields replaced by the non-null parameter values.
