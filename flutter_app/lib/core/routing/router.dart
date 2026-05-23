@@ -4,8 +4,13 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/features/admin/moderation/presentation/moderation_screen.dart';
+import 'package:social_study_app/features/admin/workspaces/presentation/workspace_settings_screen.dart';
+import 'package:social_study_app/features/admin/workspaces/presentation/workspaces_screen.dart';
 import 'package:social_study_app/features/auth/presentation/login_screen.dart';
 import 'package:social_study_app/features/documents/presentation/document_polling_screen.dart';
+import 'package:social_study_app/features/revision/presentation/revision_screen.dart';
+import 'package:social_study_app/features/taxonomy/presentation/taxonomy_editor_screen.dart';
 import 'package:social_study_app/features/home/presentation/admin_home_screen.dart';
 import 'package:social_study_app/features/home/presentation/student_home_screen.dart';
 import 'package:social_study_app/features/taxonomy/presentation/taxonomy_viewer_screen.dart';
@@ -78,8 +83,36 @@ GoRouter router(RouterRef ref) {
         ),
       ),
       GoRoute(
+        path: AppRoutes.adminTaxonomyEditor,
+        builder: (_, state) => TaxonomyEditorScreen(
+          workspaceId: state.pathParameters['workspaceId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.adminWorkspaces,
+        builder: (_, __) => const WorkspacesScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.adminWorkspaceSettingsEditor,
+        builder: (_, state) => WorkspaceSettingsScreen(
+          workspaceId: state.pathParameters['workspaceId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.adminModerationDashboard,
+        builder: (_, state) => ModerationScreen(
+          workspaceId: state.pathParameters['workspaceId']!,
+        ),
+      ),
+      GoRoute(
         path: AppRoutes.studentHome,
         builder: (_, __) => const StudentHomeScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.studentRevisionSession,
+        builder: (_, state) => RevisionScreen(
+          workspaceId: state.pathParameters['workspaceId']!,
+        ),
       ),
     ],
   );

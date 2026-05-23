@@ -5,6 +5,7 @@ import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
+import 'package:social_study_app/features/admin/users/presentation/users_screen.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/documents/presentation/documents_list_screen.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
@@ -85,8 +86,11 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
         children: [
           _DashboardTab(displayName: displayName),
           _DocumentsTab(workspaceId: workspaceId),
-          const _StudentsTab(),
-          _SettingsTab(onSignOut: () => _signOut()),
+          _StudentsTab(workspaceId: workspaceId),
+          _SettingsTab(
+            workspaceId: workspaceId,
+            onSignOut: () => _signOut(),
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -392,57 +396,62 @@ class _DocumentsTab extends StatelessWidget {
 }
 
 class _StudentsTab extends StatelessWidget {
-  const _StudentsTab();
+  const _StudentsTab({required this.workspaceId});
+
+  final String? workspaceId;
 
   @override
   Widget build(BuildContext context) {
-    return EmptyStateView(
-      icon: Icons.people_rounded,
-      title: 'No students yet',
-      subtitle: 'Generate an invite code and share it with your students.',
-      action: FilledButton.icon(
-        onPressed: () {},
-        icon: const Icon(Icons.add_link_rounded),
-        label: const Text('Generate Invite Code'),
-      ),
-    );
+    if (workspaceId == null) {
+      return const EmptyStateView(
+        icon: Icons.workspaces_outline,
+        title: 'No workspace yet',
+        subtitle: 'Create or join a workspace before managing students.',
+      );
+    }
+    // Sprint 4.2 — full roster management for the active workspace.
+    return WorkspaceUsersScreen(workspaceId: workspaceId!);
   }
 }
 
 class _SettingsTab extends StatelessWidget {
-  const _SettingsTab({required this.onSignOut});
+  const _SettingsTab({required this.workspaceId, required this.onSignOut});
 
+  final String? workspaceId;
   final VoidCallback onSignOut;
 
   @override
   Widget build(BuildContext context) {
+    final wsId = workspaceId;
     return ListView(
       children: [
         const SizedBox(height: Spacing.sm),
         _SettingsTile(
           icon: Icons.workspace_premium_rounded,
-          title: 'Workspace',
-          subtitle: 'Demo Classroom',
-          onTap: () {},
+          title: 'Workspaces',
+          subtitle: 'Create, edit, and manage workspaces',
+          onTap: () => context.push(AppRoutes.adminWorkspaces),
         ),
-        _SettingsTile(
-          icon: Icons.quiz_rounded,
-          title: 'Question Settings',
-          subtitle: '5 questions per day',
-          onTap: () {},
-        ),
-        _SettingsTile(
-          icon: Icons.shield_rounded,
-          title: 'Content Moderation',
-          subtitle: 'Auto-approve enabled',
-          onTap: () {},
-        ),
-        _SettingsTile(
-          icon: Icons.leaderboard_rounded,
-          title: 'Gamification',
-          subtitle: 'Leaderboard visible',
-          onTap: () {},
-        ),
+        // Workspace-scoped settings only resolve once the admin has a
+        // workspace — until then the Workspaces tile is the way in.
+        if (wsId != null) ...[
+          _SettingsTile(
+            icon: Icons.tune_rounded,
+            title: 'Workspace Settings',
+            subtitle: 'Question frequency, formats, gamification',
+            onTap: () => context.push(
+              '${AppRoutes.adminWorkspaceSettings}/$wsId',
+            ),
+          ),
+          _SettingsTile(
+            icon: Icons.shield_rounded,
+            title: 'Content Moderation',
+            subtitle: 'Review flagged questions and documents',
+            onTap: () => context.push(
+              '${AppRoutes.adminModeration}/$wsId',
+            ),
+          ),
+        ],
         const Divider(height: Spacing.xl),
         _SettingsTile(
           icon: Icons.logout_rounded,

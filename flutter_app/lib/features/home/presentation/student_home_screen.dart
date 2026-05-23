@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
+import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/features/flashcards/presentation/flashcard_screen.dart';
+import 'package:social_study_app/features/progress/presentation/progress_screen.dart';
+import 'package:social_study_app/features/questions/presentation/question_screen.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 
 class StudentHomeScreen extends ConsumerStatefulWidget {
@@ -25,12 +30,18 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final displayName =
-        ref.watch(authNotifierProvider).valueOrNull?.maybeWhen(
-              authenticated: (user) => user.displayName,
-              orElse: () => 'Student',
-            ) ??
+    final authValue = ref.watch(authNotifierProvider).valueOrNull;
+    final displayName = authValue?.maybeWhen(
+          authenticated: (user) => user.displayName,
+          orElse: () => 'Student',
+        ) ??
         'Student';
+    final workspaceId = authValue?.maybeWhen(
+      authenticated: (user) => user.workspaceMemberships.isNotEmpty
+          ? user.workspaceMemberships.first.workspaceId
+          : null,
+      orElse: () => null,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -62,10 +73,18 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          _HomeTab(displayName: displayName),
-          const _StudyTab(),
-          const _FlashcardsTab(),
-          const _ProgressTab(),
+          _HomeTab(
+            displayName: displayName,
+            onStartStudy: () => setState(() => _selectedIndex = 1),
+            onStartRevision: workspaceId == null
+                ? null
+                : () => context.push(
+                      '${AppRoutes.studentRevision}/$workspaceId',
+                    ),
+          ),
+          _StudyTab(workspaceId: workspaceId),
+          _FlashcardsTab(workspaceId: workspaceId),
+          _ProgressTab(workspaceId: workspaceId),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -86,9 +105,18 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
 }
 
 class _HomeTab extends StatelessWidget {
-  const _HomeTab({required this.displayName});
+  const _HomeTab({
+    required this.displayName,
+    required this.onStartStudy,
+    required this.onStartRevision,
+  });
 
   final String displayName;
+  final VoidCallback onStartStudy;
+
+  /// `null` when there's no active workspace, which disables the
+  /// revision launch button.
+  final VoidCallback? onStartRevision;
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +127,9 @@ class _HomeTab extends StatelessWidget {
         const SizedBox(height: Spacing.lg),
         _StreakCard(),
         const SizedBox(height: Spacing.lg),
-        _QuickStudyButton(),
+        _QuickStudyButton(onPressed: onStartStudy),
+        const SizedBox(height: Spacing.md),
+        _RevisionButton(onPressed: onStartRevision),
         const SizedBox(height: Spacing.xl),
         Text(
           'Recent Activity',
@@ -248,6 +278,10 @@ class _StreakCard extends StatelessWidget {
 }
 
 class _QuickStudyButton extends StatelessWidget {
+  const _QuickStudyButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
   @override
   Widget build(BuildContext context) {
     return FilledButton.icon(
@@ -261,114 +295,93 @@ class _QuickStudyButton extends StatelessWidget {
           fontWeight: FontWeight.w600,
         ),
       ),
-      onPressed: () {},
+      onPressed: onPressed,
       icon: const Icon(Icons.play_arrow_rounded, size: 24),
       label: const Text('Start Study Session'),
     );
   }
 }
 
-class _StudyTab extends StatelessWidget {
-  const _StudyTab();
+/// Launches the bounded revision session (Sprint 4.10) — disabled when
+/// the student has no workspace yet.
+class _RevisionButton extends StatelessWidget {
+  const _RevisionButton({required this.onPressed});
+
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return const EmptyStateView(
-      icon: Icons.quiz_rounded,
-      title: 'No questions ready',
-      subtitle:
-          'Your teacher needs to upload study materials before questions can be generated.',
+    return OutlinedButton.icon(
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(double.infinity, 56),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        textStyle: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      onPressed: onPressed,
+      icon: const Icon(Icons.shuffle_rounded, size: 22),
+      label: const Text('Mixed Revision'),
     );
+  }
+}
+
+class _StudyTab extends StatelessWidget {
+  const _StudyTab({required this.workspaceId});
+
+  final String? workspaceId;
+
+  @override
+  Widget build(BuildContext context) {
+    if (workspaceId == null) {
+      return const EmptyStateView(
+        icon: Icons.workspaces_outline,
+        title: 'No workspace yet',
+        subtitle: 'Join a workspace with an invite code to start studying.',
+      );
+    }
+    // Sprint 4.7 / 4.8 — the full question-answering loop.
+    return QuestionScreen(workspaceId: workspaceId!);
   }
 }
 
 class _FlashcardsTab extends StatelessWidget {
-  const _FlashcardsTab();
+  const _FlashcardsTab({required this.workspaceId});
+
+  final String? workspaceId;
 
   @override
   Widget build(BuildContext context) {
-    return const EmptyStateView(
-      icon: Icons.style_rounded,
-      title: 'No flashcards yet',
-      subtitle:
-          'Flashcards will appear here once your teacher uploads study materials.',
-    );
+    if (workspaceId == null) {
+      return const EmptyStateView(
+        icon: Icons.workspaces_outline,
+        title: 'No workspace yet',
+        subtitle: 'Join a workspace with an invite code to review flashcards.',
+      );
+    }
+    // Sprint 4.9 — the swipe-and-flip flashcard review loop.
+    return FlashcardScreen(workspaceId: workspaceId!);
   }
 }
 
 class _ProgressTab extends StatelessWidget {
-  const _ProgressTab();
+  const _ProgressTab({required this.workspaceId});
+
+  final String? workspaceId;
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(Spacing.lg),
-      children: [
-        const _LevelCard(),
-        const SizedBox(height: Spacing.lg),
-        Text(
-          'Topic Mastery',
-          style: context.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: Spacing.md),
-        const EmptyStateView(
-          icon: Icons.insights_rounded,
-          title: 'No data yet',
-          subtitle: 'Answer questions to build your topic mastery profile.',
-        ),
-      ],
-    );
-  }
-}
-
-class _LevelCard extends StatelessWidget {
-  const _LevelCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(Spacing.xl),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.stars_rounded,
-                    color: AppColors.secondary, size: 28),
-                const SizedBox(width: Spacing.sm),
-                Text(
-                  'Level 1',
-                  style: context.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.secondary,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  '0 / 100 XP',
-                  style: context.textTheme.bodySmall?.copyWith(
-                    color: context.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: Spacing.md),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: 0,
-                minHeight: 8,
-                backgroundColor: context.colorScheme.surfaceContainerHighest,
-                valueColor:
-                    const AlwaysStoppedAnimation<Color>(AppColors.secondary),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    if (workspaceId == null) {
+      return const EmptyStateView(
+        icon: Icons.workspaces_outline,
+        title: 'No workspace yet',
+        subtitle: 'Join a workspace with an invite code to track progress.',
+      );
+    }
+    // Sprint 4.11 — level/XP card, mastery bars, activity timeline.
+    return ProgressScreen(workspaceId: workspaceId!);
   }
 }
