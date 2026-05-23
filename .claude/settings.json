@@ -1,5 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUTF8": "1"
+  },
   "permissions": {
     "allow": [
       "Bash(cd backend && pytest *)",
@@ -36,7 +40,8 @@
       "Bash(git commit *)",
       "Bash(git branch *)",
       "Bash(git checkout *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(python -m ruff check app/services/answer_evaluation.py app/services/knowledge_state.py app/api/questions.py app/models/question.py tests/unit/services/test_answer_evaluation.py tests/unit/services/test_knowledge_state.py tests/unit/api/test_submit_answer.py)"
     ],
     "deny": [
       "Bash(git push *)",
@@ -55,9 +60,5 @@
       "Bash(flutter build * --release *)",
       "Bash(fastlane *)"
     ]
-  },
-  "env": {
-    "PYTHONDONTWRITEBYTECODE": "1",
-    "PYTHONUTF8": "1"
   }
 }
