@@ -494,10 +494,16 @@ async def search_chunks(
                 # being present (eases unit testing of error paths).
                 from azure.search.documents.models import VectorizedQuery
 
+                # azure-search-documents 11.7.0b2 renamed the legacy
+                # ``k_nearest_neighbors`` kwarg to ``k`` — the SDK now
+                # logs a "not a known attribute" warning and silently
+                # drops the legacy name, defaulting the k-NN limit to
+                # the index max. Pass ``k`` explicitly so the vector
+                # leg honours ``top_k``.
                 kwargs["vector_queries"] = [
                     VectorizedQuery(
                         vector=list(query_vector),
-                        k_nearest_neighbors=top_k,
+                        k=top_k,
                         fields="embedding",
                     )
                 ]
