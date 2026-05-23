@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
+import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/features/taxonomy/data/taxonomy_repository.dart';
 import 'package:social_study_app/features/taxonomy/presentation/taxonomy_notifier.dart';
 import 'package:social_study_app/features/taxonomy/presentation/widgets/topic_tree_builder.dart';
@@ -37,6 +39,17 @@ class TaxonomyViewerScreen extends ConsumerWidget {
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
         actions: [
+          // Sprint 4.3 — pushes the editor with the same workspaceId.
+          // Only meaningful once a taxonomy has loaded; the viewer
+          // surfaces the regenerate-and-edit pair together.
+          if (viewerAsync.hasValue)
+            IconButton(
+              tooltip: 'Edit taxonomy',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => context.push(
+                '${AppRoutes.adminTaxonomy}/$workspaceId/edit',
+              ),
+            ),
           _RegenerateButton(workspaceId: workspaceId, state: viewerAsync),
         ],
       ),

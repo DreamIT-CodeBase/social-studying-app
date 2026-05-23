@@ -43,6 +43,76 @@ class DemoTaxonomyRepository implements TaxonomyRepository {
     );
   }
 
+  @override
+  Future<Taxonomy> update({
+    required String workspaceId,
+    required int expectedVersion,
+    required List<CanonicalTopic> topics,
+  }) async {
+    await Future<void>.delayed(_networkDelay);
+    final current = _byWorkspace[workspaceId];
+    if (current == null) {
+      throw const TaxonomyWorkspaceNotFoundException();
+    }
+    if (current.taxonomyVersion != expectedVersion) {
+      throw TaxonomyVersionConflictException(
+        'Expected version $expectedVersion but stored '
+        'version is ${current.taxonomyVersion}',
+      );
+    }
+    _validateShape(topics);
+    final updated = current.copyWith(
+      topics: topics,
+      taxonomyVersion: current.taxonomyVersion + 1,
+      lastMergedAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    _byWorkspace[workspaceId] = updated;
+    return updated;
+  }
+
+  /// Local mirror of the backend's `validate_taxonomy_shape` checks.
+  /// Catches the obvious editor mistakes (duplicate id/name, dangling
+  /// parent, cycles, empty name) before the network round-trip.
+  static void _validateShape(List<CanonicalTopic> topics) {
+    final ids = <String>{};
+    final normalizedNames = <String>{};
+    for (final topic in topics) {
+      if (!ids.add(topic.id)) {
+        throw TaxonomyValidationException('Duplicate topic id: ${topic.id}');
+      }
+      final name = topic.name.trim();
+      if (name.isEmpty) {
+        throw const TaxonomyValidationException('Topic name cannot be empty');
+      }
+      if (!normalizedNames.add(name.toLowerCase())) {
+        throw TaxonomyValidationException(
+          'Duplicate topic name: ${topic.name}',
+        );
+      }
+    }
+    for (final topic in topics) {
+      final parentId = topic.parentId;
+      if (parentId != null && !ids.contains(parentId)) {
+        throw TaxonomyValidationException(
+          'Dangling parent_id ${topic.parentId} on ${topic.name}',
+        );
+      }
+    }
+    final parentOf = {for (final t in topics) t.id: t.parentId};
+    for (final topic in topics) {
+      final visited = <String>{};
+      String? cursor = topic.id;
+      while (cursor != null) {
+        if (!visited.add(cursor)) {
+          throw TaxonomyValidationException(
+            'Cycle detected involving ${topic.name}',
+          );
+        }
+        cursor = parentOf[cursor];
+      }
+    }
+  }
+
   Taxonomy _seedTaxonomy() {
     return Taxonomy(
       taxonomyVersion: 1,

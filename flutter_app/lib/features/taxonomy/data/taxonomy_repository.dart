@@ -21,6 +21,24 @@ abstract class TaxonomyRepository {
   /// Returns immediately (202 Accepted) — the rebuild runs server-side.
   /// Callers poll ``get`` until ``taxonomyVersion`` bumps.
   Future<void> regenerate({required String workspaceId});
+
+  /// PUT /api/v1/workspaces/{workspaceId}/taxonomy — the Sprint 4.3
+  /// editor save path. Replaces the entire topic list with [topics],
+  /// using optimistic concurrency: [expectedVersion] is the
+  /// `taxonomy_version` the editor loaded; the backend rejects the write
+  /// if the stored version has moved on.
+  ///
+  /// Throws:
+  /// - [TaxonomyWorkspaceNotFoundException] (404) — workspace deleted.
+  /// - [TaxonomyVersionConflictException] (409) — someone else saved
+  ///   first; the editor should re-fetch and let the admin redo edits.
+  /// - [TaxonomyValidationException] (422) — payload would corrupt the
+  ///   graph (duplicate id/name, dangling parent, cycle).
+  Future<Taxonomy> update({
+    required String workspaceId,
+    required int expectedVersion,
+    required List<CanonicalTopic> topics,
+  });
 }
 
 /// Thrown when the workspace doesn't exist on the backend. The notifier
@@ -31,6 +49,30 @@ class TaxonomyWorkspaceNotFoundException implements Exception {
 
   @override
   String toString() => 'TaxonomyWorkspaceNotFoundException';
+}
+
+/// 409 from PUT /taxonomy — the stored `taxonomy_version` no longer
+/// matches what the editor loaded. Someone else saved first. The editor
+/// re-fetches and surfaces a "your edits are out of date" notice.
+class TaxonomyVersionConflictException implements Exception {
+  const TaxonomyVersionConflictException([
+    this.message = 'Taxonomy was modified by another writer',
+  ]);
+  final String message;
+  @override
+  String toString() => 'TaxonomyVersionConflictException: $message';
+}
+
+/// 422 from PUT /taxonomy — the payload would corrupt the graph
+/// (duplicate id/name, dangling parent, cycle, empty name). The editor
+/// surfaces [message] inline so the admin can see exactly what's wrong.
+class TaxonomyValidationException implements Exception {
+  const TaxonomyValidationException([
+    this.message = 'Taxonomy payload is invalid',
+  ]);
+  final String message;
+  @override
+  String toString() => 'TaxonomyValidationException: $message';
 }
 
 /// Provider selects between demo and real impl based on the authenticated
