@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import (
     documents,
     flashcards,
+    gamification,
     questions,
     taxonomy,
     tenants,
@@ -47,6 +48,7 @@ app.include_router(documents.router, prefix="/api/v1")
 app.include_router(taxonomy.router, prefix="/api/v1")
 app.include_router(questions.router, prefix="/api/v1")
 app.include_router(flashcards.router, prefix="/api/v1")
+app.include_router(gamification.router, prefix="/api/v1")
 
 
 @app.get("/health")
