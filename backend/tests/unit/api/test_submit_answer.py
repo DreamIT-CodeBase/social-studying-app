@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 
 from app.core.auth import get_current_user
 from app.main import app
+from app.models.gamification import Badge
 from app.models.knowledge_state import KnowledgeState, TopicMastery
 from app.models.question import (
     DifficultyLevel,
@@ -29,6 +30,7 @@ from app.models.question import (
     QuestionType,
 )
 from app.models.user import UserRole
+from app.services.gamification import GamificationDelta
 from tests.unit.conftest import make_user
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
@@ -108,11 +110,34 @@ def _state_after(
     )
 
 
-def _patches(*, question_doc: dict, record_attempt_state: KnowledgeState):
+def _default_delta(*, xp: int = 15, level: int = 1) -> GamificationDelta:
+    """Standard gamification delta the engine mock returns.
+
+    Tests pass a custom delta via ``gamification_delta=`` to assert
+    that the endpoint surfaces the values verbatim.
+    """
+    return GamificationDelta(
+        xp_earned=xp,
+        new_level=level,
+        leveled_up=False,
+        streak_days=1,
+        streak_extended=True,
+        badges_unlocked=[],
+        state=None,
+    )
+
+
+def _patches(
+    *,
+    question_doc: dict,
+    record_attempt_state: KnowledgeState,
+    gamification_delta: GamificationDelta | None = None,
+):
     """Bundle the standard mock setup.
 
     Returns context managers + captures so tests can inspect what was
-    persisted.
+    persisted. ``gamification_delta`` defaults to :func:`_default_delta`
+    — tests that care about the gamification block override it.
     """
     questions_col = MagicMock()
     questions_col.find_one = AsyncMock(return_value=question_doc)
@@ -135,6 +160,8 @@ def _patches(*, question_doc: dict, record_attempt_state: KnowledgeState):
         raise AssertionError(f"unexpected collection: {collection}")
 
     record_attempt_mock = AsyncMock(return_value=record_attempt_state)
+    delta = gamification_delta or _default_delta()
+    gamification_mock = AsyncMock(return_value=delta)
 
     return (
         [
@@ -142,6 +169,10 @@ def _patches(*, question_doc: dict, record_attempt_state: KnowledgeState):
             patch(
                 "app.api.questions.knowledge_state_service.record_attempt",
                 record_attempt_mock,
+            ),
+            patch(
+                "app.api.questions.gamification_service.record_question_attempt",
+                gamification_mock,
             ),
         ],
         persisted_interactions,
@@ -178,7 +209,9 @@ def test_correct_answer_returns_full_feedback(client, student):
     assert body["is_correct"] is True
     assert body["canonical_answer"] == "B"
     assert body["explanation"] == "Chloroplasts contain chlorophyll."
-    # Attempt XP (10) + correct beginner bonus (5) = 15.
+    # The endpoint surfaces gamification's xp_earned verbatim. The XP
+    # math itself is pinned in test_gamification.py — here we trust the
+    # default delta (15 XP, level 1, streak 1).
     assert body["xp_earned"] == 15
     assert body["new_topic_mastery"] == pytest.approx(0.1)
     assert body["new_overall_mastery"] == pytest.approx(0.1)
@@ -191,6 +224,8 @@ def test_correct_answer_returns_full_feedback(client, student):
     assert ix["is_correct"] is True
     assert ix["answer_given"] == "B"
     assert ix["time_spent_seconds"] == 12
+    # Interaction XP must echo gamification's xp_earned — single source
+    # of truth across the response and the persisted log.
     assert ix["xp_earned"] == 15
 
     # Mastery update service called with the right args.
@@ -201,7 +236,9 @@ def test_correct_answer_returns_full_feedback(client, student):
     assert kwargs["is_correct"] is True
 
 
-def test_wrong_answer_returns_attempt_xp_only(client, student):
+def test_wrong_answer_persists_with_correctness_flag_false(client, student):
+    """The endpoint mirrors the evaluator's is_correct on the
+    interaction record + response. (XP math now lives in gamification.)"""
     mocks, persisted, _ = _patches(
         question_doc=_mcq_question(answer="B", difficulty=DifficultyLevel.advanced),
         record_attempt_state=_state_after(topic_mastery=0.0, overall=0.0),
@@ -213,41 +250,89 @@ def test_wrong_answer_returns_attempt_xp_only(client, student):
         )
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["is_correct"] is False
-    # Wrong answer → attempt XP only, no correct-bonus.
-    assert body["xp_earned"] == 10
+    assert response.json()["is_correct"] is False
     assert persisted[0]["is_correct"] is False
 
 
-def test_correct_advanced_question_awards_max_bonus(client, student):
+def test_question_difficulty_is_passed_to_gamification_engine(client, student):
+    """The endpoint forwards the question's difficulty to the engine so
+    the XP rule's per-difficulty bonus applies. The engine itself is
+    tested in test_gamification.py — here we just pin the wire-up.
+    """
     mocks, _, _ = _patches(
         question_doc=_mcq_question(answer="B", difficulty=DifficultyLevel.advanced),
-        record_attempt_state=_state_after(topic_mastery=0.3, overall=0.3),
+        record_attempt_state=_state_after(),
+    )
+    with _enter(mocks):
+        from app.api.questions import gamification_service
+
+        with patch.object(
+            gamification_service,
+            "record_question_attempt",
+            new_callable=AsyncMock,
+            return_value=_default_delta(),
+        ) as gmock:
+            response = client.post(
+                "/api/v1/workspaces/wsp_a/questions/qst_target/answer",
+                json={"answer": "B"},
+            )
+
+    assert response.status_code == 200
+    gmock.assert_awaited_once()
+    kwargs = gmock.await_args.kwargs
+    assert kwargs["difficulty"] == DifficultyLevel.advanced
+    assert kwargs["topic"] == "Photosynthesis"
+    assert kwargs["is_correct"] is True
+    assert kwargs["student_id"] == "stu_a"
+    assert kwargs["workspace_id"] == "wsp_a"
+
+
+def test_gamification_fields_surfaced_in_response(client, student):
+    """Level-up, streak, and freshly-earned badges from the engine must
+    appear on the answer response so the Sprint 5.5 celebration UI can
+    fire on them.
+    """
+    delta = GamificationDelta(
+        xp_earned=42,
+        new_level=3,
+        leveled_up=True,
+        streak_days=7,
+        streak_extended=True,
+        badges_unlocked=[
+            Badge(
+                badge_id="streak_7",
+                name="Dedicated",
+                description="Maintain a seven-day study streak.",
+                icon="local_fire_department_rounded",
+                earned_at="2026-05-23T10:00:00+00:00",
+            )
+        ],
+        state=None,
+    )
+    mocks, persisted, _ = _patches(
+        question_doc=_mcq_question(answer="B"),
+        record_attempt_state=_state_after(),
+        gamification_delta=delta,
     )
     with _enter(mocks):
         response = client.post(
             "/api/v1/workspaces/wsp_a/questions/qst_target/answer",
             json={"answer": "B"},
         )
-    # Attempt (10) + advanced bonus (20) = 30.
-    assert response.json()["xp_earned"] == 30
 
-
-def test_correct_intermediate_question_awards_mid_bonus(client, student):
-    mocks, _, _ = _patches(
-        question_doc=_mcq_question(
-            answer="B", difficulty=DifficultyLevel.intermediate
-        ),
-        record_attempt_state=_state_after(topic_mastery=0.2, overall=0.2),
-    )
-    with _enter(mocks):
-        response = client.post(
-            "/api/v1/workspaces/wsp_a/questions/qst_target/answer",
-            json={"answer": "B"},
-        )
-    # Attempt (10) + intermediate bonus (10) = 20.
-    assert response.json()["xp_earned"] == 20
+    body = response.json()
+    assert body["xp_earned"] == 42
+    assert body["new_level"] == 3
+    assert body["leveled_up"] is True
+    assert body["streak_days"] == 7
+    assert body["streak_extended"] is True
+    assert len(body["badges_unlocked"]) == 1
+    unlock = body["badges_unlocked"][0]
+    assert unlock["badge_id"] == "streak_7"
+    assert unlock["name"] == "Dedicated"
+    assert unlock["icon"] == "local_fire_department_rounded"
+    # And the interaction record carries the same XP value.
+    assert persisted[0]["xp_earned"] == 42
 
 
 # ── Status gating ──────────────────────────────────────────────────────────

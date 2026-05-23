@@ -50,6 +50,7 @@ from app.models.base import utc_now
 from app.models.flashcard import (
     Flashcard,
     FlashcardForStudent,
+    FlashcardRatingBadgeUnlock,
     FlashcardRatingEvent,
     FlashcardRatingResponse,
     FlashcardRatingSubmission,
@@ -58,6 +59,7 @@ from app.models.flashcard import (
 from app.models.user import User
 from app.models.workspace import Workspace
 from app.services import content_safety, flashcard_generation
+from app.services import gamification as gamification_service
 from app.services.flashcard_generation import (
     FlashcardShapeError,
     GeneratedFlashcard,
@@ -207,17 +209,48 @@ async def rate_flashcard(
     col = get_collection(current_user.tenant_id, FLASHCARD_RATINGS)
     await col.insert_one(event.model_dump(by_alias=True))
 
+    # Gamification: bump XP / streak / flashcards_reviewed and pick up
+    # any badge unlocks. Mirrors the answer endpoint — rating event is
+    # the source of truth (append-only), gamification is the summary.
+    delta = await gamification_service.record_flashcard_rating(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=current_user.id,
+        topic=flashcard.topic,
+        rating=submission.rating,
+        now=timestamp,
+    )
+
     logger.info(
-        "Flashcard rated flashcard=%s student=%s rating=%s",
+        "Flashcard rated flashcard=%s student=%s rating=%s "
+        "xp=%d level=%d streak=%d badges=%d",
         flashcard_id,
         current_user.id,
         submission.rating.value,
+        delta.xp_earned,
+        delta.new_level,
+        delta.streak_days,
+        len(delta.badges_unlocked),
     )
 
     return FlashcardRatingResponse(
         flashcard_id=flashcard_id,
         rating=submission.rating,
         rated_at=timestamp,
+        xp_earned=delta.xp_earned,
+        new_level=delta.new_level,
+        leveled_up=delta.leveled_up,
+        streak_days=delta.streak_days,
+        streak_extended=delta.streak_extended,
+        badges_unlocked=[
+            FlashcardRatingBadgeUnlock(
+                badge_id=b.badge_id,
+                name=b.name,
+                description=b.description,
+                icon=b.icon,
+            )
+            for b in delta.badges_unlocked
+        ],
     )
 
 

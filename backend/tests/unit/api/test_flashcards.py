@@ -516,7 +516,14 @@ def _flashcard_doc(
 
 
 def _rate_patches(flashcard: dict | None):
-    """Patch loaders + the rating-events writer."""
+    """Patch loaders + the rating-events writer + the gamification engine.
+
+    The gamification mock returns a zero-state delta so the rate-flow
+    tests don't double-test the engine math (it has its own tests in
+    ``tests/unit/services/test_gamification.py``).
+    """
+    from app.services.gamification import GamificationDelta
+
     flashcards_col = MagicMock()
     flashcards_col.find_one = AsyncMock(return_value=flashcard)
     ratings_col = MagicMock()
@@ -534,8 +541,26 @@ def _rate_patches(flashcard: dict | None):
             return ratings_col
         raise AssertionError(collection)
 
+    gamification_mock = AsyncMock(
+        return_value=GamificationDelta(
+            xp_earned=5,
+            new_level=1,
+            leveled_up=False,
+            streak_days=1,
+            streak_extended=True,
+            badges_unlocked=[],
+            state=None,
+        )
+    )
+
     return (
-        [patch("app.api.flashcards.get_collection", side_effect=_factory)],
+        [
+            patch("app.api.flashcards.get_collection", side_effect=_factory),
+            patch(
+                "app.api.flashcards.gamification_service.record_flashcard_rating",
+                gamification_mock,
+            ),
+        ],
         captured,
     )
 

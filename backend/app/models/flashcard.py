@@ -133,14 +133,37 @@ class FlashcardRatingSubmission(CosmosDocument.__base__):
     rating: FlashcardRating
 
 
+class FlashcardRatingBadgeUnlock(CosmosDocument.__base__):
+    """Wire shape for a freshly-earned badge on a flashcard rating.
+
+    Mirrors :class:`app.models.gamification.Badge` and
+    :class:`app.models.question.BadgeUnlock`. Kept separate from those
+    so the flashcard response schema stays self-contained.
+    """
+
+    badge_id: str
+    name: str
+    description: str
+    icon: str
+
+
 class FlashcardRatingResponse(CosmosDocument.__base__):
     """Response body for ``POST /flashcards/{id}/rate``.
 
-    Echoes back the stored rating + timestamp so the UI can update
-    its local state without a separate fetch. Sprint 5/6 will extend
-    this with the next-due-at hint.
+    Echoes back the stored rating + timestamp so the UI can update its
+    local state without a separate fetch. Sprint 5 added the
+    gamification block (XP, level, streak, badge unlocks) so the
+    celebration UI fires on flashcard reviews too.
     """
 
     flashcard_id: str
     rating: FlashcardRating
     rated_at: str
+
+    # ── Sprint 5 gamification ─────────────────────────────────────────
+    xp_earned: int = 0
+    new_level: int = 1
+    leveled_up: bool = False
+    streak_days: int = 0
+    streak_extended: bool = False
+    badges_unlocked: list[FlashcardRatingBadgeUnlock] = []

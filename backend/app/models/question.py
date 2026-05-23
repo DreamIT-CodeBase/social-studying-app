@@ -147,13 +147,29 @@ class AnswerSubmission(CosmosDocument.__base__):
     time_spent_seconds: int = Field(default=0, ge=0, le=3600)
 
 
+class BadgeUnlock(CosmosDocument.__base__):
+    """Wire shape for a freshly-earned badge on an answer response.
+
+    Mirrors :class:`app.models.gamification.Badge` but lives here so
+    the answer-endpoint response stays self-contained. Sprint 5.5
+    celebration UI reads this to render the badge unlock modal.
+    """
+
+    badge_id: str
+    name: str
+    description: str
+    icon: str
+
+
 class AnswerFeedback(CosmosDocument.__base__):
     """Response body for ``POST /questions/{question_id}/answer``.
 
     Surfaces correctness, the canonical answer, the explanation
-    (revealed only AFTER submission), the XP awarded, and — for the
-    rubric-scored types — a 0.0-1.0 rubric score plus the list of
-    grading hints that matched in the student's response.
+    (revealed only AFTER submission), the XP awarded, the rubric score
+    (rubric-scored types only), and a Sprint 5 gamification block: the
+    student's new level, whether they just levelled up, their current
+    streak length, whether the streak grew today, and any newly-earned
+    badges.
     """
 
     question_id: str
@@ -165,6 +181,13 @@ class AnswerFeedback(CosmosDocument.__base__):
     new_overall_mastery: float = Field(ge=0.0, le=1.0)
     rubric_score: float | None = Field(default=None, ge=0.0, le=1.0)
     matched_hints: list[str] = Field(default_factory=list)
+
+    # ── Sprint 5 gamification ─────────────────────────────────────────
+    new_level: int = Field(default=1, ge=1)
+    leveled_up: bool = False
+    streak_days: int = Field(default=0, ge=0)
+    streak_extended: bool = False
+    badges_unlocked: list[BadgeUnlock] = Field(default_factory=list)
 
 
 class QuestionResponse(CosmosDocument.__base__):

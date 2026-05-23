@@ -76,6 +76,7 @@ from app.models.moderation import (
 from app.models.question import (
     AnswerFeedback,
     AnswerSubmission,
+    BadgeUnlock,
     DifficultyLevel,
     Question,
     QuestionForStudent,
@@ -88,6 +89,9 @@ from app.services import (
     answer_evaluation,
     question_generation,
     question_safety,
+)
+from app.services import (
+    gamification as gamification_service,
 )
 from app.services import (
     knowledge_state as knowledge_state_service,
@@ -542,17 +546,6 @@ def _assert_workspace_access(user: User, workspace_id: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-# Per-difficulty XP awarded on a correct answer. Constant attempt XP
-# (10) goes to everyone for trying; the bonus rewards effort on harder
-# questions. Sprint 5 gamification will layer streak bonuses on top.
-_ATTEMPT_XP = 10
-_CORRECT_BONUS_XP: dict[DifficultyLevel, int] = {
-    DifficultyLevel.beginner: 5,
-    DifficultyLevel.intermediate: 10,
-    DifficultyLevel.advanced: 20,
-}
-
-
 @router.post("/{question_id}/answer", response_model=AnswerFeedback)
 async def submit_answer(
     workspace_id: str,
@@ -595,11 +588,23 @@ async def submit_answer(
         )
 
     evaluation = answer_evaluation.evaluate(question, submission.answer)
-    xp_earned = _compute_xp(
-        is_correct=evaluation.is_correct,
-        difficulty=question.difficulty,
-    )
     timestamp = utc_now()
+
+    # Gamification first — its XP rule (incl. the streak bonus) sets
+    # the authoritative ``xp_earned`` for both the interaction record
+    # and the response. Persistence order: gamification doc, then
+    # interaction (source of truth), then knowledge_state. Each writer
+    # is independent; a later failure logs but the earlier writes
+    # don't roll back (interaction is append-only by design).
+    gamification_delta = await gamification_service.record_question_attempt(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=current_user.id,
+        topic=question.topic,
+        difficulty=question.difficulty,
+        is_correct=evaluation.is_correct,
+        now=timestamp,
+    )
 
     await _record_interaction(
         tenant_id=current_user.tenant_id,
@@ -608,7 +613,7 @@ async def submit_answer(
         question=question,
         submission=submission,
         is_correct=evaluation.is_correct,
-        xp_earned=xp_earned,
+        xp_earned=gamification_delta.xp_earned,
         timestamp=timestamp,
     )
 
@@ -625,11 +630,14 @@ async def submit_answer(
 
     logger.info(
         "Answer submitted question=%s student=%s correct=%s xp=%d "
-        "topic_mastery=%.3f overall=%.3f",
+        "level=%d streak=%d badges=%d topic_mastery=%.3f overall=%.3f",
         question.id,
         current_user.id,
         evaluation.is_correct,
-        xp_earned,
+        gamification_delta.xp_earned,
+        gamification_delta.new_level,
+        gamification_delta.streak_days,
+        len(gamification_delta.badges_unlocked),
         topic_mastery,
         state.overall_mastery,
     )
@@ -651,11 +659,24 @@ async def submit_answer(
         is_correct=evaluation.is_correct,
         canonical_answer=evaluation.canonical_answer,
         explanation=question.explanation,
-        xp_earned=xp_earned,
+        xp_earned=gamification_delta.xp_earned,
         new_topic_mastery=topic_mastery,
         new_overall_mastery=state.overall_mastery,
         rubric_score=evaluation.rubric_score,
         matched_hints=evaluation.matched_hints,
+        new_level=gamification_delta.new_level,
+        leveled_up=gamification_delta.leveled_up,
+        streak_days=gamification_delta.streak_days,
+        streak_extended=gamification_delta.streak_extended,
+        badges_unlocked=[
+            BadgeUnlock(
+                badge_id=b.badge_id,
+                name=b.name,
+                description=b.description,
+                icon=b.icon,
+            )
+            for b in gamification_delta.badges_unlocked
+        ],
     )
 
 
@@ -685,13 +706,6 @@ async def _load_question(
     if raw is None:
         raise NotFoundError("Question", question_id)
     return Question.model_validate(raw)
-
-
-def _compute_xp(*, is_correct: bool, difficulty: DifficultyLevel) -> int:
-    """Attempt XP + (on correct) difficulty-weighted bonus."""
-    if not is_correct:
-        return _ATTEMPT_XP
-    return _ATTEMPT_XP + _CORRECT_BONUS_XP[difficulty]
 
 
 async def _record_interaction(

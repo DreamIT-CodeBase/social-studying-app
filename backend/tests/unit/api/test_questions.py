@@ -958,12 +958,29 @@ def test_submit_answer_schedules_prefetch_for_next_question(client, student):
         overall_mastery=0.1,
     )
 
+    from app.services.gamification import GamificationDelta
+
     prefetch_mock = AsyncMock()
+    gamification_mock = AsyncMock(
+        return_value=GamificationDelta(
+            xp_earned=15,
+            new_level=1,
+            leveled_up=False,
+            streak_days=1,
+            streak_extended=True,
+            badges_unlocked=[],
+            state=None,
+        )
+    )
     with (
         patch("app.api.questions.get_collection", side_effect=_factory),
         patch(
             "app.api.questions.knowledge_state_service.record_attempt",
             AsyncMock(return_value=record_state),
+        ),
+        patch(
+            "app.api.questions.gamification_service.record_question_attempt",
+            gamification_mock,
         ),
         patch(
             "app.api.questions.prefetch_next_question",
