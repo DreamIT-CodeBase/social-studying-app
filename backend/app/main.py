@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
+    analytics,
     documents,
     flashcards,
     gamification,
@@ -49,6 +50,8 @@ app.include_router(taxonomy.router, prefix="/api/v1")
 app.include_router(questions.router, prefix="/api/v1")
 app.include_router(flashcards.router, prefix="/api/v1")
 app.include_router(gamification.router, prefix="/api/v1")
+app.include_router(analytics.workspace_router, prefix="/api/v1")
+app.include_router(analytics.tenant_router, prefix="/api/v1")
 
 
 @app.get("/health")
