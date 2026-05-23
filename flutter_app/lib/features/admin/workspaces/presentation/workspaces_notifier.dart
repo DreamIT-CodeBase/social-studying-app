@@ -51,6 +51,21 @@ class WorkspacesList extends _$WorkspacesList {
     return updated;
   }
 
+  /// Persist a [WorkspaceSettings] change from the settings screen
+  /// (4.4), then refresh. Leaves name/description untouched — the
+  /// repository's partial-update semantics ignore the `null` arguments.
+  Future<Workspace> updateSettings({
+    required String workspaceId,
+    required WorkspaceSettings settings,
+  }) async {
+    final updated = await ref.read(workspacesRepositoryProvider).update(
+          workspaceId: workspaceId,
+          settings: settings,
+        );
+    refresh();
+    return updated;
+  }
+
   /// Soft-delete a workspace, then refresh.
   Future<void> deleteWorkspace(String workspaceId) async {
     await ref.read(workspacesRepositoryProvider).delete(workspaceId);

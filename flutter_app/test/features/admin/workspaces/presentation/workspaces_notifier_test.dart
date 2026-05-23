@@ -7,6 +7,7 @@ import 'package:social_study_app/features/admin/workspaces/presentation/workspac
 import 'package:social_study_app/features/auth/data/auth_repository.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/shared/models/user.dart';
+import 'package:social_study_app/shared/models/workspace.dart';
 
 class _MockAuthRepo extends Mock implements AuthRepository {}
 
@@ -95,6 +96,26 @@ void main() {
 
       final list = await container.read(workspacesListProvider.future);
       expect(list.single.name, 'Renamed');
+    });
+
+    test('updateSettings persists a settings patch', () async {
+      final container = await _container(DemoWorkspacesRepository());
+      await container.read(workspacesListProvider.future);
+
+      final updated = await container
+          .read(workspacesListProvider.notifier)
+          .updateSettings(
+            workspaceId: 'wsp_demo_001',
+            settings: const WorkspaceSettings(
+              questionsPerDay: 12,
+              leaderboardVisible: false,
+            ),
+          );
+      expect(updated.settings.questionsPerDay, 12);
+      expect(updated.settings.leaderboardVisible, isFalse);
+
+      final list = await container.read(workspacesListProvider.future);
+      expect(list.single.settings.questionsPerDay, 12);
     });
 
     test('generateInviteCode returns a code without touching list state',
