@@ -48,6 +48,16 @@ _$FlashcardRatingResponseImpl _$$FlashcardRatingResponseImplFromJson(
       flashcardId: json['flashcard_id'] as String,
       rating: $enumDecode(_$FlashcardRatingEnumMap, json['rating']),
       ratedAt: json['rated_at'] as String,
+      xpEarned: (json['xp_earned'] as num?)?.toInt() ?? 0,
+      newLevel: (json['new_level'] as num?)?.toInt() ?? 1,
+      leveledUp: json['leveled_up'] as bool? ?? false,
+      streakDays: (json['streak_days'] as num?)?.toInt() ?? 0,
+      streakExtended: json['streak_extended'] as bool? ?? false,
+      badgesUnlocked: (json['badges_unlocked'] as List<dynamic>?)
+              ?.map((e) =>
+                  FlashcardBadgeUnlock.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const <FlashcardBadgeUnlock>[],
     );
 
 Map<String, dynamic> _$$FlashcardRatingResponseImplToJson(
@@ -56,4 +66,28 @@ Map<String, dynamic> _$$FlashcardRatingResponseImplToJson(
       'flashcard_id': instance.flashcardId,
       'rating': _$FlashcardRatingEnumMap[instance.rating]!,
       'rated_at': instance.ratedAt,
+      'xp_earned': instance.xpEarned,
+      'new_level': instance.newLevel,
+      'leveled_up': instance.leveledUp,
+      'streak_days': instance.streakDays,
+      'streak_extended': instance.streakExtended,
+      'badges_unlocked': instance.badgesUnlocked,
+    };
+
+_$FlashcardBadgeUnlockImpl _$$FlashcardBadgeUnlockImplFromJson(
+        Map<String, dynamic> json) =>
+    _$FlashcardBadgeUnlockImpl(
+      badgeId: json['badge_id'] as String,
+      name: json['name'] as String,
+      description: json['description'] as String,
+      icon: json['icon'] as String,
+    );
+
+Map<String, dynamic> _$$FlashcardBadgeUnlockImplToJson(
+        _$FlashcardBadgeUnlockImpl instance) =>
+    <String, dynamic>{
+      'badge_id': instance.badgeId,
+      'name': instance.name,
+      'description': instance.description,
+      'icon': instance.icon,
     };

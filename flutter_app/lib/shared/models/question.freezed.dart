@@ -646,7 +646,31 @@ mixin _$AnswerFeedback {
   @JsonKey(name: 'rubric_score')
   double? get rubricScore => throw _privateConstructorUsedError;
   @JsonKey(name: 'matched_hints')
-  List<String> get matchedHints => throw _privateConstructorUsedError;
+  List<String> get matchedHints =>
+      throw _privateConstructorUsedError; // ── Sprint 5 gamification ──────────────────────────────────────────
+  /// The student's level after this answer.
+  @JsonKey(name: 'new_level')
+  int get newLevel => throw _privateConstructorUsedError;
+
+  /// True iff this answer crossed a level threshold — drives the 5.5
+  /// celebration burst.
+  @JsonKey(name: 'leveled_up')
+  bool get leveledUp => throw _privateConstructorUsedError;
+
+  /// Current streak length after this answer.
+  @JsonKey(name: 'streak_days')
+  int get streakDays => throw _privateConstructorUsedError;
+
+  /// True iff today's answer extended the streak (vs. same-day or
+  /// first-day-after-reset). Powers the flame pulse celebration.
+  @JsonKey(name: 'streak_extended')
+  bool get streakExtended => throw _privateConstructorUsedError;
+
+  /// Badges unlocked by this single answer. Wire shape mirrors the
+  /// backend's ``BadgeUnlock`` response model.
+  @JsonKey(name: 'badges_unlocked')
+  List<AnswerBadgeUnlock> get badgesUnlocked =>
+      throw _privateConstructorUsedError;
 
   /// Serializes this AnswerFeedback to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -673,7 +697,13 @@ abstract class $AnswerFeedbackCopyWith<$Res> {
       @JsonKey(name: 'new_topic_mastery') double newTopicMastery,
       @JsonKey(name: 'new_overall_mastery') double newOverallMastery,
       @JsonKey(name: 'rubric_score') double? rubricScore,
-      @JsonKey(name: 'matched_hints') List<String> matchedHints});
+      @JsonKey(name: 'matched_hints') List<String> matchedHints,
+      @JsonKey(name: 'new_level') int newLevel,
+      @JsonKey(name: 'leveled_up') bool leveledUp,
+      @JsonKey(name: 'streak_days') int streakDays,
+      @JsonKey(name: 'streak_extended') bool streakExtended,
+      @JsonKey(name: 'badges_unlocked')
+      List<AnswerBadgeUnlock> badgesUnlocked});
 }
 
 /// @nodoc
@@ -700,6 +730,11 @@ class _$AnswerFeedbackCopyWithImpl<$Res, $Val extends AnswerFeedback>
     Object? newOverallMastery = null,
     Object? rubricScore = freezed,
     Object? matchedHints = null,
+    Object? newLevel = null,
+    Object? leveledUp = null,
+    Object? streakDays = null,
+    Object? streakExtended = null,
+    Object? badgesUnlocked = null,
   }) {
     return _then(_value.copyWith(
       questionId: null == questionId
@@ -738,6 +773,26 @@ class _$AnswerFeedbackCopyWithImpl<$Res, $Val extends AnswerFeedback>
           ? _value.matchedHints
           : matchedHints // ignore: cast_nullable_to_non_nullable
               as List<String>,
+      newLevel: null == newLevel
+          ? _value.newLevel
+          : newLevel // ignore: cast_nullable_to_non_nullable
+              as int,
+      leveledUp: null == leveledUp
+          ? _value.leveledUp
+          : leveledUp // ignore: cast_nullable_to_non_nullable
+              as bool,
+      streakDays: null == streakDays
+          ? _value.streakDays
+          : streakDays // ignore: cast_nullable_to_non_nullable
+              as int,
+      streakExtended: null == streakExtended
+          ? _value.streakExtended
+          : streakExtended // ignore: cast_nullable_to_non_nullable
+              as bool,
+      badgesUnlocked: null == badgesUnlocked
+          ? _value.badgesUnlocked
+          : badgesUnlocked // ignore: cast_nullable_to_non_nullable
+              as List<AnswerBadgeUnlock>,
     ) as $Val);
   }
 }
@@ -759,7 +814,13 @@ abstract class _$$AnswerFeedbackImplCopyWith<$Res>
       @JsonKey(name: 'new_topic_mastery') double newTopicMastery,
       @JsonKey(name: 'new_overall_mastery') double newOverallMastery,
       @JsonKey(name: 'rubric_score') double? rubricScore,
-      @JsonKey(name: 'matched_hints') List<String> matchedHints});
+      @JsonKey(name: 'matched_hints') List<String> matchedHints,
+      @JsonKey(name: 'new_level') int newLevel,
+      @JsonKey(name: 'leveled_up') bool leveledUp,
+      @JsonKey(name: 'streak_days') int streakDays,
+      @JsonKey(name: 'streak_extended') bool streakExtended,
+      @JsonKey(name: 'badges_unlocked')
+      List<AnswerBadgeUnlock> badgesUnlocked});
 }
 
 /// @nodoc
@@ -784,6 +845,11 @@ class __$$AnswerFeedbackImplCopyWithImpl<$Res>
     Object? newOverallMastery = null,
     Object? rubricScore = freezed,
     Object? matchedHints = null,
+    Object? newLevel = null,
+    Object? leveledUp = null,
+    Object? streakDays = null,
+    Object? streakExtended = null,
+    Object? badgesUnlocked = null,
   }) {
     return _then(_$AnswerFeedbackImpl(
       questionId: null == questionId
@@ -822,6 +888,26 @@ class __$$AnswerFeedbackImplCopyWithImpl<$Res>
           ? _value._matchedHints
           : matchedHints // ignore: cast_nullable_to_non_nullable
               as List<String>,
+      newLevel: null == newLevel
+          ? _value.newLevel
+          : newLevel // ignore: cast_nullable_to_non_nullable
+              as int,
+      leveledUp: null == leveledUp
+          ? _value.leveledUp
+          : leveledUp // ignore: cast_nullable_to_non_nullable
+              as bool,
+      streakDays: null == streakDays
+          ? _value.streakDays
+          : streakDays // ignore: cast_nullable_to_non_nullable
+              as int,
+      streakExtended: null == streakExtended
+          ? _value.streakExtended
+          : streakExtended // ignore: cast_nullable_to_non_nullable
+              as bool,
+      badgesUnlocked: null == badgesUnlocked
+          ? _value._badgesUnlocked
+          : badgesUnlocked // ignore: cast_nullable_to_non_nullable
+              as List<AnswerBadgeUnlock>,
     ));
   }
 }
@@ -839,8 +925,16 @@ class _$AnswerFeedbackImpl implements _AnswerFeedback {
       @JsonKey(name: 'new_overall_mastery') required this.newOverallMastery,
       @JsonKey(name: 'rubric_score') this.rubricScore,
       @JsonKey(name: 'matched_hints')
-      final List<String> matchedHints = const <String>[]})
-      : _matchedHints = matchedHints;
+      final List<String> matchedHints = const <String>[],
+      @JsonKey(name: 'new_level') this.newLevel = 1,
+      @JsonKey(name: 'leveled_up') this.leveledUp = false,
+      @JsonKey(name: 'streak_days') this.streakDays = 0,
+      @JsonKey(name: 'streak_extended') this.streakExtended = false,
+      @JsonKey(name: 'badges_unlocked')
+      final List<AnswerBadgeUnlock> badgesUnlocked =
+          const <AnswerBadgeUnlock>[]})
+      : _matchedHints = matchedHints,
+        _badgesUnlocked = badgesUnlocked;
 
   factory _$AnswerFeedbackImpl.fromJson(Map<String, dynamic> json) =>
       _$$AnswerFeedbackImplFromJson(json);
@@ -877,9 +971,46 @@ class _$AnswerFeedbackImpl implements _AnswerFeedback {
     return EqualUnmodifiableListView(_matchedHints);
   }
 
+// ── Sprint 5 gamification ──────────────────────────────────────────
+  /// The student's level after this answer.
+  @override
+  @JsonKey(name: 'new_level')
+  final int newLevel;
+
+  /// True iff this answer crossed a level threshold — drives the 5.5
+  /// celebration burst.
+  @override
+  @JsonKey(name: 'leveled_up')
+  final bool leveledUp;
+
+  /// Current streak length after this answer.
+  @override
+  @JsonKey(name: 'streak_days')
+  final int streakDays;
+
+  /// True iff today's answer extended the streak (vs. same-day or
+  /// first-day-after-reset). Powers the flame pulse celebration.
+  @override
+  @JsonKey(name: 'streak_extended')
+  final bool streakExtended;
+
+  /// Badges unlocked by this single answer. Wire shape mirrors the
+  /// backend's ``BadgeUnlock`` response model.
+  final List<AnswerBadgeUnlock> _badgesUnlocked;
+
+  /// Badges unlocked by this single answer. Wire shape mirrors the
+  /// backend's ``BadgeUnlock`` response model.
+  @override
+  @JsonKey(name: 'badges_unlocked')
+  List<AnswerBadgeUnlock> get badgesUnlocked {
+    if (_badgesUnlocked is EqualUnmodifiableListView) return _badgesUnlocked;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_badgesUnlocked);
+  }
+
   @override
   String toString() {
-    return 'AnswerFeedback(questionId: $questionId, isCorrect: $isCorrect, canonicalAnswer: $canonicalAnswer, explanation: $explanation, xpEarned: $xpEarned, newTopicMastery: $newTopicMastery, newOverallMastery: $newOverallMastery, rubricScore: $rubricScore, matchedHints: $matchedHints)';
+    return 'AnswerFeedback(questionId: $questionId, isCorrect: $isCorrect, canonicalAnswer: $canonicalAnswer, explanation: $explanation, xpEarned: $xpEarned, newTopicMastery: $newTopicMastery, newOverallMastery: $newOverallMastery, rubricScore: $rubricScore, matchedHints: $matchedHints, newLevel: $newLevel, leveledUp: $leveledUp, streakDays: $streakDays, streakExtended: $streakExtended, badgesUnlocked: $badgesUnlocked)';
   }
 
   @override
@@ -904,7 +1035,17 @@ class _$AnswerFeedbackImpl implements _AnswerFeedback {
             (identical(other.rubricScore, rubricScore) ||
                 other.rubricScore == rubricScore) &&
             const DeepCollectionEquality()
-                .equals(other._matchedHints, _matchedHints));
+                .equals(other._matchedHints, _matchedHints) &&
+            (identical(other.newLevel, newLevel) ||
+                other.newLevel == newLevel) &&
+            (identical(other.leveledUp, leveledUp) ||
+                other.leveledUp == leveledUp) &&
+            (identical(other.streakDays, streakDays) ||
+                other.streakDays == streakDays) &&
+            (identical(other.streakExtended, streakExtended) ||
+                other.streakExtended == streakExtended) &&
+            const DeepCollectionEquality()
+                .equals(other._badgesUnlocked, _badgesUnlocked));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -919,7 +1060,12 @@ class _$AnswerFeedbackImpl implements _AnswerFeedback {
       newTopicMastery,
       newOverallMastery,
       rubricScore,
-      const DeepCollectionEquality().hash(_matchedHints));
+      const DeepCollectionEquality().hash(_matchedHints),
+      newLevel,
+      leveledUp,
+      streakDays,
+      streakExtended,
+      const DeepCollectionEquality().hash(_badgesUnlocked));
 
   /// Create a copy of AnswerFeedback
   /// with the given fields replaced by the non-null parameter values.
@@ -949,8 +1095,13 @@ abstract class _AnswerFeedback implements AnswerFeedback {
       @JsonKey(name: 'new_overall_mastery')
       required final double newOverallMastery,
       @JsonKey(name: 'rubric_score') final double? rubricScore,
-      @JsonKey(name: 'matched_hints')
-      final List<String> matchedHints}) = _$AnswerFeedbackImpl;
+      @JsonKey(name: 'matched_hints') final List<String> matchedHints,
+      @JsonKey(name: 'new_level') final int newLevel,
+      @JsonKey(name: 'leveled_up') final bool leveledUp,
+      @JsonKey(name: 'streak_days') final int streakDays,
+      @JsonKey(name: 'streak_extended') final bool streakExtended,
+      @JsonKey(name: 'badges_unlocked')
+      final List<AnswerBadgeUnlock> badgesUnlocked}) = _$AnswerFeedbackImpl;
 
   factory _AnswerFeedback.fromJson(Map<String, dynamic> json) =
       _$AnswerFeedbackImpl.fromJson;
@@ -980,12 +1131,259 @@ abstract class _AnswerFeedback implements AnswerFeedback {
   double? get rubricScore;
   @override
   @JsonKey(name: 'matched_hints')
-  List<String> get matchedHints;
+  List<String>
+      get matchedHints; // ── Sprint 5 gamification ──────────────────────────────────────────
+  /// The student's level after this answer.
+  @override
+  @JsonKey(name: 'new_level')
+  int get newLevel;
+
+  /// True iff this answer crossed a level threshold — drives the 5.5
+  /// celebration burst.
+  @override
+  @JsonKey(name: 'leveled_up')
+  bool get leveledUp;
+
+  /// Current streak length after this answer.
+  @override
+  @JsonKey(name: 'streak_days')
+  int get streakDays;
+
+  /// True iff today's answer extended the streak (vs. same-day or
+  /// first-day-after-reset). Powers the flame pulse celebration.
+  @override
+  @JsonKey(name: 'streak_extended')
+  bool get streakExtended;
+
+  /// Badges unlocked by this single answer. Wire shape mirrors the
+  /// backend's ``BadgeUnlock`` response model.
+  @override
+  @JsonKey(name: 'badges_unlocked')
+  List<AnswerBadgeUnlock> get badgesUnlocked;
 
   /// Create a copy of AnswerFeedback
   /// with the given fields replaced by the non-null parameter values.
   @override
   @JsonKey(includeFromJson: false, includeToJson: false)
   _$$AnswerFeedbackImplCopyWith<_$AnswerFeedbackImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+AnswerBadgeUnlock _$AnswerBadgeUnlockFromJson(Map<String, dynamic> json) {
+  return _AnswerBadgeUnlock.fromJson(json);
+}
+
+/// @nodoc
+mixin _$AnswerBadgeUnlock {
+  @JsonKey(name: 'badge_id')
+  String get badgeId => throw _privateConstructorUsedError;
+  String get name => throw _privateConstructorUsedError;
+  String get description => throw _privateConstructorUsedError;
+  String get icon => throw _privateConstructorUsedError;
+
+  /// Serializes this AnswerBadgeUnlock to a JSON map.
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+
+  /// Create a copy of AnswerBadgeUnlock
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  $AnswerBadgeUnlockCopyWith<AnswerBadgeUnlock> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $AnswerBadgeUnlockCopyWith<$Res> {
+  factory $AnswerBadgeUnlockCopyWith(
+          AnswerBadgeUnlock value, $Res Function(AnswerBadgeUnlock) then) =
+      _$AnswerBadgeUnlockCopyWithImpl<$Res, AnswerBadgeUnlock>;
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'badge_id') String badgeId,
+      String name,
+      String description,
+      String icon});
+}
+
+/// @nodoc
+class _$AnswerBadgeUnlockCopyWithImpl<$Res, $Val extends AnswerBadgeUnlock>
+    implements $AnswerBadgeUnlockCopyWith<$Res> {
+  _$AnswerBadgeUnlockCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  /// Create a copy of AnswerBadgeUnlock
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? badgeId = null,
+    Object? name = null,
+    Object? description = null,
+    Object? icon = null,
+  }) {
+    return _then(_value.copyWith(
+      badgeId: null == badgeId
+          ? _value.badgeId
+          : badgeId // ignore: cast_nullable_to_non_nullable
+              as String,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      description: null == description
+          ? _value.description
+          : description // ignore: cast_nullable_to_non_nullable
+              as String,
+      icon: null == icon
+          ? _value.icon
+          : icon // ignore: cast_nullable_to_non_nullable
+              as String,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$AnswerBadgeUnlockImplCopyWith<$Res>
+    implements $AnswerBadgeUnlockCopyWith<$Res> {
+  factory _$$AnswerBadgeUnlockImplCopyWith(_$AnswerBadgeUnlockImpl value,
+          $Res Function(_$AnswerBadgeUnlockImpl) then) =
+      __$$AnswerBadgeUnlockImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'badge_id') String badgeId,
+      String name,
+      String description,
+      String icon});
+}
+
+/// @nodoc
+class __$$AnswerBadgeUnlockImplCopyWithImpl<$Res>
+    extends _$AnswerBadgeUnlockCopyWithImpl<$Res, _$AnswerBadgeUnlockImpl>
+    implements _$$AnswerBadgeUnlockImplCopyWith<$Res> {
+  __$$AnswerBadgeUnlockImplCopyWithImpl(_$AnswerBadgeUnlockImpl _value,
+      $Res Function(_$AnswerBadgeUnlockImpl) _then)
+      : super(_value, _then);
+
+  /// Create a copy of AnswerBadgeUnlock
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? badgeId = null,
+    Object? name = null,
+    Object? description = null,
+    Object? icon = null,
+  }) {
+    return _then(_$AnswerBadgeUnlockImpl(
+      badgeId: null == badgeId
+          ? _value.badgeId
+          : badgeId // ignore: cast_nullable_to_non_nullable
+              as String,
+      name: null == name
+          ? _value.name
+          : name // ignore: cast_nullable_to_non_nullable
+              as String,
+      description: null == description
+          ? _value.description
+          : description // ignore: cast_nullable_to_non_nullable
+              as String,
+      icon: null == icon
+          ? _value.icon
+          : icon // ignore: cast_nullable_to_non_nullable
+              as String,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$AnswerBadgeUnlockImpl implements _AnswerBadgeUnlock {
+  const _$AnswerBadgeUnlockImpl(
+      {@JsonKey(name: 'badge_id') required this.badgeId,
+      required this.name,
+      required this.description,
+      required this.icon});
+
+  factory _$AnswerBadgeUnlockImpl.fromJson(Map<String, dynamic> json) =>
+      _$$AnswerBadgeUnlockImplFromJson(json);
+
+  @override
+  @JsonKey(name: 'badge_id')
+  final String badgeId;
+  @override
+  final String name;
+  @override
+  final String description;
+  @override
+  final String icon;
+
+  @override
+  String toString() {
+    return 'AnswerBadgeUnlock(badgeId: $badgeId, name: $name, description: $description, icon: $icon)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$AnswerBadgeUnlockImpl &&
+            (identical(other.badgeId, badgeId) || other.badgeId == badgeId) &&
+            (identical(other.name, name) || other.name == name) &&
+            (identical(other.description, description) ||
+                other.description == description) &&
+            (identical(other.icon, icon) || other.icon == icon));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode =>
+      Object.hash(runtimeType, badgeId, name, description, icon);
+
+  /// Create a copy of AnswerBadgeUnlock
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$AnswerBadgeUnlockImplCopyWith<_$AnswerBadgeUnlockImpl> get copyWith =>
+      __$$AnswerBadgeUnlockImplCopyWithImpl<_$AnswerBadgeUnlockImpl>(
+          this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$AnswerBadgeUnlockImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _AnswerBadgeUnlock implements AnswerBadgeUnlock {
+  const factory _AnswerBadgeUnlock(
+      {@JsonKey(name: 'badge_id') required final String badgeId,
+      required final String name,
+      required final String description,
+      required final String icon}) = _$AnswerBadgeUnlockImpl;
+
+  factory _AnswerBadgeUnlock.fromJson(Map<String, dynamic> json) =
+      _$AnswerBadgeUnlockImpl.fromJson;
+
+  @override
+  @JsonKey(name: 'badge_id')
+  String get badgeId;
+  @override
+  String get name;
+  @override
+  String get description;
+  @override
+  String get icon;
+
+  /// Create a copy of AnswerBadgeUnlock
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$AnswerBadgeUnlockImplCopyWith<_$AnswerBadgeUnlockImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }

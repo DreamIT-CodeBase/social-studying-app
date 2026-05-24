@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
+import 'package:social_study_app/features/gamification/presentation/widgets/celebration_overlay.dart';
 import 'package:social_study_app/features/questions/domain/question_session.dart';
 import 'package:social_study_app/features/questions/presentation/question_session_notifier.dart';
 import 'package:social_study_app/shared/models/question.dart';
@@ -578,6 +579,29 @@ class _FeedbackViewState extends ConsumerState<_FeedbackView> {
       HapticFeedback.heavyImpact();
     } else {
       HapticFeedback.lightImpact();
+    }
+    // Sprint 5.5 celebrations. Run after the feedback view renders so
+    // the overlay sits above the result banner (the user briefly sees
+    // their score before the celebration kicks in). Each is awaited
+    // sequentially — a level-up that also unlocks a badge shows the
+    // burst first, then the badge sheet.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _runCelebrations());
+  }
+
+  Future<void> _runCelebrations() async {
+    final feedback = widget.feedback;
+    if (feedback.leveledUp && mounted) {
+      await showLevelUpBurst(context, newLevel: feedback.newLevel);
+    }
+    for (final unlock in feedback.badgesUnlocked) {
+      if (!mounted) break;
+      await showBadgeUnlockSheet(
+        context,
+        badgeId: unlock.badgeId,
+        name: unlock.name,
+        description: unlock.description,
+        icon: unlock.icon,
+      );
     }
   }
 

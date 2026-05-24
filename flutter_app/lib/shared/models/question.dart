@@ -119,8 +119,45 @@ class AnswerFeedback with _$AnswerFeedback {
     @JsonKey(name: 'matched_hints')
     @Default(<String>[])
     List<String> matchedHints,
+
+    // ── Sprint 5 gamification ──────────────────────────────────────────
+    /// The student's level after this answer.
+    @JsonKey(name: 'new_level') @Default(1) int newLevel,
+
+    /// True iff this answer crossed a level threshold — drives the 5.5
+    /// celebration burst.
+    @JsonKey(name: 'leveled_up') @Default(false) bool leveledUp,
+
+    /// Current streak length after this answer.
+    @JsonKey(name: 'streak_days') @Default(0) int streakDays,
+
+    /// True iff today's answer extended the streak (vs. same-day or
+    /// first-day-after-reset). Powers the flame pulse celebration.
+    @JsonKey(name: 'streak_extended') @Default(false) bool streakExtended,
+
+    /// Badges unlocked by this single answer. Wire shape mirrors the
+    /// backend's ``BadgeUnlock`` response model.
+    @JsonKey(name: 'badges_unlocked')
+    @Default(<AnswerBadgeUnlock>[])
+    List<AnswerBadgeUnlock> badgesUnlocked,
   }) = _AnswerFeedback;
 
   factory AnswerFeedback.fromJson(Map<String, dynamic> json) =>
       _$AnswerFeedbackFromJson(json);
+}
+
+/// A badge unlocked on an answer response. Lives in this feature's
+/// model file (not in the shared gamification module) so the question
+/// response stays self-contained.
+@freezed
+class AnswerBadgeUnlock with _$AnswerBadgeUnlock {
+  const factory AnswerBadgeUnlock({
+    @JsonKey(name: 'badge_id') required String badgeId,
+    required String name,
+    required String description,
+    required String icon,
+  }) = _AnswerBadgeUnlock;
+
+  factory AnswerBadgeUnlock.fromJson(Map<String, dynamic> json) =>
+      _$AnswerBadgeUnlockFromJson(json);
 }

@@ -83,6 +83,15 @@ _$AnswerFeedbackImpl _$$AnswerFeedbackImplFromJson(Map<String, dynamic> json) =>
               ?.map((e) => e as String)
               .toList() ??
           const <String>[],
+      newLevel: (json['new_level'] as num?)?.toInt() ?? 1,
+      leveledUp: json['leveled_up'] as bool? ?? false,
+      streakDays: (json['streak_days'] as num?)?.toInt() ?? 0,
+      streakExtended: json['streak_extended'] as bool? ?? false,
+      badgesUnlocked: (json['badges_unlocked'] as List<dynamic>?)
+              ?.map(
+                  (e) => AnswerBadgeUnlock.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const <AnswerBadgeUnlock>[],
     );
 
 Map<String, dynamic> _$$AnswerFeedbackImplToJson(
@@ -97,4 +106,27 @@ Map<String, dynamic> _$$AnswerFeedbackImplToJson(
       'new_overall_mastery': instance.newOverallMastery,
       'rubric_score': instance.rubricScore,
       'matched_hints': instance.matchedHints,
+      'new_level': instance.newLevel,
+      'leveled_up': instance.leveledUp,
+      'streak_days': instance.streakDays,
+      'streak_extended': instance.streakExtended,
+      'badges_unlocked': instance.badgesUnlocked,
+    };
+
+_$AnswerBadgeUnlockImpl _$$AnswerBadgeUnlockImplFromJson(
+        Map<String, dynamic> json) =>
+    _$AnswerBadgeUnlockImpl(
+      badgeId: json['badge_id'] as String,
+      name: json['name'] as String,
+      description: json['description'] as String,
+      icon: json['icon'] as String,
+    );
+
+Map<String, dynamic> _$$AnswerBadgeUnlockImplToJson(
+        _$AnswerBadgeUnlockImpl instance) =>
+    <String, dynamic>{
+      'badge_id': instance.badgeId,
+      'name': instance.name,
+      'description': instance.description,
+      'icon': instance.icon,
     };

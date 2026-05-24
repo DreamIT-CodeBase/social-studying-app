@@ -84,8 +84,33 @@ class FlashcardRatingResponse with _$FlashcardRatingResponse {
     @JsonKey(name: 'flashcard_id') required String flashcardId,
     required FlashcardRating rating,
     @JsonKey(name: 'rated_at') required String ratedAt,
+
+    // ── Sprint 5 gamification ──────────────────────────────────────────
+    @JsonKey(name: 'xp_earned') @Default(0) int xpEarned,
+    @JsonKey(name: 'new_level') @Default(1) int newLevel,
+    @JsonKey(name: 'leveled_up') @Default(false) bool leveledUp,
+    @JsonKey(name: 'streak_days') @Default(0) int streakDays,
+    @JsonKey(name: 'streak_extended') @Default(false) bool streakExtended,
+    @JsonKey(name: 'badges_unlocked')
+    @Default(<FlashcardBadgeUnlock>[])
+    List<FlashcardBadgeUnlock> badgesUnlocked,
   }) = _FlashcardRatingResponse;
 
   factory FlashcardRatingResponse.fromJson(Map<String, dynamic> json) =>
       _$FlashcardRatingResponseFromJson(json);
+}
+
+/// A badge unlocked on a flashcard rating response. Mirrors the
+/// backend's ``FlashcardRatingBadgeUnlock`` wire model.
+@freezed
+class FlashcardBadgeUnlock with _$FlashcardBadgeUnlock {
+  const factory FlashcardBadgeUnlock({
+    @JsonKey(name: 'badge_id') required String badgeId,
+    required String name,
+    required String description,
+    required String icon,
+  }) = _FlashcardBadgeUnlock;
+
+  factory FlashcardBadgeUnlock.fromJson(Map<String, dynamic> json) =>
+      _$FlashcardBadgeUnlockFromJson(json);
 }

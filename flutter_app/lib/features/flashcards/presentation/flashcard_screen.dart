@@ -8,6 +8,7 @@ import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/flashcards/domain/flashcard_session.dart';
 import 'package:social_study_app/features/flashcards/presentation/flashcard_session_notifier.dart';
+import 'package:social_study_app/features/gamification/presentation/widgets/celebration_overlay.dart';
 import 'package:social_study_app/shared/models/flashcard.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
@@ -45,6 +46,29 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _notifier.start());
   }
 
+  /// Run the level-up burst and any badge unlocks in sequence. Each
+  /// uses the root navigator so the chain survives if the flashcards
+  /// tab itself is swapped out (the celebration sheet still resolves).
+  Future<void> _playCelebrations(
+    BuildContext context,
+    FlashcardRatingResponse response,
+  ) async {
+    if (response.leveledUp) {
+      if (!context.mounted) return;
+      await showLevelUpBurst(context, newLevel: response.newLevel);
+    }
+    for (final unlock in response.badgesUnlocked) {
+      if (!context.mounted) return;
+      await showBadgeUnlockSheet(
+        context,
+        badgeId: unlock.badgeId,
+        name: unlock.name,
+        description: unlock.description,
+        icon: unlock.icon,
+      );
+    }
+  }
+
   /// Reset the family provider to a fresh idle session, then fetch —
   /// the only escape hatch from `error` / `unavailable`, whose
   /// transitions the notifier's `start`/`next` deliberately guard.
@@ -57,6 +81,27 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Sprint 5.5: when a rating lands, run the level-up + badge-unlock
+    // celebrations. Using ``ref.listen`` so the side effect fires
+    // exactly once per transition into ``rated`` — ``initState`` would
+    // miss subsequent ratings within the same screen lifetime, and
+    // doing it from build would re-run every frame.
+    ref.listen(
+      flashcardSessionNotifierProvider(widget.workspaceId),
+      (prev, next) {
+        next.whenOrNull(
+          rated: (_, response) {
+            // Fire and forget — the celebration push/pop runs on the
+            // root navigator. Capturing ``context`` once and checking
+            // ``context.mounted`` after each await satisfies the
+            // ``use_build_context_synchronously`` lint and the actual
+            // tree-disposal invariant.
+            _playCelebrations(context, response);
+          },
+        );
+      },
+    );
+
     final session =
         ref.watch(flashcardSessionNotifierProvider(widget.workspaceId));
 
