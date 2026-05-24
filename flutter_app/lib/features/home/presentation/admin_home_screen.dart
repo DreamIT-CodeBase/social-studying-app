@@ -451,6 +451,14 @@ class _SettingsTab extends StatelessWidget {
               '${AppRoutes.adminModeration}/$wsId',
             ),
           ),
+          _SettingsTile(
+            icon: Icons.analytics_rounded,
+            title: 'Workspace Analytics',
+            subtitle: 'Engagement, mastery, and topic distribution',
+            onTap: () => context.push(
+              '/admin/analytics/$wsId',
+            ),
+          ),
         ],
         const Divider(height: Spacing.xl),
         _SettingsTile(

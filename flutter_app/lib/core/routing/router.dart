@@ -7,6 +7,7 @@ import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/admin/moderation/presentation/moderation_screen.dart';
 import 'package:social_study_app/features/admin/workspaces/presentation/workspace_settings_screen.dart';
 import 'package:social_study_app/features/admin/workspaces/presentation/workspaces_screen.dart';
+import 'package:social_study_app/features/admin/analytics/presentation/workspace_analytics_screen.dart';
 import 'package:social_study_app/features/admin/students/presentation/student_progress_detail_screen.dart';
 import 'package:social_study_app/features/auth/presentation/login_screen.dart';
 import 'package:social_study_app/features/documents/presentation/document_polling_screen.dart';
@@ -134,6 +135,12 @@ GoRouter router(RouterRef ref) {
           // already has the name in hand and just URL-encodes it.
           studentName:
               state.uri.queryParameters['name'] ?? 'Student progress',
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.adminWorkspaceAnalytics,
+        builder: (_, state) => WorkspaceAnalyticsScreen(
+          workspaceId: state.pathParameters['workspaceId']!,
         ),
       ),
       GoRoute(

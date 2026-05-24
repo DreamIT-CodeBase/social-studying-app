@@ -53,4 +53,9 @@ abstract final class AppRoutes {
   /// separate users lookup.
   static const String adminStudentProgress =
       '/admin/students/:workspaceId/:userId/progress';
+
+  /// Sprint 5.11 admin workspace analytics dashboard. Pushed from the
+  /// admin Settings tab once a workspace is active.
+  static const String adminWorkspaceAnalytics =
+      '/admin/analytics/:workspaceId';
 }
