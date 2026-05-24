@@ -46,4 +46,11 @@ abstract final class AppRoutes {
   static const String studentBadges = '/student/badges/:workspaceId/:userId';
   static const String studentLeaderboard =
       '/student/leaderboard/:workspaceId';
+
+  /// Sprint 5.10 admin per-student progress detail. Pushed from the
+  /// workspace user roster (``users_screen.dart``). The display name
+  /// rides as a query parameter so the AppBar can render it without a
+  /// separate users lookup.
+  static const String adminStudentProgress =
+      '/admin/students/:workspaceId/:userId/progress';
 }

@@ -7,6 +7,7 @@ import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/admin/moderation/presentation/moderation_screen.dart';
 import 'package:social_study_app/features/admin/workspaces/presentation/workspace_settings_screen.dart';
 import 'package:social_study_app/features/admin/workspaces/presentation/workspaces_screen.dart';
+import 'package:social_study_app/features/admin/students/presentation/student_progress_detail_screen.dart';
 import 'package:social_study_app/features/auth/presentation/login_screen.dart';
 import 'package:social_study_app/features/documents/presentation/document_polling_screen.dart';
 import 'package:social_study_app/features/gamification/presentation/badges_screen.dart';
@@ -121,6 +122,18 @@ GoRouter router(RouterRef ref) {
         builder: (_, state) => BadgesScreen(
           workspaceId: state.pathParameters['workspaceId']!,
           userId: state.pathParameters['userId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.adminStudentProgress,
+        builder: (_, state) => StudentProgressDetailScreen(
+          workspaceId: state.pathParameters['workspaceId']!,
+          studentId: state.pathParameters['userId']!,
+          // Display name rides as a ``?name=`` query param so the
+          // AppBar can render it without a users lookup. The roster
+          // already has the name in hand and just URL-encodes it.
+          studentName:
+              state.uri.queryParameters['name'] ?? 'Student progress',
         ),
       ),
       GoRoute(

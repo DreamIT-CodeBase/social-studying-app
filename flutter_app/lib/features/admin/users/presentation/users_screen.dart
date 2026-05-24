@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/features/admin/users/data/demo_users_repository.dart';
@@ -335,55 +336,68 @@ class _UserRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Only students get the tap-to-progress affordance — admin/owner
+    // rows don't have a progress view (they don't answer questions in
+    // the workspace they manage).
+    final canDrillIn = user.role == UserRole.student;
     return Card(
       margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Spacing.lg,
-          vertical: Spacing.md,
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: context.colorScheme.primaryContainer,
-              child: Text(
-                _initial(user.displayName),
-                style: TextStyle(
-                  color: context.colorScheme.onPrimaryContainer,
-                  fontWeight: FontWeight.w700,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: canDrillIn
+            ? () => context.push(
+                  '/admin/students/$workspaceId/${user.id}/progress'
+                  '?name=${Uri.encodeQueryComponent(user.displayName)}',
+                )
+            : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: Spacing.lg,
+            vertical: Spacing.md,
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: context.colorScheme.primaryContainer,
+                child: Text(
+                  _initial(user.displayName),
+                  style: TextStyle(
+                    color: context.colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: Spacing.lg),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    user.displayName,
-                    style: context.textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
+              const SizedBox(width: Spacing.lg),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user.displayName,
+                      style: context.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    user.email,
-                    style: context.textTheme.bodySmall?.copyWith(
-                      color: context.colorScheme.onSurfaceVariant,
+                    const SizedBox(height: 2),
+                    Text(
+                      user.email,
+                      style: context.textTheme.bodySmall?.copyWith(
+                        color: context.colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: Spacing.sm),
-            _RoleChip(role: user.role),
-            _UserMenu(workspaceId: workspaceId, user: user),
-          ],
+              const SizedBox(width: Spacing.sm),
+              _RoleChip(role: user.role),
+              _UserMenu(workspaceId: workspaceId, user: user),
+            ],
+          ),
         ),
       ),
     );
