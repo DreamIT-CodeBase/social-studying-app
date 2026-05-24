@@ -7,6 +7,7 @@ import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/flashcards/presentation/flashcard_screen.dart';
+import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
 import 'package:social_study_app/features/progress/presentation/progress_screen.dart';
 import 'package:social_study_app/features/questions/presentation/question_screen.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
@@ -42,6 +43,10 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
           : null,
       orElse: () => null,
     );
+    final userId = authValue?.maybeWhen(
+      authenticated: (user) => user.id,
+      orElse: () => null,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -75,11 +80,23 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
         children: [
           _HomeTab(
             displayName: displayName,
+            workspaceId: workspaceId,
+            userId: userId,
             onStartStudy: () => setState(() => _selectedIndex = 1),
             onStartRevision: workspaceId == null
                 ? null
                 : () => context.push(
                       '${AppRoutes.studentRevision}/$workspaceId',
+                    ),
+            onOpenBadges: (workspaceId == null || userId == null)
+                ? null
+                : () => context.push(
+                      '/student/badges/$workspaceId/$userId',
+                    ),
+            onOpenLeaderboard: workspaceId == null
+                ? null
+                : () => context.push(
+                      '/student/leaderboard/$workspaceId',
                     ),
           ),
           _StudyTab(workspaceId: workspaceId),
@@ -107,16 +124,25 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
 class _HomeTab extends StatelessWidget {
   const _HomeTab({
     required this.displayName,
+    required this.workspaceId,
+    required this.userId,
     required this.onStartStudy,
     required this.onStartRevision,
+    required this.onOpenBadges,
+    required this.onOpenLeaderboard,
   });
 
   final String displayName;
-  final VoidCallback onStartStudy;
 
-  /// `null` when there's no active workspace, which disables the
-  /// revision launch button.
+  /// `null` when there's no active workspace — gates the streak card
+  /// to its zero state and disables every workspace-scoped launcher.
+  final String? workspaceId;
+  final String? userId;
+
+  final VoidCallback onStartStudy;
   final VoidCallback? onStartRevision;
+  final VoidCallback? onOpenBadges;
+  final VoidCallback? onOpenLeaderboard;
 
   @override
   Widget build(BuildContext context) {
@@ -125,11 +151,16 @@ class _HomeTab extends StatelessWidget {
       children: [
         _GreetingCard(displayName: displayName),
         const SizedBox(height: Spacing.lg),
-        _StreakCard(),
+        _StreakCard(workspaceId: workspaceId, userId: userId),
         const SizedBox(height: Spacing.lg),
         _QuickStudyButton(onPressed: onStartStudy),
         const SizedBox(height: Spacing.md),
         _RevisionButton(onPressed: onStartRevision),
+        const SizedBox(height: Spacing.lg),
+        _GamificationShortcuts(
+          onOpenBadges: onOpenBadges,
+          onOpenLeaderboard: onOpenLeaderboard,
+        ),
         const SizedBox(height: Spacing.xl),
         Text(
           'Recent Activity',
@@ -212,40 +243,95 @@ class _GreetingCard extends StatelessWidget {
   }
 }
 
-class _StreakCard extends StatelessWidget {
+/// Streak + XP card. Reads the gamification streak summary (cheap)
+/// for the headline number, and falls back to a static zero state
+/// when there's no workspace yet OR while the streak is loading.
+///
+/// The XP chip on the right reads the full profile — a slightly
+/// heavier call but the home page already pays the round-trip and
+/// the cached provider value is shared with the dedicated profile
+/// view if that's opened next.
+class _StreakCard extends ConsumerWidget {
+  const _StreakCard({required this.workspaceId, required this.userId});
+
+  final String? workspaceId;
+  final String? userId;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (workspaceId == null || userId == null) {
+      return _zeroStateCard(
+        context,
+        title: '0-day streak',
+        subtitle: 'Join a workspace to start your streak!',
+        xpChip: '0 XP',
+      );
+    }
+    final key = (workspaceId: workspaceId!, userId: userId!);
+    final streakAsync = ref.watch(streakSummaryProvider(key));
+    final profileAsync = ref.watch(gamificationProfileProvider(key));
+
+    final streak = streakAsync.valueOrNull;
+    final xpTotal = profileAsync.valueOrNull?.xpTotal ?? 0;
+    final days = streak?.streakDays ?? 0;
+    final activeToday = streak?.activeToday ?? false;
+
+    return _streakCard(
+      context,
+      days: days,
+      activeToday: activeToday,
+      xpTotal: xpTotal,
+    );
+  }
+
+  Widget _streakCard(
+    BuildContext context, {
+    required int days,
+    required bool activeToday,
+    required int xpTotal,
+  }) {
+    final title = days == 1 ? '1-day streak' : '$days-day streak';
+    final subtitle = days == 0
+        ? 'Study today to start your streak!'
+        : activeToday
+            ? "You've studied today — keep it going!"
+            : 'Study today to keep your streak alive.';
+    return _zeroStateCard(
+      context,
+      title: title,
+      subtitle: subtitle,
+      xpChip: '$xpTotal XP',
+      // Pulse the flame on an active streak so the card feels alive.
+      animate: activeToday && days > 0,
+    );
+  }
+
+  Widget _zeroStateCard(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required String xpChip,
+    bool animate = false,
+  }) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(Spacing.lg),
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: AppColors.secondaryContainer,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.local_fire_department_rounded,
-                color: AppColors.secondary,
-                size: 28,
-              ),
-            ),
+            _FlameIcon(animate: animate),
             const SizedBox(width: Spacing.lg),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '0-day streak',
+                    title,
                     style: context.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   Text(
-                    'Study today to start your streak!',
+                    subtitle,
                     style: context.textTheme.bodySmall?.copyWith(
                       color: context.colorScheme.onSurfaceVariant,
                     ),
@@ -263,7 +349,7 @@ class _StreakCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                '0 XP',
+                xpChip,
                 style: context.textTheme.labelMedium?.copyWith(
                   color: AppColors.primary,
                   fontWeight: FontWeight.w700,
@@ -271,6 +357,170 @@ class _StreakCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Pulsing flame icon. Animation only runs on active streaks so a
+/// brand-new student doesn't see a phantom heartbeat.
+class _FlameIcon extends StatefulWidget {
+  const _FlameIcon({required this.animate});
+
+  final bool animate;
+
+  @override
+  State<_FlameIcon> createState() => _FlameIconState();
+}
+
+class _FlameIconState extends State<_FlameIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    if (widget.animate) _controller.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(_FlameIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.animate && !_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    } else if (!widget.animate && _controller.isAnimating) {
+      _controller.stop();
+      _controller.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        // Subtle scale pulse — 1.0 → 1.08, no glow.
+        final scale = 1.0 + (_controller.value * 0.08);
+        return Transform.scale(scale: scale, child: child);
+      },
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: AppColors.secondaryContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(
+          Icons.local_fire_department_rounded,
+          color: AppColors.secondary,
+          size: 28,
+        ),
+      ),
+    );
+  }
+}
+
+/// Two side-by-side cards that push into the badges grid and the
+/// workspace leaderboard. Disabled when there's no workspace yet —
+/// nothing to show.
+class _GamificationShortcuts extends StatelessWidget {
+  const _GamificationShortcuts({
+    required this.onOpenBadges,
+    required this.onOpenLeaderboard,
+  });
+
+  final VoidCallback? onOpenBadges;
+  final VoidCallback? onOpenLeaderboard;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _ShortcutCard(
+            icon: Icons.emoji_events_rounded,
+            label: 'Badges',
+            onTap: onOpenBadges,
+          ),
+        ),
+        const SizedBox(width: Spacing.md),
+        Expanded(
+          child: _ShortcutCard(
+            icon: Icons.leaderboard_rounded,
+            label: 'Leaderboard',
+            onTap: onOpenLeaderboard,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ShortcutCard extends StatelessWidget {
+  const _ShortcutCard({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onTap == null;
+    return Material(
+      color: disabled
+          ? context.colorScheme.surfaceContainerHighest
+          : context.colorScheme.surface,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(Spacing.lg),
+          decoration: BoxDecoration(
+            border: Border.all(color: context.colorScheme.outlineVariant),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                color: disabled
+                    ? context.colorScheme.onSurfaceVariant
+                    : AppColors.primary,
+              ),
+              const SizedBox(width: Spacing.md),
+              Expanded(
+                child: Text(
+                  label,
+                  style: context.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: disabled
+                        ? context.colorScheme.onSurfaceVariant
+                        : null,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: context.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
         ),
       ),
     );

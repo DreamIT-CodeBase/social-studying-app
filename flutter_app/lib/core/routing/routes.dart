@@ -38,4 +38,12 @@ abstract final class AppRoutes {
   /// session. Pushed from the student Home tab.
   static const String studentRevisionSession =
       '$studentRevision/:workspaceId';
+
+  /// Sprint 5.4 student gamification screens. Pushed from the student
+  /// home + progress views. Badges is per-student (workspace + user id);
+  /// leaderboard is workspace-scoped and reads the caller's identity
+  /// from the auth state for highlighting.
+  static const String studentBadges = '/student/badges/:workspaceId/:userId';
+  static const String studentLeaderboard =
+      '/student/leaderboard/:workspaceId';
 }

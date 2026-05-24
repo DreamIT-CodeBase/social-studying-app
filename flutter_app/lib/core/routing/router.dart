@@ -9,6 +9,8 @@ import 'package:social_study_app/features/admin/workspaces/presentation/workspac
 import 'package:social_study_app/features/admin/workspaces/presentation/workspaces_screen.dart';
 import 'package:social_study_app/features/auth/presentation/login_screen.dart';
 import 'package:social_study_app/features/documents/presentation/document_polling_screen.dart';
+import 'package:social_study_app/features/gamification/presentation/badges_screen.dart';
+import 'package:social_study_app/features/gamification/presentation/leaderboard_screen.dart';
 import 'package:social_study_app/features/revision/presentation/revision_screen.dart';
 import 'package:social_study_app/features/taxonomy/presentation/taxonomy_editor_screen.dart';
 import 'package:social_study_app/features/home/presentation/admin_home_screen.dart';
@@ -113,6 +115,32 @@ GoRouter router(RouterRef ref) {
         builder: (_, state) => RevisionScreen(
           workspaceId: state.pathParameters['workspaceId']!,
         ),
+      ),
+      GoRoute(
+        path: AppRoutes.studentBadges,
+        builder: (_, state) => BadgesScreen(
+          workspaceId: state.pathParameters['workspaceId']!,
+          userId: state.pathParameters['userId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.studentLeaderboard,
+        builder: (_, state) {
+          // The caller's identity drives row highlighting. Reading
+          // ``authNotifierProvider`` off ``ref`` (closed over from the
+          // outer ``router`` builder) keeps the screen signature
+          // declarative without coupling it to the auth feature.
+          final auth = ref.read(authNotifierProvider).valueOrNull;
+          final userId = auth?.maybeWhen(
+                authenticated: (user) => user.id,
+                orElse: () => '',
+              ) ??
+              '';
+          return LeaderboardScreen(
+            workspaceId: state.pathParameters['workspaceId']!,
+            currentUserId: userId,
+          );
+        },
       ),
     ],
   );
