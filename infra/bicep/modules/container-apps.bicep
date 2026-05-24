@@ -16,6 +16,11 @@ param searchKeySecretUri string
 param contentSafetyKeySecretUri string
 param storageConnectionSecretUri string
 param documentIntelligenceKeySecretUri string
+// Sprint 5.6 — ANH connection string (Manage+Send+Listen). The API
+// uses Send to dispatch pushes; the Flutter app registers directly
+// via a scoped Listen-only SAS minted at runtime.
+param notificationHubConnectionSecretUri string
+param notificationHubName string
 
 // Plain-text configuration values
 param openAiEndpoint string
@@ -130,6 +135,11 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = {
           keyVaultUrl: documentIntelligenceKeySecretUri
           identity: managedIdentityId
         }
+        {
+          name: 'notification-hub-connection-string'
+          keyVaultUrl: notificationHubConnectionSecretUri
+          identity: managedIdentityId
+        }
       ]
       ingress: {
         external: true
@@ -212,6 +222,14 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'DOCUMENT_INTELLIGENCE_KEY'
               secretRef: 'document-intelligence-key'
+            }
+            {
+              name: 'NOTIFICATION_HUB_CONNECTION_STRING'
+              secretRef: 'notification-hub-connection-string'
+            }
+            {
+              name: 'NOTIFICATION_HUB_NAME'
+              value: notificationHubName
             }
             {
               name: 'B2C_TENANT_ID'

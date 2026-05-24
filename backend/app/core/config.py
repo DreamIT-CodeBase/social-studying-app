@@ -88,5 +88,14 @@ class Settings(BaseSettings):
     # with dashes at lookup time. See ``azure_ai_search.index_name_for``.
     search_chunks_index_prefix: str = "chunks"
 
+    # Sprint 5.6 — Azure Notification Hubs. Connection string carries
+    # the SAS key + endpoint (``Endpoint=sb://...;SharedAccessKeyName=...;
+    # SharedAccessKey=...``). Empty in dev → the notification service
+    # falls back to ``LoggingSender`` so local development never tries
+    # to call a non-existent ANH. Hub name is the per-environment
+    # ``study-app-<env>`` from ``infra/bicep/modules/notification-hub.bicep``.
+    notification_hub_connection_string: str = ""
+    notification_hub_name: str = ""
+
 
 settings = Settings()

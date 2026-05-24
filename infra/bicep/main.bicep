@@ -180,6 +180,20 @@ module documentIntelligence 'modules/document-intelligence.bicep' = {
   }
 }
 
+// Sprint 5.6 — Azure Notification Hubs. Cross-platform push delivery
+// for question reminders, streak warnings, and milestone alerts.
+// FCM wire-up is human-only (see docs/notifications-setup.md).
+module notificationHub 'modules/notification-hub.bicep' = {
+  name: 'notification-hub'
+  scope: rg
+  params: {
+    location: location
+    environment: environment
+    tags: tags
+    keyVaultName: keyVault.outputs.keyVaultName
+  }
+}
+
 // ── Step 4: Container Apps (needs all of the above) ───────────────────────────
 
 module containerApp 'modules/container-apps.bicep' = {
@@ -199,6 +213,8 @@ module containerApp 'modules/container-apps.bicep' = {
     contentSafetyKeySecretUri: contentSafety.outputs.contentSafetyKeySecretUri
     storageConnectionSecretUri: storage.outputs.storageConnectionSecretUri
     documentIntelligenceKeySecretUri: documentIntelligence.outputs.documentIntelligenceKeySecretUri
+    notificationHubConnectionSecretUri: notificationHub.outputs.notificationHubConnectionSecretUri
+    notificationHubName: notificationHub.outputs.hubName
     openAiEndpoint: openAi.outputs.openAiEndpoint
     openAiDeploymentName: openAi.outputs.deploymentName
     openAiEmbeddingDeploymentName: openAi.outputs.embeddingDeploymentName
