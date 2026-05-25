@@ -9,6 +9,7 @@ from app.api import (
     documents,
     flashcards,
     gamification,
+    notifications,
     questions,
     taxonomy,
     tenants,
@@ -52,6 +53,8 @@ app.include_router(flashcards.router, prefix="/api/v1")
 app.include_router(gamification.router, prefix="/api/v1")
 app.include_router(analytics.workspace_router, prefix="/api/v1")
 app.include_router(analytics.tenant_router, prefix="/api/v1")
+app.include_router(notifications.users_router, prefix="/api/v1")
+app.include_router(notifications.admin_router, prefix="/api/v1")
 
 
 @app.get("/health")

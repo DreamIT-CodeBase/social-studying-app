@@ -26,7 +26,7 @@ import logging
 from dataclasses import dataclass
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 
 from app.core.auth import get_current_user
 from app.core.database import (
@@ -60,6 +60,7 @@ from app.models.user import User
 from app.models.workspace import Workspace
 from app.services import content_safety, flashcard_generation
 from app.services import gamification as gamification_service
+from app.services import notifications as notification_service
 from app.services.flashcard_generation import (
     FlashcardShapeError,
     GeneratedFlashcard,
@@ -168,6 +169,7 @@ async def rate_flashcard(
     workspace_id: str,
     flashcard_id: str,
     submission: FlashcardRatingSubmission,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
 ) -> FlashcardRatingResponse:
     """Record a student's self-rating for a flashcard.
@@ -232,6 +234,18 @@ async def rate_flashcard(
         delta.streak_days,
         len(delta.badges_unlocked),
     )
+
+    # Sprint 5.7c — same milestone push fan-out as the answer endpoint.
+    if delta.leveled_up or delta.badges_unlocked:
+        background_tasks.add_task(
+            notification_service.dispatch_gamification_milestones,
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            workspace_id=workspace_id,
+            leveled_up=delta.leveled_up,
+            new_level=delta.new_level,
+            badges_unlocked=list(delta.badges_unlocked),
+        )
 
     return FlashcardRatingResponse(
         flashcard_id=flashcard_id,

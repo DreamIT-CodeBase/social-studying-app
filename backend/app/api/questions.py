@@ -96,6 +96,7 @@ from app.services import (
 from app.services import (
     knowledge_state as knowledge_state_service,
 )
+from app.services import notifications as notification_service
 from app.services.difficulty import calibrate_difficulty
 from app.services.learning_path import (
     NoTopicsAvailable,
@@ -653,6 +654,22 @@ async def submit_answer(
         workspace_id=workspace_id,
         student_id=current_user.id,
     )
+
+    # Sprint 5.7c: imperative milestone pushes. Same background-task
+    # contract as the prefetch — a notification failure must not
+    # affect the response the student is about to receive, and the
+    # in-app celebration (5.5) is already firing off the response
+    # body, so the push is purely the "also tell their phone" path.
+    if gamification_delta.leveled_up or gamification_delta.badges_unlocked:
+        background_tasks.add_task(
+            notification_service.dispatch_gamification_milestones,
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            workspace_id=workspace_id,
+            leveled_up=gamification_delta.leveled_up,
+            new_level=gamification_delta.new_level,
+            badges_unlocked=list(gamification_delta.badges_unlocked),
+        )
 
     return AnswerFeedback(
         question_id=question.id,

@@ -163,6 +163,13 @@ def _patches(
     delta = gamification_delta or _default_delta()
     gamification_mock = AsyncMock(return_value=delta)
 
+    # Sprint 5.7c — the answer endpoint now schedules a milestone push
+    # background task whenever the engine reports a level-up or badge
+    # unlock. Stub it to a no-op so the test doesn't end up calling
+    # the real notifications service (which would hit Cosmos for the
+    # token list).
+    notification_dispatch_mock = AsyncMock(return_value=None)
+
     return (
         [
             patch("app.api.questions.get_collection", side_effect=_factory),
@@ -173,6 +180,10 @@ def _patches(
             patch(
                 "app.api.questions.gamification_service.record_question_attempt",
                 gamification_mock,
+            ),
+            patch(
+                "app.api.questions.notification_service.dispatch_gamification_milestones",
+                notification_dispatch_mock,
             ),
         ],
         persisted_interactions,
