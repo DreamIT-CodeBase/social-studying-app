@@ -87,6 +87,7 @@ class SchedulerTickSummary(BaseModel):
 
     study_reminders_sent: int
     streak_warnings_sent: int
+    unanswered_reprompts_sent: int = 0
     students_evaluated: int
     failures: int
 
@@ -173,6 +174,7 @@ async def run_scheduler(
     return SchedulerTickSummary(
         study_reminders_sent=summary.study_reminders_sent,
         streak_warnings_sent=summary.streak_warnings_sent,
+        unanswered_reprompts_sent=summary.unanswered_reprompts_sent,
         students_evaluated=summary.students_evaluated,
         failures=summary.failures,
     )

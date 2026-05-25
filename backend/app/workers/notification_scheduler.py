@@ -48,10 +48,12 @@ from datetime import UTC, datetime
 from app.core.database import (
     GAMIFICATION,
     NOTIFICATION_DISPATCHES,
+    QUESTION_QUEUE,
     USERS,
     WORKSPACES,
     get_collection,
 )
+from app.models.base import utc_now
 from app.models.gamification import GamificationState
 from app.models.notification import NotificationType
 from app.models.user import User, UserRole
@@ -69,6 +71,7 @@ class TickSummary:
     students_evaluated: int
     study_reminders_sent: int
     streak_warnings_sent: int
+    unanswered_reprompts_sent: int
     failures: int
 
 
@@ -153,21 +156,81 @@ async def run_tick_for_tenant(*, tenant_id: str) -> TickSummary:
             summary_warnings += _count_successes(results)
             summary_failures += _count_failures(results)
 
+    # Sprint 5.12 — unanswered reprompt fires. Run after the per-student
+    # reminders so a student who hasn't studied today AND has a
+    # ready-to-reprompt question gets both pushes — the reminder is the
+    # general nudge and the reprompt names the specific question.
+    summary_reprompts, reprompt_failures = await _fire_unanswered_reprompts(
+        tenant_id=tenant_id
+    )
+    summary_failures += reprompt_failures
+
     logger.info(
         "Notification tick tenant=%s students=%d reminders=%d "
-        "warnings=%d failures=%d",
+        "warnings=%d reprompts=%d failures=%d",
         tenant_id,
         len(students),
         summary_reminders,
         summary_warnings,
+        summary_reprompts,
         summary_failures,
     )
     return TickSummary(
         students_evaluated=len(students),
         study_reminders_sent=summary_reminders,
         streak_warnings_sent=summary_warnings,
+        unanswered_reprompts_sent=summary_reprompts,
         failures=summary_failures,
     )
+
+
+async def _fire_unanswered_reprompts(
+    *, tenant_id: str
+) -> tuple[int, int]:
+    """Find every question whose ``deferred_until`` is at or past now,
+    fire a reprompt push for it, and clear ``deferred_until`` so the
+    student is only nudged once per skip.
+
+    Returns ``(successes, failures)``. Questions whose owning student
+    is no longer in the system (deleted user) are still cleared so the
+    field doesn't accumulate stale entries forever.
+    """
+    now_iso = utc_now()
+    col = get_collection(tenant_id, QUESTION_QUEUE)
+    cursor = col.find(
+        {
+            # Lexicographic ISO 8601 comparison — strings sort the
+            # same as datetimes when they're in canonical form.
+            "deferred_until": {"$ne": None, "$lte": now_iso},
+            "deleted_at": None,
+        }
+    )
+    successes = 0
+    failures = 0
+    async for raw in cursor:
+        student_id = raw.get("deferred_for")
+        if not student_id:
+            # Stale state — deferred_until is set but no owning student.
+            # Clear it to keep the field honest.
+            await col.update_one(
+                {"_id": raw["_id"]},
+                {"$set": {"deferred_until": None}},
+            )
+            continue
+        results = await notification_service.send_unanswered_reprompt(
+            tenant_id=tenant_id,
+            user_id=student_id,
+            workspace_id=raw.get("workspace_id", ""),
+            question_id=raw["_id"],
+            topic=raw.get("topic", ""),
+        )
+        successes += _count_successes(results)
+        failures += _count_failures(results)
+        await col.update_one(
+            {"_id": raw["_id"]},
+            {"$set": {"deferred_until": None}},
+        )
+    return successes, failures
 
 
 # ── Cosmos reads ───────────────────────────────────────────────────────────

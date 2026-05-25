@@ -198,6 +198,7 @@ def test_run_scheduler_returns_summary_to_tenant_admin(client, tenant_admin):
         students_evaluated=42,
         study_reminders_sent=15,
         streak_warnings_sent=4,
+        unanswered_reprompts_sent=7,
         failures=0,
     )
     with patch(
@@ -213,6 +214,7 @@ def test_run_scheduler_returns_summary_to_tenant_admin(client, tenant_admin):
         "students_evaluated": 42,
         "study_reminders_sent": 15,
         "streak_warnings_sent": 4,
+        "unanswered_reprompts_sent": 7,
         "failures": 0,
     }
 
@@ -228,6 +230,7 @@ def test_run_scheduler_uses_callers_tenant_id(client, tenant_admin):
             students_evaluated=0,
             study_reminders_sent=0,
             streak_warnings_sent=0,
+            unanswered_reprompts_sent=0,
             failures=0,
         )
 

@@ -79,6 +79,20 @@ class Question(CosmosDocument):
     # prefetched row. None = live-generated, no reserved consumer.
     prefetched_for: str | None = None
 
+    # ── Sprint 5.12: unanswered queue ─────────────────────────────────────────
+    # A student saw this question, declined to answer it, and asked to
+    # see it again later. ``deferred_for`` is the student id; the
+    # ``deferred_until`` ISO 8601 UTC timestamp is the earliest the
+    # scheduler may fire an ``unanswered_reprompt`` push for it. After
+    # the push fires the scheduler clears ``deferred_until`` so the
+    # student is only nudged once per defer. ``defer_count`` tracks how
+    # many times the student has skipped this same question across
+    # sessions — three+ skips drops it from the rotation entirely
+    # (treated as a topic the student isn't ready for).
+    deferred_for: str | None = None
+    deferred_until: str | None = None
+    defer_count: int = 0
+
 
 class StudentMcqOption(CosmosDocument.__base__):
     """MCQ option as the student sees it — ``is_correct`` removed.

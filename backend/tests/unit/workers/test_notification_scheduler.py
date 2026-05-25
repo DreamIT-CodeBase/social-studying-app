@@ -121,6 +121,9 @@ def _patch_module(
 
     study_mock = AsyncMock(return_value=results)
     streak_mock = AsyncMock(return_value=results)
+    # No-op the reprompt path by default — tests that want to
+    # exercise it patch ``_fire_unanswered_reprompts`` themselves.
+    reprompt_mock = AsyncMock(return_value=(0, 0))
 
     return [
         patch.object(notification_scheduler, "_read_students", _fake_students),
@@ -132,6 +135,11 @@ def _patch_module(
         ),
         patch.object(
             notification_scheduler, "_already_sent_today", _fake_already
+        ),
+        patch.object(
+            notification_scheduler,
+            "_fire_unanswered_reprompts",
+            reprompt_mock,
         ),
         patch(
             "app.workers.notification_scheduler.notification_service.send_study_reminder",
@@ -285,6 +293,130 @@ async def test_student_with_deleted_workspace_is_skipped_silently():
         )
     assert summary.study_reminders_sent == 0
     study.assert_not_awaited()
+
+
+# ── 5.12 reprompts ────────────────────────────────────────────────────────
+
+
+def _async_iter(items):
+    class _Iter:
+        def __init__(self, xs):
+            self._xs = iter(xs)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            try:
+                return next(self._xs)
+            except StopIteration as exc:
+                raise StopAsyncIteration from exc
+
+    return _Iter(items)
+
+
+@pytest.mark.asyncio
+async def test_reprompt_path_fires_for_due_questions_and_clears_defer():
+    """Sprint 5.12 — _fire_unanswered_reprompts fires one push per
+    question whose deferred_until has elapsed, then clears the field
+    so the same skip isn't re-prompted twice."""
+    due_question = {
+        "_id": "qst_a",
+        "workspace_id": "wsp_a",
+        "topic": "Photosynthesis",
+        "deferred_for": "stu_a",
+        # An ISO 8601 timestamp clearly in the past.
+        "deferred_until": "2020-01-01T00:00:00+00:00",
+        "deleted_at": None,
+    }
+    questions_col = MagicMock()
+    questions_col.find = MagicMock(return_value=_async_iter([due_question]))
+    captured_updates: list[dict] = []
+
+    async def _update_one(_filter, update):
+        captured_updates.append(update)
+        return MagicMock(modified_count=1)
+
+    questions_col.update_one = _update_one
+
+    def _factory(_tid, collection):
+        from app.core.database import QUESTION_QUEUE
+
+        if collection == QUESTION_QUEUE:
+            return questions_col
+        raise AssertionError(collection)
+
+    reprompt_mock = AsyncMock(
+        return_value=[DispatchResult(outcome=DispatchOutcome.logged_only)]
+    )
+    with patch.object(
+        notification_scheduler, "get_collection", side_effect=_factory
+    ), patch(
+        "app.workers.notification_scheduler.notification_service.send_unanswered_reprompt",
+        reprompt_mock,
+    ):
+        successes, failures = await notification_scheduler._fire_unanswered_reprompts(
+            tenant_id="ten_a"
+        )
+
+    assert successes == 1
+    assert failures == 0
+    # send_unanswered_reprompt was called with the question's fields.
+    kwargs = reprompt_mock.await_args.kwargs
+    assert kwargs["question_id"] == "qst_a"
+    assert kwargs["user_id"] == "stu_a"
+    assert kwargs["workspace_id"] == "wsp_a"
+    assert kwargs["topic"] == "Photosynthesis"
+    # And the question's deferred_until was cleared.
+    assert captured_updates == [{"$set": {"deferred_until": None}}]
+
+
+@pytest.mark.asyncio
+async def test_reprompt_skips_questions_with_missing_owner_but_clears_field():
+    """Stale state: ``deferred_until`` is set but ``deferred_for`` is
+    null. The push can't fire (nowhere to send) but the field is
+    cleared so the row doesn't accumulate stale entries."""
+    stale_question = {
+        "_id": "qst_stale",
+        "workspace_id": "wsp_a",
+        "topic": "Photosynthesis",
+        "deferred_for": None,
+        "deferred_until": "2020-01-01T00:00:00+00:00",
+        "deleted_at": None,
+    }
+    questions_col = MagicMock()
+    questions_col.find = MagicMock(return_value=_async_iter([stale_question]))
+    captured_updates: list[dict] = []
+
+    async def _update_one(_filter, update):
+        captured_updates.append(update)
+        return MagicMock(modified_count=1)
+
+    questions_col.update_one = _update_one
+
+    def _factory(_tid, collection):
+        from app.core.database import QUESTION_QUEUE
+
+        if collection == QUESTION_QUEUE:
+            return questions_col
+        raise AssertionError(collection)
+
+    reprompt_mock = AsyncMock()
+    with patch.object(
+        notification_scheduler, "get_collection", side_effect=_factory
+    ), patch(
+        "app.workers.notification_scheduler.notification_service.send_unanswered_reprompt",
+        reprompt_mock,
+    ):
+        successes, failures = await notification_scheduler._fire_unanswered_reprompts(
+            tenant_id="ten_a"
+        )
+
+    assert successes == 0
+    assert failures == 0
+    reprompt_mock.assert_not_awaited()
+    # Field is still cleared.
+    assert captured_updates == [{"$set": {"deferred_until": None}}]
 
 
 @pytest.mark.asyncio

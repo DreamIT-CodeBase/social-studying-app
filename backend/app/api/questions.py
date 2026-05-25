@@ -41,7 +41,9 @@ import logging
 from dataclasses import dataclass
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from datetime import UTC, datetime, timedelta
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Response, status
 
 from app.core.auth import get_current_user
 from app.core.database import (
@@ -695,6 +697,95 @@ async def submit_answer(
             for b in gamification_delta.badges_unlocked
         ],
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sprint 5.12 — POST /questions/{question_id}/skip
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# How long after a skip before the scheduler may fire an
+# ``unanswered_reprompt`` push. Four hours threads the needle: long
+# enough that the student is in a fresh session, short enough that the
+# question is still relevant. Sprint 6 polish: per-workspace knob.
+UNANSWERED_REPROMPT_COOLDOWN = timedelta(hours=4)
+
+# After this many skips the question is deemed too hard / off-topic
+# for this student and drops out of the rotation entirely. Stays
+# persisted (the admin can review and surface manually) but the
+# scheduler skips it from re-prompts and ``/next`` won't re-serve it.
+UNANSWERED_REPROMPT_MAX_SKIPS = 3
+
+
+@router.post(
+    "/{question_id}/skip",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def skip_question(
+    workspace_id: str,
+    question_id: str,
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Defer this question to a later session.
+
+    The student saw the question but doesn't want to answer it right
+    now (too hard, off-topic, distracted, whatever). The scheduler
+    will surface it again via an ``unanswered_reprompt`` push after
+    the cool-down has elapsed; if the same student skips the same
+    question three+ times the question drops out of the rotation for
+    them entirely.
+
+    Raises:
+        404: Question not found in this workspace.
+        409: Question is not approved (pending review / rejected).
+        403: Caller is not a member of the workspace.
+    """
+    _assert_workspace_access(current_user, workspace_id)
+    question = await _load_question(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        question_id=question_id,
+    )
+    if question.status != QuestionStatus.approved:
+        raise ConflictError(
+            f"Question {question_id} is not in a skippable state "
+            f"(status={question.status.value})."
+        )
+
+    new_count = question.defer_count + 1
+    timestamp = utc_now()
+    # If the student has hit the skip cap, mark the question as
+    # "permanently deferred" by clearing ``deferred_until`` (so the
+    # scheduler ignores it) while keeping the count for analytics.
+    if new_count >= UNANSWERED_REPROMPT_MAX_SKIPS:
+        next_eligible = None
+    else:
+        next_eligible = (
+            datetime.now(UTC) + UNANSWERED_REPROMPT_COOLDOWN
+        ).isoformat()
+
+    col = get_collection(current_user.tenant_id, QUESTION_QUEUE)
+    await col.update_one(
+        {"_id": question_id, "workspace_id": workspace_id},
+        {
+            "$set": {
+                "deferred_for": current_user.id,
+                "deferred_until": next_eligible,
+                "defer_count": new_count,
+                "updated_at": timestamp,
+            }
+        },
+    )
+    logger.info(
+        "Question skipped question=%s student=%s defer_count=%d "
+        "next_eligible=%s",
+        question_id,
+        current_user.id,
+        new_count,
+        next_eligible,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ── Per-endpoint helpers ────────────────────────────────────────────────────
