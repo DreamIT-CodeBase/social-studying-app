@@ -58,4 +58,10 @@ abstract final class AppRoutes {
   /// admin Settings tab once a workspace is active.
   static const String adminWorkspaceAnalytics =
       '/admin/analytics/:workspaceId';
+
+  /// Sprint 6.9 first-launch onboarding wizard. Redirected to by the
+  /// router when an authenticated admin has zero workspace
+  /// memberships. The redirect stops firing the moment the first
+  /// workspace exists, so the wizard truly only appears on day 1.
+  static const String adminOnboarding = '/admin/onboarding';
 }

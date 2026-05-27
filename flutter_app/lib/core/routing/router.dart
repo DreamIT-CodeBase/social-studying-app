@@ -17,6 +17,7 @@ import 'package:social_study_app/features/revision/presentation/revision_screen.
 import 'package:social_study_app/features/taxonomy/presentation/taxonomy_editor_screen.dart';
 import 'package:social_study_app/features/home/presentation/admin_home_screen.dart';
 import 'package:social_study_app/features/home/presentation/student_home_screen.dart';
+import 'package:social_study_app/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:social_study_app/features/taxonomy/presentation/taxonomy_viewer_screen.dart';
 
 part 'router.g.dart';
@@ -41,9 +42,30 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
     return authAsync.when(
       data: (authState) {
         final isOnLogin = state.matchedLocation == AppRoutes.login;
+        final isOnOnboarding =
+            state.matchedLocation == AppRoutes.adminOnboarding;
         return authState.when(
           unauthenticated: () => isOnLogin ? null : AppRoutes.login,
-          authenticated: (_) {
+          authenticated: (user) {
+            // Sprint 6.9 — admin with zero workspaces lands on the
+            // onboarding wizard, not the dashboard. The wizard
+            // creates the first workspace, and the redirect stops
+            // firing the moment ``workspaceMemberships`` is non-empty.
+            // The student flavor doesn't get this — students join a
+            // workspace via invite code, not creation.
+            final needsOnboarding =
+                currentFlavor == AppFlavor.admin &&
+                    user.workspaceMemberships.isEmpty;
+
+            if (needsOnboarding) {
+              return isOnOnboarding ? null : AppRoutes.adminOnboarding;
+            }
+            // If the admin has workspaces but somehow lands on
+            // /onboarding (e.g. browser back button after first
+            // creation), bounce them to the dashboard.
+            if (isOnOnboarding) {
+              return AppRoutes.adminDashboard;
+            }
             if (!isOnLogin) return null;
             return currentFlavor == AppFlavor.admin
                 ? AppRoutes.adminDashboard
@@ -72,6 +94,10 @@ GoRouter router(RouterRef ref) {
       GoRoute(
         path: AppRoutes.adminDashboard,
         builder: (_, __) => const AdminHomeScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.adminOnboarding,
+        builder: (_, __) => const OnboardingScreen(),
       ),
       GoRoute(
         path: AppRoutes.adminDocumentPolling,
