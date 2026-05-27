@@ -1,0 +1,72 @@
+{
+  "prompt": "question_true_false_v1",
+  "description": "Five diverse true/false inputs: a clearly true statement, a clearly false statement, a subtle wrong-quantity case (intermediate), an inferential advanced case, and an insufficient-source.",
+  "cases": [
+    {
+      "name": "clearly_true_beginner",
+      "input": {
+        "topic": "Solar System",
+        "difficulty": "beginner",
+        "source_content": "The Sun is at the center of our solar system. Eight planets orbit the Sun. In order from the Sun, they are: Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune. Pluto, once considered the ninth planet, was reclassified as a dwarf planet by the International Astronomical Union in 2006.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "answer is 'true' or 'false' (lowercase string)",
+        "body is a declarative sentence, NOT a question",
+        "body ends with '.'",
+        "no 'True or false:' prefix"
+      ]
+    },
+    {
+      "name": "clearly_false_beginner",
+      "input": {
+        "topic": "Solar System",
+        "difficulty": "beginner",
+        "source_content": "The Sun is at the center of our solar system. Eight planets orbit the Sun. Pluto, once considered the ninth planet, was reclassified as a dwarf planet by the International Astronomical Union in 2006.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "if statement is false, explanation identifies which specific clause is wrong",
+        "false statement is not just a 'true statement with an absolute word added' (no trick falsity)"
+      ]
+    },
+    {
+      "name": "subtle_wrong_quantity_intermediate",
+      "input": {
+        "topic": "Human Body",
+        "difficulty": "intermediate",
+        "source_content": "The adult human body contains 206 bones. The skeleton supports the body, protects internal organs, and works with muscles to enable movement. Babies are born with about 270 bones, many of which fuse together as they grow.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "intermediate distortion = correct concept, wrong quantity/actor/date",
+        "the falsity is checkable against the source"
+      ]
+    },
+    {
+      "name": "inferential_advanced",
+      "input": {
+        "topic": "Newton's Laws",
+        "difficulty": "advanced",
+        "source_content": "Newton's first law states that an object at rest will remain at rest, and an object in motion will continue in motion at a constant velocity, unless acted upon by an external force. This property is called inertia. The second law quantifies the relationship: F = ma, where F is force, m is mass, and a is acceleration. The third law states that for every action there is an equal and opposite reaction.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "advanced statement requires inference or application",
+        "answer derivable from source via reasoning, not surface match"
+      ]
+    },
+    {
+      "name": "insufficient_source_topic_mismatch",
+      "input": {
+        "topic": "Genetic Recombination",
+        "difficulty": "intermediate",
+        "source_content": "A computer's CPU executes instructions stored in memory.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "MUST return insufficient_source"
+      ]
+    }
+  ]
+}

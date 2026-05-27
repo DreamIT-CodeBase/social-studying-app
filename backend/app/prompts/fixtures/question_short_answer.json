@@ -1,0 +1,72 @@
+{
+  "prompt": "question_short_answer_v1",
+  "description": "Five diverse short-answer inputs covering happy path, abbreviation-friendly answer (variants), unit conversion answer, multi-answer-temptation (should refuse), and insufficient source.",
+  "cases": [
+    {
+      "name": "happy_path_biology",
+      "input": {
+        "topic": "Photosynthesis",
+        "difficulty": "beginner",
+        "source_content": "Photosynthesis is the process by which green plants use sunlight, water, and carbon dioxide to produce glucose and release oxygen as a byproduct. The reaction takes place in chloroplasts and is driven by the green pigment chlorophyll.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "answer is 1-10 words",
+        "acceptable_variants is a list (may be empty)",
+        "body ends with '?'",
+        "answer lowercase unless proper noun"
+      ]
+    },
+    {
+      "name": "abbreviation_friendly_answer",
+      "input": {
+        "topic": "Cellular Energy",
+        "difficulty": "beginner",
+        "source_content": "Adenosine triphosphate, abbreviated ATP, is the molecule that stores and transfers energy in living cells. ATP is sometimes called the energy currency of the cell. When energy is needed, ATP is broken down to ADP (adenosine diphosphate), releasing a phosphate group and energy.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "acceptable_variants includes both expanded form and abbreviation (or vice versa) when the source covers both",
+        "answer specific enough to be unambiguous"
+      ]
+    },
+    {
+      "name": "unit_or_number_answer",
+      "input": {
+        "topic": "Speed of Light",
+        "difficulty": "intermediate",
+        "source_content": "The speed of light in a vacuum is approximately 299,792,458 meters per second, often rounded to 3 x 10^8 m/s for calculations. It is denoted by the symbol c and is the maximum speed at which information or matter can travel through space.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "if numeric, answer uses digits not words",
+        "trailing punctuation absent from answer"
+      ]
+    },
+    {
+      "name": "multi_answer_temptation_should_refuse_or_disambiguate",
+      "input": {
+        "topic": "Plant Anatomy",
+        "difficulty": "beginner",
+        "source_content": "Plants have several major organs that work together. The roots anchor the plant and absorb water and minerals. The stem supports the plant and transports nutrients. The leaves are the primary site of photosynthesis. Flowers are involved in reproduction.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "question MUST have a single unambiguous answer — must not be 'name the four organs' style (that's long_answer)",
+        "OR returns insufficient_source if no single-answer question fits"
+      ]
+    },
+    {
+      "name": "insufficient_source_borderline",
+      "input": {
+        "topic": "Black Hole Thermodynamics",
+        "difficulty": "advanced",
+        "source_content": "A leaf is a part of a plant that is usually green and flat.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "MUST return insufficient_source — topic not in source"
+      ]
+    }
+  ]
+}

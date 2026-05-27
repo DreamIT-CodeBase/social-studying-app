@@ -1,0 +1,78 @@
+{
+  "prompt": "question_mcq_v1",
+  "description": "Five diverse MCQ inputs covering happy path, very short source (edge case), very long source (stress), different subject from likely defaults (humanities), and an ambiguous/borderline case the prompt should refuse with insufficient_source.",
+  "cases": [
+    {
+      "name": "happy_path_biology_beginner",
+      "input": {
+        "topic": "Photosynthesis",
+        "difficulty": "beginner",
+        "source_content": "Photosynthesis is the process by which green plants and some other organisms use sunlight to synthesize foods with the help of chlorophyll. Carbon dioxide and water react in the presence of light energy and chlorophyll inside chloroplasts to produce glucose and oxygen. The overall chemical equation is: 6CO2 + 6H2O + light energy → C6H12O6 + 6O2. Photosynthesis takes place mainly in the leaves of plants. The green pigment chlorophyll absorbs sunlight, mostly in the blue and red wavelengths. The oxygen released during photosynthesis is a byproduct that escapes through tiny pores called stomata.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "valid JSON with body/options/answer/explanation",
+        "options has exactly 4 entries with keys A B C D",
+        "exactly one option has is_correct=true",
+        "answer matches the correct option's key",
+        "body ends with '?'",
+        "no 'all of the above' or 'none of the above'"
+      ]
+    },
+    {
+      "name": "short_source_edge",
+      "input": {
+        "topic": "Water Molecules",
+        "difficulty": "beginner",
+        "source_content": "A water molecule consists of two hydrogen atoms bonded to one oxygen atom. Its chemical formula is H2O.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "valid JSON or insufficient_source",
+        "if generated, body grounded in the 22-word source",
+        "no invented facts about water properties not in the source"
+      ]
+    },
+    {
+      "name": "long_source_stress",
+      "input": {
+        "topic": "World War I Causes",
+        "difficulty": "intermediate",
+        "source_content": "The First World War, also known as the Great War, lasted from 1914 to 1918. Its causes were complex and have been the subject of extensive historical debate. The MAIN acronym is often used to summarize: Militarism, Alliances, Imperialism, and Nationalism. Militarism referred to the arms race between European powers, particularly the naval competition between Britain and Germany. The Dreadnought class of battleship, introduced by Britain in 1906, sparked a building race that strained international relations. Alliance systems divided Europe into two armed camps: the Triple Entente (France, Russia, Britain) and the Triple Alliance (Germany, Austria-Hungary, Italy). These mutual-defense pacts meant that a conflict between any two powers would quickly drag in others. Imperialism produced competition for colonies in Africa and Asia. Germany, a late entrant to the colonial scramble, sought to assert itself against established powers. The Moroccan crises of 1905 and 1911 nearly led to war. Nationalism was particularly explosive in the Balkans, where Slavic peoples under Austro-Hungarian rule looked to Serbia for liberation. The assassination of Archduke Franz Ferdinand by Gavrilo Princip in Sarajevo on June 28, 1914, became the immediate trigger. Austria-Hungary's ultimatum to Serbia, Russia's mobilization in support of Serbia, Germany's invasion of Belgium under the Schlieffen Plan, and Britain's entry to defend Belgian neutrality cascaded over a few weeks. Underlying all of this was a widespread belief among European leaders that war, if it came, would be brief and decisive — a belief tragically falsified by the four years of trench warfare that followed.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "options reference at least one MAIN factor from the source",
+        "answer is unambiguously supported by the source text",
+        "distractors plausible but wrong against the source",
+        "body 1-2 sentences"
+      ]
+    },
+    {
+      "name": "humanities_advanced",
+      "input": {
+        "topic": "Metaphor in Poetry",
+        "difficulty": "advanced",
+        "source_content": "Metaphor is a figure of speech in which a word or phrase is applied to an object or action to which it is not literally applicable. Unlike a simile, which uses 'like' or 'as' to make a comparison explicit, a metaphor asserts identity. When Shakespeare's Romeo says 'Juliet is the sun,' he is not claiming his beloved is a star — he is asserting that her presence has the same effect on him that sunlight has on the world. Strong metaphors operate on multiple levels: literal description, emotional resonance, and conceptual mapping. A 'dead metaphor' is one used so often it has lost its figurative force ('the leg of a table'). Live metaphors invite readers to discover the comparison; dead metaphors merely label.",
+        "seen_questions": ["What is the difference between metaphor and simile?"]
+      },
+      "expected_constraints": [
+        "advanced framing requires inference or application",
+        "does not duplicate the seen_questions entry",
+        "respects the seen_questions dedup rule"
+      ]
+    },
+    {
+      "name": "insufficient_source_borderline",
+      "input": {
+        "topic": "Quantum Field Theory",
+        "difficulty": "advanced",
+        "source_content": "The cell is the basic structural unit of all living organisms. Cells were first observed by Robert Hooke in 1665.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "MUST return {\"insufficient_source\": true} — source doesn't cover the topic"
+      ]
+    }
+  ]
+}

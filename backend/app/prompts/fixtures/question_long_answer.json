@@ -1,0 +1,73 @@
+{
+  "prompt": "question_long_answer_v1",
+  "description": "Five diverse long-answer inputs covering 'explain' / 'compare' / 'analyse' framings + a recall-shaped case the prompt should refuse (long_answer requires synthesis, not recall).",
+  "cases": [
+    {
+      "name": "explain_beginner",
+      "input": {
+        "topic": "The Water Cycle",
+        "difficulty": "beginner",
+        "source_content": "The water cycle describes the continuous movement of water on, above, and below the surface of the Earth. Water evaporates from oceans, lakes, and rivers when heated by the sun, rising as water vapor into the atmosphere. There it cools and condenses into tiny droplets, forming clouds. When the droplets combine and grow heavy enough, they fall back to Earth as precipitation — rain, snow, sleet, or hail. The water that lands on the ground either runs off into bodies of water, soaks into the soil to become groundwater, or evaporates again. The cycle is powered by solar energy and gravity.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "key_points has 3-5 entries each appearing in reference_answer",
+        "reference_answer is 3-6 sentences",
+        "body uses 'explain' or 'describe' framing",
+        "not pure recall — requires synthesis"
+      ]
+    },
+    {
+      "name": "compare_intermediate",
+      "input": {
+        "topic": "Mitosis vs Meiosis",
+        "difficulty": "intermediate",
+        "source_content": "Mitosis is a type of cell division in which a single parent cell divides to produce two genetically identical daughter cells. It occurs in somatic (body) cells and is responsible for growth, repair, and asexual reproduction. The daughter cells have the same number of chromosomes as the parent. Meiosis, in contrast, is a specialized cell division that produces four genetically unique gametes (sex cells), each with half the chromosome number of the parent. Meiosis occurs only in reproductive organs. It introduces genetic variation through crossing over and independent assortment, which is essential for sexual reproduction and biological diversity.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "framing uses 'compare and contrast' or 'explain how X differs from Y'",
+        "reference_answer integrates BOTH ideas from source",
+        "key_points cover both halves of the comparison"
+      ]
+    },
+    {
+      "name": "analyse_advanced",
+      "input": {
+        "topic": "Causes of the French Revolution",
+        "difficulty": "advanced",
+        "source_content": "The French Revolution (1789-1799) emerged from the convergence of long-term structural problems and short-term crises. Structurally, France's social order (the three estates) placed an unsustainable tax burden on the common people while exempting the clergy and nobility. The Enlightenment had spread ideas of natural rights and popular sovereignty that contradicted absolute monarchy. Economically, France was bankrupted by its support of the American Revolution and decades of court extravagance. Short-term, a series of bad harvests in 1788 raised bread prices to over half of a worker's daily wage. King Louis XVI's calling of the Estates-General in May 1789 — for the first time since 1614 — opened a constitutional crisis that revolutionary leaders seized. The fall of the Bastille on July 14, 1789, marked the irreversible point.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "advanced framing requires interpretation or evaluation",
+        "reference_answer connects causes to outcomes",
+        "key_points name distinct causes (structural / economic / immediate trigger)"
+      ]
+    },
+    {
+      "name": "pure_recall_should_refuse",
+      "input": {
+        "topic": "Capital Cities",
+        "difficulty": "beginner",
+        "source_content": "The capital of France is Paris. The capital of Germany is Berlin. The capital of Italy is Rome. The capital of Spain is Madrid.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "MUST return insufficient_source — source supports recall (short_answer territory), not synthesis"
+      ]
+    },
+    {
+      "name": "insufficient_source_borderline",
+      "input": {
+        "topic": "Differential Equations",
+        "difficulty": "advanced",
+        "source_content": "A square has four equal sides and four right angles.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "MUST return insufficient_source — topic not in source"
+      ]
+    }
+  ]
+}

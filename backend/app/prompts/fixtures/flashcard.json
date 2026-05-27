@@ -1,0 +1,68 @@
+{
+  "prompt": "flashcard_v1",
+  "description": "Five diverse flashcard inputs: definition-style happy path, formula card, person/event card, two-part-temptation (should split or refuse), and insufficient source.",
+  "cases": [
+    {
+      "name": "definition_happy_path",
+      "input": {
+        "topic": "Photosynthesis",
+        "source_content": "Photosynthesis is the process by which plants convert light energy into chemical energy stored in glucose. It occurs in the chloroplasts and is driven by the green pigment chlorophyll.",
+        "seen_cards": []
+      },
+      "expected_constraints": [
+        "front is 1 sentence or noun phrase",
+        "back is 1-2 sentences",
+        "back does NOT echo the front",
+        "front and back form a clean recall pair"
+      ]
+    },
+    {
+      "name": "formula_card",
+      "input": {
+        "topic": "Pythagorean Theorem",
+        "source_content": "In a right triangle, the square of the length of the hypotenuse equals the sum of the squares of the lengths of the other two sides. If the legs are a and b and the hypotenuse is c, then a^2 + b^2 = c^2.",
+        "seen_cards": []
+      },
+      "expected_constraints": [
+        "front prompts for the formula (e.g. 'Pythagorean theorem')",
+        "back states the formula concisely",
+        "explanation provides extra context"
+      ]
+    },
+    {
+      "name": "person_event_card",
+      "input": {
+        "topic": "American Revolution",
+        "source_content": "The Declaration of Independence was adopted by the Second Continental Congress on July 4, 1776. Thomas Jefferson was the principal author. The Declaration formally announced the thirteen American colonies' separation from Great Britain.",
+        "seen_cards": []
+      },
+      "expected_constraints": [
+        "card targets a single fact (date, author, OR event)",
+        "no two-part front"
+      ]
+    },
+    {
+      "name": "two_part_temptation",
+      "input": {
+        "topic": "Cell Organelles",
+        "source_content": "The mitochondrion is the organelle that produces ATP through aerobic respiration. The chloroplast is the organelle that performs photosynthesis. Both are believed to have originated from endosymbiotic bacteria.",
+        "seen_cards": []
+      },
+      "expected_constraints": [
+        "card MUST focus on ONE organelle (mitochondrion OR chloroplast)",
+        "MUST NOT use 'and' to combine both into a two-part front"
+      ]
+    },
+    {
+      "name": "insufficient_source_topic_mismatch",
+      "input": {
+        "topic": "Quantum Mechanics",
+        "source_content": "The cat sat on the mat.",
+        "seen_cards": []
+      },
+      "expected_constraints": [
+        "MUST return insufficient_source"
+      ]
+    }
+  ]
+}

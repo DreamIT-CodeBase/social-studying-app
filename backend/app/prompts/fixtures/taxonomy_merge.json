@@ -1,0 +1,72 @@
+{
+  "prompt": "taxonomy_merge_v1",
+  "description": "Five diverse merge inputs: empty existing + new topics (seed case), existing + non-overlapping new (pure additions), existing + alias-match new (alias-merge case), existing + completely-overlapping new (idempotency), and adjacent-but-distinct topic temptation (should NOT merge).",
+  "cases": [
+    {
+      "name": "empty_existing_seed",
+      "input": {
+        "existing_taxonomy": "[]",
+        "new_document_id": "doc_a",
+        "new_topics": "[{\"name\":\"Photosynthesis\",\"description\":\"Process by which plants convert light into chemical energy.\",\"complexity_level\":2,\"page_refs\":[1,3]},{\"name\":\"Cellular Respiration\",\"description\":\"Process by which cells break down glucose to release energy.\",\"complexity_level\":3,\"page_refs\":[4,5]}]"
+      },
+      "expected_constraints": [
+        "all new topics added with id='NEW'",
+        "mapping has exactly one entry per new topic",
+        "source_document_ids includes 'NEW' for each"
+      ]
+    },
+    {
+      "name": "non_overlapping_additions",
+      "input": {
+        "existing_taxonomy": "[{\"id\":\"tpc_001\",\"name\":\"Photosynthesis\",\"aliases\":[],\"description\":\"Light into energy.\",\"complexity_level\":2,\"source_document_ids\":[\"doc_old\"]}]",
+        "new_document_id": "doc_b",
+        "new_topics": "[{\"name\":\"Mitosis\",\"description\":\"Cell division producing identical daughter cells.\",\"complexity_level\":3,\"page_refs\":[1]}]"
+      },
+      "expected_constraints": [
+        "existing tpc_001 appears unchanged",
+        "Mitosis added as NEW",
+        "mapping has exactly one entry (for Mitosis)"
+      ]
+    },
+    {
+      "name": "alias_match_merge",
+      "input": {
+        "existing_taxonomy": "[{\"id\":\"tpc_001\",\"name\":\"Photosynthesis\",\"aliases\":[],\"description\":\"How plants make food.\",\"complexity_level\":2,\"source_document_ids\":[\"doc_old\"]}]",
+        "new_document_id": "doc_b",
+        "new_topics": "[{\"name\":\"Plant Photosynthesis\",\"description\":\"The process by which plants synthesize glucose from sunlight, water, and CO2.\",\"complexity_level\":3,\"page_refs\":[10,12]}]"
+      },
+      "expected_constraints": [
+        "'Plant Photosynthesis' merges into tpc_001 (not a new topic)",
+        "tpc_001.aliases includes 'Plant Photosynthesis'",
+        "tpc_001.source_document_ids includes 'doc_b'",
+        "complexity_level updated to rounded average (2+3=5, /2=2.5 → 3 or 2)",
+        "mapping[*].canonical_id = 'tpc_001' for the new entry"
+      ]
+    },
+    {
+      "name": "idempotent_no_change",
+      "input": {
+        "existing_taxonomy": "[{\"id\":\"tpc_001\",\"name\":\"Photosynthesis\",\"aliases\":[\"Plant Photosynthesis\"],\"description\":\"How plants make food.\",\"complexity_level\":2,\"source_document_ids\":[\"doc_a\",\"doc_b\"]}]",
+        "new_document_id": "doc_c",
+        "new_topics": "[{\"name\":\"Photosynthesis\",\"description\":\"How plants make food.\",\"complexity_level\":2,\"page_refs\":[1]}]"
+      },
+      "expected_constraints": [
+        "existing tpc_001 still appears",
+        "no duplicate alias added (since 'Photosynthesis' is the canonical name)",
+        "doc_c added to source_document_ids"
+      ]
+    },
+    {
+      "name": "adjacent_but_distinct_no_merge",
+      "input": {
+        "existing_taxonomy": "[{\"id\":\"tpc_001\",\"name\":\"Photosynthesis\",\"aliases\":[],\"description\":\"How plants make food using sunlight.\",\"complexity_level\":2,\"source_document_ids\":[\"doc_a\"]}]",
+        "new_document_id": "doc_b",
+        "new_topics": "[{\"name\":\"Cellular Respiration\",\"description\":\"How cells break down glucose to release energy.\",\"complexity_level\":3,\"page_refs\":[1]}]"
+      },
+      "expected_constraints": [
+        "Cellular Respiration added as NEW — NOT merged with Photosynthesis",
+        "even though both involve cellular energy, descriptions are different processes"
+      ]
+    }
+  ]
+}

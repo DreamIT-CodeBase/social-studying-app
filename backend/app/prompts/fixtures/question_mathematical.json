@@ -1,0 +1,74 @@
+{
+  "prompt": "question_mathematical_v1",
+  "description": "Five diverse mathematical inputs: direct formula application (beginner), two-step (intermediate), backwards/word-problem (advanced), unit-bearing answer, and insufficient source.",
+  "cases": [
+    {
+      "name": "direct_formula_beginner",
+      "input": {
+        "topic": "Area of Rectangles",
+        "difficulty": "beginner",
+        "source_content": "The area of a rectangle is calculated by multiplying its length by its width: A = l × w. If a rectangle has length 8 cm and width 3 cm, then its area is 8 × 3 = 24 square centimetres.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "body uses LaTeX where appropriate ($...$ or $$...$$)",
+        "solution_steps has 2-5 entries showing the work",
+        "answer is the FINAL answer only, LaTeX-formatted",
+        "explanation names the underlying rule (area formula)"
+      ]
+    },
+    {
+      "name": "two_step_intermediate",
+      "input": {
+        "topic": "Quadratic Formula",
+        "difficulty": "intermediate",
+        "source_content": "The quadratic formula solves equations of the form ax^2 + bx + c = 0. The solutions are x = (-b ± sqrt(b^2 - 4ac)) / (2a). The expression under the square root, b^2 - 4ac, is called the discriminant. If the discriminant is positive there are two real solutions; if zero, one repeated solution; if negative, two complex solutions.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "intermediate difficulty: two-step combining concepts",
+        "solution_steps shows formula application + arithmetic",
+        "answer is deterministic (one canonical LaTeX form)"
+      ]
+    },
+    {
+      "name": "backwards_word_problem_advanced",
+      "input": {
+        "topic": "Circle Geometry",
+        "difficulty": "advanced",
+        "source_content": "The area A of a circle is given by A = πr^2, where r is the radius. The circumference C is given by C = 2πr. The diameter d is twice the radius: d = 2r.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "advanced: solving backwards or applying in a non-standard direction",
+        "uses LaTeX consistently in solution_steps",
+        "clean numeric value when possible"
+      ]
+    },
+    {
+      "name": "unit_bearing_answer",
+      "input": {
+        "topic": "Kinematic Equations",
+        "difficulty": "intermediate",
+        "source_content": "For constant acceleration motion, the kinematic equations relate displacement, initial velocity, time, and acceleration. v = u + at, where u is initial velocity, a is acceleration, and t is time. The standard units are metres per second (m/s) for velocities and metres per second squared (m/s^2) for acceleration.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "if units required, answer uses LaTeX format like $5\\,\\text{m/s}$",
+        "solution_steps notes the unit at each step"
+      ]
+    },
+    {
+      "name": "insufficient_source_topic_mismatch",
+      "input": {
+        "topic": "Differential Calculus",
+        "difficulty": "advanced",
+        "source_content": "A rectangle has four sides, two of which are equal in length to each other.",
+        "seen_questions": []
+      },
+      "expected_constraints": [
+        "MUST return insufficient_source — calculus not established by source"
+      ]
+    }
+  ]
+}

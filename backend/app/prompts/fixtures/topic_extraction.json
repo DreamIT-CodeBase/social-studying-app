@@ -1,0 +1,59 @@
+{
+  "prompt": "topic_extraction_v1",
+  "description": "Five diverse extraction inputs: well-structured chapter (happy), very short snippet (returns empty or 1 topic), long mixed-subject document (stress + cap test), pure admin/cover-page (returns empty), and a borderline document with many fragmented mentions.",
+  "cases": [
+    {
+      "name": "structured_chapter_happy",
+      "input": {
+        "source_content": "Chapter 3: The Cell.\n\nThe cell is the basic structural and functional unit of all known organisms. Cells were first observed by Robert Hooke in 1665.\n\n3.1 Cell Theory. The cell theory states that (1) all living things are composed of one or more cells, (2) the cell is the basic unit of structure and organization in organisms, and (3) cells come only from pre-existing cells.\n\n3.2 Prokaryotic and Eukaryotic Cells. Cells are broadly classified into prokaryotic (lacking a nucleus) and eukaryotic (containing a nucleus) types. Bacteria are prokaryotic; plants, animals, and fungi are eukaryotic.\n\n3.3 Organelles. Major organelles include the nucleus (genetic control), mitochondrion (energy), endoplasmic reticulum (protein synthesis and transport), and Golgi apparatus (packaging)."
+      },
+      "expected_constraints": [
+        "returns between 3 and 30 topics",
+        "topics are in Title Case",
+        "topics have non-empty descriptions",
+        "page_refs may be empty when not extractable"
+      ]
+    },
+    {
+      "name": "very_short_snippet",
+      "input": {
+        "source_content": "Photosynthesis is the process by which plants make food."
+      },
+      "expected_constraints": [
+        "may return 1 topic OR an empty list",
+        "if returns 1 topic, it's 'Photosynthesis' (or close variant)",
+        "MUST NOT invent unrelated topics"
+      ]
+    },
+    {
+      "name": "long_mixed_subject_stress",
+      "input": {
+        "source_content": "Module 1: Algebra. Linear equations of the form ax + b = 0 can be solved by isolating x. Quadratic equations of the form ax^2 + bx + c = 0 have solutions given by the quadratic formula. Systems of linear equations can be solved by substitution or elimination.\n\nModule 2: Geometry. The area of a rectangle is length times width. The area of a triangle is half the base times the height. The area of a circle is pi times the radius squared. The Pythagorean theorem relates the sides of a right triangle: a^2 + b^2 = c^2.\n\nModule 3: Trigonometry. The sine of an angle in a right triangle is the opposite side over the hypotenuse. The cosine is the adjacent over the hypotenuse. The tangent is the opposite over the adjacent. The unit circle generalises these to all real angles.\n\nModule 4: Calculus introduction. The derivative measures rate of change. The integral measures accumulation. The fundamental theorem of calculus relates the two."
+      },
+      "expected_constraints": [
+        "topics cap of 30 honoured",
+        "topics include distinct math sub-areas (algebra, geometry, trig, calculus)",
+        "no fragmentation (e.g. each formula as a separate topic)"
+      ]
+    },
+    {
+      "name": "admin_cover_page_empty",
+      "input": {
+        "source_content": "Page 1\nGrade 9 Biology\nTeacher: Ms. Smith\nSpring Term 2026"
+      },
+      "expected_constraints": [
+        "MUST return {\"topics\": []} — no extractable concepts"
+      ]
+    },
+    {
+      "name": "fragmented_mentions",
+      "input": {
+        "source_content": "The Renaissance was a period of cultural rebirth in Europe. Leonardo da Vinci, Michelangelo, and Raphael were leading Renaissance artists. The Renaissance began in Italy in the 14th century and spread throughout Europe over the next two centuries. Humanism, a key Renaissance ideal, emphasized the dignity and potential of human beings. Renaissance art moved away from the flat religious iconography of the Middle Ages toward realistic depictions of human figures and landscapes."
+      },
+      "expected_constraints": [
+        "topics prefer fewer well-defined entries over many fragmentary ones",
+        "examples: 'Renaissance', 'Renaissance Art', 'Humanism' — not each artist as a topic"
+      ]
+    }
+  ]
+}

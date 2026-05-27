@@ -1,0 +1,64 @@
+{
+  "prompt": "dependency_inference_v1",
+  "description": "Five diverse dependency inference inputs: clear tree (basic→intermediate→advanced), peer topics with no prereq (all null), forced single-prerequisite (conservative case), self-loop temptation (must avoid), and the empty-taxonomy edge case.",
+  "cases": [
+    {
+      "name": "clear_three_layer_tree",
+      "input": {
+        "workspace_id": "wsp_a",
+        "taxonomy_topics": "[{\"id\":\"tpc_arith\",\"name\":\"Arithmetic\",\"description\":\"Addition, subtraction, multiplication, division.\",\"complexity_level\":1},{\"id\":\"tpc_algebra\",\"name\":\"Algebra\",\"description\":\"Solving equations with variables.\",\"complexity_level\":3},{\"id\":\"tpc_calculus\",\"name\":\"Calculus\",\"description\":\"Derivatives and integrals of functions.\",\"complexity_level\":5}]"
+      },
+      "expected_constraints": [
+        "tpc_arith.parent_id = null (foundational)",
+        "tpc_algebra.parent_id = tpc_arith",
+        "tpc_calculus.parent_id = tpc_algebra OR tpc_arith (deeper chain)",
+        "no self-loops",
+        "every input topic has an entry"
+      ]
+    },
+    {
+      "name": "peer_topics_no_prereq",
+      "input": {
+        "workspace_id": "wsp_a",
+        "taxonomy_topics": "[{\"id\":\"tpc_rom\",\"name\":\"Roman Empire\",\"description\":\"Government and culture of ancient Rome.\",\"complexity_level\":2},{\"id\":\"tpc_greek\",\"name\":\"Ancient Greece\",\"description\":\"Greek city-states and philosophy.\",\"complexity_level\":2}]"
+      },
+      "expected_constraints": [
+        "both topics have parent_id=null OR one carefully argues prereq",
+        "no false-positive prereq (e.g. 'Roman Empire requires Ancient Greece')",
+        "conservative bias respected"
+      ]
+    },
+    {
+      "name": "forced_single_prereq_conservative",
+      "input": {
+        "workspace_id": "wsp_a",
+        "taxonomy_topics": "[{\"id\":\"tpc_cells\",\"name\":\"Cell Biology\",\"description\":\"Structure and function of cells.\",\"complexity_level\":2},{\"id\":\"tpc_dna\",\"name\":\"DNA Replication\",\"description\":\"Process by which DNA copies itself during cell division.\",\"complexity_level\":4}]"
+      },
+      "expected_constraints": [
+        "tpc_dna.parent_id = tpc_cells (DNA replication genuinely requires cell biology)",
+        "tpc_cells.parent_id = null"
+      ]
+    },
+    {
+      "name": "self_loop_temptation",
+      "input": {
+        "workspace_id": "wsp_a",
+        "taxonomy_topics": "[{\"id\":\"tpc_a\",\"name\":\"Concept A\",\"description\":\"Some concept.\",\"complexity_level\":3}]"
+      },
+      "expected_constraints": [
+        "tpc_a.parent_id = null (cannot self-reference)",
+        "no edges have topic_id == parent_id"
+      ]
+    },
+    {
+      "name": "empty_taxonomy_edge",
+      "input": {
+        "workspace_id": "wsp_a",
+        "taxonomy_topics": "[]"
+      },
+      "expected_constraints": [
+        "edges = []"
+      ]
+    }
+  ]
+}
