@@ -156,7 +156,7 @@ app = FastAPI(
     openapi_tags=_OPENAPI_TAGS,
     contact={
         "name": "Social Study App engineering",
-        "email": "engineering@socialstudyapp.com",
+        "email": "chirag@socialstudying.ai",
     },
     license_info={"name": "Proprietary", "identifier": "LicenseRef-Proprietary"},
     docs_url="/docs" if settings.environment != "production" else None,
@@ -179,7 +179,11 @@ app.add_middleware(
 app.add_middleware(VersionResponseMiddleware)
 
 
-class _ApiVersionView(BaseModel):
+# The leading underscore was stripped on /review (Sprint 6) — FastAPI
+# emits class names verbatim into the OpenAPI ``components/schemas``
+# section, and a Dart / TypeScript code generator on the spec will
+# mangle ``_ApiVersionView`` into something ugly or rejected.
+class ApiVersionView(BaseModel):
     """Wire view of :class:`app.core.versioning.ApiVersion`."""
 
     version: str
@@ -188,21 +192,21 @@ class _ApiVersionView(BaseModel):
     base_path: str
 
 
-class _ApiVersionsResponse(BaseModel):
-    versions: list[_ApiVersionView]
+class ApiVersionsResponse(BaseModel):
+    versions: list[ApiVersionView]
 
 
-@app.get("/api/versions", response_model=_ApiVersionsResponse, tags=["meta"])
-async def list_api_versions() -> _ApiVersionsResponse:
+@app.get("/api/versions", response_model=ApiVersionsResponse, tags=["meta"])
+async def list_api_versions() -> ApiVersionsResponse:
     """Discovery endpoint for the live API versions.
 
     Clients hit this once at startup to discover the base path for
     each supported version + its lifecycle status. The list is
     canonical — anything not in here isn't supported.
     """
-    return _ApiVersionsResponse(
+    return ApiVersionsResponse(
         versions=[
-            _ApiVersionView(
+            ApiVersionView(
                 version=v.version,
                 status=v.status,
                 sunset_date=v.sunset_date,

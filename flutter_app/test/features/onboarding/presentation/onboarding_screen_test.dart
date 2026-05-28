@@ -6,12 +6,40 @@ import 'package:mocktail/mocktail.dart';
 import 'package:social_study_app/core/theme/app_theme.dart';
 import 'package:social_study_app/features/admin/workspaces/data/demo_workspaces_repository.dart';
 import 'package:social_study_app/features/admin/workspaces/data/workspaces_repository.dart';
+import 'package:social_study_app/features/auth/data/auth_repository.dart';
 import 'package:social_study_app/features/onboarding/presentation/onboarding_screen.dart';
+import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/models/workspace.dart';
 
 class _MockWorkspacesRepo extends Mock implements WorkspacesRepository {}
 
 class _FakeWorkspaceSettings extends Fake implements WorkspaceSettings {}
+
+/// Stub auth repo so ``AuthNotifier.refresh`` doesn't hit unmocked
+/// secure storage (which hangs the test). The wizard calls refresh
+/// after a successful create — see Sprint 6 /review fix.
+class _StubAuthRepo implements AuthRepository {
+  const _StubAuthRepo();
+
+  @override
+  Future<User> signIn() async => _user;
+
+  @override
+  Future<void> signOut() async {}
+
+  @override
+  Future<User?> getStoredUser() async => _user;
+
+  static final _user = User(
+    id: 'usr_test',
+    email: 'test@example.com',
+    displayName: 'Test Admin',
+    tenantId: 'ten_test',
+    role: UserRole.tenantAdmin,
+    workspaceMemberships: const [],
+    createdAt: DateTime(2026, 1, 1),
+  );
+}
 
 
 /// Builds a minimal app that renders the onboarding screen at ``/``
@@ -38,6 +66,7 @@ Widget _wrap({required WorkspacesRepository repo}) {
   return ProviderScope(
     overrides: [
       workspacesRepositoryProvider.overrideWithValue(repo),
+      authRepositoryProvider.overrideWithValue(const _StubAuthRepo()),
     ],
     child: MaterialApp.router(
       theme: AppTheme.light,

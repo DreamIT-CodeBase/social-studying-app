@@ -7,6 +7,7 @@ import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/admin/workspaces/data/demo_workspaces_repository.dart';
 import 'package:social_study_app/features/admin/workspaces/presentation/workspaces_notifier.dart';
+import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 
 /// Sprint 6.9 — first-launch admin onboarding wizard.
 ///
@@ -28,11 +29,11 @@ import 'package:social_study_app/features/admin/workspaces/presentation/workspac
 /// Why the role question even matters
 /// ----------------------------------
 /// The app supports two markets (families + schools) with the same
-/// codebase. A parent's first workspace is "Family Study" with a
-/// student limit of 5; a teacher's first workspace is "Class
-/// Workspace" with a student limit of 30. We could ask for the
-/// limit explicitly but defaults from a single click is friendlier.
-/// Admins can change the name / limit immediately from settings.
+/// codebase. The role choice picks a default workspace name +
+/// description ("Family Study" / "My Class") that the admin can
+/// override in step 2. Both flow into the same ``createWorkspace``
+/// call — the role isn't persisted on the workspace itself, just
+/// used to seed the form.
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -128,6 +129,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             description: description.isEmpty ? null : description,
           );
       if (!mounted) return;
+      // Sprint 6 /review fix — re-hydrate auth so ``user.workspace
+      // Memberships`` includes the new workspace. Without this, the
+      // router's redirect re-runs against stale auth state and bounces
+      // the admin back here, hitting a 409 on the next create attempt.
+      await ref.read(authNotifierProvider.notifier).refresh();
+      if (!mounted) return;
       // Push to the admin dashboard. The redirect guard that brought
       // us here clears now that the user has a workspace.
       context.go(AppRoutes.adminDashboard);
@@ -164,7 +171,7 @@ class _RoleChoiceView extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: Spacing.xxl),
-          _Hero(context: context),
+          const _Hero(),
           const SizedBox(height: Spacing.xxl),
           Text(
             'Welcome!',
@@ -197,12 +204,10 @@ class _RoleChoiceView extends StatelessWidget {
 
 
 class _Hero extends StatelessWidget {
-  const _Hero({required this.context});
-
-  final BuildContext context;
+  const _Hero();
 
   @override
-  Widget build(BuildContext _) {
+  Widget build(BuildContext context) {
     return Center(
       child: Container(
         width: 96,
