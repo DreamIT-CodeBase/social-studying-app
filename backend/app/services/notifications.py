@@ -194,8 +194,11 @@ class AzureNotificationHubSender(NotificationSender):
         payload: NotificationPayload,
     ) -> DispatchResult:
         endpoint = self._connection["endpoint"]
+        # api-version 2015-04 is the documented version for the direct-send
+        # data-plane endpoint that accepts the FCM v1 (``fcmV1``) format.
+        # See https://learn.microsoft.com/rest/api/notificationhubs/direct-send
         url = (
-            f"{endpoint}{self._hub_name}/messages/?direct&api-version=2015-01"
+            f"{endpoint}{self._hub_name}/messages/?direct&api-version=2015-04"
         )
         sas_token = _mint_sas_token(
             target_uri=f"{endpoint}{self._hub_name}/messages/",
@@ -661,8 +664,16 @@ def _mint_sas_token(
 
 
 def _anh_format_for(platform: DevicePlatform) -> str:
-    """Header value ANH expects for the platform-specific payload shape."""
-    return "gcm" if platform == DevicePlatform.android else "apple"
+    """Header value (``ServiceBusNotification-Format``) ANH expects for the
+    platform-specific payload shape.
+
+    Android uses ``fcmV1`` (exact casing — lowercase ``fcm``, capital
+    ``V``, ``1``). The legacy ``gcm`` format was retired when Google shut
+    down FCM legacy HTTP on 2024-06-20; ANH rejects it once the hub holds
+    FCM v1 credentials. See
+    https://learn.microsoft.com/azure/notification-hubs/firebase-migration-rest
+    """
+    return "fcmV1" if platform == DevicePlatform.android else "apple"
 
 
 def _platform_payload(
@@ -671,17 +682,26 @@ def _platform_payload(
     """Return the platform-shaped JSON body that ANH proxies to FCM /
     APNs.
 
-    FCM uses ``{ "data": {...}, "notification": {...} }``. APNs uses
-    ``{ "aps": {...}, ...data }``. Keeping both shapes here means the
-    sender doesn't bloat with platform conditionals at the call site.
+    FCM v1 wraps everything under a top-level ``message`` object:
+    ``{ "message": { "notification": {...}, "data": {...} } }`` — a
+    breaking change from FCM legacy's flat ``{ "notification", "data" }``.
+    The ``data`` map must be flat string→string (already guaranteed by
+    :class:`NotificationPayload.data`). No ``token``/``topic`` target
+    field — ANH injects the device via the ``ServiceBusNotification-
+    DeviceHandle`` header on direct send. APNs uses
+    ``{ "aps": {...}, ...data }`` and is unchanged. Keeping both shapes
+    here means the sender doesn't bloat with platform conditionals at the
+    call site.
     """
     if platform == DevicePlatform.android:
         body: dict[str, Any] = {
-            "notification": {
-                "title": payload.title,
-                "body": payload.body,
-            },
-            "data": payload.data,
+            "message": {
+                "notification": {
+                    "title": payload.title,
+                    "body": payload.body,
+                },
+                "data": payload.data,
+            }
         }
     else:  # APNs
         body = {

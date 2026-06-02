@@ -127,12 +127,14 @@ def test_parse_connection_string_tolerates_missing_trailing_slash():
     assert parsed["endpoint"].endswith("/")
 
 
-def test_anh_format_for_maps_android_to_gcm_ios_to_apple():
-    assert _anh_format_for(DevicePlatform.android) == "gcm"
+def test_anh_format_for_maps_android_to_fcmv1_ios_to_apple():
+    # FCM v1 format header — exact casing matters (ANH rejects ``fcmv1``
+    # / ``gcm``). Legacy ``gcm`` was retired 2024-06-20.
+    assert _anh_format_for(DevicePlatform.android) == "fcmV1"
     assert _anh_format_for(DevicePlatform.ios) == "apple"
 
 
-def test_platform_payload_android_uses_data_envelope():
+def test_platform_payload_android_uses_fcmv1_message_envelope():
     payload = NotificationPayload(
         notification_type=NotificationType.milestone,
         title="hi",
@@ -143,8 +145,14 @@ def test_platform_payload_android_uses_data_envelope():
     import json
 
     parsed = json.loads(body)
-    assert parsed["notification"]["title"] == "hi"
-    assert parsed["data"]["workspace_id"] == "wsp_a"
+    # FCM v1 wraps everything under a top-level ``message`` object.
+    assert parsed["message"]["notification"]["title"] == "hi"
+    assert parsed["message"]["notification"]["body"] == "there"
+    assert parsed["message"]["data"]["workspace_id"] == "wsp_a"
+    # No legacy flat keys, no PNS target field (ANH injects via header).
+    assert "notification" not in parsed
+    assert "token" not in parsed["message"]
+    assert "topic" not in parsed["message"]
 
 
 def test_platform_payload_ios_uses_aps_envelope():
