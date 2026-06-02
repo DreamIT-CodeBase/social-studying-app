@@ -423,11 +423,17 @@ push_image() {
   docker push "$image_latest"
   success "Image pushed: $image_tag"
 
-  info "Updating API Container App image to: $image_latest"
+  # Deploy the unique commit-SHA tag, NOT the moving ``:latest``. Updating a
+  # Container App to the same image *string* it already runs (``:latest``)
+  # leaves the revision template unchanged, so Azure creates no new revision
+  # and the running code stays stale even though ``:latest`` now points at a
+  # new digest in ACR. Pinning the SHA tag changes the template every deploy,
+  # which forces a fresh revision that actually pulls the new image.
+  info "Updating API Container App image to: $image_tag"
   az containerapp update \
     --name "$container_app" \
     --resource-group "$rg_name" \
-    --image "$image_latest" \
+    --image "$image_tag" \
     --output table
 
   # All worker Container Apps share the API image — different processes started
@@ -438,11 +444,11 @@ push_image() {
     local app_name="$1"
     local sprint_label="$2"
     if [[ -n "$app_name" ]]; then
-      info "Updating $sprint_label Container App image to: $image_latest"
+      info "Updating $sprint_label Container App image to: $image_tag"
       az containerapp update \
         --name "$app_name" \
         --resource-group "$rg_name" \
-        --image "$image_latest" \
+        --image "$image_tag" \
         --output table
       success "$sprint_label app updated: $app_name"
     else

@@ -27,7 +27,9 @@ android {
         applicationId = "com.socialstudyapp.social_study_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // firebase-messaging (FCM v1) pulls the Firebase Android BoM, which
+        // requires minSdkVersion >= 23. Flutter's default (21) fails the build.
+        minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
