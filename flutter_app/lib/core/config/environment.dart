@@ -12,7 +12,7 @@ abstract final class Environment {
 
   static const String authority = 'https://$tenantSubdomain.ciamlogin.com/$tenantId/v2.0';
   static const String discoveryUrl = '$authority/.well-known/openid-configuration';
-  static const String redirectUri = 'msauth://com.socialstudyapp.social_study_app/jykf64iAkgA74TNoFizFZlLnNPI1Y_C8el5RxYcCKCk';
+  static const String redirectUri = 'msauth://com.socialstudyapp.app/callback';
 
   // Direct Endpoints for speed (CIAM)
   static const String authorizationEndpoint = 'https://$tenantSubdomain.ciamlogin.com/$tenantId/oauth2/v2.0/authorize';

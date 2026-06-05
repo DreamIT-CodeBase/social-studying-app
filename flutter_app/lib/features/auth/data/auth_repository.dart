@@ -61,7 +61,7 @@ class RealAuthRepository implements AuthRepository {
           ),
           scopes: Environment.scopes,
           promptValues: ['login'],
-          preferEphemeralSession: true,
+          externalUserAgent: ExternalUserAgent.ephemeralAsWebAuthenticationSession,
         ),
       );
 

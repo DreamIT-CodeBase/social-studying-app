@@ -29,6 +29,7 @@
         <activity
             android:name="net.openid.appauth.RedirectUriReceiverActivity"
             android:exported="true"
+            android:theme="@style/Theme.AppCompat.Translucent.NoTitleBar"
             tools:node="replace">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -36,8 +37,8 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:scheme="msauth"
-                    android:host="com.socialstudyapp.social_study_app"
-                    android:path="/jykf64iAkgA74TNoFizFZlLnNPI1Y_C8el5RxYcCKCk" />
+                    android:host="com.socialstudyapp.app"
+                    android:path="/callback" />
             </intent-filter>
         </activity>
 

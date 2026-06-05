@@ -42,3 +42,4 @@ infra/environments/*/params.local.json
 
 # Logs
 *.log
+.gstack/

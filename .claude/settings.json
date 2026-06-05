@@ -41,7 +41,8 @@
       "Bash(git branch *)",
       "Bash(git checkout *)",
       "Bash(git stash *)",
-      "Bash(python -m ruff check app/services/answer_evaluation.py app/services/knowledge_state.py app/api/questions.py app/models/question.py tests/unit/services/test_answer_evaluation.py tests/unit/services/test_knowledge_state.py tests/unit/api/test_submit_answer.py)"
+      "Bash(python -m ruff check app/services/answer_evaluation.py app/services/knowledge_state.py app/api/questions.py app/models/question.py tests/unit/services/test_answer_evaluation.py tests/unit/services/test_knowledge_state.py tests/unit/api/test_submit_answer.py)",
+      "Bash(python -m pytest tests/unit/services/test_notifications.py -x)"
     ],
     "deny": [
       "Bash(git push *)",
