@@ -3,7 +3,6 @@ import os
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 from datetime import datetime, timezone
-from uuid import uuid4
 
 async def main():
     load_dotenv("backend/.env.dev")
@@ -13,52 +12,31 @@ async def main():
     tenant_id = "93e3ce50-a29e-462b-8956-85674a34d167"
     db = client[tenant_id]
 
+    # YOUR PHYSICAL PHONE ID
+    installation_id = "36f3f6f7-f6f2-420d-8e0f-0e1213121617"
+    user_id = "usr_seed_002"
     now = datetime.now(timezone.utc).isoformat()
 
-    # 1. Ensure you are an ADMIN so you can trigger the API
-    await db["users"].update_one(
-        {"_id": "usr_seed_001"},
-        {"$set": {"role": "tenant_admin"}}
-    )
-    print("User usr_seed_001 is now a tenant_admin (to trigger API).")
+    # Ensure you are admin
+    await db["users"].update_one({"_id": user_id}, {"$set": {"role": "tenant_admin"}})
 
-    # 2. Create a dummy student user that points to YOUR phone
-    # This installation ID comes from your registered token
-    installation_id = "94858b87-fc91-4092-afa8-a5ffdcb2673d"
-    token = "dweTZSZ1S1eXI3ba4MbTNd:APA91bE3Jytee8Zc6dPOMeciQmDvGBehMPauTD1Wq15YJMe1SlDfCfcp1p6Uz6H6VGwwTtMYBc53Ym636pH45EToPodEA27APcTKjXgXhWEQ6omm1_lpBto"
+    # Find the token for the physical phone
+    token_doc = await db["notification_tokens"].find_one({"installation_id": installation_id})
+    if not token_doc:
+        print(f"Error: No token found for physical phone {installation_id}")
+        return
 
+    token = token_doc["token"]
+
+    # Target this phone with a student account
     workspace_id = "wsp_test_001"
-    # Ensure workspace exists
-    await db["workspaces"].replace_one(
-        {"_id": workspace_id},
-        {
-            "_id": workspace_id,
-            "tenant_id": tenant_id,
-            "name": "Notification Test",
-            "settings": {"questions_per_day": 5},
-            "student_ids": ["usr_test_student"],
-            "deleted_at": None
-        },
+    await db["users"].update_one(
+        {"_id": "usr_test_student"},
+        {"$set": {"role": "student", "workspace_memberships": [{"workspace_id": workspace_id, "role": "student", "joined_at": now}]}},
         upsert=True
     )
 
-    test_student = {
-        "_id": "usr_test_student",
-        "tenant_id": tenant_id,
-        "email": "test-student@example.com",
-        "display_name": "Test Student",
-        "role": "student",
-        "workspace_memberships": [
-            {"workspace_id": workspace_id, "role": "student", "joined_at": now}
-        ],
-        "deleted_at": None,
-        "is_active": True
-    }
-    await db["users"].replace_one({"_id": "usr_test_student"}, test_student, upsert=True)
-    print("Created dummy student usr_test_student.")
-
-    # 3. Register YOUR phone to this dummy student
-    token_doc = {
+    token_doc_new = {
         "_id": "ntk_test_push",
         "tenant_id": tenant_id,
         "user_id": "usr_test_student",
@@ -69,13 +47,14 @@ async def main():
         "last_seen_at": now,
         "deleted_at": None
     }
-    await db["notification_tokens"].replace_one({"_id": "ntk_test_push"}, token_doc, upsert=True)
-    print("Linked your phone (installation_id) to the dummy student.")
+    await db["notification_tokens"].replace_one({"_id": "ntk_test_push"}, token_doc_new, upsert=True)
 
-    # 4. Clear logs so it fires
+    # Clear logs
     today_iso = datetime.now(timezone.utc).date().isoformat()
     await db["notification_dispatches"].delete_many({"dispatched_at": {"$regex": f"^{today_iso}"}})
-    print("Ready! Now run the trigger script.")
+
+    print(f"Targeting PHYSICAL PHONE: {installation_id}")
+    print("Ready!")
 
 if __name__ == "__main__":
     asyncio.run(main())

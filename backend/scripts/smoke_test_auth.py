@@ -91,7 +91,7 @@ print(f"Scopes:    {SCOPES}")
 print("\nA browser window will open. Sign up with a fresh email, then return here.\n")
 
 app = msal.PublicClientApplication(client_id=CLIENT_ID, authority=AUTHORITY)
-result = app.acquire_token_interactive(scopes=SCOPES)
+result = app.acquire_token_interactive(scopes=SCOPES, prompt="select_account")
 
 if "access_token" not in result and "id_token" not in result:
     print("FAILED to acquire token:")

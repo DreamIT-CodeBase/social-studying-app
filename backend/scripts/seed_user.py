@@ -9,20 +9,20 @@ async def main():
     conn_str = os.getenv("COSMOS_CONNECTION_STRING")
     client = AsyncIOMotorClient(conn_str)
 
-    # These come from your token output
-    b2c_object_id = "15eyVnWbzECTcJEd1q-0ZyiGTS8fXBzIj9wlj2Q4SQk"
+    # New correct account details from your terminal output
+    b2c_object_id = "jykf64iAkgA74TNoFizFZlLnNPI1Y_C8el5RxYcCKCk"
     tenant_id = "93e3ce50-a29e-462b-8956-85674a34d167"
-    email = "tarunjunejaun471@gmail.com"
+    email = "tarun@dreamitcs.com"
     display_name = "Tarun Juneja"
 
-    # We insert into the database named after the tenant_id GUID
+    # Insert into the tenant database
     db = client[tenant_id]
     users_col = db["users"]
 
     now = datetime.now(timezone.utc).isoformat()
 
     user_doc = {
-        "_id": "usr_seed_001",
+        "_id": "usr_seed_002",
         "created_at": now,
         "updated_at": now,
         "deleted_at": None,
