@@ -30,6 +30,12 @@ class _StubAuthRepo implements AuthRepository {
   @override
   Future<User?> getStoredUser() async => _user;
 
+  @override
+  Future<String?> getValidAccessToken() async => 'fake_token';
+
+  @override
+  Future<void> deleteAccount(String userId) async {}
+
   static final _user = User(
     id: 'usr_test',
     email: 'test@example.com',

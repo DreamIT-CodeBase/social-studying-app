@@ -23,8 +23,8 @@ class LoginScreen extends ConsumerWidget {
           loading: () => const LoadingIndicator(message: 'Signing you in…'),
           error: (error, _) => ErrorView(
             message: error.toString(),
-            onRetry: () => ref.read(authNotifierProvider.notifier).signIn(),
-            retryLabel: 'Try Again',
+            onRetry: () => ref.invalidate(authNotifierProvider),
+            retryLabel: 'Go Back',
           ),
         ),
       ),
@@ -66,11 +66,9 @@ class _LoginBody extends StatelessWidget {
           ),
           const Spacer(flex: 3),
           _MicrosoftSignInButton(onPressed: onSignIn),
-          const SizedBox(height: Spacing.lg),
-          _DemoButton(onPressed: onSignIn),
           const Spacer(),
           Text(
-            'Social Study App v0.1.0-demo',
+            'Social Study App v1.0.0',
             style: context.textTheme.bodySmall?.copyWith(
               color: context.colorScheme.onSurfaceVariant,
             ),
@@ -169,37 +167,6 @@ class _MicrosoftLogoIcon extends StatelessWidget {
           ColoredBox(color: Color(0xFF00A4EF)),
           ColoredBox(color: Color(0xFFFFB900)),
         ],
-      ),
-    );
-  }
-}
-
-class _DemoButton extends StatelessWidget {
-  const _DemoButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: OutlinedButton(
-        style: OutlinedButton.styleFrom(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          side: BorderSide(color: context.colorScheme.outline),
-        ),
-        onPressed: onPressed,
-        child: Text(
-          'Continue with Demo Account',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-            color: context.colorScheme.onSurface,
-          ),
-        ),
       ),
     );
   }

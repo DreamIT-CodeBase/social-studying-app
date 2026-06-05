@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,14 +44,6 @@ void main() {
     DocumentPolling.debugInterval = kDocumentPollInterval;
   });
 
-  Future<AsyncValue<Document>> readState() => Future.microtask(
-        () => container.read(
-          documentPollingProvider(
-            workspaceId: 'wsp_test',
-            documentId: 'doc_test',
-          ),
-        ),
-      );
 
   test('first build returns the initial fetch', () async {
     when(() => repo.get(

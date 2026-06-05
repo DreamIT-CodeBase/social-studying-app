@@ -29,10 +29,12 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // firebase-messaging (FCM v1) pulls the Firebase Android BoM, which
         // requires minSdkVersion >= 23. Flutter's default (21) fails the build.
-        minSdk = 23
+        minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        manifestPlaceholders += mapOf("appAuthRedirectScheme" to "msauth")
     }
 
     buildTypes {

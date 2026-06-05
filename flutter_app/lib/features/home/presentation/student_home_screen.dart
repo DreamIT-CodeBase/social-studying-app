@@ -22,6 +22,71 @@ class StudentHomeScreen extends ConsumerStatefulWidget {
 class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
   int _selectedIndex = 0;
 
+  void _showProfileMenu(BuildContext context, WidgetRef ref, String name) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: Spacing.md),
+            Text(
+              name,
+              style: context.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: Spacing.md),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.logout_rounded),
+              title: const Text('Sign Out'),
+              onTap: () {
+                Navigator.pop(context);
+                ref.read(authNotifierProvider.notifier).signOut();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_forever_rounded, color: Colors.red),
+              title: const Text('Delete Account', style: TextStyle(color: Colors.red)),
+              onTap: () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Delete Account?'),
+                    content: const Text(
+                      'This will permanently deactivate your account. '
+                      'This action cannot be undone.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (confirm == true) {
+                  if (context.mounted) Navigator.pop(context);
+                  ref.read(authNotifierProvider.notifier).deleteAccount();
+                }
+              },
+            ),
+            const SizedBox(height: Spacing.lg),
+          ],
+        ),
+      ),
+    );
+  }
+
   static const _tabs = [
     (icon: Icons.home_rounded, label: 'Home'),
     (icon: Icons.quiz_rounded, label: 'Study'),
@@ -58,8 +123,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
           Padding(
             padding: const EdgeInsets.only(right: Spacing.lg),
             child: GestureDetector(
-              onTap: () =>
-                  ref.read(authNotifierProvider.notifier).signOut(),
+              onTap: () => _showProfileMenu(context, ref, displayName),
               child: CircleAvatar(
                 backgroundColor: AppColors.primaryContainer,
                 radius: 18,

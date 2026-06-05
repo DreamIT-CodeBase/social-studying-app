@@ -28,17 +28,21 @@ class AuthNotifier extends _$AuthNotifier {
     state = const AsyncData(AuthState.unauthenticated());
   }
 
+  Future<void> deleteAccount() async {
+    final currentUser = state.valueOrNull?.maybeWhen(
+      authenticated: (user) => user,
+      orElse: () => null,
+    );
+    if (currentUser == null) return;
+
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      await ref.read(authRepositoryProvider).deleteAccount(currentUser.id);
+      return const AuthState.unauthenticated();
+    });
+  }
+
   /// Re-fetch the stored User and update auth state.
-  ///
-  /// Sprint 6.9 — the onboarding wizard calls this after creating
-  /// the first workspace so the router's redirect sees the new
-  /// ``workspaceMemberships`` value and stops bouncing the admin
-  /// back to the wizard.
-  ///
-  /// Best-effort: a transport failure here MUST NOT take down the
-  /// app. The current state is preserved on error; the caller logs
-  /// + moves on, and the next session's cold start re-hydrates from
-  /// secure storage.
   Future<void> refresh() async {
     try {
       final user = await ref.read(authRepositoryProvider).getStoredUser();

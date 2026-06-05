@@ -108,7 +108,7 @@ void main() {
   testWidgets('detail line summarises pages, chunks, and topics', (tester) async {
     when(() => repo.list(workspaceId: 'wsp_test')).thenAnswer(
       (_) async => [
-        Document(
+        const Document(
           id: 'doc_a',
           workspaceId: 'wsp_test',
           filename: 'biology.pdf',
@@ -116,7 +116,7 @@ void main() {
           status: DocumentStatus.ready,
           pageCount: 12,
           chunkCount: 9,
-          topicTags: const [
+          topicTags: [
             TopicTag(name: 'Photosynthesis'),
             TopicTag(name: 'Mitosis'),
           ],

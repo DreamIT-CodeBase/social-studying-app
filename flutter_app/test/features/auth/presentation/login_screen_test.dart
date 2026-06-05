@@ -30,12 +30,11 @@ void main() {
   });
 
   group('LoginScreen — unauthenticated', () {
-    testWidgets('shows sign-in and demo buttons', (tester) async {
+    testWidgets('shows sign-in button', (tester) async {
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump(); // let FutureProvider resolve
 
       expect(find.text('Sign in with Microsoft'), findsOneWidget);
-      expect(find.text('Continue with Demo Account'), findsOneWidget);
     });
 
     testWidgets('shows app name and tagline', (tester) async {
@@ -57,7 +56,7 @@ void main() {
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump();
 
-      await tester.tap(find.text('Continue with Demo Account'));
+      await tester.tap(find.text('Sign in with Microsoft'));
       await tester.pump(); // trigger loading state
 
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
@@ -73,11 +72,11 @@ void main() {
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump();
 
-      await tester.tap(find.text('Continue with Demo Account'));
+      await tester.tap(find.text('Sign in with Microsoft'));
       await tester.pumpAndSettle();
 
       expect(find.text('Something went wrong'), findsOneWidget);
-      expect(find.text('Try Again'), findsOneWidget);
+      expect(find.text('Go Back'), findsOneWidget);
     });
   });
 

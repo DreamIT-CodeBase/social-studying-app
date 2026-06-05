@@ -1,0 +1,16 @@
+{
+  "client_id": "93e3ce50-a29e-462b-8956-85674a34d167",
+  "authorization_user_agent": "DEFAULT",
+  "redirect_uri": "msauth://com.socialstudyapp.social_study_app/jykf64iAkgA74TNoFizFZlLnNPI1Y_C8el5RxYcCKCk",
+  "account_mode": "SINGLE",
+  "authorities": [
+    {
+      "type": "AAD",
+      "audience": {
+        "type": "AzureADMyOrg",
+        "tenant_id": "cbf2e3d3-af81-40dd-a396-aae11d2c6b3f"
+      },
+      "authority_url": "https://socialstudyingapp.ciamlogin.com/cbf2e3d3-af81-40dd-a396-aae11d2c6b3f"
+    }
+  ]
+}
