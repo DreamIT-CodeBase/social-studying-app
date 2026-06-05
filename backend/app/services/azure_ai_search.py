@@ -494,16 +494,18 @@ async def search_chunks(
                 # being present (eases unit testing of error paths).
                 from azure.search.documents.models import VectorizedQuery
 
-                # azure-search-documents 11.7.0b2 renamed the legacy
-                # ``k_nearest_neighbors`` kwarg to ``k`` — the SDK now
-                # logs a "not a known attribute" warning and silently
-                # drops the legacy name, defaulting the k-NN limit to
-                # the index max. Pass ``k`` explicitly so the vector
-                # leg honours ``top_k``.
+                # The GA SDK (12.x, the pinned line — see pyproject) names
+                # the k-NN limit ``k_nearest_neighbors``. A short-lived
+                # 11.7.0bX beta renamed it to ``k``, but that was reverted
+                # before GA: passing ``k`` to 12.x raises
+                # ``TypeError: unexpected keyword argument 'k'``, which
+                # surfaced as a hard 500 on every /questions/next and
+                # /flashcards/next. Pin + this kwarg keep local and the
+                # deployed image on the same name.
                 kwargs["vector_queries"] = [
                     VectorizedQuery(
                         vector=list(query_vector),
-                        k=top_k,
+                        k_nearest_neighbors=top_k,
                         fields="embedding",
                     )
                 ]

@@ -502,6 +502,14 @@ async def test_search_chunks_hybrid_passes_vector_query_to_sdk():
     vq = kwargs["vector_queries"][0]
     assert list(vq.vector) == vec
     assert vq.fields == "embedding"
+    # Lock the k-NN kwarg name. The production code constructs a *real*
+    # VectorizedQuery (the import is not mocked), so an SDK that doesn't
+    # accept this kwarg raises TypeError right here — which is exactly the
+    # 500 that hit /questions/next and /flashcards/next when the image ran
+    # GA 12.x while the code passed the beta-only ``k=``. Asserting the
+    # value (not just presence) also catches the 11.7.0bX silent-drop,
+    # where ``k_nearest_neighbors`` was accepted but ignored.
+    assert vq.k_nearest_neighbors == 3
 
 
 @pytest.mark.asyncio
