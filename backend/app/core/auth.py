@@ -97,6 +97,41 @@ async def _lookup_user(b2c_object_id: str, tenant_id: str) -> User:
     return user
 
 
+def _dev_auth_active() -> bool:
+    """Whether the dev-auth bypass may run for this process.
+
+    Double-gated: never in production, and only when an operator has set a
+    non-empty ``dev_auth_token``. Both conditions must hold, so a prod
+    deploy (which leaves the token empty) can never accept the bypass even
+    if ``environment`` were ever misconfigured.
+    """
+    return settings.environment != "production" and bool(settings.dev_auth_token)
+
+
+async def _resolve_dev_user(token: str) -> User | None:
+    """Resolve the sentinel dev-auth token to the seeded demo user.
+
+    Returns None when the token doesn't match (so the caller falls through
+    to normal JWT validation). Raises UnauthorizedError when the token
+    matches but the demo identity hasn't been seeded — that's an operator
+    error (run scripts/seed_demo_tenant.py), surfaced loudly rather than
+    silently degrading to a 401 that looks like a bad token.
+    """
+    if token != settings.dev_auth_token:
+        return None
+
+    collection = get_collection(settings.dev_auth_tenant_id, USERS)
+    doc = await collection.find_one(
+        {"_id": settings.dev_auth_user_id, "deleted_at": None}
+    )
+    if doc is None:
+        raise UnauthorizedError(
+            "Dev-auth token accepted but demo user is not seeded. "
+            "Run backend/scripts/seed_demo_tenant.py against this environment."
+        )
+    return User.model_validate(doc)
+
+
 async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
@@ -108,6 +143,17 @@ async def get_current_user(
     """
     if credentials is None:
         raise UnauthorizedError()
+
+    # Dev-auth bypass (non-prod only) — short-circuits JWT validation for
+    # the seeded demo identity so the still-mocked Flutter login can drive
+    # the real backend. See settings.dev_auth_token.
+    if _dev_auth_active():
+        dev_user = await _resolve_dev_user(credentials.credentials)
+        if dev_user is not None:
+            if not dev_user.is_active:
+                raise UnauthorizedError("Account is disabled")
+            request.state.user = dev_user
+            return dev_user
 
     claims = await _validate_token(credentials.credentials)
     b2c_object_id: str = claims.get("sub", "")

@@ -2,6 +2,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/progress/data/demo_progress_repository.dart';
 import 'package:social_study_app/features/progress/data/real_progress_repository.dart';
+import 'package:social_study_app/core/config/environment.dart';
 import 'package:social_study_app/shared/models/progress.dart';
 import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/services/dio_client.dart';
@@ -46,5 +47,8 @@ ProgressRepository progressRepository(ProgressRepositoryRef ref) {
   return RealProgressRepository(dio: ref.read(dioClientProvider).dio);
 }
 
+// `!useRealBackend` so a `--dart-define=USE_REAL_BACKEND=true` build treats
+// nobody as a demo user and routes every call to the Real* impl over Dio.
 bool _isDemoUser(User user) =>
-    user.id == 'usr_demo_001' || user.email == 'demo@socialstudyapp.com';
+    !Environment.useRealBackend &&
+    (user.id == 'usr_demo_001' || user.email == 'demo@socialstudyapp.com');

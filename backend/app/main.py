@@ -10,6 +10,7 @@ from app.api import (
     documents,
     flashcards,
     gamification,
+    moderation,
     notifications,
     questions,
     taxonomy,
@@ -168,6 +169,14 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
+    # Non-prod only: also accept any localhost port so Flutter web dev servers
+    # (random port per run) aren't CORS-blocked. None in prod → explicit
+    # allowed_origins is the sole allowlist. See settings.allowed_origin_regex.
+    allow_origin_regex=(
+        settings.allowed_origin_regex
+        if settings.environment != "production"
+        else None
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -221,6 +230,7 @@ app.include_router(workspaces.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(documents.router, prefix="/api/v1")
 app.include_router(taxonomy.router, prefix="/api/v1")
+app.include_router(moderation.router, prefix="/api/v1")
 app.include_router(questions.router, prefix="/api/v1")
 app.include_router(flashcards.router, prefix="/api/v1")
 app.include_router(gamification.router, prefix="/api/v1")

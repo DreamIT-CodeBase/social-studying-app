@@ -6,7 +6,14 @@ import pytest
 from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials
 
-from app.core.auth import _validate_token, get_current_user, require_role
+from app.core.auth import (
+    _dev_auth_active,
+    _resolve_dev_user,
+    _validate_token,
+    get_current_user,
+    require_role,
+)
+from app.core.config import settings
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.models.user import UserRole
 from tests.unit.conftest import make_user
@@ -100,6 +107,106 @@ async def test_get_current_user_happy_path_returns_user_and_sets_state():
 
     assert user.id == expected_user.id
     assert request.state.user == expected_user
+
+
+# ── dev-auth bypass ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("environment", "token", "expected"),
+    [
+        ("development", "secret", True),    # both gates open
+        ("dev", "secret", True),
+        ("production", "secret", False),    # prod never bypasses, even with a token
+        ("development", "", False),         # no token → bypass off
+        ("production", "", False),
+    ],
+)
+def test_dev_auth_active_double_gated(monkeypatch, environment, token, expected):
+    monkeypatch.setattr(settings, "environment", environment)
+    monkeypatch.setattr(settings, "dev_auth_token", token)
+    assert _dev_auth_active() is expected
+
+
+@pytest.mark.asyncio
+async def test_resolve_dev_user_wrong_token_returns_none(monkeypatch):
+    monkeypatch.setattr(settings, "dev_auth_token", "the-real-token")
+    # No DB access should happen on a mismatch — None means "fall through to JWT".
+    assert await _resolve_dev_user("a-different-token") is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_dev_user_match_returns_seeded_user(monkeypatch):
+    monkeypatch.setattr(settings, "dev_auth_token", "the-real-token")
+    monkeypatch.setattr(settings, "dev_auth_tenant_id", "ten_demo_001")
+    monkeypatch.setattr(settings, "dev_auth_user_id", "usr_demo_001")
+    seeded = make_user(user_id="usr_demo_001", tenant_id="ten_demo_001")
+
+    fake_col = MagicMock()
+    fake_col.find_one = AsyncMock(return_value=seeded.model_dump(by_alias=True))
+    with patch("app.core.auth.get_collection", return_value=fake_col):
+        user = await _resolve_dev_user("the-real-token")
+
+    assert user is not None
+    assert user.id == "usr_demo_001"
+    fake_col.find_one.assert_awaited_once_with(
+        {"_id": "usr_demo_001", "deleted_at": None}
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_dev_user_match_but_unseeded_raises(monkeypatch):
+    monkeypatch.setattr(settings, "dev_auth_token", "the-real-token")
+    fake_col = MagicMock()
+    fake_col.find_one = AsyncMock(return_value=None)
+    with (
+        patch("app.core.auth.get_collection", return_value=fake_col),
+        pytest.raises(UnauthorizedError, match="not seeded"),
+    ):
+        await _resolve_dev_user("the-real-token")
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_dev_token_short_circuits_jwt(monkeypatch):
+    request = _make_request()
+    request._state = MagicMock()
+    monkeypatch.setattr(settings, "environment", "dev")
+    monkeypatch.setattr(settings, "dev_auth_token", "the-real-token")
+    creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="the-real-token")
+    seeded = make_user(user_id="usr_demo_001", tenant_id="ten_demo_001")
+
+    validate = AsyncMock()
+    with (
+        patch("app.core.auth._resolve_dev_user", AsyncMock(return_value=seeded)),
+        patch("app.core.auth._validate_token", validate),
+    ):
+        user = await get_current_user(request, credentials=creds)
+
+    assert user.id == "usr_demo_001"
+    assert request.state.user == seeded
+    validate.assert_not_called()  # JWT path skipped entirely
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_in_prod_ignores_dev_token(monkeypatch):
+    """Even if a request carries the dev token, production validates as a JWT."""
+    request = _make_request()
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "dev_auth_token", "the-real-token")
+    creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="the-real-token")
+
+    resolve = AsyncMock()
+    with (
+        patch("app.core.auth._resolve_dev_user", resolve),
+        patch(
+            "app.core.auth._validate_token",
+            AsyncMock(return_value={"sub": "", "extension_TenantId": ""}),
+        ),
+        pytest.raises(UnauthorizedError, match="missing required claims"),
+    ):
+        await get_current_user(request, credentials=creds)
+
+    resolve.assert_not_called()  # bypass never consulted in prod
 
 
 # ── require_role ──────────────────────────────────────────────────────────────

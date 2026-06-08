@@ -42,3 +42,7 @@ infra/environments/*/params.local.json
 
 # Logs
 *.log
+
+# gstack / Claude Code local tooling artifacts
+.gstack/
+.claude/worktrees/

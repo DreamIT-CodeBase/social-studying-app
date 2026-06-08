@@ -84,7 +84,11 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          _DashboardTab(displayName: displayName),
+          _DashboardTab(
+            displayName: displayName,
+            workspaceId: workspaceId,
+            onSelectTab: (index) => setState(() => _selectedIndex = index),
+          ),
           _DocumentsTab(workspaceId: workspaceId),
           _StudentsTab(workspaceId: workspaceId),
           _SettingsTab(
@@ -134,12 +138,22 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
 }
 
 class _DashboardTab extends StatelessWidget {
-  const _DashboardTab({required this.displayName});
+  const _DashboardTab({
+    required this.displayName,
+    required this.workspaceId,
+    required this.onSelectTab,
+  });
 
   final String displayName;
+  final String? workspaceId;
+
+  /// Switches the parent's bottom-nav tab — lets the Get Started cards jump
+  /// to the Documents / Students tabs they describe.
+  final ValueChanged<int> onSelectTab;
 
   @override
   Widget build(BuildContext context) {
+    final wsId = workspaceId;
     return ListView(
       padding: const EdgeInsets.all(Spacing.lg),
       children: [
@@ -154,28 +168,35 @@ class _DashboardTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: Spacing.md),
-        const _GetStartedCard(
+        _GetStartedCard(
           step: 1,
           title: 'Upload study materials',
           subtitle: 'Add PDFs, Word docs, or images to your workspace',
           icon: Icons.upload_file_rounded,
           isDone: false,
+          onTap: () => onSelectTab(1), // Documents tab
         ),
         const SizedBox(height: Spacing.sm),
-        const _GetStartedCard(
+        _GetStartedCard(
           step: 2,
           title: 'Invite your students',
           subtitle: 'Share an invite code so students can join',
           icon: Icons.person_add_rounded,
           isDone: false,
+          onTap: () => onSelectTab(2), // Students tab (roster + invite codes)
         ),
         const SizedBox(height: Spacing.sm),
-        const _GetStartedCard(
+        _GetStartedCard(
           step: 3,
           title: 'Watch them learn',
           subtitle: 'AI generates personalized questions for each student',
           icon: Icons.auto_awesome_rounded,
           isDone: false,
+          // Engagement/mastery view lives at workspace analytics. Needs a
+          // workspace; until one exists, nudge the admin to the Documents tab.
+          onTap: () => wsId != null
+              ? context.push('/admin/analytics/$wsId')
+              : onSelectTab(1),
         ),
       ],
     );
@@ -326,6 +347,7 @@ class _GetStartedCard extends StatelessWidget {
     required this.subtitle,
     required this.icon,
     required this.isDone,
+    required this.onTap,
   });
 
   final int step;
@@ -333,11 +355,13 @@ class _GetStartedCard extends StatelessWidget {
   final String subtitle;
   final IconData icon;
   final bool isDone;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: ListTile(
+        onTap: onTap,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: Spacing.lg,
           vertical: Spacing.sm,
