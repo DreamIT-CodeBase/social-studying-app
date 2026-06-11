@@ -139,6 +139,7 @@ def test_deactivate_user_not_found_returns_404(client):
     admin = make_user(role=UserRole.tenant_admin)
     app.dependency_overrides[get_current_user] = lambda: admin
     col = MagicMock()
+    col.find_one = AsyncMock(return_value=None)
     col.update_one = AsyncMock(return_value=MagicMock(matched_count=0))
 
     with patch("app.api.users.get_collection", return_value=col):

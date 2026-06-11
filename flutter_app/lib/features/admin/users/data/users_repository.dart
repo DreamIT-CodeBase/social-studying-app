@@ -28,6 +28,7 @@ abstract class UsersRepository {
   ///
   /// Throws [UserEmailConflictException] (409) when the email is taken.
   Future<User> createUser({
+    required String workspaceId,
     required String email,
     required String displayName,
     required UserRole role,
@@ -41,7 +42,11 @@ abstract class UsersRepository {
   /// Change a user's role.
   ///
   /// Throws [UserNotFoundException] (404).
-  Future<User> changeRole({required String userId, required UserRole role});
+  Future<User> changeRole({
+    required String workspaceId,
+    required String userId,
+    required UserRole role,
+  });
 }
 
 /// Selects demo vs. real implementation by authenticated user.

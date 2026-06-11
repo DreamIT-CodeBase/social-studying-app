@@ -87,7 +87,7 @@ class _ProgressBody extends StatelessWidget {
           const SizedBox(height: Spacing.lg),
           const _SectionHeader(title: 'Recent activity'),
           const SizedBox(height: Spacing.md),
-          for (final entry in progress.recentActivity) ...[
+          for (final entry in progress.recentActivity.take(20)) ...[
             _ActivityRow(entry: entry),
             const SizedBox(height: Spacing.sm),
           ],

@@ -7,12 +7,12 @@ A workspace is a classroom or family learning group. Only workspace admins
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, status
-
-from app.core.auth import get_current_user, require_role
+from pydantic import BaseModel, EmailStr
+from app.core.auth import get_current_user, require_role, invalidate_user_cache
 from app.core.database import WORKSPACES, get_collection
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.models.base import utc_now
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, WorkspaceMembership, UserResponse
 from app.models.workspace import (
     InviteCode,
     Workspace,
@@ -31,7 +31,7 @@ def _admin_roles() -> tuple[UserRole, ...]:
 @router.post("/", response_model=WorkspaceResponse, status_code=status.HTTP_201_CREATED)
 async def create_workspace(
     body: WorkspaceCreate,
-    current_user: User = Depends(require_role(UserRole.tenant_admin, UserRole.workspace_admin)),
+    current_user: User = Depends(get_current_user),
 ) -> WorkspaceResponse:
     """Create a new workspace inside the caller's tenant."""
     col = get_collection(current_user.tenant_id, WORKSPACES)
@@ -50,6 +50,25 @@ async def create_workspace(
         admin_ids=[current_user.id],
     )
     await col.insert_one(workspace.model_dump(by_alias=True))
+    
+    # Also update the creating user's workspace_memberships
+    user_col = get_collection(current_user.tenant_id, "users")
+    
+    # If this is the user's first workspace and they are a student, promote them to workspace_admin
+    if current_user.role == UserRole.student:
+        current_user.role = UserRole.workspace_admin
+        
+    current_user.workspace_memberships.append(
+        WorkspaceMembership(
+            workspace_id=workspace.id,
+            role=UserRole.workspace_admin,
+            joined_at=utc_now(),
+        )
+    )
+    current_user.touch()
+    await user_col.replace_one({"_id": current_user.id}, current_user.model_dump(by_alias=True))
+    await invalidate_user_cache(current_user)
+
     return WorkspaceResponse.from_doc(workspace)
 
 
@@ -177,3 +196,96 @@ def _assert_admin(user: User, workspace_id: str) -> None:
     }
     if workspace_id not in admin_memberships:
         raise ForbiddenError("You do not have admin access to this workspace")
+
+
+# ── Add Workspace Member (Email Invite) ───────────────────────────────────────
+
+class WorkspaceMemberAdd(BaseModel):
+    email: EmailStr
+
+@router.post("/{workspace_id}/members", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def add_workspace_member(
+    workspace_id: str,
+    body: WorkspaceMemberAdd,
+    current_user: User = Depends(require_role(UserRole.tenant_admin, UserRole.workspace_admin)),
+) -> UserResponse:
+    """Invite a student to a workspace via email. 
+    
+    If the user does not exist, a placeholder user is created.
+    An email containing a magic link is dispatched.
+    """
+    _assert_admin(current_user, workspace_id)
+    wsp_col = get_collection(current_user.tenant_id, WORKSPACES)
+    workspace_doc = await wsp_col.find_one({"_id": workspace_id, "deleted_at": None})
+    if workspace_doc is None:
+        raise NotFoundError("Workspace", workspace_id)
+        
+    workspace = Workspace.model_validate(workspace_doc)
+    user_col = get_collection(current_user.tenant_id, "users")
+    
+    target_email = body.email.strip().lower()
+    
+    # 1. Lookup or create placeholder user
+    user_doc = await user_col.find_one({"email": target_email, "deleted_at": None})
+    if user_doc:
+        user = User.model_validate(user_doc)
+    else:
+        user = User(
+            **{"_id": f"usr_{uuid4().hex}"},
+            tenant_id=current_user.tenant_id,
+            email=target_email,
+            display_name=target_email.split("@")[0],
+            role=UserRole.student,
+        )
+        await user_col.insert_one(user.model_dump(by_alias=True))
+        
+    # 2. Add to workspace
+    if user.id not in workspace.student_ids:
+        workspace.student_ids.append(user.id)
+        workspace.touch()
+        await wsp_col.replace_one({"_id": workspace.id}, workspace.model_dump(by_alias=True))
+        
+    already_member = any(m.workspace_id == workspace.id for m in user.workspace_memberships)
+    if not already_member:
+        user.workspace_memberships.append(
+            WorkspaceMembership(
+                workspace_id=workspace.id,
+                role=UserRole.student,
+                joined_at=utc_now(),
+            )
+        )
+        user.touch()
+        await user_col.replace_one({"_id": user.id}, user.model_dump(by_alias=True))
+        await invalidate_user_cache(user)
+        
+    # 3. Dispatch Email
+    from app.services.email import get_email_sender, EmailPayload
+    from app.services.email_templates import get_invite_email_html
+    import os
+    
+    sender = get_email_sender()
+    magic_link = f"socialstudy://app/join?workspace={workspace.id}"
+    
+    plain_text = (
+        f"Hi {user.display_name},\n\n"
+        f"You have been invited to join the workspace '{workspace.name}' on Social Study.\n\n"
+        f"Click the link below on your mobile device to accept the invitation and sign in:\n\n"
+        f"{magic_link}\n\n"
+        f"Welcome aboard!"
+    )
+    
+    html_text = get_invite_email_html(user.display_name, workspace.name, magic_link)
+    
+    backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    project_root = os.path.dirname(backend_dir)
+    logo_path = os.path.join(project_root, "flutter_app", "assets", "branding", "app_logo.jpg")
+    
+    await sender.send(EmailPayload(
+        to_email=user.email,
+        subject=f"You've been invited to {workspace.name}!",
+        body_text=plain_text,
+        body_html=html_text,
+        logo_path=logo_path if os.path.exists(logo_path) else None
+    ))
+    
+    return UserResponse.from_doc(user)

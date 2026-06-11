@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/routing/routes.dart';
+import 'package:social_study_app/shared/models/user.dart';
+import 'package:social_study_app/features/profile/presentation/profile_screen.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/admin/moderation/presentation/moderation_screen.dart';
 import 'package:social_study_app/features/admin/workspaces/presentation/workspace_settings_screen.dart';
@@ -22,6 +24,15 @@ import 'package:social_study_app/features/taxonomy/presentation/taxonomy_viewer_
 
 part 'router.g.dart';
 
+@riverpod
+class PendingInviteCode extends _$PendingInviteCode {
+  @override
+  String? build() => null;
+
+  void set(String code) => state = code;
+  void clear() => state = null;
+}
+
 @Riverpod(keepAlive: true)
 class RouterNotifier extends _$RouterNotifier implements Listenable {
   VoidCallback? _listener;
@@ -38,6 +49,11 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
   void removeListener(VoidCallback listener) => _listener = null;
 
   String? redirect(BuildContext context, GoRouterState state) {
+    final code = state.uri.queryParameters['code'];
+    if (code != null && code.isNotEmpty) {
+      ref.read(pendingInviteCodeProvider.notifier).set(code);
+    }
+
     final authAsync = ref.read(authNotifierProvider);
     return authAsync.when(
       data: (authState) {
@@ -53,9 +69,12 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
             // firing the moment ``workspaceMemberships`` is non-empty.
             // The student flavor doesn't get this — students join a
             // workspace via invite code, not creation.
+            final adminWorkspaces = user.workspaceMemberships.where((m) =>
+                m.role == UserRole.tenantAdmin ||
+                m.role == UserRole.workspaceAdmin ||
+                user.role == UserRole.tenantAdmin);
             final needsOnboarding =
-                currentFlavor == AppFlavor.admin &&
-                    user.workspaceMemberships.isEmpty;
+                currentFlavor == AppFlavor.admin && adminWorkspaces.isEmpty;
 
             if (needsOnboarding) {
               return isOnOnboarding ? null : AppRoutes.adminOnboarding;
@@ -88,8 +107,18 @@ GoRouter router(RouterRef ref) {
     redirect: notifier.redirect,
     routes: [
       GoRoute(
+        path: '/join',
+        redirect: (_, __) => currentFlavor == AppFlavor.admin
+            ? AppRoutes.adminDashboard
+            : AppRoutes.studentHome,
+      ),
+      GoRoute(
         path: AppRoutes.login,
         builder: (_, __) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.profile,
+        builder: (_, __) => const ProfileScreen(),
       ),
       GoRoute(
         path: AppRoutes.adminDashboard,

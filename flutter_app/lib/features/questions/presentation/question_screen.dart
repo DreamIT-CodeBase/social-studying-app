@@ -38,11 +38,17 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
   @override
   void initState() {
     super.initState();
-    // `start` is a no-op unless the session is idle, so this is safe
-    // even though the IndexedStack keeps the screen alive across tab
-    // switches.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _notifier.start());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref
+            .read(questionSessionNotifierProvider(widget.workspaceId).notifier)
+            .start();
+      }
+    });
   }
+
+  // Auto-starts on load. If the session is ever reset/ended, the idle view
+  // shows a "Start Study Session" button that drives the session via _restart().
 
   /// Reset the family provider to a fresh idle session, then fetch.
   /// This is the only escape hatch from the `error` / `unavailable`
@@ -61,7 +67,16 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
         ref.watch(questionSessionNotifierProvider(widget.workspaceId));
 
     return session.when(
-      idle: () => const LoadingIndicator(),
+      idle: () => EmptyStateView(
+        icon: Icons.quiz_rounded,
+        title: 'Ready to study?',
+        subtitle: 'Tap below to start a new question session.',
+        action: FilledButton.icon(
+          onPressed: _restart,
+          icon: const Icon(Icons.play_arrow_rounded),
+          label: const Text('Start Study Session'),
+        ),
+      ),
       loading: () =>
           const LoadingIndicator(message: 'Generating your question…'),
       ready: (question, draftAnswer) => _QuestionView(
@@ -645,6 +660,11 @@ class _FeedbackViewState extends ConsumerState<_FeedbackView> {
                 questionSessionNotifierProvider(widget.workspaceId).notifier,
               )
               .next,
+          onEndSession: ref
+              .read(
+                questionSessionNotifierProvider(widget.workspaceId).notifier,
+              )
+              .endSession,
         ),
       ],
     );
@@ -999,9 +1019,10 @@ class _RewardTile extends StatelessWidget {
 }
 
 class _NextBar extends StatelessWidget {
-  const _NextBar({required this.onNext});
+  const _NextBar({required this.onNext, required this.onEndSession});
 
   final Future<void> Function() onNext;
+  final VoidCallback onEndSession;
 
   @override
   Widget build(BuildContext context) {
@@ -1012,13 +1033,24 @@ class _NextBar extends StatelessWidget {
         top: false,
         child: Padding(
           padding: const EdgeInsets.all(Spacing.lg),
-          child: FilledButton.icon(
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(double.infinity, 52),
-            ),
-            onPressed: () => onNext(),
-            icon: const Icon(Icons.arrow_forward_rounded),
-            label: const Text('Next Question'),
+          child: Row(
+            children: [
+              TextButton(
+                onPressed: onEndSession,
+                child: const Text('End Session'),
+              ),
+              const SizedBox(width: Spacing.md),
+              Expanded(
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 52),
+                  ),
+                  onPressed: () => onNext(),
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  label: const Text('Next Question'),
+                ),
+              ),
+            ],
           ),
         ),
       ),

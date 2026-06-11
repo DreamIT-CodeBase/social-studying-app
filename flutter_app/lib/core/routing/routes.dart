@@ -8,6 +8,7 @@ abstract final class AppRoutes {
   static const String adminWorkspaceSettings = '/admin/settings';
   static const String studentHome = '/student/home';
   static const String studentRevision = '/student/revision';
+  static const String profile = '/profile';
 
   /// Sprint 2.10 polling screen route. The list screen pushes onto
   /// this with `context.push('${adminDocuments}/$workspaceId/$documentId')`.

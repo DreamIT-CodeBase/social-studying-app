@@ -91,8 +91,17 @@ def _collections(*, mod_find=None, mod_find_one=None, document=None):
     docs.find_one = AsyncMock(return_value=document)
     docs.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
 
+    wsp = MagicMock()
+    wsp.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
+
     def _get(_tenant_id, name):
-        return mod if name == "moderation_log" else docs
+        if name == "moderation_log":
+            return mod
+        if name == "documents":
+            return docs
+        if name == "workspaces":
+            return wsp
+        return MagicMock()
 
     return _get, mod, docs
 
@@ -268,3 +277,122 @@ def test_student_role_forbidden(client):
     )
     resp = client.get("/api/v1/workspaces/wsp_test001/moderation/flagged")
     assert resp.status_code == 403
+
+
+# ── Question & Flashcard moderation tests ─────────────────────────────────────
+
+
+def test_resolve_question_approved(client):
+    app.dependency_overrides[get_current_user] = lambda: make_user(
+        role=UserRole.tenant_admin
+    )
+    mod_entry = _mod_entry(
+        entry_id="mod_q",
+        action=ModerationAction.flagged,
+        target_id="qst_001",
+        target_type=ModerationTarget.question,
+    )
+    
+    mod_col = MagicMock()
+    mod_col.find_one = AsyncMock(return_value=mod_entry)
+    mod_col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
+    
+    qst_col = MagicMock()
+    qst_col.find_one = AsyncMock(return_value={"_id": "qst_001", "workspace_id": "wsp_test001", "status": "pending_review"})
+    qst_col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
+    
+    def get_col_side_effect(tenant_id, collection):
+        if collection == "moderation_log":
+            return mod_col
+        elif collection == "question_queue":
+            return qst_col
+        return MagicMock()
+
+    with patch("app.api.moderation.get_collection", side_effect=get_col_side_effect):
+        resp = client.put(
+            "/api/v1/workspaces/wsp_test001/moderation/mod_q/resolve",
+            json={"approved": True},
+        )
+        
+    assert resp.status_code == 200
+    assert resp.json()["verdict"] == "approved"
+    
+    qst_update = qst_col.update_one.call_args.args[1]["$set"]
+    assert qst_update["status"] == "approved"
+    assert qst_update["moderation_flagged"] is False
+
+
+def test_resolve_flashcard_rejected(client):
+    app.dependency_overrides[get_current_user] = lambda: make_user(
+        role=UserRole.tenant_admin
+    )
+    mod_entry = _mod_entry(
+        entry_id="mod_fc",
+        action=ModerationAction.flagged,
+        target_id="fc_001",
+        target_type=ModerationTarget.flashcard,
+    )
+    
+    mod_col = MagicMock()
+    mod_col.find_one = AsyncMock(return_value=mod_entry)
+    mod_col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
+    
+    fc_col = MagicMock()
+    fc_col.find_one = AsyncMock(return_value={"_id": "fc_001", "workspace_id": "wsp_test001", "status": "pending_review"})
+    fc_col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
+    
+    def get_col_side_effect(tenant_id, collection):
+        if collection == "moderation_log":
+            return mod_col
+        elif collection == "flashcards":
+            return fc_col
+        return MagicMock()
+
+    with patch("app.api.moderation.get_collection", side_effect=get_col_side_effect):
+        resp = client.put(
+            "/api/v1/workspaces/wsp_test001/moderation/mod_fc/resolve",
+            json={"approved": False},
+        )
+        
+    assert resp.status_code == 200
+    assert resp.json()["verdict"] == "rejected"
+    
+    fc_update = fc_col.update_one.call_args.args[1]["$set"]
+    assert fc_update["status"] == "rejected"
+    assert fc_update["moderation_flagged"] is False
+
+
+def test_resolve_reject_decrements_workspace_document_count(client):
+    app.dependency_overrides[get_current_user] = lambda: make_user(
+        role=UserRole.tenant_admin
+    )
+    get_col, mod, docs = _collections(mod_find_one=_mod_entry(), document=_doc())
+    
+    workspace_col = MagicMock()
+    workspace_col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
+    
+    def get_col_side_effect(tenant_id, collection):
+        if collection == "moderation_log":
+            return mod
+        elif collection == "documents":
+            return docs
+        elif collection == "workspaces":
+            return workspace_col
+        return MagicMock()
+
+    with (
+        patch("app.api.moderation.get_collection", side_effect=get_col_side_effect),
+        patch(
+            "app.services.topic_queue.publish_topic_message",
+            AsyncMock(return_value=None),
+        ),
+    ):
+        resp = client.put(
+            "/api/v1/workspaces/wsp_test001/moderation/mod_001/resolve",
+            json={"approved": False},
+        )
+        
+    assert resp.status_code == 200
+    workspace_col.update_one.assert_called_once()
+    ws_update = workspace_col.update_one.call_args.args[1]
+    assert ws_update == {"$inc": {"document_count": -1}}

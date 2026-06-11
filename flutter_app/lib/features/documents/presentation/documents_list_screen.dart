@@ -89,9 +89,24 @@ class DocumentsListScreen extends ConsumerWidget {
   }
 
   Future<void> _handleUpload(BuildContext context, WidgetRef ref) async {
-    final doc = await ref
-        .read(uploadControllerProvider.notifier)
-        .pickAndUpload(workspaceId: workspaceId);
+    final source = await showModalBottomSheet<_UploadSource>(
+      context: context,
+      builder: (_) => const _UploadSourceSheet(),
+    );
+    if (source == null) return;
+
+    final doc = switch (source) {
+      _UploadSource.camera => await ref
+          .read(uploadControllerProvider.notifier)
+          .pickFromCamera(workspaceId: workspaceId),
+      _UploadSource.gallery => await ref
+          .read(uploadControllerProvider.notifier)
+          .pickImageFromGallery(workspaceId: workspaceId),
+      _UploadSource.file => await ref
+          .read(uploadControllerProvider.notifier)
+          .pickAndUpload(workspaceId: workspaceId),
+    };
+
     if (doc != null) {
       // List view should reflect the new doc; provider invalidate
       // re-runs the list fetch.
@@ -259,6 +274,48 @@ class _DocTypeIcon extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
       ),
       child: Icon(icon, color: context.colorScheme.onPrimaryContainer),
+    );
+  }
+}
+
+
+enum _UploadSource { camera, gallery, file }
+
+class _UploadSourceSheet extends StatelessWidget {
+  const _UploadSourceSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(Spacing.lg),
+            child: Text(
+              'Upload Document',
+              style: context.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt_rounded),
+            title: const Text('Take Photo'),
+            onTap: () => Navigator.of(context).pop(_UploadSource.camera),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_rounded),
+            title: const Text('Choose from Gallery'),
+            onTap: () => Navigator.of(context).pop(_UploadSource.gallery),
+          ),
+          ListTile(
+            leading: const Icon(Icons.folder_rounded),
+            title: const Text('Choose File'),
+            onTap: () => Navigator.of(context).pop(_UploadSource.file),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/features/admin/users/data/users_repository.dart';
 import 'package:social_study_app/shared/models/user.dart';
+import 'package:social_study_app/features/admin/workspaces/presentation/workspaces_notifier.dart';
 
 part 'users_notifier.g.dart';
 
@@ -29,11 +30,13 @@ class WorkspaceUsersList extends _$WorkspaceUsersList {
     required UserRole role,
   }) async {
     final created = await ref.read(usersRepositoryProvider).createUser(
+          workspaceId: workspaceId,
           email: email,
           displayName: displayName,
           role: role,
         );
     refresh();
+    ref.read(workspacesListProvider.notifier).refresh();
     return created;
   }
 
@@ -41,17 +44,20 @@ class WorkspaceUsersList extends _$WorkspaceUsersList {
   Future<void> deactivateUser(String userId) async {
     await ref.read(usersRepositoryProvider).deactivateUser(userId);
     refresh();
+    ref.read(workspacesListProvider.notifier).refresh();
   }
 
-  /// Change a user's role, then refresh.
+  /// Change a user's role, then refresh both the user list and the
+  /// workspace list so the admin/student counts update immediately.
   Future<User> changeRole({
     required String userId,
     required UserRole role,
   }) async {
     final updated = await ref
         .read(usersRepositoryProvider)
-        .changeRole(userId: userId, role: role);
+        .changeRole(workspaceId: workspaceId, userId: userId, role: role);
     refresh();
+    ref.read(workspacesListProvider.notifier).refresh();
     return updated;
   }
 }

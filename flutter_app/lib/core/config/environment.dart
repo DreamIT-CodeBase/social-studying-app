@@ -1,34 +1,43 @@
 abstract final class Environment {
-  // Replace with actual Azure Container Apps URL after deployment
+  // Default points at the host machine from the Android emulator (10.0.2.2).
+  // Override for production deploys:
+  //   --dart-define=API_BASE_URL=https://ca-api-dev.salmonmushroom-d5e027eb.centralus.azurecontainerapps.io
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:8080',
+    defaultValue: 'http://10.0.2.2:8000',
   );
 
-  // ── Dev-auth (real backend, demo creds) ──────────────────────────────────
-  //
-  // When true, the still-mocked demo login (auth_repository.dart) drives the
-  // *real* backend instead of the in-process Demo* repositories: it writes
-  // [devAuthToken] as the bearer token and every repository provider routes
-  // through Dio. The backend accepts that sentinel token only in non-prod and
-  // resolves it to the seeded demo user (see backend/app/core/auth.py).
-  //
-  // Off by default, so a plain `flutter run` stays a fully offline demo. Turn
-  // it on for dogfooding against rg-ssa2-dev:
-  //
-  //   flutter run --flavor admin -t lib/main_admin.dart \
-  //     --dart-define=USE_REAL_BACKEND=true \
-  //     --dart-define=API_BASE_URL=https://ca-api-dev.salmonmushroom-d5e027eb.centralus.azurecontainerapps.io
-  //
-  // DEV_AUTH_TOKEN defaults to the value provisioned on ca-api-dev; override
-  // via --dart-define if the backend token is rotated.
+  // When true, all repository providers route through Dio → real backend.
+  // When false, demo/offline repositories are used for users matching the
+  // demo-user heuristic.
   static const bool useRealBackend = bool.fromEnvironment(
     'USE_REAL_BACKEND',
-    defaultValue: false,
+    defaultValue: true,
   );
 
-  static const String devAuthToken = String.fromEnvironment(
-    'DEV_AUTH_TOKEN',
-    defaultValue: 'devauth-ssa2-2c9f8a1b7e4d6035',
+  // ── Microsoft Entra ID (Azure AD B2C / CIAM) Config ──────────────────────
+  static const String b2cTenantId = String.fromEnvironment(
+    'B2C_TENANT_ID',
+    defaultValue: 'cbf2e3d3-af81-40dd-a396-aae11d2c6b3f',
+  );
+
+  static const String b2cClientId = String.fromEnvironment(
+    'B2C_CLIENT_ID',
+    defaultValue: '93e3ce50-a29e-462b-8956-85674a34d167',
+  );
+
+  static const String b2cTenantSubdomain = String.fromEnvironment(
+    'B2C_TENANT_SUBDOMAIN',
+    defaultValue: 'socialstudyingapp',
+  );
+
+  static const String b2cPolicyName = String.fromEnvironment(
+    'B2C_POLICY_NAME',
+    defaultValue: 'B2C_1_signupsignin',
+  );
+
+  static const String b2cRedirectUri = String.fromEnvironment(
+    'B2C_REDIRECT_URI',
+    defaultValue: 'msauth://com.socialstudyapp.app/callback',
   );
 }

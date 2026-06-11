@@ -1,72 +1,122 @@
+import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/core/config/environment.dart';
 import 'package:social_study_app/shared/models/user.dart';
+import 'package:social_study_app/shared/services/dio_client.dart';
 
 part 'auth_repository.g.dart';
 
 abstract class AuthRepository {
-  Future<User> signIn();
+  Future<User> signInWithMicrosoft();
   Future<void> signOut();
   Future<User?> getStoredUser();
+  Future<void> updateStoredUser(User user);
+  Future<User> redeemInviteCode(String code);
 }
 
 @Riverpod(keepAlive: true)
-AuthRepository authRepository(AuthRepositoryRef ref) => _MockAuthRepository();
+AuthRepository authRepository(AuthRepositoryRef ref) => RealAuthRepository(ref);
 
-// Mock implementation — replace with MSAL B2C SDK in Sprint 1 task 1.11
-class _MockAuthRepository implements AuthRepository {
+class RealAuthRepository implements AuthRepository {
+  RealAuthRepository(this._ref);
+
+  final AuthRepositoryRef _ref;
   static const _storage = FlutterSecureStorage();
-  static const _loggedInKey = 'demo_user_logged_in';
-
-  // Key the Dio auth interceptor reads (see shared/services/dio_client.dart).
-  // In a real-backend build we stash the dev-auth sentinel here on sign-in so
-  // every request carries it; the backend resolves it to the seeded demo user.
   static const _tokenKey = 'auth_token';
+  static const _userKey = 'auth_user';
+  final _appAuth = const FlutterAppAuth();
 
   @override
-  Future<User> signIn() async {
-    await Future.delayed(const Duration(milliseconds: 1500));
-    await _storage.write(key: _loggedInKey, value: 'true');
-    if (Environment.useRealBackend) {
-      await _storage.write(key: _tokenKey, value: Environment.devAuthToken);
+  Future<User> signInWithMicrosoft() async {
+    try {
+      final discoveryUrl = 'https://${Environment.b2cTenantSubdomain}.ciamlogin.com/'
+          '${Environment.b2cTenantId}/v2.0/.well-known/openid-configuration';
+
+      final result = await _appAuth.authorizeAndExchangeCode(
+        AuthorizationTokenRequest(
+          Environment.b2cClientId,
+          Environment.b2cRedirectUri,
+          discoveryUrl: discoveryUrl,
+          promptValues: ['login'],
+          scopes: [
+            'openid',
+            'profile',
+            'offline_access',
+            'api://${Environment.b2cClientId}/access_as_user',
+          ],
+        ),
+      );
+
+      if (result == null || result.idToken == null) {
+        throw Exception('Authentication returned empty result');
+      }
+
+      await _storage.write(key: _tokenKey, value: result.idToken);
+
+      // Fetch the real user profile from the backend
+      final dio = _ref.read(dioClientProvider).dio;
+      final response = await dio.get('/api/v1/users/me');
+      final backendUser = User.fromJson(response.data as Map<String, dynamic>);
+      
+      await _storage.write(key: _userKey, value: jsonEncode(backendUser.toJson()));
+
+      return backendUser;
+    } catch (e) {
+      throw Exception('Sign in failed: $e');
     }
-    return _demoUser;
   }
 
   @override
   Future<void> signOut() async {
-    await _storage.delete(key: _loggedInKey);
     await _storage.delete(key: _tokenKey);
+    await _storage.delete(key: _userKey);
   }
 
   @override
   Future<User?> getStoredUser() async {
-    final value = await _storage.read(key: _loggedInKey);
-    if (value != 'true') return null;
-    // Self-heal the bearer token on resume: a session persisted by a demo
-    // build (or before this flag existed) won't have written one, which
-    // would 401 every real-backend call until the next sign-in.
-    if (Environment.useRealBackend) {
-      await _storage.write(key: _tokenKey, value: Environment.devAuthToken);
+    final token = await _storage.read(key: _tokenKey);
+    final userJson = await _storage.read(key: _userKey);
+    if (token == null || userJson == null) {
+      return null;
     }
-    return _demoUser;
+    try {
+      return User.fromJson(jsonDecode(userJson) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
   }
 
-  static final _demoUser = User(
-    id: 'usr_demo_001',
-    email: 'demo@socialstudyapp.com',
-    displayName: 'Alex Rivera',
-    tenantId: 'ten_demo_001',
-    role: UserRole.tenantAdmin,
-    workspaceMemberships: [
-      const WorkspaceMembership(
-        workspaceId: 'wsp_demo_001',
-        workspaceName: 'Demo Classroom',
-        role: UserRole.workspaceAdmin,
-      ),
-    ],
-    createdAt: DateTime(2026, 4, 30),
-    lastLogin: DateTime.now(),
-  );
+  @override
+  Future<void> updateStoredUser(User user) async {
+    await _storage.write(key: _userKey, value: jsonEncode(user.toJson()));
+  }
+
+  @override
+  Future<User> redeemInviteCode(String code) async {
+    try {
+      final dio = _ref.read(dioClientProvider).dio;
+      final response = await dio.post(
+        '/api/v1/users/join',
+        data: {'code': code},
+      );
+      final updatedUser = User.fromJson(response.data as Map<String, dynamic>);
+      await updateStoredUser(updatedUser);
+      return updatedUser;
+    } catch (e) {
+      throw Exception('Redeem invite code failed: $e');
+    }
+  }
+
+  Map<String, dynamic> _parseJwt(String token) {
+    final parts = token.split('.');
+    if (parts.length != 3) {
+      throw const FormatException('Invalid token');
+    }
+    final payload = parts[1];
+    var normalized = base64Url.normalize(payload);
+    final resp = utf8.decode(base64Url.decode(normalized));
+    return jsonDecode(resp) as Map<String, dynamic>;
+  }
 }

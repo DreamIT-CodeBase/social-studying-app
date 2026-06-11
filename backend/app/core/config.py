@@ -2,7 +2,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     environment: str = "development"
     allowed_origins: list[str] = ["http://localhost:3000"]
@@ -32,6 +36,7 @@ class Settings(BaseSettings):
     # Azure AD B2C
     b2c_tenant_id: str = ""
     b2c_client_id: str = ""
+    b2c_tenant_subdomain: str = ""
     b2c_policy_name: str = "B2C_1_signupsignin"
 
     # Dev-auth bypass — lets the Flutter demo login exercise the *real*
@@ -50,6 +55,12 @@ class Settings(BaseSettings):
     dev_auth_token: str = ""
     dev_auth_tenant_id: str = "ten_demo_001"
     dev_auth_user_id: str = "usr_demo_001"
+
+    # SMTP Email
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
 
     # Redis
     redis_url: str = "redis://localhost:6379"

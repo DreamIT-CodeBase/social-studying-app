@@ -6,7 +6,7 @@ part of 'upload_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$uploadControllerHash() => r'553319ff78fa4c6861c488023e0c248e5047eb9c';
+String _$uploadControllerHash() => r'136f6a4aaa4912965c8ac8eb8c071be08312aa5a';
 
 /// Encapsulates the "pick a file → POST it → return the new doc" flow.
 ///

@@ -71,8 +71,6 @@ class _StudentAppState extends ConsumerState<_StudentApp> {
   void _initNotifications(router) {
     unawaited(
       ref.read(notificationServiceProvider).initialize(
-        onForeground: (RemoteMessage message) =>
-            showInAppNotificationBanner(message: message, router: router),
         onTap: (RemoteMessage message) {
           final path = deepLinkFor(message.data);
           if (path != null) router.go(path);

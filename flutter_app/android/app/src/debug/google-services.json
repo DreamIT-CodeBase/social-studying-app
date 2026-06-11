@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "140186450317",
+    "project_id": "social-study-app-14c31",
+    "storage_bucket": "social-study-app-14c31.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:140186450317:android:6c0bbb1a0aea6e7fb825c4",
+        "android_client_info": {
+          "package_name": "com.socialstudyapp.social_study_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCYWPRd2sqkfFCLYT5B-TZOBGus878k4nI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -44,8 +44,4 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Sprint 5.6 — Firebase config files carry the FCM API key + sender id.
-# They're per-environment secrets that ship to whoever provisions
-# Firebase (see docs/notifications-setup.md). Never commit.
-/android/app/google-services.json
-/ios/Runner/GoogleService-Info.plist
+

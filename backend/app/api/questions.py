@@ -590,7 +590,7 @@ async def submit_answer(
             f"(status={question.status.value})."
         )
 
-    evaluation = answer_evaluation.evaluate(question, submission.answer)
+    evaluation = await answer_evaluation.evaluate(question, submission.answer)
     timestamp = utc_now()
 
     # Gamification first — its XP rule (incl. the streak bonus) sets

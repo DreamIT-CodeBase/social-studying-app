@@ -56,6 +56,20 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
     await _fetchNext();
   }
 
+  /// End the current study session, returning to the idle state.
+  ///
+  /// Valid from [ready] or [feedback]. Not valid from [loading] or
+  /// [submitting] — those are transient states with in-flight work
+  /// that should complete before the user can exit.
+  void endSession() {
+    if (state is QuestionSessionReady ||
+        state is QuestionSessionFeedback ||
+        state is QuestionSessionError ||
+        state is QuestionSessionUnavailable) {
+      state = const QuestionSession.idle();
+    }
+  }
+
   /// Store the student's in-progress response.
   ///
   /// Only valid from [ready] state (the question is shown and the

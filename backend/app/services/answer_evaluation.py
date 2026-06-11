@@ -33,11 +33,16 @@ mark wrong.
 
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
 
+from app.core.exceptions import ServiceUnavailableError
 from app.models.question import Question, QuestionType
+from app.services import azure_openai
+
+logger = logging.getLogger(__name__)
 
 # ── Result type ─────────────────────────────────────────────────────────────
 
@@ -63,7 +68,7 @@ class EvaluationResult:
 # ── Public entry point ──────────────────────────────────────────────────────
 
 
-def evaluate(question: Question, submitted: str) -> EvaluationResult:
+async def evaluate(question: Question, submitted: str) -> EvaluationResult:
     """Grade ``submitted`` against ``question``.
 
     Args:
@@ -88,7 +93,7 @@ def evaluate(question: Question, submitted: str) -> EvaluationResult:
     if question.question_type == QuestionType.true_false:
         return _evaluate_true_false(question, submitted)
     if question.question_type == QuestionType.short_answer:
-        return _evaluate_short_answer(question, submitted)
+        return await _evaluate_short_answer(question, submitted)
     if question.question_type == QuestionType.long_answer:
         return _evaluate_long_answer(question, submitted)
     if question.question_type == QuestionType.mathematical:
@@ -147,7 +152,7 @@ def _evaluate_true_false(
     )
 
 
-def _evaluate_short_answer(
+async def _evaluate_short_answer(
     question: Question, submitted: str
 ) -> EvaluationResult:
     """Match against the canonical answer + every acceptable variant.
@@ -156,6 +161,9 @@ def _evaluate_short_answer(
     punctuation. ``"DNA"`` and ``"dna."`` and ``" DNA "`` all collapse
     to ``"dna"`` for comparison. Diacritics are stripped via Unicode
     NFKD so ``"café"`` and ``"cafe"`` match.
+    
+    If the exact string match fails, falls back to a semantic LLM
+    check to award credit for valid synonyms (Sprint 5/6 polish).
     """
     norm_submitted = _normalize_short(submitted)
     candidates = [question.answer, *question.grading_hints]
@@ -165,8 +173,39 @@ def _evaluate_short_answer(
                 is_correct=True,
                 canonical_answer=question.answer,
             )
+
+    # Deterministic check failed. Fall back to semantic AI grading for synonyms.
+    system_prompt = (
+        "You are an expert educational grader. You are grading a student's short answer response. "
+        "The expected canonical answer is provided, along with any acceptable variations (grading hints). "
+        "Your task is to determine if the student's answer is semantically equivalent, synonymous, "
+        "or conceptually identical to the expected answer in the context of general science or the question's topic. "
+        "If the student provided a correct synonym (e.g., 'spirilla' vs 'spirochetes'), mark it correct. "
+        "If the student's answer is conceptually wrong, unrelated, or too vague, mark it incorrect. "
+        "Return ONLY a JSON object with a single boolean field: 'is_correct'."
+    )
+    user_prompt = (
+        f"Expected answer: {question.answer}\n"
+        f"Acceptable variations: {', '.join(question.grading_hints) if question.grading_hints else 'None'}\n"
+        f"Student answer: {submitted}"
+    )
+
+    try:
+        result = await azure_openai.chat_json(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_output_tokens=50,
+            temperature=0.0,
+        )
+        is_correct = bool(result.get("is_correct", False))
+        if is_correct:
+            logger.info("AI marked synonym %r as correct for expected %r", submitted, question.answer)
+    except Exception as exc:
+        logger.warning("AI short_answer evaluation failed, falling back to deterministic result. Error: %s", exc)
+        is_correct = False
+
     return EvaluationResult(
-        is_correct=False,
+        is_correct=is_correct,
         canonical_answer=question.answer,
     )
 

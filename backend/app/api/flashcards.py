@@ -340,6 +340,7 @@ class _FlashcardVerdict:
 
     status: FlashcardStatus
     reason: str
+    safety: content_safety.SafetyVerdict | None = None
 
 
 async def _review(generated: GeneratedFlashcard) -> _FlashcardVerdict:
@@ -373,6 +374,7 @@ async def _review(generated: GeneratedFlashcard) -> _FlashcardVerdict:
                 f"{', '.join(safety.flagged_categories)} "
                 f"(max severity {max(safety.severities.values())}/6)."
             ),
+            safety=safety,
         )
 
     return _FlashcardVerdict(
@@ -453,6 +455,33 @@ async def _persist_flashcard(
 
     col = get_collection(current_user.tenant_id, FLASHCARDS)
     await col.insert_one(flashcard.model_dump(by_alias=True))
+
+    if verdict.status == FlashcardStatus.flagged:
+        from app.core.database import MODERATION_LOG
+        from app.models.moderation import ModerationAction, ModerationLog, ModerationTarget
+
+        entry = ModerationLog(
+            **{"_id": f"mod_{uuid4().hex}"},
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            target_type=ModerationTarget.flashcard,
+            target_id=flashcard.id,
+            action=ModerationAction.flagged,
+            performed_by="system",
+            reason=verdict.reason,
+            azure_safety_score=verdict.safety.max_severity_normalized if verdict.safety else None,
+            severities=verdict.safety.severities if verdict.safety else {},
+            flagged_categories=verdict.safety.flagged_categories if verdict.safety else [],
+        )
+        try:
+            mod_col = get_collection(current_user.tenant_id, MODERATION_LOG)
+            await mod_col.insert_one(entry.model_dump(by_alias=True))
+        except Exception:
+            logger.exception(
+                "Failed to write moderation_log entry for flashcard=%s",
+                flashcard.id,
+            )
+
     return flashcard
 
 

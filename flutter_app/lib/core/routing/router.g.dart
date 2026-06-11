@@ -6,7 +6,7 @@ part of 'router.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$routerHash() => r'1309bc5a8062a2e54e487f43871d954843c8ecae';
+String _$routerHash() => r'40566600b3cef21029a4b5f9305acae91e9c6132';
 
 /// See also [router].
 @ProviderFor(router)
@@ -22,7 +22,23 @@ final routerProvider = Provider<GoRouter>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef RouterRef = ProviderRef<GoRouter>;
-String _$routerNotifierHash() => r'a08a1101df6c807a6ff4624b97c817d136b3fad6';
+String _$pendingInviteCodeHash() => r'2df786c4f3ddde7404cb853a28a3fed84f0cf13e';
+
+/// See also [PendingInviteCode].
+@ProviderFor(PendingInviteCode)
+final pendingInviteCodeProvider =
+    AutoDisposeNotifierProvider<PendingInviteCode, String?>.internal(
+  PendingInviteCode.new,
+  name: r'pendingInviteCodeProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$pendingInviteCodeHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+typedef _$PendingInviteCode = AutoDisposeNotifier<String?>;
+String _$routerNotifierHash() => r'c0e6ee7839b4ca954c8fe01a135faff59a8c9b46';
 
 /// See also [RouterNotifier].
 @ProviderFor(RouterNotifier)

@@ -8,7 +8,10 @@ import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/admin/users/presentation/users_screen.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/documents/presentation/documents_list_screen.dart';
+import 'package:social_study_app/features/admin/workspaces/presentation/selected_workspace_provider.dart';
+import 'package:social_study_app/features/admin/workspaces/presentation/workspaces_notifier.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
+import 'package:social_study_app/shared/models/workspace.dart';
 
 class AdminHomeScreen extends ConsumerStatefulWidget {
   const AdminHomeScreen({super.key});
@@ -35,13 +38,13 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
           orElse: () => 'Admin',
         ) ??
         'Admin';
-    final workspaceId = authAsync.valueOrNull?.maybeWhen(
-      authenticated: (user) =>
-          user.workspaceMemberships.isNotEmpty
-              ? user.workspaceMemberships.first.workspaceId
-              : null,
-      orElse: () => null,
-    );
+
+
+    final workspaceId = ref.watch(selectedWorkspaceProvider);
+    final activeWorkspace = ref.watch(activeWorkspaceProvider);
+    final workspacesAsync = ref.watch(workspacesListProvider);
+    final workspaces = workspacesAsync.valueOrNull ?? [];
+    final workspaceName = activeWorkspace?.name ?? 'No Workspace';
 
     final isDocumentsTab = _tabs[_selectedIndex].label == 'Documents';
     return Scaffold(
@@ -51,10 +54,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
         actions: [
-          // Sprint 2.13 — taxonomy viewer entry point. Only meaningful
-          // inside the Documents tab and only when the user has a
-          // workspace; tucked into the AppBar to avoid stealing space
-          // from the documents FAB.
+          // Sprint 2.13 — taxonomy viewer entry point.
           if (isDocumentsTab && workspaceId != null)
             IconButton(
               tooltip: 'Topic taxonomy',
@@ -62,10 +62,21 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
               onPressed: () =>
                   context.push('${AppRoutes.adminTaxonomy}/$workspaceId'),
             ),
+          // Workspace switcher — only visible when there are 2+ workspaces
+          if (workspaces.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(right: Spacing.sm),
+              child: _WorkspaceSwitcherButton(
+                workspaces: workspaces,
+                selectedId: workspaceId,
+                onSelect: (id) =>
+                    ref.read(selectedWorkspaceProvider.notifier).selectWorkspace(id),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.only(right: Spacing.lg),
             child: GestureDetector(
-              onTap: () => _showSignOutDialog(context),
+              onTap: () => context.push(AppRoutes.profile),
               child: CircleAvatar(
                 backgroundColor: AppColors.primaryContainer,
                 radius: 18,
@@ -87,14 +98,12 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
           _DashboardTab(
             displayName: displayName,
             workspaceId: workspaceId,
+            workspaceName: workspaceName,
             onSelectTab: (index) => setState(() => _selectedIndex = index),
           ),
           _DocumentsTab(workspaceId: workspaceId),
           _StudentsTab(workspaceId: workspaceId),
-          _SettingsTab(
-            workspaceId: workspaceId,
-            onSignOut: () => _signOut(),
-          ),
+          _SettingsTab(workspaceId: workspaceId),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -113,39 +122,154 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
     );
   }
 
-  Future<void> _showSignOutDialog(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Sign out'),
-        content: const Text('Are you sure you want to sign out?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+
+}
+
+/// Button that opens a bottom sheet to switch between workspaces.
+class _WorkspaceSwitcherButton extends StatelessWidget {
+  const _WorkspaceSwitcherButton({
+    required this.workspaces,
+    required this.selectedId,
+    required this.onSelect,
+  });
+
+  final List<Workspace> workspaces;
+  final String? selectedId;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = workspaces.where((w) => w.id == selectedId).firstOrNull;
+    return TextButton.icon(
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
+        visualDensity: VisualDensity.compact,
+      ),
+      onPressed: () => _showSwitcher(context),
+      icon: const Icon(Icons.workspaces_rounded, size: 18),
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            selected?.name ?? 'Select',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sign out'),
-          ),
+          const SizedBox(width: 2),
+          const Icon(Icons.arrow_drop_down_rounded, size: 18),
         ],
       ),
     );
-    if (confirmed == true) _signOut();
   }
 
-  void _signOut() => ref.read(authNotifierProvider.notifier).signOut();
+  void _showSwitcher(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => _WorkspaceSwitcherSheet(
+        workspaces: workspaces,
+        selectedId: selectedId,
+        onSelect: (id) {
+          Navigator.of(context).pop();
+          onSelect(id);
+        },
+      ),
+    );
+  }
+}
+
+class _WorkspaceSwitcherSheet extends StatelessWidget {
+  const _WorkspaceSwitcherSheet({
+    required this.workspaces,
+    required this.selectedId,
+    required this.onSelect,
+  });
+
+  final List<Workspace> workspaces;
+  final String? selectedId;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            Spacing.xl, 0, Spacing.xl, Spacing.sm,
+          ),
+          child: Text(
+            'Switch Workspace',
+            style: context.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        for (final ws in workspaces)
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: Spacing.xl,
+              vertical: 0,
+            ),
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: ws.id == selectedId
+                    ? context.colorScheme.primaryContainer
+                    : context.colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                Icons.workspaces_rounded,
+                size: 20,
+                color: ws.id == selectedId
+                    ? context.colorScheme.onPrimaryContainer
+                    : context.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            title: Text(
+              ws.name,
+              style: context.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: ws.id == selectedId
+                    ? context.colorScheme.primary
+                    : null,
+              ),
+            ),
+            subtitle: Text(
+              '${ws.studentCount} students • ${ws.documentCount} documents',
+              style: context.textTheme.bodySmall?.copyWith(
+                color: context.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            trailing: ws.id == selectedId
+                ? Icon(
+                    Icons.check_circle_rounded,
+                    color: context.colorScheme.primary,
+                  )
+                : null,
+            onTap: () => onSelect(ws.id),
+          ),
+        const SizedBox(height: Spacing.lg),
+      ],
+    );
+  }
 }
 
 class _DashboardTab extends StatelessWidget {
   const _DashboardTab({
     required this.displayName,
     required this.workspaceId,
+    required this.workspaceName,
     required this.onSelectTab,
   });
 
   final String displayName;
   final String? workspaceId;
+  final String workspaceName;
 
   /// Switches the parent's bottom-nav tab — lets the Get Started cards jump
   /// to the Documents / Students tabs they describe.
@@ -157,9 +281,12 @@ class _DashboardTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(Spacing.lg),
       children: [
-        _WelcomeBanner(displayName: displayName),
+        _WelcomeBanner(
+          displayName: displayName,
+          workspaceName: workspaceName,
+        ),
         const SizedBox(height: Spacing.lg),
-        const _StatsRow(),
+        _StatsRow(workspaceId: workspaceId),
         const SizedBox(height: Spacing.xl),
         Text(
           'Get Started',
@@ -192,8 +319,7 @@ class _DashboardTab extends StatelessWidget {
           subtitle: 'AI generates personalized questions for each student',
           icon: Icons.auto_awesome_rounded,
           isDone: false,
-          // Engagement/mastery view lives at workspace analytics. Needs a
-          // workspace; until one exists, nudge the admin to the Documents tab.
+          // Engagement/mastery view lives at workspace analytics.
           onTap: () => wsId != null
               ? context.push('/admin/analytics/$wsId')
               : onSelectTab(1),
@@ -204,9 +330,13 @@ class _DashboardTab extends StatelessWidget {
 }
 
 class _WelcomeBanner extends StatelessWidget {
-  const _WelcomeBanner({required this.displayName});
+  const _WelcomeBanner({
+    required this.displayName,
+    required this.workspaceName,
+  });
 
   final String displayName;
+  final String workspaceName;
 
   @override
   Widget build(BuildContext context) {
@@ -247,7 +377,7 @@ class _WelcomeBanner extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
-              'Demo Classroom  •  Admin',
+              '$workspaceName  •  Admin',
               style: context.textTheme.bodySmall?.copyWith(
                 color: Colors.white,
                 fontWeight: FontWeight.w500,
@@ -260,36 +390,61 @@ class _WelcomeBanner extends StatelessWidget {
   }
 }
 
-class _StatsRow extends StatelessWidget {
-  const _StatsRow();
+/// Live stats row that reads from the currently selected workspace.
+class _StatsRow extends ConsumerWidget {
+  const _StatsRow({required this.workspaceId});
+
+  final String? workspaceId;
 
   @override
-  Widget build(BuildContext context) {
-    return const Row(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final workspacesAsync = ref.watch(workspacesListProvider);
+
+    // While loading show skeleton placeholders
+    if (workspacesAsync.isLoading) {
+      return const Row(
+        children: [
+          Expanded(child: _StatCard(value: '—', label: 'Students', icon: Icons.people_rounded, color: AppColors.primary)),
+          SizedBox(width: Spacing.md),
+          Expanded(child: _StatCard(value: '—', label: 'Documents', icon: Icons.description_rounded, color: AppColors.secondary)),
+          SizedBox(width: Spacing.md),
+          Expanded(child: _StatCard(value: '—', label: 'Admins', icon: Icons.shield_rounded, color: AppColors.tertiary)),
+        ],
+      );
+    }
+
+    final workspaces = workspacesAsync.valueOrNull ?? [];
+    final activeWs = workspaceId != null
+        ? workspaces.where((w) => w.id == workspaceId).firstOrNull
+        : workspaces.isNotEmpty
+            ? workspaces.first
+            : null;
+
+    return Row(
       children: [
         Expanded(
           child: _StatCard(
-            value: '0',
+            value: activeWs != null ? '${activeWs.studentCount}' : '0',
             label: 'Students',
             icon: Icons.people_rounded,
             color: AppColors.primary,
           ),
         ),
-        SizedBox(width: Spacing.md),
+        const SizedBox(width: Spacing.md),
         Expanded(
           child: _StatCard(
-            value: '0',
+            value: activeWs != null ? '${activeWs.documentCount}' : '0',
             label: 'Documents',
             icon: Icons.description_rounded,
             color: AppColors.secondary,
           ),
         ),
-        SizedBox(width: Spacing.md),
+        const SizedBox(width: Spacing.md),
         Expanded(
           child: _StatCard(
-            value: '0',
-            label: 'Questions',
-            icon: Icons.quiz_rounded,
+            value: activeWs != null ? '${activeWs.adminCount}' : '0',
+            label: 'Admins',
+            icon: Icons.shield_rounded,
             color: AppColors.tertiary,
           ),
         ),
@@ -439,10 +594,9 @@ class _StudentsTab extends StatelessWidget {
 }
 
 class _SettingsTab extends StatelessWidget {
-  const _SettingsTab({required this.workspaceId, required this.onSignOut});
+  const _SettingsTab({required this.workspaceId});
 
   final String? workspaceId;
-  final VoidCallback onSignOut;
 
   @override
   Widget build(BuildContext context) {
@@ -484,14 +638,6 @@ class _SettingsTab extends StatelessWidget {
             ),
           ),
         ],
-        const Divider(height: Spacing.xl),
-        _SettingsTile(
-          icon: Icons.logout_rounded,
-          title: 'Sign out',
-          subtitle: 'demo@socialstudyapp.com',
-          onTap: onSignOut,
-          isDestructive: true,
-        ),
       ],
     );
   }
@@ -503,43 +649,32 @@ class _SettingsTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
-    this.isDestructive = false,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
-  final bool isDestructive;
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        isDestructive ? context.colorScheme.error : context.colorScheme.primary;
     return ListTile(
       leading: Container(
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: isDestructive
-              ? context.colorScheme.errorContainer
-              : context.colorScheme.primaryContainer,
+          color: context.colorScheme.primaryContainer,
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(icon, color: color, size: 20),
+        child: Icon(icon, color: context.colorScheme.primary, size: 20),
       ),
       title: Text(
         title,
-        style: TextStyle(
-          fontWeight: FontWeight.w500,
-          color: isDestructive ? context.colorScheme.error : null,
-        ),
+        style: const TextStyle(fontWeight: FontWeight.w500),
       ),
       subtitle: Text(subtitle),
-      trailing: isDestructive
-          ? null
-          : Icon(Icons.chevron_right_rounded,
-              color: context.colorScheme.onSurfaceVariant),
+      trailing: Icon(Icons.chevron_right_rounded,
+          color: context.colorScheme.onSurfaceVariant),
       onTap: onTap,
     );
   }

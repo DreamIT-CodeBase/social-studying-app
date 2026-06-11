@@ -21,12 +21,13 @@ wrapping, no fallback to sync. The OpenAI SDK supports async natively.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
 from typing import Any
 
-from openai import AsyncAzureOpenAI
+from openai import AsyncAzureOpenAI, RateLimitError
 from openai.types.chat import ChatCompletionMessageParam
 
 from app.core.config import settings
@@ -99,19 +100,33 @@ async def chat_json(
 
     start = time.perf_counter()
     async with _client() as client:
-        try:
-            response = await client.chat.completions.create(
-                model=deployment_name,
-                messages=messages,
-                response_format={"type": "json_object"},
-                temperature=temperature,
-                max_tokens=max_output_tokens,
-            )
-        except Exception as exc:
-            logger.exception("Azure OpenAI chat completion failed")
-            raise ServiceUnavailableError(
-                f"Azure OpenAI request failed: {exc}"
-            ) from exc
+        max_retries = 4
+        for attempt in range(max_retries + 1):
+            try:
+                response = await client.chat.completions.create(
+                    model=deployment_name,
+                    messages=messages,
+                    response_format={"type": "json_object"},
+                    temperature=temperature,
+                    max_tokens=max_output_tokens,
+                )
+                break
+            except RateLimitError as exc:
+                if attempt < max_retries:
+                    wait_time = 2 ** attempt
+                    logger.warning(
+                        "Azure OpenAI chat rate limited, retrying in %ds (attempt %d/%d)",
+                        wait_time, attempt + 1, max_retries,
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.exception("Azure OpenAI chat rate limit exceeded after %d retries", max_retries)
+                    raise ServiceUnavailableError(f"Azure OpenAI rate limit exceeded: {exc}") from exc
+            except Exception as exc:
+                logger.exception("Azure OpenAI chat completion failed")
+                raise ServiceUnavailableError(
+                    f"Azure OpenAI request failed: {exc}"
+                ) from exc
 
     duration_ms = int((time.perf_counter() - start) * 1000)
     usage = response.usage
@@ -195,20 +210,34 @@ async def embed_texts(
     async with _client() as client:
         for offset in range(0, len(texts), chunk_size):
             batch = texts[offset : offset + chunk_size]
-            try:
-                response = await client.embeddings.create(
-                    model=deployment_name,
-                    input=batch,
-                )
-            except Exception as exc:
-                logger.exception(
-                    "Azure OpenAI embeddings call failed at offset=%d batch_size=%d",
-                    offset,
-                    len(batch),
-                )
-                raise ServiceUnavailableError(
-                    f"Azure OpenAI embeddings request failed: {exc}"
-                ) from exc
+            max_retries = 4
+            for attempt in range(max_retries + 1):
+                try:
+                    response = await client.embeddings.create(
+                        model=deployment_name,
+                        input=batch,
+                    )
+                    break
+                except RateLimitError as exc:
+                    if attempt < max_retries:
+                        wait_time = 2 ** attempt
+                        logger.warning(
+                            "Azure OpenAI embeddings rate limited, retrying in %ds (attempt %d/%d)",
+                            wait_time, attempt + 1, max_retries,
+                        )
+                        await asyncio.sleep(wait_time)
+                    else:
+                        logger.exception("Azure OpenAI embeddings rate limit exceeded after %d retries", max_retries)
+                        raise ServiceUnavailableError(f"Azure OpenAI rate limit exceeded: {exc}") from exc
+                except Exception as exc:
+                    logger.exception(
+                        "Azure OpenAI embeddings call failed at offset=%d batch_size=%d",
+                        offset,
+                        len(batch),
+                    )
+                    raise ServiceUnavailableError(
+                        f"Azure OpenAI embeddings request failed: {exc}"
+                    ) from exc
 
             # The SDK returns Embedding objects in input order. Pull them in
             # that order to preserve the text<->vector mapping the caller

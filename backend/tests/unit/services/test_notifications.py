@@ -95,6 +95,7 @@ async def test_logging_sender_returns_logged_only():
     sender = LoggingSender()
     result = await sender.send_to_installation(
         installation_id="inst_a",
+        device_token="tok_a",
         platform=DevicePlatform.android,
         payload=NotificationPayload(
             notification_type=NotificationType.milestone,
@@ -191,6 +192,7 @@ async def test_anh_sender_returns_sent_on_2xx():
     )
     result = await sender.send_to_installation(
         installation_id="inst_a",
+        device_token="tok_a",
         platform=DevicePlatform.android,
         payload=NotificationPayload(
             notification_type=NotificationType.milestone,
@@ -202,9 +204,9 @@ async def test_anh_sender_returns_sent_on_2xx():
     # SAS header was included.
     _, kwargs = client.post.call_args
     assert kwargs["headers"]["Authorization"].startswith("SharedAccessSignature")
-    # Device handle = installation id.
+    # Device handle = device token.
     assert (
-        kwargs["headers"]["ServiceBusNotification-DeviceHandle"] == "inst_a"
+        kwargs["headers"]["ServiceBusNotification-DeviceHandle"] == "tok_a"
     )
 
 
@@ -226,6 +228,7 @@ async def test_anh_sender_returns_failed_on_4xx_with_reason():
     )
     result = await sender.send_to_installation(
         installation_id="inst_dead",
+        device_token="tok_dead",
         platform=DevicePlatform.android,
         payload=NotificationPayload(
             notification_type=NotificationType.milestone,

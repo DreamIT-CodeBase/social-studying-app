@@ -211,10 +211,17 @@ def test_upload_marks_document_failed_when_publish_raises(client):
     """
     admin = make_user(role=UserRole.tenant_admin)
     app.dependency_overrides[get_current_user] = lambda: admin
-    col = _col_with_docs([])
+    doc_col = _col_with_docs([])
+    wsp_col = MagicMock()
+    wsp_col.update_one = AsyncMock()
+
+    def get_collection_mock(tenant_id, collection_name):
+        if collection_name == "workspaces":
+            return wsp_col
+        return doc_col
 
     with (
-        patch("app.api.documents.get_collection", return_value=col),
+        patch("app.api.documents.get_collection", side_effect=get_collection_mock),
         patch(
             "app.api.documents.blob_storage.upload_document",
             AsyncMock(return_value="https://x.blob/study.pdf"),
@@ -231,10 +238,11 @@ def test_upload_marks_document_failed_when_publish_raises(client):
 
     assert response.status_code == 422
     # insert_one ran (doc was created); update_one ran (doc was marked failed).
-    col.insert_one.assert_awaited_once()
-    col.update_one.assert_awaited_once()
-    update_call = col.update_one.await_args
+    doc_col.insert_one.assert_awaited_once()
+    doc_col.update_one.assert_awaited_once()
+    update_call = doc_col.update_one.await_args
     assert update_call.args[1]["$set"]["status"] == "failed"
+    wsp_col.update_one.assert_awaited_once()
     assert "could not be queued" in response.json()["detail"]
 
 
@@ -380,14 +388,22 @@ def test_get_document_as_non_member_student_is_forbidden(client):
 def test_delete_document_happy_path(client):
     admin = make_user(role=UserRole.tenant_admin)
     app.dependency_overrides[get_current_user] = lambda: admin
-    col = MagicMock()
-    col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
+    doc_col = MagicMock()
+    doc_col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
+    wsp_col = MagicMock()
+    wsp_col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
 
-    with patch("app.api.documents.get_collection", return_value=col):
+    def get_collection_mock(tenant_id, collection_name):
+        if collection_name == "workspaces":
+            return wsp_col
+        return doc_col
+
+    with patch("app.api.documents.get_collection", side_effect=get_collection_mock):
         response = client.delete("/api/v1/workspaces/wsp_test001/documents/doc_test001")
 
     assert response.status_code == 204
-    col.update_one.assert_awaited_once()
+    doc_col.update_one.assert_awaited_once()
+    wsp_col.update_one.assert_awaited_once()
 
 
 def test_delete_document_not_found_returns_404(client):

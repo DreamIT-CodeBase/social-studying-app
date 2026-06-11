@@ -4,6 +4,8 @@ import 'package:mocktail/mocktail.dart';
 import 'package:social_study_app/features/admin/users/data/demo_users_repository.dart';
 import 'package:social_study_app/features/admin/users/data/users_repository.dart';
 import 'package:social_study_app/features/admin/users/presentation/users_notifier.dart';
+import 'package:social_study_app/features/admin/workspaces/data/demo_workspaces_repository.dart';
+import 'package:social_study_app/features/admin/workspaces/data/workspaces_repository.dart';
 import 'package:social_study_app/features/auth/data/auth_repository.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/shared/models/user.dart';
@@ -26,6 +28,7 @@ Future<ProviderContainer> _container(UsersRepository repo) async {
     overrides: [
       authRepositoryProvider.overrideWithValue(authRepo),
       usersRepositoryProvider.overrideWithValue(repo),
+      workspacesRepositoryProvider.overrideWithValue(DemoWorkspacesRepository()),
     ],
   );
   addTearDown(container.dispose);

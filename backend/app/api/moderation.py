@@ -35,7 +35,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.core.auth import require_role
-from app.core.database import DOCUMENTS, MODERATION_LOG, get_collection
+from app.core.database import DOCUMENTS, MODERATION_LOG, QUESTION_QUEUE, FLASHCARDS, get_collection
 from app.core.exceptions import ForbiddenError, NotFoundError
 from app.models.base import utc_now
 from app.models.document import DocumentStatus
@@ -121,6 +121,20 @@ async def _project(
             else:
                 detail = "passed content safety during ingestion"
             excerpt = f"{doc.get('filename', topic)} — {page_str}; {detail}"
+    elif entry.target_type == ModerationTarget.question:
+        qst = await get_collection(tenant_id, QUESTION_QUEUE).find_one(
+            {"_id": entry.target_id}
+        )
+        if qst is not None:
+            topic = qst.get("topic", topic)
+            excerpt = qst.get("body", excerpt)
+    elif entry.target_type == ModerationTarget.flashcard:
+        fc = await get_collection(tenant_id, FLASHCARDS).find_one(
+            {"_id": entry.target_id}
+        )
+        if fc is not None:
+            topic = fc.get("topic", topic)
+            excerpt = fc.get("front", excerpt)
 
     return FlaggedItemResponse(
         id=entry.id,
@@ -238,6 +252,20 @@ async def resolve(
             document_id=entry.target_id,
             approved=body.approved,
         )
+    elif entry.target_type == ModerationTarget.question:
+        await _apply_question_decision(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            question_id=entry.target_id,
+            approved=body.approved,
+        )
+    elif entry.target_type == ModerationTarget.flashcard:
+        await _apply_flashcard_decision(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            flashcard_id=entry.target_id,
+            approved=body.approved,
+        )
 
     await mod_col.update_one(
         {"_id": item_id},
@@ -279,6 +307,13 @@ async def _apply_document_decision(
         await doc_col.update_one(
             {"_id": document_id},
             {"$set": {"deleted_at": utc_now(), "updated_at": utc_now()}},
+        )
+        # Update workspace document count
+        from app.core.database import WORKSPACES
+        wsp_col = get_collection(tenant_id, WORKSPACES)
+        await wsp_col.update_one(
+            {"_id": workspace_id},
+            {"$inc": {"document_count": -1}}
         )
         return
 
@@ -325,3 +360,49 @@ async def _apply_document_decision(
             "it will stay at text_extracted until re-triggered.",
             document_id,
         )
+
+
+async def _apply_question_decision(
+    *, tenant_id: str, workspace_id: str, question_id: str, approved: bool
+) -> None:
+    qst_col = get_collection(tenant_id, QUESTION_QUEUE)
+    qst = await qst_col.find_one(
+        {"_id": question_id, "workspace_id": workspace_id}
+    )
+    if qst is None:
+        raise NotFoundError("Question", question_id)
+
+    status = "approved" if approved else "rejected"
+    await qst_col.update_one(
+        {"_id": question_id},
+        {
+            "$set": {
+                "status": status,
+                "moderation_flagged": False,
+                "updated_at": utc_now(),
+            }
+        },
+    )
+
+
+async def _apply_flashcard_decision(
+    *, tenant_id: str, workspace_id: str, flashcard_id: str, approved: bool
+) -> None:
+    fc_col = get_collection(tenant_id, FLASHCARDS)
+    fc = await fc_col.find_one(
+        {"_id": flashcard_id, "workspace_id": workspace_id}
+    )
+    if fc is None:
+        raise NotFoundError("Flashcard", flashcard_id)
+
+    status = "approved" if approved else "rejected"
+    await fc_col.update_one(
+        {"_id": flashcard_id},
+        {
+            "$set": {
+                "status": status,
+                "moderation_flagged": False,
+                "updated_at": utc_now(),
+            }
+        },
+    )

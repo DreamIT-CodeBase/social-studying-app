@@ -17,6 +17,7 @@ class ModerationAction(StrEnum):
 class ModerationTarget(StrEnum):
     question = "question"
     document = "document"
+    flashcard = "flashcard"
 
 
 class SafetyCategory(StrEnum):

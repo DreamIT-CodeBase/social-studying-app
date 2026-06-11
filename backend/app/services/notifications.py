@@ -112,6 +112,7 @@ class NotificationSender(ABC):
         self,
         *,
         installation_id: str,
+        device_token: str,
         platform: DevicePlatform,
         payload: NotificationPayload,
     ) -> DispatchResult:
@@ -133,6 +134,7 @@ class LoggingSender(NotificationSender):
         self,
         *,
         installation_id: str,
+        device_token: str,
         platform: DevicePlatform,
         payload: NotificationPayload,
     ) -> DispatchResult:
@@ -190,6 +192,7 @@ class AzureNotificationHubSender(NotificationSender):
         self,
         *,
         installation_id: str,
+        device_token: str,
         platform: DevicePlatform,
         payload: NotificationPayload,
     ) -> DispatchResult:
@@ -211,7 +214,7 @@ class AzureNotificationHubSender(NotificationSender):
             "Authorization": sas_token,
             "Content-Type": "application/json;charset=utf-8",
             "ServiceBusNotification-Format": _anh_format_for(platform),
-            "ServiceBusNotification-DeviceHandle": installation_id,
+            "ServiceBusNotification-DeviceHandle": device_token,
         }
         try:
             response = await self._client.post(url, content=body, headers=headers)
@@ -312,6 +315,7 @@ async def dispatch_to_user(
     for token in tokens:
         result = await sender.send_to_installation(
             installation_id=token.installation_id,
+            device_token=token.token,
             platform=token.platform,
             payload=payload,
         )

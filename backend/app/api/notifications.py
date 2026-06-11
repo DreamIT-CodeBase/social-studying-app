@@ -29,6 +29,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, Response, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.core.auth import get_current_user, require_role
@@ -110,13 +111,25 @@ async def register_notification_token(
     registered" isn't a separate response. ``last_seen_at`` always
     bumps to wall-clock now so heartbeats are observable.
     """
-    token = await notification_service.register_token(
-        tenant_id=current_user.tenant_id,
-        user_id=current_user.id,
-        installation_id=body.installation_id,
-        token=body.token,
-        platform=body.platform,
-    )
+    try:
+        token = await notification_service.register_token(
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            installation_id=body.installation_id,
+            token=body.token,
+            platform=body.platform,
+        )
+    except Exception as exc:
+        logger.exception(
+            "register_notification_token failed for user=%s installation=%s: %s",
+            current_user.id,
+            body.installation_id,
+            exc,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"detail": "Push registration temporarily unavailable. Will retry on next launch."},
+        )
     return NotificationTokenResponse(
         installation_id=token.installation_id,
         token=token.token,
@@ -178,3 +191,71 @@ async def run_scheduler(
         students_evaluated=summary.students_evaluated,
         failures=summary.failures,
     )
+
+
+# ── Test push endpoint ─────────────────────────────────────────────────────
+
+
+class TestPushResponse(BaseModel):
+    """Result of a test-push request."""
+
+    devices_found: int
+    results: list[str]
+    sender_type: str
+
+
+@users_router.post(
+    "/notification-tokens/test-push",
+    response_model=TestPushResponse,
+    summary="Send a test push to all of your registered devices",
+)
+async def send_test_push(
+    current_user: User = Depends(get_current_user),
+) -> TestPushResponse:
+    """Fire a test notification to every registered device for the calling user.
+
+    Use this to verify end-to-end push delivery without waiting for the
+    scheduler. The response tells you how many devices were found, what
+    the outcome was for each, and which sender was used.
+
+    If ``sender_type`` is ``LoggingSender`` the push was only logged
+    server-side — you need to configure
+    ``NOTIFICATION_HUB_CONNECTION_STRING`` + ``NOTIFICATION_HUB_NAME``
+    in ``.env`` to get real pushes.
+    """
+    from app.services.notifications import (
+        NotificationPayload,
+        NotificationType,
+        dispatch_to_user,
+        get_sender,
+    )
+
+    sender = get_sender()
+    sender_type = type(sender).__name__
+
+    results = await dispatch_to_user(
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.id,
+        payload=NotificationPayload(
+            notification_type=NotificationType.study_reminder,
+            title="🔔 Test notification",
+            body=f"Push is working! Sent to {current_user.display_name}.",
+            data={
+                "type": NotificationType.study_reminder.value,
+                "workspace_id": "test",
+            },
+        ),
+    )
+
+    result_labels = [
+        f"device {i + 1}: {r.outcome.value}"
+        + (f" ({r.failure_reason})" if r.failure_reason else "")
+        for i, r in enumerate(results)
+    ]
+
+    return TestPushResponse(
+        devices_found=len(results),
+        results=result_labels if result_labels else ["No registered devices found"],
+        sender_type=sender_type,
+    )
+

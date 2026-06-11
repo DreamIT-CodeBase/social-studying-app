@@ -8,9 +8,12 @@ import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/flashcards/presentation/flashcard_screen.dart';
 import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
+import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 import 'package:social_study_app/features/progress/presentation/progress_screen.dart';
 import 'package:social_study_app/features/questions/presentation/question_screen.dart';
+import 'package:social_study_app/shared/models/progress.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
+import 'package:social_study_app/core/routing/router.dart';
 
 class StudentHomeScreen extends ConsumerStatefulWidget {
   const StudentHomeScreen({super.key});
@@ -31,6 +34,12 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<String?>(pendingInviteCodeProvider, (previous, next) {
+      if (next != null && next.isNotEmpty) {
+        _showRedeemDialog(context, next);
+      }
+    });
+
     final authValue = ref.watch(authNotifierProvider).valueOrNull;
     final displayName = authValue?.maybeWhen(
           authenticated: (user) => user.displayName,
@@ -58,8 +67,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
           Padding(
             padding: const EdgeInsets.only(right: Spacing.lg),
             child: GestureDetector(
-              onTap: () =>
-                  ref.read(authNotifierProvider.notifier).signOut(),
+              onTap: () => context.push(AppRoutes.profile),
               child: CircleAvatar(
                 backgroundColor: AppColors.primaryContainer,
                 radius: 18,
@@ -119,9 +127,148 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
       ),
     );
   }
+
+  void _showRedeemDialog(BuildContext context, String code) {
+    // Clear the pending code immediately so we don't prompt multiple times
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(pendingInviteCodeProvider.notifier).clear();
+    });
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(Spacing.sm),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.vpn_key_rounded,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: Spacing.md),
+              const Text(
+                'Join Workspace',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 20,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'You have a pending invite to join a workspace.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: Spacing.md),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Spacing.lg,
+                  vertical: Spacing.md,
+                ),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainer,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                ),
+                child: Text(
+                  code,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 18,
+                    letterSpacing: 1.2,
+                    color: AppColors.primary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: Spacing.md),
+              Text(
+                'Would you like to redeem this code and join now?',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            const SizedBox(width: Spacing.xs),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () async {
+                Navigator.of(context).pop();
+                try {
+                  _showLoadingIndicator(context);
+                  await ref.read(authNotifierProvider.notifier).redeemInviteCode(code);
+                  if (context.mounted) {
+                    Navigator.of(context).pop(); // Dismiss loading
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Successfully joined the workspace!'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    Navigator.of(context).pop(); // Dismiss loading
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Failed to join workspace: ${e.toString().replaceAll('Exception: ', '')}',
+                        ),
+                        backgroundColor: Theme.of(context).colorScheme.error,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('Join Workspace'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showLoadingIndicator(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return const Center(
+          child: CircularProgressIndicator(),
+        );
+      },
+    );
+  }
 }
 
-class _HomeTab extends StatelessWidget {
+class _HomeTab extends ConsumerWidget {
   const _HomeTab({
     required this.displayName,
     required this.workspaceId,
@@ -145,11 +292,26 @@ class _HomeTab extends StatelessWidget {
   final VoidCallback? onOpenLeaderboard;
 
   @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(Spacing.lg),
-      children: [
+  Widget build(BuildContext context, WidgetRef ref) {
+    final progressAsync = workspaceId != null
+        ? ref.watch(studentProgressNotifierProvider(workspaceId!))
+        : const AsyncValue.loading();
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        if (workspaceId != null) {
+          ref.read(studentProgressNotifierProvider(workspaceId!).notifier).refresh();
+          await ref.read(studentProgressNotifierProvider(workspaceId!).future);
+        }
+      },
+      child: ListView(
+        padding: const EdgeInsets.all(Spacing.lg),
+        children: [
         _GreetingCard(displayName: displayName),
+        if (workspaceId == null) ...[
+          const SizedBox(height: Spacing.lg),
+          const _RedeemInviteCard(),
+        ],
         const SizedBox(height: Spacing.lg),
         _StreakCard(workspaceId: workspaceId, userId: userId),
         const SizedBox(height: Spacing.lg),
@@ -169,13 +331,41 @@ class _HomeTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: Spacing.md),
-        const EmptyStateView(
-          icon: Icons.history_rounded,
-          title: 'No activity yet',
-          subtitle: 'Start a study session to see your progress here.',
-        ),
+        workspaceId == null
+            ? const EmptyStateView(
+                icon: Icons.history_rounded,
+                title: 'No activity yet',
+                subtitle: 'Join a workspace to see your progress here.',
+              )
+            : progressAsync.when(
+                data: (progress) {
+                  if (progress.recentActivity.isEmpty) {
+                    return const EmptyStateView(
+                      icon: Icons.history_rounded,
+                      title: 'No activity yet',
+                      subtitle: 'Start a study session to see your progress here.',
+                    );
+                  }
+                  return Column(
+                    children: [
+                      for (final entry in progress.recentActivity.take(20))
+                        _ActivityEntryCard(entry: entry),
+                    ],
+                  );
+                },
+                loading: () => const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(Spacing.xl),
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+                error: (err, stack) => Center(
+                  child: Text('Failed to load activity: $err'),
+                ),
+              ),
       ],
-    );
+    ),
+  );
   }
 }
 
@@ -232,10 +422,21 @@ class _GreetingCard extends StatelessWidget {
               ],
             ),
           ),
-          const Icon(
-            Icons.auto_stories_rounded,
-            size: 56,
-            color: Colors.white,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: Image.asset(
+              'assets/branding/app_logo.jpg',
+              width: 56,
+              height: 56,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(
+                  Icons.auto_stories_rounded,
+                  size: 56,
+                  color: Colors.white,
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -635,3 +836,284 @@ class _ProgressTab extends StatelessWidget {
     return ProgressScreen(workspaceId: workspaceId!);
   }
 }
+
+class _ActivityEntryCard extends StatelessWidget {
+  const _ActivityEntryCard({required this.entry});
+
+  final ActivityEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final isQuestion = entry.kind == ActivityKind.question;
+    final icon = isQuestion ? Icons.quiz_rounded : Icons.style_rounded;
+    final iconColor = isQuestion ? AppColors.primary : AppColors.secondary;
+
+    String subtitle = '';
+    if (isQuestion && entry.isCorrect != null) {
+      subtitle = entry.isCorrect! ? 'Correct (+${entry.xpEarned} XP)' : 'Incorrect';
+    } else if (!isQuestion) {
+      subtitle = 'Reviewed (+${entry.xpEarned} XP)';
+    }
+
+    // Format date simple "yyyy-MM-dd"
+    final date = DateTime.tryParse(entry.occurredAt)?.toLocal() ?? DateTime.now();
+    final dateString = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: Spacing.md),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: iconColor.withOpacity(0.1),
+          foregroundColor: iconColor,
+          child: Icon(icon, size: 20),
+        ),
+        title: Text(
+          entry.topic,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+        ),
+        subtitle: Text(subtitle, style: const TextStyle(fontSize: 13)),
+        trailing: Text(
+          dateString,
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RedeemInviteCard extends ConsumerStatefulWidget {
+  const _RedeemInviteCard();
+
+  @override
+  ConsumerState<_RedeemInviteCard> createState() => _RedeemInviteCardState();
+}
+
+class _RedeemInviteCardState extends ConsumerState<_RedeemInviteCard>
+    with SingleTickerProviderStateMixin {
+  final _controller = TextEditingController();
+  late final AnimationController _animController;
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
+      lowerBound: 0.95,
+      upperBound: 1.0,
+      value: 1.0,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _animController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _redeem() async {
+    final code = _controller.text.trim();
+    if (code.isEmpty) {
+      setState(() => _errorMessage = 'Please enter an invite code');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await ref.read(authNotifierProvider.notifier).redeemInviteCode(code);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Successfully joined the workspace!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(
+            colors: [
+              Color(0xFF0F172A),
+              Color(0xFF1E293B),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          border: Border.all(
+            color: const Color(0xFF334155),
+            width: 1.5,
+          ),
+        ),
+        padding: const EdgeInsets.all(Spacing.xl),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(Spacing.sm),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.school_rounded,
+                    color: AppColors.primary,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: Spacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Join a Workspace',
+                        style: context.textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        'Enter an invite code from your teacher or parent',
+                        style: context.textTheme.bodySmall?.copyWith(
+                          color: Colors.white.withOpacity(0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: Spacing.lg),
+            TextField(
+              controller: _controller,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+              decoration: InputDecoration(
+                hintText: 'e.g. WS-123456',
+                hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                prefixIcon: const Icon(Icons.vpn_key_outlined, color: Colors.white60),
+                filled: true,
+                fillColor: const Color(0xFF0F172A).withOpacity(0.8),
+                errorText: _errorMessage,
+                errorStyle: const TextStyle(color: Colors.redAccent),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: Spacing.lg,
+                  vertical: Spacing.md,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: Color(0xFF475569)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                ),
+                errorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: Colors.redAccent),
+                ),
+                focusedErrorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+                ),
+              ),
+              textCapitalization: TextCapitalization.characters,
+            ),
+            const SizedBox(height: Spacing.lg),
+            GestureDetector(
+              onTapDown: (_) => _animController.reverse(),
+              onTapUp: (_) {
+                _animController.forward();
+                if (!_isLoading) _redeem();
+              },
+              onTapCancel: () => _animController.forward(),
+              child: ScaleTransition(
+                scale: _animController,
+                child: Container(
+                  height: 52,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [
+                        AppColors.primary,
+                        Color(0xFF818CF8),
+                      ],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withOpacity(0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 24,
+                          width: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.5,
+                          ),
+                        )
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Redeem Code',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            SizedBox(width: Spacing.xs),
+                            Icon(
+                              Icons.arrow_forward_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

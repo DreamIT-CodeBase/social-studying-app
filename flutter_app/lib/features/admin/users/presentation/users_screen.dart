@@ -66,6 +66,7 @@ class WorkspaceUsersScreen extends ConsumerWidget {
             bottom: Spacing.lg,
             right: Spacing.lg,
             child: FloatingActionButton.extended(
+              heroTag: null,
               onPressed: () => _openAddUserForm(context, ref, workspaceId),
               icon: const Icon(Icons.person_add_rounded),
               label: const Text('Add'),

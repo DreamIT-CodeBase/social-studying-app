@@ -1,8 +1,11 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+import logging
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.api import (
@@ -165,6 +168,26 @@ app = FastAPI(
     openapi_url="/openapi.json",
     lifespan=lifespan,
 )
+
+_logger = logging.getLogger(__name__)
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """Catch-all for unhandled exceptions — logs the full traceback and
+    returns a clean 500 JSON body so clients always see structured errors.
+    FastAPI/Starlette's default is a plain-text 500; this replaces it.
+    """
+    _logger.exception(
+        "Unhandled exception: %s %s", request.method, request.url, exc_info=exc
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error. Check server logs."},
+    )
+
 
 app.add_middleware(
     CORSMiddleware,

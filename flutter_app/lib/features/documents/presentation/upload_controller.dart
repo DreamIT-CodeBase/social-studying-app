@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:social_study_app/features/admin/workspaces/presentation/workspaces_notifier.dart';
 import 'package:social_study_app/features/documents/data/documents_repository.dart';
 import 'package:social_study_app/shared/models/document.dart';
 
@@ -41,6 +43,59 @@ class UploadController extends _$UploadController {
             bytes: selection.bytes,
             contentType: selection.contentType,
           );
+      ref.read(workspacesListProvider.notifier).refresh();
+      state = AsyncData<Document?>(doc);
+      return doc;
+    } catch (e, st) {
+      state = AsyncError<Document?>(e, st);
+      return null;
+    }
+  }
+
+  /// Capture a photo from the device camera, then upload it.
+  ///
+  /// Returns `null` when the user cancels the camera.
+  Future<Document?> pickFromCamera({required String workspaceId}) async {
+    state = const AsyncLoading();
+    try {
+      final selection = await _pickImageFromSource(ImageSource.camera);
+      if (selection == null) {
+        state = const AsyncData<Document?>(null);
+        return null;
+      }
+      final doc = await ref.read(documentsRepositoryProvider).upload(
+            workspaceId: workspaceId,
+            filename: selection.filename,
+            bytes: selection.bytes,
+            contentType: selection.contentType,
+          );
+      ref.read(workspacesListProvider.notifier).refresh();
+      state = AsyncData<Document?>(doc);
+      return doc;
+    } catch (e, st) {
+      state = AsyncError<Document?>(e, st);
+      return null;
+    }
+  }
+
+  /// Select an image from the device gallery, then upload it.
+  ///
+  /// Returns `null` when the user cancels the gallery.
+  Future<Document?> pickImageFromGallery({required String workspaceId}) async {
+    state = const AsyncLoading();
+    try {
+      final selection = await _pickImageFromSource(ImageSource.gallery);
+      if (selection == null) {
+        state = const AsyncData<Document?>(null);
+        return null;
+      }
+      final doc = await ref.read(documentsRepositoryProvider).upload(
+            workspaceId: workspaceId,
+            filename: selection.filename,
+            bytes: selection.bytes,
+            contentType: selection.contentType,
+          );
+      ref.read(workspacesListProvider.notifier).refresh();
       state = AsyncData<Document?>(doc);
       return doc;
     } catch (e, st) {
@@ -57,6 +112,25 @@ class UploadController extends _$UploadController {
   Future<FileSelection?> _pickFile() async {
     final result = await pickerOverride();
     return result;
+  }
+
+  /// Use image_picker for camera/gallery sources.
+  Future<FileSelection?> _pickImageFromSource(ImageSource source) async {
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+      source: source,
+      imageQuality: 85,
+      maxWidth: 2048,
+      maxHeight: 2048,
+    );
+    if (image == null) return null;
+    final bytes = await image.readAsBytes();
+    final extension = image.name.split('.').last.toLowerCase();
+    return FileSelection(
+      filename: image.name,
+      bytes: bytes,
+      contentType: _contentTypeFor(extension),
+    );
   }
 }
 
@@ -107,3 +181,4 @@ String _contentTypeFor(String extension) => switch (extension.toLowerCase()) {
       'txt' => 'text/plain',
       _ => 'application/octet-stream',
     };
+

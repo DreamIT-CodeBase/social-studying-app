@@ -96,6 +96,13 @@ async def upload_document(
     )
     col = get_collection(current_user.tenant_id, DOCUMENTS)
     await col.insert_one(doc.model_dump(by_alias=True))
+    
+    # Update workspace document count
+    wsp_col = get_collection(current_user.tenant_id, "workspaces")
+    await wsp_col.update_one(
+        {"_id": workspace_id},
+        {"$inc": {"document_count": 1}}
+    )
 
     # Hand off to the ingestion worker. If publish fails, mark the document
     # failed in Cosmos so the admin sees a clear error instead of a phantom
@@ -195,6 +202,13 @@ async def delete_document(
     )
     if result.matched_count == 0:
         raise NotFoundError("Document", document_id)
+        
+    # Update workspace document count
+    wsp_col = get_collection(current_user.tenant_id, "workspaces")
+    await wsp_col.update_one(
+        {"_id": workspace_id},
+        {"$inc": {"document_count": -1}}
+    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
