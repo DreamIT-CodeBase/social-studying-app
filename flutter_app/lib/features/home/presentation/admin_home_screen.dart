@@ -622,6 +622,14 @@ class _SettingsTab extends StatelessWidget {
             ),
           ),
           _SettingsTile(
+            icon: Icons.screen_lock_portrait_rounded,
+            title: 'Screen Time & Blocking',
+            subtitle: 'Configure app blocking and XP rules',
+            onTap: () => context.push(
+              AppRoutes.studentScreenTimeSettings,
+            ),
+          ),
+          _SettingsTile(
             icon: Icons.shield_rounded,
             title: 'Content Moderation',
             subtitle: 'Review flagged questions and documents',

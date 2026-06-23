@@ -142,10 +142,12 @@ def test_upload_document_as_workspace_admin_non_member_is_forbidden(client):
     )
     app.dependency_overrides[get_current_user] = lambda: ws_admin
 
-    response = client.post(
-        "/api/v1/workspaces/wsp_test001/documents",
-        files={"file": ("study.pdf", b"%PDF-1.4 fake", "application/pdf")},
-    )
+    col = _col_with_docs([])
+    with patch("app.api.documents.get_collection", return_value=col):
+        response = client.post(
+            "/api/v1/workspaces/wsp_test001/documents",
+            files={"file": ("study.pdf", b"%PDF-1.4 fake", "application/pdf")},
+        )
 
     assert response.status_code == 403
 
@@ -154,10 +156,12 @@ def test_upload_document_as_student_is_forbidden(client):
     student = make_user(role=UserRole.student, workspace_ids=["wsp_test001"])
     app.dependency_overrides[get_current_user] = lambda: student
 
-    response = client.post(
-        "/api/v1/workspaces/wsp_test001/documents",
-        files={"file": ("study.pdf", b"%PDF-1.4 fake", "application/pdf")},
-    )
+    col = _col_with_docs([])
+    with patch("app.api.documents.get_collection", return_value=col):
+        response = client.post(
+            "/api/v1/workspaces/wsp_test001/documents",
+            files={"file": ("study.pdf", b"%PDF-1.4 fake", "application/pdf")},
+        )
 
     assert response.status_code == 403
 
@@ -422,7 +426,9 @@ def test_delete_document_as_student_is_forbidden(client):
     student = make_user(role=UserRole.student, workspace_ids=["wsp_test001"])
     app.dependency_overrides[get_current_user] = lambda: student
 
-    response = client.delete("/api/v1/workspaces/wsp_test001/documents/doc_test001")
+    col = _col_with_docs([])
+    with patch("app.api.documents.get_collection", return_value=col):
+        response = client.delete("/api/v1/workspaces/wsp_test001/documents/doc_test001")
 
     assert response.status_code == 403
 
@@ -434,6 +440,8 @@ def test_delete_document_as_workspace_admin_non_member_is_forbidden(client):
     )
     app.dependency_overrides[get_current_user] = lambda: ws_admin
 
-    response = client.delete("/api/v1/workspaces/wsp_test001/documents/doc_test001")
+    col = _col_with_docs([])
+    with patch("app.api.documents.get_collection", return_value=col):
+        response = client.delete("/api/v1/workspaces/wsp_test001/documents/doc_test001")
 
     assert response.status_code == 403

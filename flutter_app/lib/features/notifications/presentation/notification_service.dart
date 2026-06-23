@@ -10,8 +10,8 @@ import 'package:flutter/material.dart' show
     debugPrint;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:social_study_app/core/services/sound_service.dart';
 import 'package:social_study_app/features/notifications/data/notification_token_repository.dart';
 import 'package:social_study_app/shared/models/notification_token.dart';
 
@@ -179,6 +179,9 @@ class NotificationService {
           ),
           payload: jsonEncode(message.data),
         );
+        // Play in-app notification chime (foreground only — the system
+        // handles sound when the app is backgrounded).
+        SoundService.instance.playNotification();
       }
     });
 

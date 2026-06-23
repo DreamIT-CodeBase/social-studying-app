@@ -34,7 +34,7 @@ import logging
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from app.core.auth import require_role
+from app.core.auth import get_current_user, require_role
 from app.core.database import DOCUMENTS, MODERATION_LOG, QUESTION_QUEUE, FLASHCARDS, get_collection
 from app.core.exceptions import ForbiddenError, NotFoundError
 from app.models.base import utc_now
@@ -77,6 +77,19 @@ def _assert_workspace_access(user: User, workspace_id: str) -> None:
     ids = {m.workspace_id for m in user.workspace_memberships}
     if workspace_id not in ids:
         raise ForbiddenError("You are not a member of this workspace")
+
+
+def _assert_admin(user: User, workspace_id: str) -> None:
+    """Raise ForbiddenError if the user is not an admin of this workspace."""
+    if user.role == UserRole.tenant_admin:
+        return
+    admin_memberships = {
+        m.workspace_id
+        for m in user.workspace_memberships
+        if m.role in (UserRole.workspace_admin, UserRole.tenant_admin)
+    }
+    if workspace_id not in admin_memberships:
+        raise ForbiddenError("You do not have admin access to this workspace")
 
 
 _VERDICT_FOR_ACTION: dict[ModerationAction, str] = {
@@ -175,12 +188,10 @@ async def _list_by_actions(
 @router.get("/flagged", response_model=list[FlaggedItemResponse])
 async def list_flagged(
     workspace_id: str,
-    current_user: User = Depends(
-        require_role(UserRole.tenant_admin, UserRole.workspace_admin)
-    ),
+    current_user: User = Depends(get_current_user),
 ) -> list[FlaggedItemResponse]:
     """The review queue — content awaiting an admin decision."""
-    _assert_workspace_access(current_user, workspace_id)
+    _assert_admin(current_user, workspace_id)
     return await _list_by_actions(
         tenant_id=current_user.tenant_id,
         workspace_id=workspace_id,
@@ -191,16 +202,14 @@ async def list_flagged(
 @router.get("/log", response_model=list[FlaggedItemResponse])
 async def list_log(
     workspace_id: str,
-    current_user: User = Depends(
-        require_role(UserRole.tenant_admin, UserRole.workspace_admin)
-    ),
+    current_user: User = Depends(get_current_user),
 ) -> list[FlaggedItemResponse]:
     """The audit log — everything content safety has already decided.
 
     Includes ``auto_approved`` (clean content that passed automatically) so the
     admin can see the full trail, not just human overrides.
     """
-    _assert_workspace_access(current_user, workspace_id)
+    _assert_admin(current_user, workspace_id)
     return await _list_by_actions(
         tenant_id=current_user.tenant_id,
         workspace_id=workspace_id,
@@ -217,16 +226,14 @@ async def resolve(
     workspace_id: str,
     item_id: str,
     body: ResolveRequest,
-    current_user: User = Depends(
-        require_role(UserRole.tenant_admin, UserRole.workspace_admin)
-    ),
+    current_user: User = Depends(get_current_user),
 ) -> FlaggedItemResponse:
     """Approve or reject a flagged item.
 
     404 if the item doesn't exist or was already resolved (matches the
     Flutter ``FlaggedItemNotFoundException`` contract).
     """
-    _assert_workspace_access(current_user, workspace_id)
+    _assert_admin(current_user, workspace_id)
     tenant_id = current_user.tenant_id
 
     mod_col = get_collection(tenant_id, MODERATION_LOG)

@@ -8,6 +8,9 @@ import 'package:social_study_app/features/flashcards/data/demo_flashcards_reposi
 import 'package:social_study_app/features/flashcards/data/flashcards_repository.dart';
 import 'package:social_study_app/features/flashcards/domain/flashcard_session.dart';
 import 'package:social_study_app/shared/models/flashcard.dart';
+import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
+import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 
 part 'flashcard_session_notifier.g.dart';
 
@@ -90,6 +93,7 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
         submission: FlashcardRatingSubmission(rating: rating),
       );
       state = FlashcardSession.rated(card: card, response: response);
+      _invalidateProfile();
     } on FlashcardNotFoundException catch (e) {
       // The card was deleted between fetch and rating — rare (admin
       // moderation), but the student should see a clear error rather
@@ -102,6 +106,17 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
       state = FlashcardSession.error(message: e.message);
     } on Object catch (e) {
       state = FlashcardSession.error(message: e.toString());
+    }
+  }
+
+  void _invalidateProfile() {
+    final authState = ref.read(authNotifierProvider).valueOrNull;
+    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    if (user != null) {
+      final key = (workspaceId: _workspaceId, userId: user.id);
+      ref.invalidate(gamificationProfileProvider(key));
+      ref.invalidate(streakSummaryProvider(key));
+      ref.invalidate(studentProgressNotifierProvider(_workspaceId));
     }
   }
 

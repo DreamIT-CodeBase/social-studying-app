@@ -4,8 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
+import 'package:social_study_app/core/services/sound_service.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/gamification/presentation/widgets/badge_icon.dart';
+import 'package:social_study_app/features/mascot/models/mascot_state.dart';
+import 'package:social_study_app/features/mascot/widgets/study_buddy.dart';
 
 /// Sprint 5.5 celebration helpers — drop these into a feedback flow
 /// when a [AnswerFeedback] / [FlashcardRatingResponse] comes back with
@@ -40,6 +43,7 @@ Future<void> showLevelUpBurst(
   required int newLevel,
 }) async {
   HapticFeedback.heavyImpact();
+  SoundService.instance.playLevelUp();
   await Navigator.of(context, rootNavigator: true).push(
     PageRouteBuilder<void>(
       opaque: false,
@@ -61,6 +65,7 @@ Future<void> showBadgeUnlockSheet(
   required String icon,
 }) async {
   HapticFeedback.selectionClick();
+  SoundService.instance.playBadgeUnlock();
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -198,10 +203,9 @@ class _LevelUpCard extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Icons.auto_awesome_rounded,
-                  color: Colors.white,
-                  size: 48,
+                const StudyBuddy(
+                  state: MascotState.celebrate,
+                  size: 96,
                 ),
                 const SizedBox(height: Spacing.lg),
                 Text(

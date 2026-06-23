@@ -11,6 +11,19 @@ import 'package:social_study_app/features/progress/data/progress_repository.dart
 import 'package:social_study_app/features/progress/presentation/progress_screen.dart';
 import 'package:social_study_app/shared/models/progress.dart';
 import 'package:social_study_app/shared/models/user.dart';
+import 'package:social_study_app/features/screen_time/providers/screen_time_providers.dart';
+import 'package:social_study_app/features/screen_time/models/screen_time_wallet.dart';
+
+class _FakeScreenTimeNotifier extends ScreenTimeNotifier {
+  @override
+  Future<ScreenTimeWallet> build() async {
+    return ScreenTimeWallet.initial();
+  }
+
+  @override
+  Future<void> refreshWallet() async {}
+}
+
 
 class _MockProgressRepo extends Mock implements ProgressRepository {}
 
@@ -90,12 +103,14 @@ Widget _wrap({
       overrides: [
         progressRepositoryProvider.overrideWithValue(repo),
         authRepositoryProvider.overrideWithValue(authRepo),
+        screenTimeNotifierProvider.overrideWith(() => _FakeScreenTimeNotifier()),
       ],
       child: MaterialApp(
         theme: AppTheme.light,
         home: const Scaffold(body: ProgressScreen(workspaceId: _wsId)),
       ),
     );
+
 
 /// The progress view is a scrolling list — give it a tall viewport so
 /// every section (overall mastery, every topic card, every activity row)
@@ -166,12 +181,14 @@ void main() {
 
   testWidgets('zero state shows the Level 1 card and a no-progress message',
       (tester) async {
+    await _tallViewport(tester);
     when(() => repo.fetch(
           workspaceId: any(named: 'workspaceId'),
           userId: any(named: 'userId'),
         )).thenAnswer((_) async => StudentProgress.empty);
 
     await tester.pumpWidget(_wrap(repo: repo, authRepo: authRepo));
+
     await tester.pumpAndSettle();
 
     expect(find.text('Level 1'), findsOneWidget);
@@ -235,10 +252,12 @@ void main() {
 
   testWidgets('an unauthenticated session falls back to the empty state',
       (tester) async {
+    await _tallViewport(tester);
     final unauthRepo = _MockAuthRepo();
     when(() => unauthRepo.getStoredUser()).thenAnswer((_) async => null);
 
     await tester.pumpWidget(_wrap(repo: repo, authRepo: unauthRepo));
+
     await tester.pumpAndSettle();
 
     expect(find.text('Level 1'), findsOneWidget);
@@ -260,6 +279,7 @@ void main() {
           progressRepositoryProvider
               .overrideWithValue(DemoProgressRepository()),
           authRepositoryProvider.overrideWithValue(_authedRepo()),
+          screenTimeNotifierProvider.overrideWith(() => _FakeScreenTimeNotifier()),
         ],
         child: const MaterialApp(
           home: Scaffold(body: ProgressScreen(workspaceId: 'wsp_demo_001')),
@@ -274,18 +294,21 @@ void main() {
   });
 
   testWidgets('the empty demo variant renders the zero state', (tester) async {
+    await _tallViewport(tester);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           progressRepositoryProvider
               .overrideWithValue(const EmptyDemoProgressRepository()),
           authRepositoryProvider.overrideWithValue(_authedRepo()),
+          screenTimeNotifierProvider.overrideWith(() => _FakeScreenTimeNotifier()),
         ],
         child: const MaterialApp(
           home: Scaffold(body: ProgressScreen(workspaceId: 'wsp_demo_001')),
         ),
       ),
     );
+
     await tester.pumpAndSettle();
 
     expect(find.text('No progress yet'), findsOneWidget);

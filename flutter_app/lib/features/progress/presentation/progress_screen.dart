@@ -8,6 +8,9 @@ import 'package:social_study_app/shared/models/progress.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
+import 'package:social_study_app/features/screen_time/widgets/screen_time_dashboard_card.dart';
+import 'package:social_study_app/features/screen_time/providers/screen_time_providers.dart';
+import 'package:social_study_app/features/home/presentation/student_home_screen.dart';
 
 /// Student progress view (Sprint 4.11).
 ///
@@ -19,22 +22,53 @@ import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 /// Handles all four states (Boil the Lake): loading, error (with
 /// retry), zero-state (a brand-new student — shows the Level 1 card
 /// plus a single combined empty placeholder), and the populated view.
-class ProgressScreen extends ConsumerWidget {
+class ProgressScreen extends ConsumerStatefulWidget {
   const ProgressScreen({super.key, required this.workspaceId});
 
   final String workspaceId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProgressScreen> createState() => _ProgressScreenState();
+}
+
+class _ProgressScreenState extends ConsumerState<ProgressScreen> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Refresh the screen time wallet on entry
+    Future.microtask(() {
+      if (mounted) {
+        ref.read(screenTimeNotifierProvider.notifier).refreshWallet();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(screenTimeNotifierProvider.notifier).refreshWallet();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final progressAsync =
-        ref.watch(studentProgressNotifierProvider(workspaceId));
+        ref.watch(studentProgressNotifierProvider(widget.workspaceId));
 
     return RefreshIndicator(
       onRefresh: () async {
         ref
-            .read(studentProgressNotifierProvider(workspaceId).notifier)
+            .read(studentProgressNotifierProvider(widget.workspaceId).notifier)
             .refresh();
-        await ref.read(studentProgressNotifierProvider(workspaceId).future);
+        await ref.read(screenTimeNotifierProvider.notifier).refreshWallet();
+        await ref.read(studentProgressNotifierProvider(widget.workspaceId).future);
       },
       child: progressAsync.when(
         data: (progress) => _ProgressBody(progress: progress),
@@ -49,7 +83,7 @@ class ProgressScreen extends ConsumerWidget {
                 message: error.toString(),
                 onRetry: () => ref
                     .read(
-                      studentProgressNotifierProvider(workspaceId).notifier,
+                      studentProgressNotifierProvider(widget.workspaceId).notifier,
                     )
                     .refresh(),
               ),
@@ -72,6 +106,14 @@ class _ProgressBody extends StatelessWidget {
       padding: const EdgeInsets.all(Spacing.lg),
       children: [
         _LevelCard(progress: progress),
+        const SizedBox(height: Spacing.lg),
+        Consumer(
+          builder: (context, ref, _) {
+            return ScreenTimeDashboardCard(
+              onStudyMore: () => ref.read(studentHomeTabProvider.notifier).state = 1,
+            );
+          },
+        ),
         const SizedBox(height: Spacing.lg),
         _OverallMasteryCard(mastery: progress.overallMastery),
         const SizedBox(height: Spacing.xl),

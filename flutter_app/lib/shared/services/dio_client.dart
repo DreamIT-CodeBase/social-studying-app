@@ -19,7 +19,7 @@ class DioClient {
     _dio.options = BaseOptions(
       baseUrl: baseUrl,
       connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 120), // GPT-4o can take 20-60s
       headers: const {
         'Content-Type': 'application/json',
       },

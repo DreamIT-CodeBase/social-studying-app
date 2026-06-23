@@ -24,6 +24,20 @@ class Settings(BaseSettings):
     # replaced by Azure connection string in prod
     cosmos_connection_string: str = "mongodb://localhost:27017"
 
+    db_name_smoke: str = "ten_smoke001_shared"
+    db_name_demo: str = "ten_demo_001_shared"
+    db_name_uuid: str = "93e3ce50-a29e-462b-8956-85674a34d167_shared"
+
+    def get_db_name(self, tenant_id: str) -> str:
+        """Map tenant ID to configured database name, or return tenant ID if not mapped."""
+        if tenant_id == "ten_smoke001":
+            return self.db_name_smoke
+        elif tenant_id == "ten_demo_001":
+            return self.db_name_demo
+        elif tenant_id == "93e3ce50-a29e-462b-8956-85674a34d167":
+            return self.db_name_uuid
+        return tenant_id
+
     # Azure AI Search
     search_endpoint: str = ""
     search_key: str = ""

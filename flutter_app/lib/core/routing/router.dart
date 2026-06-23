@@ -13,6 +13,7 @@ import 'package:social_study_app/features/admin/analytics/presentation/workspace
 import 'package:social_study_app/features/admin/students/presentation/student_progress_detail_screen.dart';
 import 'package:social_study_app/features/auth/presentation/login_screen.dart';
 import 'package:social_study_app/features/documents/presentation/document_polling_screen.dart';
+import 'package:social_study_app/features/documents/presentation/documents_list_screen.dart';
 import 'package:social_study_app/features/gamification/presentation/badges_screen.dart';
 import 'package:social_study_app/features/gamification/presentation/leaderboard_screen.dart';
 import 'package:social_study_app/features/revision/presentation/revision_screen.dart';
@@ -20,7 +21,10 @@ import 'package:social_study_app/features/taxonomy/presentation/taxonomy_editor_
 import 'package:social_study_app/features/home/presentation/admin_home_screen.dart';
 import 'package:social_study_app/features/home/presentation/student_home_screen.dart';
 import 'package:social_study_app/features/onboarding/presentation/onboarding_screen.dart';
+import 'package:social_study_app/features/onboarding/presentation/permission_onboarding_screen.dart';
 import 'package:social_study_app/features/taxonomy/presentation/taxonomy_viewer_screen.dart';
+import 'package:social_study_app/features/screen_time/screens/screen_time_settings_screen.dart';
+
 
 part 'router.g.dart';
 
@@ -168,9 +172,31 @@ GoRouter router(RouterRef ref) {
         builder: (_, __) => const StudentHomeScreen(),
       ),
       GoRoute(
+        path: AppRoutes.studentOnboarding,
+        builder: (_, __) => const PermissionOnboardingScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.studentScreenTimeSettings,
+        builder: (_, __) => const ScreenTimeSettingsScreen(),
+      ),
+
+      GoRoute(
         path: AppRoutes.studentRevisionSession,
         builder: (_, state) => RevisionScreen(
           workspaceId: state.pathParameters['workspaceId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.studentDocuments,
+        builder: (_, state) => DocumentsListScreen(
+          workspaceId: state.pathParameters['workspaceId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.studentDocumentPolling,
+        builder: (_, state) => DocumentPollingScreen(
+          workspaceId: state.pathParameters['workspaceId']!,
+          documentId: state.pathParameters['documentId']!,
         ),
       ),
       GoRoute(

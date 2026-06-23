@@ -132,7 +132,41 @@ class ProfileScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
+                  if (currentFlavor == AppFlavor.student) ...[
+                    const SizedBox(height: Spacing.md),
+                    Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: Spacing.lg,
+                          vertical: Spacing.xs,
+                        ),
+                        leading: Container(
+                          padding: const EdgeInsets.all(Spacing.md),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withOpacity(0.08),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.screen_lock_portrait_rounded,
+                            color: AppColors.primary,
+                            size: 22,
+                          ),
+                        ),
+                        title: const Text(
+                          'Screen Time Controls',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        subtitle: const Text('Manage app limits and sync preferences'),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => context.push('/student/screen-time-settings'),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: Spacing.xl),
+
                   // Sign Out Button
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/routing/routes.dart';
+import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/features/documents/data/demo_documents_repository.dart';
 import 'package:social_study_app/features/documents/presentation/documents_notifier.dart';
 import 'package:social_study_app/features/documents/presentation/upload_controller.dart';
@@ -37,7 +38,7 @@ class DocumentsListScreen extends ConsumerWidget {
       );
     });
 
-    return Stack(
+    final content = Stack(
       children: [
         RefreshIndicator(
           onRefresh: () async {
@@ -86,6 +87,20 @@ class DocumentsListScreen extends ConsumerWidget {
           ),
       ],
     );
+
+    if (currentFlavor == AppFlavor.student) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'My Study Materials',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+        body: content,
+      );
+    }
+
+    return content;
   }
 
   Future<void> _handleUpload(BuildContext context, WidgetRef ref) async {
@@ -131,8 +146,12 @@ class DocumentsListScreen extends ConsumerWidget {
   }
 }
 
-String _pollingRouteFor(String workspaceId, String documentId) =>
-    '${AppRoutes.adminDocuments}/$workspaceId/$documentId';
+String _pollingRouteFor(String workspaceId, String documentId) {
+  if (currentFlavor == AppFlavor.student) {
+    return '/student/documents/$workspaceId/$documentId';
+  }
+  return '${AppRoutes.adminDocuments}/$workspaceId/$documentId';
+}
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState({required this.onUpload});

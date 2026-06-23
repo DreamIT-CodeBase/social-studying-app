@@ -56,6 +56,19 @@ def _assert_workspace_access(user: User, workspace_id: str) -> None:
         raise ForbiddenError("You are not a member of this workspace")
 
 
+def _assert_admin(user: User, workspace_id: str) -> None:
+    """Raise ForbiddenError if the user is not an admin of this workspace."""
+    if user.role == UserRole.tenant_admin:
+        return
+    admin_memberships = {
+        m.workspace_id
+        for m in user.workspace_memberships
+        if m.role in (UserRole.workspace_admin, UserRole.tenant_admin)
+    }
+    if workspace_id not in admin_memberships:
+        raise ForbiddenError("You do not have admin access to this workspace")
+
+
 async def _load_workspace(tenant_id: str, workspace_id: str) -> Workspace:
     col = get_collection(tenant_id, WORKSPACES)
     raw = await col.find_one(
@@ -95,9 +108,7 @@ async def get_taxonomy(
 async def update_taxonomy(
     workspace_id: str,
     body: TaxonomyUpdate,
-    current_user: User = Depends(
-        require_role(UserRole.tenant_admin, UserRole.workspace_admin)
-    ),
+    current_user: User = Depends(get_current_user),
 ) -> TaxonomyResponse:
     """Admin-driven taxonomy edit: rename / merge / re-parent / drop topics.
 
@@ -110,7 +121,7 @@ async def update_taxonomy(
     ids, dangling parent refs, cycles, duplicate names). See
     :func:`app.services.taxonomy.validate_taxonomy_shape` for details.
     """
-    _assert_workspace_access(current_user, workspace_id)
+    _assert_admin(current_user, workspace_id)
 
     try:
         refreshed = await taxonomy_service.replace_taxonomy(
@@ -146,9 +157,7 @@ async def update_taxonomy(
 async def regenerate_taxonomy(
     workspace_id: str,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(
-        require_role(UserRole.tenant_admin, UserRole.workspace_admin)
-    ),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, str]:
     """Kick off an async rebuild of the workspace taxonomy from documents.
 
@@ -163,7 +172,7 @@ async def regenerate_taxonomy(
     worker is the right answer; for the demo and most workspaces of
     Sprint 2 scale, this is fine.
     """
-    _assert_workspace_access(current_user, workspace_id)
+    _assert_admin(current_user, workspace_id)
 
     # Confirm the workspace exists before scheduling work — saves us from
     # a background task that fails immediately on the lookup.

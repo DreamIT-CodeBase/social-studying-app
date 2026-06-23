@@ -3,14 +3,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
+import 'package:social_study_app/core/services/sound_service.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/gamification/presentation/widgets/celebration_overlay.dart';
+import 'package:social_study_app/features/home/providers/workspace_providers.dart';
 import 'package:social_study_app/features/questions/domain/question_session.dart';
 import 'package:social_study_app/features/questions/presentation/question_session_notifier.dart';
 import 'package:social_study_app/shared/models/question.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
+import 'package:social_study_app/features/mascot/models/mascot_state.dart';
+import 'package:social_study_app/features/mascot/widgets/study_buddy.dart';
 
 /// Question-answering interface (Sprint 4.7) and answer feedback
 /// (Sprint 4.8) — one screen, because [QuestionSession] is a single
@@ -40,11 +44,21 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        ref
-            .read(questionSessionNotifierProvider(widget.workspaceId).notifier)
-            .start();
+        _notifier.start();
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(QuestionScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.workspaceId != oldWidget.workspaceId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _notifier.start();
+        }
+      });
+    }
   }
 
   // Auto-starts on load. If the session is ever reset/ended, the idle view
@@ -56,15 +70,14 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
   /// guarded against those.
   void _restart() {
     ref.invalidate(questionSessionNotifierProvider(widget.workspaceId));
-    ref
-        .read(questionSessionNotifierProvider(widget.workspaceId).notifier)
-        .start();
+    _notifier.start();
   }
 
   @override
   Widget build(BuildContext context) {
     final session =
         ref.watch(questionSessionNotifierProvider(widget.workspaceId));
+    final isAdmin = ref.watch(isActiveWorkspaceAdminProvider);
 
     return session.when(
       idle: () => EmptyStateView(
@@ -104,8 +117,11 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
             : Icons.hourglass_empty_rounded,
         title: isNoTopics ? 'No questions yet' : 'Generator is busy',
         subtitle: isNoTopics
-            ? 'Your teacher needs to upload study material before '
-                'questions can be generated.'
+            ? (isAdmin
+                ? 'Upload study material in the Home tab before '
+                    'questions can be generated.'
+                : 'Your teacher needs to upload study material before '
+                    'questions can be generated.')
             : message,
         // "No topics" can't be fixed by retrying — only the busy case
         // gets a retry button.
@@ -152,6 +168,13 @@ class _QuestionView extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.all(Spacing.lg),
             children: [
+              const Center(
+                child: StudyBuddy(
+                  state: MascotState.idle,
+                  size: 64,
+                ),
+              ),
+              const SizedBox(height: Spacing.md),
               _QuestionHeader(question: question),
               const SizedBox(height: Spacing.lg),
               Text(
@@ -585,16 +608,33 @@ class _FeedbackView extends ConsumerStatefulWidget {
 }
 
 class _FeedbackViewState extends ConsumerState<_FeedbackView> {
+  late MascotState _mascotState;
+
   @override
   void initState() {
     super.initState();
-    // Haptic confirmation the moment feedback lands — heavier for a
-    // correct answer, a light tick for a miss.
+    
     if (widget.feedback.isCorrect) {
+      _mascotState = MascotState.happy;
       HapticFeedback.heavyImpact();
+      // Play success chime on correct answer.
+      SoundService.instance.playCorrectAnswer();
     } else {
+      _mascotState = MascotState.sad;
       HapticFeedback.lightImpact();
+      // Play wrong-answer sound on incorrect answer.
+      SoundService.instance.playWrongAnswer();
     }
+
+    // Reset mascot to idle after 2.5 seconds.
+    Future.delayed(const Duration(milliseconds: 2500), () {
+      if (mounted) {
+        setState(() {
+          _mascotState = MascotState.idle;
+        });
+      }
+    });
+
     // Sprint 5.5 celebrations. Run after the feedback view renders so
     // the overlay sits above the result banner (the user briefly sees
     // their score before the celebration kicks in). Each is awaited
@@ -632,6 +672,13 @@ class _FeedbackViewState extends ConsumerState<_FeedbackView> {
           child: ListView(
             padding: const EdgeInsets.all(Spacing.lg),
             children: [
+              Center(
+                child: StudyBuddy(
+                  state: _mascotState,
+                  size: 96,
+                ),
+              ),
+              const SizedBox(height: Spacing.md),
               _ResultBanner(correct: correct, accent: accent),
               const SizedBox(height: Spacing.lg),
               _AnswerComparison(
@@ -950,14 +997,22 @@ class _RewardRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final xp = feedback.xpEarned;
+    final isNegative = xp < 0;
+    final xpColor = isNegative ? AppColors.error : AppColors.secondary;
+    final xpIcon = isNegative
+        ? Icons.bolt_rounded  // keep bolt but colour it red
+        : Icons.bolt_rounded;
+    final xpLabel = isNegative ? '$xp XP' : '+$xp XP';
+
     return Row(
       children: [
         Expanded(
           child: _RewardTile(
-            icon: Icons.bolt_rounded,
-            color: AppColors.secondary,
-            value: '+${feedback.xpEarned}',
-            label: 'XP earned',
+            icon: xpIcon,
+            color: xpColor,
+            value: xpLabel,
+            label: isNegative ? 'XP penalty' : 'XP earned',
           ),
         ),
         const SizedBox(width: Spacing.md),

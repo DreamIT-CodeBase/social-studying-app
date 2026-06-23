@@ -67,6 +67,9 @@ class Workspace(CosmosDocument):
     tenant_id: str
     name: str
     description: str = ""
+    type: str = "personal"  # "personal" or "collaborative"
+    owner_id: str | None = None
+    join_code: str | None = None
     admin_ids: list[str] = Field(default_factory=list)   # user_ids with workspace_admin role
     student_ids: list[str] = Field(default_factory=list)
     settings: WorkspaceSettings = Field(default_factory=WorkspaceSettings)
@@ -100,6 +103,9 @@ class WorkspaceResponse(CosmosDocument.__base__):
     tenant_id: str
     name: str
     description: str
+    type: str
+    owner_id: str | None = None
+    join_code: str | None = None
     admin_count: int
     student_count: int
     document_count: int
@@ -114,6 +120,9 @@ class WorkspaceResponse(CosmosDocument.__base__):
             tenant_id=doc.tenant_id,
             name=doc.name,
             description=doc.description,
+            type=doc.type,
+            owner_id=doc.owner_id,
+            join_code=doc.join_code,
             admin_count=len(doc.admin_ids),
             student_count=len(doc.student_ids),
             document_count=doc.document_count,

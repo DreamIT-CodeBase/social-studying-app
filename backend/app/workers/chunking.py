@@ -185,7 +185,7 @@ async def _handle(msg: ReceivedChunkingMessage) -> None:
             payload, f"Extracted text blob not found: {payload.extracted_text_blob_path}"
         )
         await msg.dead_letter("ExtractedTextNotFound", str(exc))
-        return
+        return False
 
     # 2. Split into chunks. ValueError from the chunker means bad input
     #    (negative-or-zero target via misconfig) — treat as permanent so
@@ -196,7 +196,7 @@ async def _handle(msg: ReceivedChunkingMessage) -> None:
     except ValueError as exc:
         await _mark_failed(payload, f"Chunker rejected input: {exc}")
         await msg.dead_letter("ChunkerInputInvalid", str(exc))
-        return
+        return False
 
     # 3. Atomic replace in Cosmos. Sets chunks for this document_id.
     inserted = await chunk_storage.replace_chunks(
@@ -259,8 +259,9 @@ async def run_forever(*, max_wait_seconds: int = 30) -> None:
     async with consume_chunking_messages(max_wait_seconds=max_wait_seconds) as messages:
         async for msg in messages:
             try:
-                await _handle(msg)
-                await msg.complete()
+                res = await _handle(msg)
+                if res is not False:
+                    await msg.complete()
             except asyncio.CancelledError:
                 logger.warning(
                     "Cancelled while handling doc=%s — abandoning",

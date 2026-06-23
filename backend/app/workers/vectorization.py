@@ -151,7 +151,7 @@ async def _handle(msg: ReceivedVectorizationMessage) -> None:
         # nothing to embed, no recovery possible.
         await _mark_failed(payload, f"Document not found: {exc}")
         await msg.dead_letter("DocumentNotFound", str(exc))
-        return
+        return False
     except ServiceUnavailableError:
         # Embeddings or Search transient — re-raise so the run loop abandons
         # and Service Bus redelivers.
@@ -194,8 +194,9 @@ async def run_forever(*, max_wait_seconds: int = 30) -> None:
     ) as messages:
         async for msg in messages:
             try:
-                await _handle(msg)
-                await msg.complete()
+                res = await _handle(msg)
+                if res is not False:
+                    await msg.complete()
             except asyncio.CancelledError:
                 logger.warning(
                     "Cancelled while handling doc=%s — abandoning",

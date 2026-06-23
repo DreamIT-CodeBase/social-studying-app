@@ -9,6 +9,11 @@ abstract final class AppRoutes {
   static const String studentHome = '/student/home';
   static const String studentRevision = '/student/revision';
   static const String profile = '/profile';
+  static const String studentScreenTimeSettings = '/student/screen-time-settings';
+  static const String studentDocuments = '/student/documents/:workspaceId';
+  static const String studentDocumentPolling = '/student/documents/:workspaceId/:documentId';
+  static const String studentOnboarding = '/student/onboarding';
+
 
   /// Sprint 2.10 polling screen route. The list screen pushes onto
   /// this with `context.push('${adminDocuments}/$workspaceId/$documentId')`.

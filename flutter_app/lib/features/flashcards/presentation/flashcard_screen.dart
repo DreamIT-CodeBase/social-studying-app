@@ -5,10 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
+import 'package:social_study_app/core/services/sound_service.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/flashcards/domain/flashcard_session.dart';
 import 'package:social_study_app/features/flashcards/presentation/flashcard_session_notifier.dart';
 import 'package:social_study_app/features/gamification/presentation/widgets/celebration_overlay.dart';
+import 'package:social_study_app/features/home/providers/workspace_providers.dart';
 import 'package:social_study_app/shared/models/flashcard.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
@@ -44,6 +46,20 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
     // even though the IndexedStack keeps the screen alive across tab
     // switches.
     WidgetsBinding.instance.addPostFrameCallback((_) => _notifier.start());
+  }
+
+  @override
+  void didUpdateWidget(FlashcardScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.workspaceId != oldWidget.workspaceId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ref
+              .read(flashcardSessionNotifierProvider(widget.workspaceId).notifier)
+              .start();
+        }
+      });
+    }
   }
 
   /// Run the level-up burst and any badge unlocks in sequence. Each
@@ -104,6 +120,7 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
 
     final session =
         ref.watch(flashcardSessionNotifierProvider(widget.workspaceId));
+    final isAdmin = ref.watch(isActiveWorkspaceAdminProvider);
 
     return session.when(
       idle: () => const LoadingIndicator(),
@@ -136,9 +153,13 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
             : Icons.hourglass_empty_rounded,
         title: isNoTopics ? 'No flashcards yet' : 'Generator is busy',
         subtitle: isNoTopics
-            ? 'Your teacher needs to upload study material before '
-                'flashcards can be generated.'
+            ? (isAdmin
+                ? 'Upload study material in the Home tab before '
+                    'flashcards can be generated.'
+                : 'Your teacher needs to upload study material before '
+                    'flashcards can be generated.')
             : message,
+        useMascot: true,
         action: isNoTopics
             ? null
             : FilledButton.icon(
@@ -190,6 +211,7 @@ class _CardView extends ConsumerWidget {
               onTap: phase == _Phase.front
                   ? () {
                       HapticFeedback.selectionClick();
+                      SoundService.instance.playCardFlip();
                       notifier.flip();
                     }
                   : null,

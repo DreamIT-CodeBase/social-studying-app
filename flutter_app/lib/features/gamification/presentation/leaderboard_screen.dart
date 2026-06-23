@@ -8,6 +8,9 @@ import 'package:social_study_app/shared/models/gamification.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:social_study_app/features/mascot/models/mascot_state.dart';
+import 'package:social_study_app/features/mascot/widgets/study_buddy.dart';
 
 /// Workspace leaderboard (Sprint 5.4).
 ///
@@ -117,24 +120,56 @@ class _LeaderboardBody extends StatelessWidget {
         ],
       );
     }
-    return ListView(
+    final entries = response.entries;
+    return ListView.builder(
       padding: const EdgeInsets.all(Spacing.lg),
-      children: [
-        if (response.currentUserRank != null) ...[
-          _YourRankBanner(
-            rank: response.currentUserRank!,
-            total: response.entries.length,
-          ),
-          const SizedBox(height: Spacing.lg),
-        ],
-        for (final entry in response.entries) ...[
-          _LeaderboardRow(
-            entry: entry,
-            isCurrentUser: entry.studentId == currentUserId,
-          ),
-          const SizedBox(height: Spacing.sm),
-        ],
-      ],
+      itemCount: entries.length + (response.currentUserRank != null ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (response.currentUserRank != null) {
+          if (index == 0) {
+            return Column(
+              children: [
+                _YourRankBanner(
+                  rank: response.currentUserRank!,
+                  total: entries.length,
+                )
+                    .animate()
+                    .fadeIn(duration: 400.ms)
+                    .slideY(begin: -0.1, end: 0, duration: 400.ms, curve: Curves.easeOutBack),
+                const SizedBox(height: Spacing.lg),
+              ],
+            );
+          }
+          final entryIndex = index - 1;
+          final entry = entries[entryIndex];
+          return Column(
+            children: [
+              _LeaderboardRow(
+                entry: entry,
+                isCurrentUser: entry.studentId == currentUserId,
+              )
+                  .animate()
+                  .fadeIn(duration: 400.ms, delay: (entryIndex * 40).ms)
+                  .slideY(begin: 0.1, end: 0, duration: 400.ms, curve: Curves.easeOutQuad, delay: (entryIndex * 40).ms),
+              const SizedBox(height: Spacing.sm),
+            ],
+          );
+        } else {
+          final entry = entries[index];
+          return Column(
+            children: [
+              _LeaderboardRow(
+                entry: entry,
+                isCurrentUser: entry.studentId == currentUserId,
+              )
+                  .animate()
+                  .fadeIn(duration: 400.ms, delay: (index * 40).ms)
+                  .slideY(begin: 0.1, end: 0, duration: 400.ms, curve: Curves.easeOutQuad, delay: (index * 40).ms),
+              const SizedBox(height: Spacing.sm),
+            ],
+          );
+        }
+      },
     );
   }
 }
@@ -196,6 +231,11 @@ class _YourRankBanner extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+          const SizedBox(width: Spacing.md),
+          const StudyBuddy(
+            state: MascotState.idle,
+            size: 48,
           ),
         ],
       ),

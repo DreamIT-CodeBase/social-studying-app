@@ -224,6 +224,24 @@ async def get_current_user(
     if credentials is None:
         raise UnauthorizedError()
 
+    # Dev-auth bypass check
+    if (
+        settings.environment != "production"
+        and settings.dev_auth_token
+        and credentials.credentials == settings.dev_auth_token
+    ):
+        tenant_id = settings.dev_auth_tenant_id
+        user_id = settings.dev_auth_user_id
+        col = get_collection(tenant_id, USERS)
+        doc = await col.find_one({"_id": user_id, "deleted_at": None})
+        if doc is None:
+            raise UnauthorizedError(
+                f"Dev auth user {user_id} not found in database for tenant {tenant_id}."
+            )
+        user = User.model_validate(doc)
+        request.state.user = user
+        return user
+
     claims = await _validate_token(credentials.credentials)
     b2c_object_id: str = claims.get("sub", "")
     # Default to the app's B2C Client ID if the user didn't provide a tenant ID during sign up

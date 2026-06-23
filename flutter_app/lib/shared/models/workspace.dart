@@ -66,6 +66,9 @@ class Workspace with _$Workspace {
     /// False once the workspace has been soft-deleted.
     @JsonKey(name: 'is_active') @Default(true) bool isActive,
     @JsonKey(name: 'created_at') required DateTime createdAt,
+    @Default('personal') String type,
+    @JsonKey(name: 'owner_id') String? ownerId,
+    @JsonKey(name: 'join_code') String? joinCode,
   }) = _Workspace;
 
   factory Workspace.fromJson(Map<String, dynamic> json) =>

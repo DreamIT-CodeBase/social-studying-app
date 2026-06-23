@@ -116,14 +116,16 @@ async def _upsert(client: AsyncIOMotorClient, db: str, collection: str, doc_id: 
 
 
 async def _seed(connection_string: str) -> None:
+    from app.core.config import settings
     tenant, workspace, user = _build_documents()
     client: AsyncIOMotorClient = AsyncIOMotorClient(connection_string)
+    db_name = settings.get_db_name(_TENANT_ID)
     try:
         await client.admin.command("ping")
         plan = [
             (_PLATFORM_DB, _TENANTS, _TENANT_ID, tenant),
-            (_TENANT_ID, _WORKSPACES, _WORKSPACE_ID, workspace),
-            (_TENANT_ID, _USERS, _USER_ID, user),
+            (db_name, _WORKSPACES, _WORKSPACE_ID, workspace),
+            (db_name, _USERS, _USER_ID, user),
         ]
         for db, collection, doc_id, model in plan:
             inserted = await _upsert(

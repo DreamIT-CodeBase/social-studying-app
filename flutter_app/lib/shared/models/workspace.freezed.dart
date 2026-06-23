@@ -348,6 +348,11 @@ mixin _$Workspace {
   bool get isActive => throw _privateConstructorUsedError;
   @JsonKey(name: 'created_at')
   DateTime get createdAt => throw _privateConstructorUsedError;
+  String get type => throw _privateConstructorUsedError;
+  @JsonKey(name: 'owner_id')
+  String? get ownerId => throw _privateConstructorUsedError;
+  @JsonKey(name: 'join_code')
+  String? get joinCode => throw _privateConstructorUsedError;
 
   /// Serializes this Workspace to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -374,7 +379,10 @@ abstract class $WorkspaceCopyWith<$Res> {
       @JsonKey(name: 'document_count') int documentCount,
       WorkspaceSettings settings,
       @JsonKey(name: 'is_active') bool isActive,
-      @JsonKey(name: 'created_at') DateTime createdAt});
+      @JsonKey(name: 'created_at') DateTime createdAt,
+      String type,
+      @JsonKey(name: 'owner_id') String? ownerId,
+      @JsonKey(name: 'join_code') String? joinCode});
 
   $WorkspaceSettingsCopyWith<$Res> get settings;
 }
@@ -404,6 +412,9 @@ class _$WorkspaceCopyWithImpl<$Res, $Val extends Workspace>
     Object? settings = null,
     Object? isActive = null,
     Object? createdAt = null,
+    Object? type = null,
+    Object? ownerId = freezed,
+    Object? joinCode = freezed,
   }) {
     return _then(_value.copyWith(
       id: null == id
@@ -446,6 +457,18 @@ class _$WorkspaceCopyWithImpl<$Res, $Val extends Workspace>
           ? _value.createdAt
           : createdAt // ignore: cast_nullable_to_non_nullable
               as DateTime,
+      type: null == type
+          ? _value.type
+          : type // ignore: cast_nullable_to_non_nullable
+              as String,
+      ownerId: freezed == ownerId
+          ? _value.ownerId
+          : ownerId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      joinCode: freezed == joinCode
+          ? _value.joinCode
+          : joinCode // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 
@@ -478,7 +501,10 @@ abstract class _$$WorkspaceImplCopyWith<$Res>
       @JsonKey(name: 'document_count') int documentCount,
       WorkspaceSettings settings,
       @JsonKey(name: 'is_active') bool isActive,
-      @JsonKey(name: 'created_at') DateTime createdAt});
+      @JsonKey(name: 'created_at') DateTime createdAt,
+      String type,
+      @JsonKey(name: 'owner_id') String? ownerId,
+      @JsonKey(name: 'join_code') String? joinCode});
 
   @override
   $WorkspaceSettingsCopyWith<$Res> get settings;
@@ -507,6 +533,9 @@ class __$$WorkspaceImplCopyWithImpl<$Res>
     Object? settings = null,
     Object? isActive = null,
     Object? createdAt = null,
+    Object? type = null,
+    Object? ownerId = freezed,
+    Object? joinCode = freezed,
   }) {
     return _then(_$WorkspaceImpl(
       id: null == id
@@ -549,6 +578,18 @@ class __$$WorkspaceImplCopyWithImpl<$Res>
           ? _value.createdAt
           : createdAt // ignore: cast_nullable_to_non_nullable
               as DateTime,
+      type: null == type
+          ? _value.type
+          : type // ignore: cast_nullable_to_non_nullable
+              as String,
+      ownerId: freezed == ownerId
+          ? _value.ownerId
+          : ownerId // ignore: cast_nullable_to_non_nullable
+              as String?,
+      joinCode: freezed == joinCode
+          ? _value.joinCode
+          : joinCode // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -566,7 +607,10 @@ class _$WorkspaceImpl implements _Workspace {
       @JsonKey(name: 'document_count') this.documentCount = 0,
       required this.settings,
       @JsonKey(name: 'is_active') this.isActive = true,
-      @JsonKey(name: 'created_at') required this.createdAt});
+      @JsonKey(name: 'created_at') required this.createdAt,
+      this.type = 'personal',
+      @JsonKey(name: 'owner_id') this.ownerId,
+      @JsonKey(name: 'join_code') this.joinCode});
 
   factory _$WorkspaceImpl.fromJson(Map<String, dynamic> json) =>
       _$$WorkspaceImplFromJson(json);
@@ -606,10 +650,19 @@ class _$WorkspaceImpl implements _Workspace {
   @override
   @JsonKey(name: 'created_at')
   final DateTime createdAt;
+  @override
+  @JsonKey()
+  final String type;
+  @override
+  @JsonKey(name: 'owner_id')
+  final String? ownerId;
+  @override
+  @JsonKey(name: 'join_code')
+  final String? joinCode;
 
   @override
   String toString() {
-    return 'Workspace(id: $id, tenantId: $tenantId, name: $name, description: $description, adminCount: $adminCount, studentCount: $studentCount, documentCount: $documentCount, settings: $settings, isActive: $isActive, createdAt: $createdAt)';
+    return 'Workspace(id: $id, tenantId: $tenantId, name: $name, description: $description, adminCount: $adminCount, studentCount: $studentCount, documentCount: $documentCount, settings: $settings, isActive: $isActive, createdAt: $createdAt, type: $type, ownerId: $ownerId, joinCode: $joinCode)';
   }
 
   @override
@@ -634,13 +687,30 @@ class _$WorkspaceImpl implements _Workspace {
             (identical(other.isActive, isActive) ||
                 other.isActive == isActive) &&
             (identical(other.createdAt, createdAt) ||
-                other.createdAt == createdAt));
+                other.createdAt == createdAt) &&
+            (identical(other.type, type) || other.type == type) &&
+            (identical(other.ownerId, ownerId) || other.ownerId == ownerId) &&
+            (identical(other.joinCode, joinCode) ||
+                other.joinCode == joinCode));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(runtimeType, id, tenantId, name, description,
-      adminCount, studentCount, documentCount, settings, isActive, createdAt);
+  int get hashCode => Object.hash(
+      runtimeType,
+      id,
+      tenantId,
+      name,
+      description,
+      adminCount,
+      studentCount,
+      documentCount,
+      settings,
+      isActive,
+      createdAt,
+      type,
+      ownerId,
+      joinCode);
 
   /// Create a copy of Workspace
   /// with the given fields replaced by the non-null parameter values.
@@ -660,17 +730,19 @@ class _$WorkspaceImpl implements _Workspace {
 
 abstract class _Workspace implements Workspace {
   const factory _Workspace(
-          {required final String id,
-          @JsonKey(name: 'tenant_id') required final String tenantId,
-          required final String name,
-          final String description,
-          @JsonKey(name: 'admin_count') final int adminCount,
-          @JsonKey(name: 'student_count') final int studentCount,
-          @JsonKey(name: 'document_count') final int documentCount,
-          required final WorkspaceSettings settings,
-          @JsonKey(name: 'is_active') final bool isActive,
-          @JsonKey(name: 'created_at') required final DateTime createdAt}) =
-      _$WorkspaceImpl;
+      {required final String id,
+      @JsonKey(name: 'tenant_id') required final String tenantId,
+      required final String name,
+      final String description,
+      @JsonKey(name: 'admin_count') final int adminCount,
+      @JsonKey(name: 'student_count') final int studentCount,
+      @JsonKey(name: 'document_count') final int documentCount,
+      required final WorkspaceSettings settings,
+      @JsonKey(name: 'is_active') final bool isActive,
+      @JsonKey(name: 'created_at') required final DateTime createdAt,
+      final String type,
+      @JsonKey(name: 'owner_id') final String? ownerId,
+      @JsonKey(name: 'join_code') final String? joinCode}) = _$WorkspaceImpl;
 
   factory _Workspace.fromJson(Map<String, dynamic> json) =
       _$WorkspaceImpl.fromJson;
@@ -709,6 +781,14 @@ abstract class _Workspace implements Workspace {
   @override
   @JsonKey(name: 'created_at')
   DateTime get createdAt;
+  @override
+  String get type;
+  @override
+  @JsonKey(name: 'owner_id')
+  String? get ownerId;
+  @override
+  @JsonKey(name: 'join_code')
+  String? get joinCode;
 
   /// Create a copy of Workspace
   /// with the given fields replaced by the non-null parameter values.

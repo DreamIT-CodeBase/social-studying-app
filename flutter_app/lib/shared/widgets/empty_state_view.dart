@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
+import 'package:social_study_app/features/mascot/models/mascot_state.dart';
+import 'package:social_study_app/features/mascot/widgets/study_buddy.dart';
 
 class EmptyStateView extends StatelessWidget {
   const EmptyStateView({
@@ -9,30 +11,35 @@ class EmptyStateView extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.action,
+    this.useMascot = false,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final Widget? action;
+  final bool useMascot;
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(Spacing.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: context.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(20),
+            if (useMascot)
+              const StudyBuddy(state: MascotState.idle, size: 100)
+            else
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: context.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Icon(icon, size: 40, color: context.colorScheme.primary),
               ),
-              child: Icon(icon, size: 40, color: context.colorScheme.primary),
-            ),
             const SizedBox(height: Spacing.xl),
             Text(
               title,

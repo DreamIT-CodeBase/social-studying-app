@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -10,12 +13,14 @@ from pydantic import BaseModel
 
 from app.api import (
     analytics,
+    device_management,
     documents,
     flashcards,
     gamification,
     moderation,
     notifications,
     questions,
+    screen_time,
     taxonomy,
     tenants,
     users,
@@ -26,11 +31,70 @@ from app.core.database import ping as db_ping
 from app.core.redis_client import close_redis, get_redis
 from app.core.versioning import API_VERSIONS, VersionResponseMiddleware
 
+_startup_logger = logging.getLogger("app.main")
+
+# ── Inline worker loop ────────────────────────────────────────────────────────
+# In local / non-production mode the pipeline workers run as asyncio tasks
+# inside the same uvicorn process so you don't need a separate terminal.
+# In production the workers are separate Container Apps, so this is a no-op.
+
+async def _run_worker_loop(name: str) -> None:
+    """Import and run a worker's run_forever(), restarting when it exits."""
+    import importlib
+    while True:
+        try:
+            mod = importlib.import_module(f"app.workers.{name}")
+            await mod.run_forever()
+        except asyncio.CancelledError:
+            _startup_logger.info("Worker %s cancelled — shutting down.", name)
+            return
+        except Exception:
+            _startup_logger.exception("Worker %s crashed — restarting in 2 s.", name)
+        await asyncio.sleep(2)
+
+
+_INLINE_WORKERS = [
+    "document_ingestion",
+    "topic_extraction",
+    "chunking",
+    "vectorization",
+]
+
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     await get_redis()  # warm up connection pool on startup
+    startup_logger = logging.getLogger("app.main")
+    startup_logger.info("MongoDB databases configured on startup:")
+    startup_logger.info(f"  - Tenant 'ten_smoke001' maps to database: {settings.db_name_smoke}")
+    startup_logger.info(f"  - Tenant 'ten_demo_001' maps to database: {settings.db_name_demo}")
+    startup_logger.info(f"  - Tenant '93e3ce50-a29e-462b-8956-85674a34d167' maps to database: {settings.db_name_uuid}")
+
+    # Start inline workers (non-production only)
+    worker_tasks: list[asyncio.Task] = []
+    if settings.environment != "production" and settings.service_bus_connection:
+        for worker_name in _INLINE_WORKERS:
+            task = asyncio.create_task(
+                _run_worker_loop(worker_name), name=f"worker-{worker_name}"
+            )
+            worker_tasks.append(task)
+        startup_logger.info(
+            "Inline workers started: %s", ", ".join(_INLINE_WORKERS)
+        )
+    else:
+        startup_logger.info(
+            "Inline workers skipped (production mode or SERVICE_BUS_CONNECTION not set)."
+        )
+
     yield
+
+    # Shutdown: cancel all worker tasks and wait for clean exit
+    for task in worker_tasks:
+        task.cancel()
+    if worker_tasks:
+        await asyncio.gather(*worker_tasks, return_exceptions=True)
+        startup_logger.info("All inline workers stopped.")
+
     await close_redis()
 
 
@@ -261,6 +325,8 @@ app.include_router(analytics.workspace_router, prefix="/api/v1")
 app.include_router(analytics.tenant_router, prefix="/api/v1")
 app.include_router(notifications.users_router, prefix="/api/v1")
 app.include_router(notifications.admin_router, prefix="/api/v1")
+app.include_router(screen_time.router, prefix="/api/v1")
+app.include_router(device_management.router, prefix="/api/v1")
 
 
 @app.get("/health")

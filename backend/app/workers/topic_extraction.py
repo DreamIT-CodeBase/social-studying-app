@@ -174,7 +174,7 @@ async def _handle(msg: ReceivedTopicMessage) -> None:
             payload, f"Extracted text blob not found: {payload.extracted_text_blob_path}"
         )
         await msg.dead_letter("ExtractedTextBlobNotFound", str(exc))
-        return
+        return False
 
     text = content_bytes.decode("utf-8", errors="replace")
 
@@ -185,7 +185,7 @@ async def _handle(msg: ReceivedTopicMessage) -> None:
     except ValueError as exc:
         await _mark_failed(payload, f"Topic extraction prompt failure: {exc}")
         await msg.dead_letter("PromptFailure", str(exc))
-        return
+        return False
     except ServiceUnavailableError:
         # Transient — re-raise so the run loop abandons + retries.
         raise
@@ -312,8 +312,9 @@ async def run_forever(*, max_wait_seconds: int = 30) -> None:
     async with consume_topic_messages(max_wait_seconds=max_wait_seconds) as messages:
         async for msg in messages:
             try:
-                await _handle(msg)
-                await msg.complete()
+                res = await _handle(msg)
+                if res is not False:
+                    await msg.complete()
             except asyncio.CancelledError:
                 logger.warning(
                     "Cancelled while handling doc=%s — abandoning",

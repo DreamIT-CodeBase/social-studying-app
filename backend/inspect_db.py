@@ -9,7 +9,8 @@ async def inspect():
     from app.core.config import settings
 
     client = AsyncIOMotorClient(settings.cosmos_connection_string)
-    db = client["93e3ce50-a29e-462b-8956-85674a34d167"]
+    db_name = settings.get_db_name("93e3ce50-a29e-462b-8956-85674a34d167")
+    db = client[db_name]
     
     print("ALL USERS:")
     async for user in db["users"].find():
