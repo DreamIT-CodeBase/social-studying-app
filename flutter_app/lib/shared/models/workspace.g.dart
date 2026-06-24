@@ -42,6 +42,9 @@ _$WorkspaceImpl _$$WorkspaceImplFromJson(Map<String, dynamic> json) =>
           WorkspaceSettings.fromJson(json['settings'] as Map<String, dynamic>),
       isActive: json['is_active'] as bool? ?? true,
       createdAt: DateTime.parse(json['created_at'] as String),
+      type: json['type'] as String? ?? 'personal',
+      ownerId: json['owner_id'] as String?,
+      joinCode: json['join_code'] as String?,
     );
 
 Map<String, dynamic> _$$WorkspaceImplToJson(_$WorkspaceImpl instance) =>
@@ -56,4 +59,7 @@ Map<String, dynamic> _$$WorkspaceImplToJson(_$WorkspaceImpl instance) =>
       'settings': instance.settings,
       'is_active': instance.isActive,
       'created_at': instance.createdAt.toIso8601String(),
+      'type': instance.type,
+      'owner_id': instance.ownerId,
+      'join_code': instance.joinCode,
     };

@@ -160,7 +160,7 @@ async def _handle(msg: ReceivedExtractionMessage) -> None:
         # Blob is gone for good — no point retrying. DLQ + mark failed.
         await _mark_failed(payload, f"Source blob not found: {payload.blob_path}")
         await msg.dead_letter("BlobNotFound", str(exc))
-        return
+        return False
 
     # 2. Send to Document Intelligence (prebuilt-read).
     try:
@@ -171,7 +171,7 @@ async def _handle(msg: ReceivedExtractionMessage) -> None:
         if _is_permanent(exc):
             await _mark_failed(payload, f"Document Intelligence rejected file: {exc.message}")
             await msg.dead_letter("UnsupportedContent", str(exc))
-            return
+            return False
         # Transient — let Service Bus redeliver.
         raise
 
@@ -347,8 +347,9 @@ async def run_forever(*, max_wait_seconds: int = 30) -> None:
     async with consume_extraction_messages(max_wait_seconds=max_wait_seconds) as messages:
         async for msg in messages:
             try:
-                await _handle(msg)
-                await msg.complete()
+                res = await _handle(msg)
+                if res is not False:
+                    await msg.complete()
             except asyncio.CancelledError:
                 logger.warning("Cancelled while handling doc=%s — abandoning", msg.payload.document_id)
                 await msg.abandon()

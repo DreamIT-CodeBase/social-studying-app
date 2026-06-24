@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/routing/routes.dart';
+import 'package:social_study_app/shared/models/user.dart';
+import 'package:social_study_app/features/profile/presentation/profile_screen.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/admin/moderation/presentation/moderation_screen.dart';
 import 'package:social_study_app/features/admin/workspaces/presentation/workspace_settings_screen.dart';
@@ -11,6 +13,7 @@ import 'package:social_study_app/features/admin/analytics/presentation/workspace
 import 'package:social_study_app/features/admin/students/presentation/student_progress_detail_screen.dart';
 import 'package:social_study_app/features/auth/presentation/login_screen.dart';
 import 'package:social_study_app/features/documents/presentation/document_polling_screen.dart';
+import 'package:social_study_app/features/documents/presentation/documents_list_screen.dart';
 import 'package:social_study_app/features/gamification/presentation/badges_screen.dart';
 import 'package:social_study_app/features/gamification/presentation/leaderboard_screen.dart';
 import 'package:social_study_app/features/revision/presentation/revision_screen.dart';
@@ -18,9 +21,21 @@ import 'package:social_study_app/features/taxonomy/presentation/taxonomy_editor_
 import 'package:social_study_app/features/home/presentation/admin_home_screen.dart';
 import 'package:social_study_app/features/home/presentation/student_home_screen.dart';
 import 'package:social_study_app/features/onboarding/presentation/onboarding_screen.dart';
+import 'package:social_study_app/features/onboarding/presentation/permission_onboarding_screen.dart';
 import 'package:social_study_app/features/taxonomy/presentation/taxonomy_viewer_screen.dart';
+import 'package:social_study_app/features/screen_time/screens/screen_time_settings_screen.dart';
+
 
 part 'router.g.dart';
+
+@riverpod
+class PendingInviteCode extends _$PendingInviteCode {
+  @override
+  String? build() => null;
+
+  void set(String code) => state = code;
+  void clear() => state = null;
+}
 
 @Riverpod(keepAlive: true)
 class RouterNotifier extends _$RouterNotifier implements Listenable {
@@ -38,6 +53,11 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
   void removeListener(VoidCallback listener) => _listener = null;
 
   String? redirect(BuildContext context, GoRouterState state) {
+    final code = state.uri.queryParameters['code'];
+    if (code != null && code.isNotEmpty) {
+      ref.read(pendingInviteCodeProvider.notifier).set(code);
+    }
+
     final authAsync = ref.read(authNotifierProvider);
     return authAsync.when(
       data: (authState) {
@@ -53,9 +73,12 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
             // firing the moment ``workspaceMemberships`` is non-empty.
             // The student flavor doesn't get this — students join a
             // workspace via invite code, not creation.
+            final adminWorkspaces = user.workspaceMemberships.where((m) =>
+                m.role == UserRole.tenantAdmin ||
+                m.role == UserRole.workspaceAdmin ||
+                user.role == UserRole.tenantAdmin);
             final needsOnboarding =
-                currentFlavor == AppFlavor.admin &&
-                    user.workspaceMemberships.isEmpty;
+                currentFlavor == AppFlavor.admin && adminWorkspaces.isEmpty;
 
             if (needsOnboarding) {
               return isOnOnboarding ? null : AppRoutes.adminOnboarding;
@@ -88,8 +111,18 @@ GoRouter router(RouterRef ref) {
     redirect: notifier.redirect,
     routes: [
       GoRoute(
+        path: '/join',
+        redirect: (_, __) => currentFlavor == AppFlavor.admin
+            ? AppRoutes.adminDashboard
+            : AppRoutes.studentHome,
+      ),
+      GoRoute(
         path: AppRoutes.login,
         builder: (_, __) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.profile,
+        builder: (_, __) => const ProfileScreen(),
       ),
       GoRoute(
         path: AppRoutes.adminDashboard,
@@ -139,9 +172,31 @@ GoRouter router(RouterRef ref) {
         builder: (_, __) => const StudentHomeScreen(),
       ),
       GoRoute(
+        path: AppRoutes.studentOnboarding,
+        builder: (_, __) => const PermissionOnboardingScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.studentScreenTimeSettings,
+        builder: (_, __) => const ScreenTimeSettingsScreen(),
+      ),
+
+      GoRoute(
         path: AppRoutes.studentRevisionSession,
         builder: (_, state) => RevisionScreen(
           workspaceId: state.pathParameters['workspaceId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.studentDocuments,
+        builder: (_, state) => DocumentsListScreen(
+          workspaceId: state.pathParameters['workspaceId']!,
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.studentDocumentPolling,
+        builder: (_, state) => DocumentPollingScreen(
+          workspaceId: state.pathParameters['workspaceId']!,
+          documentId: state.pathParameters['documentId']!,
         ),
       ),
       GoRoute(

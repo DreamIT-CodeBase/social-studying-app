@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.core.auth import get_current_user
 from app.main import app
-from app.models.user import UserRole
+from app.models.user import UserRole, WorkspaceMembership
 from tests.unit.conftest import make_user, make_workspace
 
 
@@ -165,3 +165,70 @@ def test_generate_invite_code_returns_code(client):
     data = response.json()
     assert "code" in data
     assert len(data["code"]) == 8
+
+
+# ── POST /api/v1/workspaces/{id}/members ──────────────────────────────────────
+
+
+def test_add_member_does_not_downgrade_tenant_admin(client):
+    admin = make_user(role=UserRole.tenant_admin, workspace_ids=["wsp_existing"])
+    app.dependency_overrides[get_current_user] = lambda: admin
+    workspace = make_workspace(workspace_id="wsp_new", admin_ids=["usr_owner"])
+
+    workspace_col = _col_with_doc(workspace.model_dump(by_alias=True))
+    user_col = _col_with_doc(admin.model_dump(by_alias=True))
+
+    with patch(
+        "app.api.workspaces.get_collection",
+        side_effect=[workspace_col, user_col, workspace_col],
+    ):
+        response = client.post(
+            "/api/v1/workspaces/wsp_new/members",
+            json={
+                "email": admin.email,
+                "display_name": admin.display_name,
+                "role": "student",
+            },
+        )
+
+    assert response.status_code == 201
+    saved_user = user_col.replace_one.call_args.args[1]
+    assert saved_user["role"] == UserRole.tenant_admin.value
+
+
+def test_add_member_keeps_workspace_admin_with_other_admin_membership(client):
+    current_admin = make_user(role=UserRole.tenant_admin)
+    target = make_user(
+        user_id="usr_target",
+        role=UserRole.workspace_admin,
+        workspace_ids=[],
+    )
+    target.workspace_memberships = [
+        WorkspaceMembership(
+            workspace_id="wsp_existing",
+            role=UserRole.workspace_admin,
+            joined_at="2026-01-01T00:00:00+00:00",
+        )
+    ]
+    app.dependency_overrides[get_current_user] = lambda: current_admin
+    workspace = make_workspace(workspace_id="wsp_new", admin_ids=["usr_owner"])
+
+    workspace_col = _col_with_doc(workspace.model_dump(by_alias=True))
+    user_col = _col_with_doc(target.model_dump(by_alias=True))
+
+    with patch(
+        "app.api.workspaces.get_collection",
+        side_effect=[workspace_col, user_col, workspace_col],
+    ):
+        response = client.post(
+            "/api/v1/workspaces/wsp_new/members",
+            json={
+                "email": target.email,
+                "display_name": target.display_name,
+                "role": "student",
+            },
+        )
+
+    assert response.status_code == 201
+    saved_user = user_col.replace_one.call_args.args[1]
+    assert saved_user["role"] == UserRole.workspace_admin.value

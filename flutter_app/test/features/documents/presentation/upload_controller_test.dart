@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:social_study_app/features/admin/workspaces/data/demo_workspaces_repository.dart';
+import 'package:social_study_app/features/admin/workspaces/data/workspaces_repository.dart';
 import 'package:social_study_app/features/documents/data/demo_documents_repository.dart';
 import 'package:social_study_app/features/documents/data/documents_repository.dart';
 import 'package:social_study_app/features/documents/presentation/upload_controller.dart';
@@ -43,6 +45,7 @@ void main() {
     container = ProviderContainer(
       overrides: [
         documentsRepositoryProvider.overrideWith((_) => repo),
+        workspacesRepositoryProvider.overrideWithValue(DemoWorkspacesRepository()),
       ],
     );
   });

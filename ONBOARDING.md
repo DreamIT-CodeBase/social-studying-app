@@ -114,8 +114,8 @@ cd backend && uvicorn app.main:app --reload
 cd backend && pytest                 # 693 tests
 cd backend && ruff check . && mypy app/
 
-# Flutter
-cd flutter_app && flutter run --flavor student -t lib/main_student.dart
+# Flutterflutter run --flavor student -t lib/main_student.dart
+cd flutter_app && 
 cd flutter_app && flutter run --flavor admin   -t lib/main_admin.dart
 cd flutter_app && dart run build_runner build   # Freezed/Riverpod codegen
 cd flutter_app && flutter test && flutter analyze

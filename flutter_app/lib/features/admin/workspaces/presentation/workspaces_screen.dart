@@ -25,6 +25,9 @@ class WorkspacesScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final workspacesAsync = ref.watch(workspacesListProvider);
+    final workspaces = workspacesAsync.valueOrNull ?? [];
+    // Only allow creating a workspace if none exist yet.
+    final canCreate = workspacesAsync.hasValue && workspaces.isEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -33,10 +36,10 @@ class WorkspacesScreen extends ConsumerWidget {
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
-      // The FAB only appears once a list has rendered, so it never
-      // overlaps the empty-state CTA or a loading spinner.
-      floatingActionButton: workspacesAsync.hasValue
+      // The FAB only appears when the admin has no workspace yet.
+      floatingActionButton: canCreate
           ? FloatingActionButton.extended(
+              heroTag: null,
               onPressed: () => _openForm(context, ref),
               icon: const Icon(Icons.add_rounded),
               label: const Text('New Workspace'),
@@ -125,17 +128,46 @@ class _WorkspacesList extends ConsumerWidget {
         ref.read(workspacesListProvider.notifier).refresh();
         await ref.read(workspacesListProvider.future);
       },
-      child: ListView.separated(
+      child: ListView(
         padding: const EdgeInsets.fromLTRB(
           Spacing.lg,
           Spacing.lg,
           Spacing.lg,
-          // Leave room for the floating action button.
-          96,
+          Spacing.xl,
         ),
-        itemCount: workspaces.length,
-        separatorBuilder: (_, __) => const SizedBox(height: Spacing.sm),
-        itemBuilder: (_, i) => _WorkspaceCard(workspace: workspaces[i]),
+        children: [
+          // Info banner — each admin account gets one workspace.
+          Container(
+            padding: const EdgeInsets.all(Spacing.md),
+            decoration: BoxDecoration(
+              color: context.colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 18,
+                  color: context.colorScheme.onSecondaryContainer,
+                ),
+                const SizedBox(width: Spacing.sm),
+                Expanded(
+                  child: Text(
+                    'Each admin account manages one workspace. Edit your workspace below.',
+                    style: context.textTheme.bodySmall?.copyWith(
+                      color: context.colorScheme.onSecondaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: Spacing.md),
+          for (final ws in workspaces) ...[
+            _WorkspaceCard(workspace: ws),
+            const SizedBox(height: Spacing.sm),
+          ],
+        ],
       ),
     );
   }

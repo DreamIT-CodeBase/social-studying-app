@@ -29,6 +29,7 @@ void main() {
     test('adds a user the roster reflects', () async {
       final repo = DemoUsersRepository();
       final created = await repo.createUser(
+        workspaceId: 'wsp_demo_001',
         email: 'noah@socialstudyapp.com',
         displayName: 'Noah Kim',
         role: UserRole.student,
@@ -44,6 +45,7 @@ void main() {
       final repo = DemoUsersRepository();
       expect(
         () => repo.createUser(
+          workspaceId: 'wsp_demo_001',
           email: 'MAYA@socialstudyapp.com',
           displayName: 'Maya Two',
           role: UserRole.student,
@@ -74,6 +76,7 @@ void main() {
     test('updates the role and the roster reflects it', () async {
       final repo = DemoUsersRepository();
       final updated = await repo.changeRole(
+        workspaceId: 'wsp_demo_001',
         userId: 'usr_demo_101',
         role: UserRole.workspaceAdmin,
       );
@@ -90,6 +93,7 @@ void main() {
       final repo = DemoUsersRepository();
       expect(
         () => repo.changeRole(
+          workspaceId: 'wsp_demo_001',
           userId: 'usr_ghost',
           role: UserRole.student,
         ),

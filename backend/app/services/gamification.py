@@ -94,6 +94,12 @@ CORRECT_BONUS_XP: dict[DifficultyLevel, int] = {
 }
 """Difficulty-weighted bonus added on a correct answer."""
 
+WRONG_ANSWER_PENALTY_XP: int = -5
+"""XP deducted when the student answers incorrectly. Applied after the
+attempt XP and streak bonus are computed — the net result can be
+negative for this event, but :func:`record_question_attempt` floors
+``xp_total`` at 0 so the cumulative total never goes below zero."""
+
 STREAK_BONUS_CAP: int = 10
 """Maximum streak-day XP applied to a single submission. Streak XP =
 ``min(streak_days, STREAK_BONUS_CAP)``. Caps the late-streak runaway —
@@ -201,9 +207,14 @@ async def record_question_attempt(
         streak_days=state.streak_days,
     )
 
-    state.xp_total += xp_earned
-    state.xp_this_week += xp_earned
-    state.xp_by_topic[topic] = state.xp_by_topic.get(topic, 0) + xp_earned
+    # Floor xp_total at 0 — a wrong-answer penalty can produce a
+    # negative ``xp_earned`` for this event, but a student's cumulative
+    # total should never go below zero (level 1 is the floor).
+    state.xp_total = max(0, state.xp_total + xp_earned)
+    state.xp_this_week = max(0, state.xp_this_week + xp_earned)
+    state.xp_by_topic[topic] = max(
+        0, state.xp_by_topic.get(topic, 0) + xp_earned
+    )
     state.questions_answered += 1
     if is_correct:
         state.questions_correct += 1
@@ -355,16 +366,21 @@ def compute_question_xp(
     difficulty: DifficultyLevel,
     streak_days: int,
 ) -> int:
-    """Pure XP rule: attempt + (correct?) bonus + capped streak bonus.
+    """Pure XP rule: attempt + (correct?) bonus + capped streak bonus
+    − wrong-answer penalty.
 
     Always-on attempt XP rewards trying. Correct bonus scales with
     difficulty so hard questions are worth chasing. Streak bonus
     rewards regular study, capped so a 200-day streak doesn't
-    trivialise the level curve.
+    trivialise the level curve. Wrong answers receive a flat
+    :data:`WRONG_ANSWER_PENALTY_XP` deduction — the returned value may
+    be negative; the caller is responsible for flooring ``xp_total``.
     """
     xp = ATTEMPT_XP
     if is_correct:
         xp += CORRECT_BONUS_XP[difficulty]
+    else:
+        xp += WRONG_ANSWER_PENALTY_XP
     xp += min(streak_days, STREAK_BONUS_CAP)
     return xp
 

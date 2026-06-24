@@ -199,10 +199,23 @@ async def ensure_index(tenant_id: str) -> str:
         # Concurrent worker won the race. Fine — the schema is the same.
         logger.debug("AI Search index already exists: %s", name)
     except HttpResponseError as exc:
-        # 409 Conflict shows up here too on some SDK versions when the index
-        # already exists. Treat that as success; everything else propagates.
-        if getattr(exc, "status_code", None) == 409:
-            logger.debug("AI Search index already exists (409): %s", name)
+        # "Index already exists" is benign — the index being present is all
+        # ensure_index promises. SDK/search-API versions report it
+        # differently: classic raised ResourceExistsError (above) or
+        # HttpResponseError(409); the GA 12.x SDK on search API 2026-04-01
+        # raises HttpResponseError(400) with code 'ResourceNameAlreadyInUse'
+        # / 'CannotCreateExistingIndex'. Match on code/message, not status
+        # alone — the old 409-only check mistook the 400 for a fatal error
+        # and dead-lettered every doc after a tenant's first upload, which
+        # silently stranded vectorization (docs stuck at status=vectorizing).
+        err_code = getattr(getattr(exc, "error", None), "code", "") or ""
+        already_exists = (
+            getattr(exc, "status_code", None) == 409
+            or err_code == "ResourceNameAlreadyInUse"
+            or "already exists" in str(exc).lower()
+        )
+        if already_exists:
+            logger.debug("AI Search index already exists: %s", name)
         else:
             logger.exception("Failed to create AI Search index %s", name)
             raise ServiceUnavailableError(
@@ -494,16 +507,18 @@ async def search_chunks(
                 # being present (eases unit testing of error paths).
                 from azure.search.documents.models import VectorizedQuery
 
-                # azure-search-documents 11.7.0b2 renamed the legacy
-                # ``k_nearest_neighbors`` kwarg to ``k`` — the SDK now
-                # logs a "not a known attribute" warning and silently
-                # drops the legacy name, defaulting the k-NN limit to
-                # the index max. Pass ``k`` explicitly so the vector
-                # leg honours ``top_k``.
+                # The GA SDK (12.x, the pinned line — see pyproject) names
+                # the k-NN limit ``k_nearest_neighbors``. A short-lived
+                # 11.7.0bX beta renamed it to ``k``, but that was reverted
+                # before GA: passing ``k`` to 12.x raises
+                # ``TypeError: unexpected keyword argument 'k'``, which
+                # surfaced as a hard 500 on every /questions/next and
+                # /flashcards/next. Pin + this kwarg keep local and the
+                # deployed image on the same name.
                 kwargs["vector_queries"] = [
                     VectorizedQuery(
                         vector=list(query_vector),
-                        k=top_k,
+                        k_nearest_neighbors=top_k,
                         fields="embedding",
                     )
                 ]

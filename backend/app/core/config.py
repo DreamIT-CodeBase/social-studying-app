@@ -2,14 +2,41 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     environment: str = "development"
     allowed_origins: list[str] = ["http://localhost:3000"]
 
+    # Flutter web (`flutter run -d chrome`) binds a *random* localhost port on
+    # every run, so a fixed allowed_origins entry can't keep up. In non-prod we
+    # additionally allow any localhost / 127.0.0.1 port via this regex (wired in
+    # main.py). With allow_credentials=True the matched origin is echoed back
+    # verbatim — never "*" — so credentialed requests still work. Applied ONLY
+    # when environment != "production" (see main.py), so prod keeps the explicit
+    # allowed_origins allowlist and nothing else.
+    allowed_origin_regex: str = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
+
     # Azure Cosmos DB (MongoDB API)
     # replaced by Azure connection string in prod
     cosmos_connection_string: str = "mongodb://localhost:27017"
+
+    db_name_smoke: str = "ten_smoke001_shared"
+    db_name_demo: str = "ten_demo_001_shared"
+    db_name_uuid: str = "93e3ce50-a29e-462b-8956-85674a34d167_shared"
+
+    def get_db_name(self, tenant_id: str) -> str:
+        """Map tenant ID to configured database name, or return tenant ID if not mapped."""
+        if tenant_id == "ten_smoke001":
+            return self.db_name_smoke
+        elif tenant_id == "ten_demo_001":
+            return self.db_name_demo
+        elif tenant_id == "93e3ce50-a29e-462b-8956-85674a34d167":
+            return self.db_name_uuid
+        return tenant_id
 
     # Azure AI Search
     search_endpoint: str = ""
@@ -23,7 +50,31 @@ class Settings(BaseSettings):
     # Azure AD B2C
     b2c_tenant_id: str = ""
     b2c_client_id: str = ""
+    b2c_tenant_subdomain: str = ""
     b2c_policy_name: str = "B2C_1_signupsignin"
+
+    # Dev-auth bypass — lets the Flutter demo login exercise the *real*
+    # backend without a full Entra interactive sign-in (MSAL is not wired
+    # yet; auth_repository.dart is still mocked). When a request arrives
+    # bearing exactly ``dev_auth_token``, auth.get_current_user resolves it
+    # to the seeded demo user (``dev_auth_user_id`` in tenant
+    # ``dev_auth_tenant_id``) instead of validating a JWT.
+    #
+    # DOUBLE-GATED so it can never weaken production: the bypass is active
+    # only when ``environment != "production"`` AND ``dev_auth_token`` is
+    # non-empty. The default empty token means the bypass is OFF unless an
+    # operator explicitly sets it (we set it on ca-api-dev only). Blast
+    # radius if the token leaks is limited to the isolated demo tenant's
+    # Cosmos database. Seed the demo identity with scripts/seed_demo_tenant.py.
+    dev_auth_token: str = ""
+    dev_auth_tenant_id: str = "ten_demo_001"
+    dev_auth_user_id: str = "usr_demo_001"
+
+    # SMTP Email
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
 
     # Redis
     redis_url: str = "redis://localhost:6379"

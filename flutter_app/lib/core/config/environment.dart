@@ -1,28 +1,43 @@
 abstract final class Environment {
-  // Deployed Azure Container Apps URL
+  // Default points at the host machine from the Android emulator (10.0.2.2).
+  // Override for production deploys:
+  //   --dart-define=API_BASE_URL=https://ca-api-dev.salmonmushroom-d5e027eb.centralus.azurecontainerapps.io
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://ca-api-dev.salmonmushroom-d5e027eb.centralus.azurecontainerapps.io',
+    defaultValue: 'http://10.0.2.2:8000',
   );
 
-  // Microsoft Entra External ID (CIAM) Configuration
-  static const String tenantId = 'cbf2e3d3-af81-40dd-a396-aae11d2c6b3f';
-  static const String clientId = '93e3ce50-a29e-462b-8956-85674a34d167';
-  static const String tenantSubdomain = 'socialstudyingapp';
+  // When true, all repository providers route through Dio → real backend.
+  // When false, demo/offline repositories are used for users matching the
+  // demo-user heuristic.
+  static const bool useRealBackend = bool.fromEnvironment(
+    'USE_REAL_BACKEND',
+    defaultValue: true,
+  );
 
-  static const String authority = 'https://$tenantSubdomain.ciamlogin.com/$tenantId/v2.0';
-  static const String discoveryUrl = '$authority/.well-known/openid-configuration';
-  static const String redirectUri = 'msauth://com.socialstudyapp.app/callback';
+  // ── Microsoft Entra ID (Azure AD B2C / CIAM) Config ──────────────────────
+  static const String b2cTenantId = String.fromEnvironment(
+    'B2C_TENANT_ID',
+    defaultValue: 'cbf2e3d3-af81-40dd-a396-aae11d2c6b3f',
+  );
 
-  // Direct Endpoints for speed (CIAM)
-  static const String authorizationEndpoint = 'https://$tenantSubdomain.ciamlogin.com/$tenantId/oauth2/v2.0/authorize';
-  static const String tokenEndpoint = 'https://$tenantSubdomain.ciamlogin.com/$tenantId/oauth2/v2.0/token';
-  static const String endSessionEndpoint = 'https://$tenantSubdomain.ciamlogin.com/$tenantId/oauth2/v2.0/logout';
+  static const String b2cClientId = String.fromEnvironment(
+    'B2C_CLIENT_ID',
+    defaultValue: '93e3ce50-a29e-462b-8956-85674a34d167',
+  );
 
-  static const List<String> scopes = [
-    'openid',
-    'profile',
-    'offline_access',
-    'api://$clientId/access_as_user',
-  ];
+  static const String b2cTenantSubdomain = String.fromEnvironment(
+    'B2C_TENANT_SUBDOMAIN',
+    defaultValue: 'socialstudyingapp',
+  );
+
+  static const String b2cPolicyName = String.fromEnvironment(
+    'B2C_POLICY_NAME',
+    defaultValue: 'B2C_1_signupsignin',
+  );
+
+  static const String b2cRedirectUri = String.fromEnvironment(
+    'B2C_REDIRECT_URI',
+    defaultValue: 'msauth://com.socialstudyapp.app/callback',
+  );
 }

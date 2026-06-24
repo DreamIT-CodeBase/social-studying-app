@@ -111,6 +111,30 @@ async def test_ensure_index_treats_409_http_error_as_success(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ensure_index_treats_resource_name_already_in_use_as_success(monkeypatch):
+    """GA 12.x SDK on search API 2026-04-01 reports an existing index as
+    HttpResponseError(400, code='ResourceNameAlreadyInUse'), NOT 409. The
+    old 409-only check mistook this for a fatal error and dead-lettered every
+    document after a tenant's first upload — stranding vectorization. Treat
+    it as success.
+    """
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(azure_ai_search.settings, "search_endpoint", "https://x")
+    monkeypatch.setattr(azure_ai_search.settings, "search_key", "k")
+    err = HttpResponseError(
+        message="Cannot create index 'chunks-ten-abc' because it already exists."
+    )
+    err.status_code = 400
+    err.error = SimpleNamespace(code="ResourceNameAlreadyInUse")
+    patched, _ = _patched_index_client(create_side_effect=err)
+    with patched:
+        name = await azure_ai_search.ensure_index("ten_abc")
+    assert name == azure_ai_search.index_name_for("ten_abc")
+    assert name in azure_ai_search._KNOWN_INDEXES
+
+
+@pytest.mark.asyncio
 async def test_ensure_index_propagates_non_409_http_error(monkeypatch):
     monkeypatch.setattr(azure_ai_search.settings, "search_endpoint", "https://x")
     monkeypatch.setattr(azure_ai_search.settings, "search_key", "k")
@@ -502,6 +526,14 @@ async def test_search_chunks_hybrid_passes_vector_query_to_sdk():
     vq = kwargs["vector_queries"][0]
     assert list(vq.vector) == vec
     assert vq.fields == "embedding"
+    # Lock the k-NN kwarg name. The production code constructs a *real*
+    # VectorizedQuery (the import is not mocked), so an SDK that doesn't
+    # accept this kwarg raises TypeError right here — which is exactly the
+    # 500 that hit /questions/next and /flashcards/next when the image ran
+    # GA 12.x while the code passed the beta-only ``k=``. Asserting the
+    # value (not just presence) also catches the 11.7.0bX silent-drop,
+    # where ``k_nearest_neighbors`` was accepted but ignored.
+    assert vq.k_nearest_neighbors == 3
 
 
 @pytest.mark.asyncio

@@ -16,6 +16,9 @@ import 'package:social_study_app/features/questions/data/questions_repository.da
 import 'package:social_study_app/features/revision/domain/revision_session.dart';
 import 'package:social_study_app/shared/models/flashcard.dart';
 import 'package:social_study_app/shared/models/question.dart';
+import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
+import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 
 part 'revision_session_notifier.g.dart';
 
@@ -116,6 +119,7 @@ class RevisionSessionNotifier extends _$RevisionSessionNotifier {
         feedback: feedback,
         progress: current.progress,
       );
+      _invalidateProfile();
     } on QuestionNotFoundException catch (e) {
       state = RevisionSession.error(message: e.message);
     } on QuestionNotAnswerableException catch (e) {
@@ -160,12 +164,24 @@ class RevisionSessionNotifier extends _$RevisionSessionNotifier {
         rating: rating,
         progress: current.progress,
       );
+      _invalidateProfile();
     } on FlashcardNotFoundException catch (e) {
       state = RevisionSession.error(message: e.message);
     } on FlashcardNotRatableException catch (e) {
       state = RevisionSession.error(message: e.message);
     } on Object catch (e) {
       state = RevisionSession.error(message: e.toString());
+    }
+  }
+
+  void _invalidateProfile() {
+    final authState = ref.read(authNotifierProvider).valueOrNull;
+    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    if (user != null) {
+      final key = (workspaceId: _workspaceId, userId: user.id);
+      ref.invalidate(gamificationProfileProvider(key));
+      ref.invalidate(streakSummaryProvider(key));
+      ref.invalidate(studentProgressNotifierProvider(_workspaceId));
     }
   }
 

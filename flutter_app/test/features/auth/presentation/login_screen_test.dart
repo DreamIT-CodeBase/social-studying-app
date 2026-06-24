@@ -35,6 +35,7 @@ void main() {
       await tester.pump(); // let FutureProvider resolve
 
       expect(find.text('Sign in with Microsoft'), findsOneWidget);
+      expect(find.text('Continue with Demo Account'), findsNothing);
     });
 
     testWidgets('shows app name and tagline', (tester) async {
@@ -51,7 +52,7 @@ void main() {
     testWidgets('shows loading indicator while sign-in is in progress',
         (tester) async {
       final completer = Completer<User>();
-      when(() => mockRepo.signIn()).thenAnswer((_) => completer.future);
+      when(() => mockRepo.signInWithMicrosoft()).thenAnswer((_) => completer.future);
 
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump();
@@ -67,7 +68,7 @@ void main() {
     });
 
     testWidgets('shows error view when sign-in fails', (tester) async {
-      when(() => mockRepo.signIn()).thenThrow(Exception('Auth failed'));
+      when(() => mockRepo.signInWithMicrosoft()).thenThrow(Exception('Auth failed'));
 
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump();
@@ -76,7 +77,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Something went wrong'), findsOneWidget);
-      expect(find.text('Go Back'), findsOneWidget);
+      expect(find.text('Try Again'), findsOneWidget);
     });
   });
 

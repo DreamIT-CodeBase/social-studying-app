@@ -76,6 +76,19 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Sign Out',
+            icon: const Icon(Icons.logout_rounded),
+            onPressed: () async {
+              await ref.read(authNotifierProvider.notifier).signOut();
+            },
+          ),
+        ],
+      ),
       body: SafeArea(
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 250),

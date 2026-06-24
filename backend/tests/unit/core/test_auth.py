@@ -6,7 +6,13 @@ import pytest
 from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials
 
-from app.core.auth import _validate_token, get_current_user, require_role
+from app.core.auth import (
+    _validate_token,
+    get_current_user,
+    require_role,
+    _lookup_or_create_user,
+)
+from app.core.config import settings
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.models.user import UserRole
 from tests.unit.conftest import make_user
@@ -51,15 +57,15 @@ async def test_get_current_user_no_credentials_raises_unauthorized():
 
 
 @pytest.mark.asyncio
-async def test_get_current_user_missing_claims_raises_unauthorized():
+async def test_get_current_user_missing_sub_raises_unauthorized():
     request = _make_request()
     creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="tok")
     with (
         patch(
             "app.core.auth._validate_token",
-            AsyncMock(return_value={"sub": "", "extension_TenantId": ""}),
+            AsyncMock(return_value={"sub": "", "extension_TenantId": "ten_001"}),
         ),
-        pytest.raises(UnauthorizedError, match="missing required claims"),
+        pytest.raises(UnauthorizedError, match="Token missing required sub claim"),
     ):
         await get_current_user(request, credentials=creds)
 
@@ -76,7 +82,7 @@ async def test_get_current_user_inactive_account_raises_unauthorized():
             "app.core.auth._validate_token",
             AsyncMock(return_value={"sub": "obj_123", "extension_TenantId": "ten_001"}),
         ),
-        patch("app.core.auth._lookup_user", AsyncMock(return_value=inactive_user)),
+        patch("app.core.auth._lookup_or_create_user", AsyncMock(return_value=inactive_user)),
         pytest.raises(UnauthorizedError, match="Account is disabled"),
     ):
         await get_current_user(request, credentials=creds)
@@ -94,7 +100,7 @@ async def test_get_current_user_happy_path_returns_user_and_sets_state():
             "app.core.auth._validate_token",
             AsyncMock(return_value={"sub": "obj_123", "extension_TenantId": "ten_test001"}),
         ),
-        patch("app.core.auth._lookup_user", AsyncMock(return_value=expected_user)),
+        patch("app.core.auth._lookup_or_create_user", AsyncMock(return_value=expected_user)),
     ):
         user = await get_current_user(request, credentials=creds)
 
@@ -131,11 +137,11 @@ async def test_require_role_multiple_allowed_roles():
     assert result.role == UserRole.workspace_admin
 
 
-# ── _lookup_user (cache miss + hit) ──────────────────────────────────────────
+# ── _lookup_or_create_user (cache miss + hit + auto creation) ──────────────────
 
 
 @pytest.mark.asyncio
-async def test_lookup_user_cache_miss_hits_db():
+async def test_lookup_or_create_user_cache_miss_hits_db():
     user = make_user()
 
     fake_redis = AsyncMock()
@@ -144,21 +150,21 @@ async def test_lookup_user_cache_miss_hits_db():
 
     fake_col = MagicMock()
     fake_col.find_one = AsyncMock(return_value=user.model_dump(by_alias=True))
+    fake_col.update_one = AsyncMock()
 
     with (
         patch("app.core.auth.get_redis", AsyncMock(return_value=fake_redis)),
         patch("app.core.auth.get_collection", return_value=fake_col),
     ):
-        from app.core.auth import _lookup_user
-
-        result = await _lookup_user("obj_123", "ten_test001")
+        claims = {"email": "test@example.com", "name": "Test User"}
+        result = await _lookup_or_create_user("obj_123", "ten_test001", claims)
 
     assert result.id == user.id
     fake_redis.setex.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_lookup_user_cache_hit_skips_db():
+async def test_lookup_or_create_user_cache_hit_skips_db():
     user = make_user()
     user_json = user.model_dump_json()
 
@@ -169,27 +175,48 @@ async def test_lookup_user_cache_hit_skips_db():
         patch("app.core.auth.get_redis", AsyncMock(return_value=fake_redis)),
         patch("app.core.auth.get_collection") as mock_get_col,
     ):
-        from app.core.auth import _lookup_user
-
-        result = await _lookup_user("obj_123", "ten_test001")
+        result = await _lookup_or_create_user("obj_123", "ten_test001", {})
 
     mock_get_col.assert_not_called()
     assert result.id == user.id
 
 
 @pytest.mark.asyncio
-async def test_lookup_user_not_found_raises_unauthorized():
+async def test_lookup_or_create_user_not_found_creates_user():
     fake_redis = AsyncMock()
     fake_redis.get = AsyncMock(return_value=None)
+    fake_redis.setex = AsyncMock()
 
-    fake_col = MagicMock()
-    fake_col.find_one = AsyncMock(return_value=None)
+    # DB collection simulation: return None (user not found), then simulate insert and subsequent find returning the user doc
+    fake_users_col = MagicMock()
+    fake_users_col.find_one = AsyncMock(side_effect=[None, None, {
+        "_id": "usr_created_123",
+        "tenant_id": "ten_test001",
+        "email": "test@example.com",
+        "display_name": "Test User",
+        "b2c_object_id": "unknown",
+        "role": "student",
+        "is_active": True,
+        "created_at": "2026-06-08T00:00:00",
+    }])
+    fake_users_col.insert_one = AsyncMock()
+
+    fake_tenants_col = MagicMock()
+    fake_tenants_col.find_one = AsyncMock(return_value={"_id": "ten_test001", "name": "Test Tenant"})
+
+    def get_collection_mock(db_name, col_name):
+        if db_name == "platform" and col_name == "tenants":
+            return fake_tenants_col
+        return fake_users_col
 
     with (
         patch("app.core.auth.get_redis", AsyncMock(return_value=fake_redis)),
-        patch("app.core.auth.get_collection", return_value=fake_col),
-        pytest.raises(UnauthorizedError),
+        patch("app.core.auth.get_collection", side_effect=get_collection_mock),
     ):
-        from app.core.auth import _lookup_user
+        claims = {"email": "test@example.com", "name": "Test User", "extension_Role": "student"}
+        result = await _lookup_or_create_user("unknown", "ten_test001", claims)
 
-        await _lookup_user("unknown", "ten_test001")
+    assert result.email == "test@example.com"
+    assert result.display_name == "Test User"
+    assert result.role == UserRole.student
+    fake_users_col.insert_one.assert_called_once()

@@ -294,7 +294,7 @@ async def _try_candidate(
             difficulty=difficulty,
             question_type=question_type,
             grounding_chunks=retrieved.chunks,
-            seen_question_bodies=None,  # repeat suppression hooked up via 3.13
+            seen_question_bodies=None,  # reverted: user prefers repeats over 503 errors on small workspaces
         )
     except InsufficientSource as exc:
         return _Skip(f"generator: insufficient_source ({exc})")
@@ -590,7 +590,7 @@ async def submit_answer(
             f"(status={question.status.value})."
         )
 
-    evaluation = answer_evaluation.evaluate(question, submission.answer)
+    evaluation = await answer_evaluation.evaluate(question, submission.answer)
     timestamp = utc_now()
 
     # Gamification first — its XP rule (incl. the streak bonus) sets
@@ -867,6 +867,30 @@ def _topic_mastery_for(state, topic: str) -> float:
     # to leave the row present, but don't crash the response if it
     # didn't.
     return 0.0
+
+
+async def _fetch_seen_question_bodies(
+    *,
+    tenant_id: str,
+    question_ids: list[str],
+) -> list[str]:
+    """Return the ``body`` strings for a list of question IDs.
+
+    Used to populate ``seen_question_bodies`` for the prompt's
+    avoid-duplication instruction. Missing IDs (deleted / not yet
+    persisted) are silently skipped — a missing body in the dedup list
+    just means the model might re-generate a similar stem, which is
+    acceptable.
+    """
+    if not question_ids:
+        return []
+    col = get_collection(tenant_id, QUESTION_QUEUE)
+    cursor = col.find(
+        {"_id": {"$in": question_ids}},
+        projection={"body": 1},
+    )
+    rows = await cursor.to_list(length=None)
+    return [r["body"] for r in rows if r.get("body")]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

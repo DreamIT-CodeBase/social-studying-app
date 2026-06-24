@@ -89,6 +89,7 @@ void main() {
       );
       final repo = RealUsersRepository(dio: _dio(adapter));
       await repo.createUser(
+        workspaceId: 'wsp_1',
         email: 'a@b.com',
         displayName: 'A B',
         role: UserRole.workspaceAdmin,
@@ -108,6 +109,7 @@ void main() {
       final repo = RealUsersRepository(dio: _dio(adapter));
       expect(
         () => repo.createUser(
+          workspaceId: 'wsp_1',
           email: 'a@b.com',
           displayName: 'A B',
           role: UserRole.student,
@@ -145,12 +147,13 @@ void main() {
       );
       final repo = RealUsersRepository(dio: _dio(adapter));
       await repo.changeRole(
+        workspaceId: 'wsp_1',
         userId: 'usr_1',
         role: UserRole.workspaceAdmin,
       );
 
       expect(adapter.lastRequest!.method, 'PATCH');
-      expect(adapter.lastRequest!.path, '/api/v1/users/usr_1');
+      expect(adapter.lastRequest!.path, '/api/v1/workspaces/wsp_1/members/usr_1');
       final sent = jsonDecode(utf8.decode(adapter.lastRequestBody!))
           as Map<String, dynamic>;
       expect(sent['role'], 'workspace_admin');
@@ -162,7 +165,7 @@ void main() {
       );
       final repo = RealUsersRepository(dio: _dio(adapter));
       expect(
-        () => repo.changeRole(userId: 'usr_ghost', role: UserRole.student),
+        () => repo.changeRole(workspaceId: 'wsp_1', userId: 'usr_ghost', role: UserRole.student),
         throwsA(isA<UserNotFoundException>()),
       );
     });

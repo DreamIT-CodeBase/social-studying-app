@@ -1,6 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/features/admin/users/data/demo_users_repository.dart';
 import 'package:social_study_app/features/admin/users/data/real_users_repository.dart';
+import 'package:social_study_app/core/config/environment.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/services/dio_client.dart';
@@ -27,6 +28,7 @@ abstract class UsersRepository {
   ///
   /// Throws [UserEmailConflictException] (409) when the email is taken.
   Future<User> createUser({
+    required String workspaceId,
     required String email,
     required String displayName,
     required UserRole role,
@@ -40,7 +42,11 @@ abstract class UsersRepository {
   /// Change a user's role.
   ///
   /// Throws [UserNotFoundException] (404).
-  Future<User> changeRole({required String userId, required UserRole role});
+  Future<User> changeRole({
+    required String workspaceId,
+    required String userId,
+    required UserRole role,
+  });
 }
 
 /// Selects demo vs. real implementation by authenticated user.
@@ -59,5 +65,8 @@ UsersRepository usersRepository(UsersRepositoryRef ref) {
   return RealUsersRepository(dio: ref.read(dioClientProvider).dio);
 }
 
+// `!useRealBackend` so a `--dart-define=USE_REAL_BACKEND=true` build treats
+// nobody as a demo user and routes every call to the Real* impl over Dio.
 bool _isDemoUser(User user) =>
-    user.id == 'usr_demo_001' || user.email == 'demo@socialstudyapp.com';
+    !Environment.useRealBackend &&
+    (user.id == 'usr_demo_001' || user.email == 'demo@socialstudyapp.com');

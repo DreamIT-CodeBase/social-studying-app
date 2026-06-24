@@ -47,6 +47,7 @@ class UserResponse(CosmosDocument.__base__):
     email: EmailStr
     display_name: str
     role: UserRole
+    workspace_memberships: list[WorkspaceMembership] = Field(default_factory=list)
     is_active: bool
     created_at: str
 
@@ -58,6 +59,7 @@ class UserResponse(CosmosDocument.__base__):
             email=doc.email,
             display_name=doc.display_name,
             role=doc.role,
+            workspace_memberships=doc.workspace_memberships,
             is_active=doc.is_active,
             created_at=doc.created_at,
         )

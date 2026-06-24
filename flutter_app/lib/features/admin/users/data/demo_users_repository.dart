@@ -97,6 +97,7 @@ class DemoUsersRepository implements UsersRepository {
 
   @override
   Future<User> createUser({
+    required String workspaceId,
     required String email,
     required String displayName,
     required UserRole role,
@@ -119,7 +120,7 @@ class DemoUsersRepository implements UsersRepository {
       // reflects them without a separate invite-redemption step.
       workspaceMemberships: [
         WorkspaceMembership(
-          workspaceId: 'wsp_demo_001',
+          workspaceId: workspaceId,
           workspaceName: 'Demo Classroom',
           role: role,
         ),
@@ -140,13 +141,23 @@ class DemoUsersRepository implements UsersRepository {
 
   @override
   Future<User> changeRole({
+    required String workspaceId,
     required String userId,
     required UserRole role,
   }) async {
     await _latency();
     final index = _users.indexWhere((u) => u.id == userId);
     if (index == -1) throw const UserNotFoundException();
-    final updated = _users[index].copyWith(role: role);
+    final memberships = [
+      for (final membership in _users[index].workspaceMemberships)
+        membership.workspaceId == workspaceId
+            ? membership.copyWith(role: role)
+            : membership,
+    ];
+    final updated = _users[index].copyWith(
+      role: role,
+      workspaceMemberships: memberships,
+    );
     _users[index] = updated;
     return updated;
   }

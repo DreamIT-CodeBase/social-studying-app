@@ -15,6 +15,9 @@ from __future__ import annotations
 
 import pytest
 
+pytestmark = pytest.mark.asyncio
+from unittest.mock import patch
+
 from app.models.question import (
     DifficultyLevel,
     McqOption,
@@ -55,111 +58,127 @@ def _question(
 # ── MCQ ─────────────────────────────────────────────────────────────────────
 
 
-def test_mcq_correct_key_matches():
+async def test_mcq_correct_key_matches():
     q = _question(question_type=QuestionType.mcq, answer="B")
-    result = evaluate(q, "B")
+    result = await evaluate(q, "B")
     assert result.is_correct is True
     assert result.canonical_answer == "B"
 
 
-def test_mcq_wrong_key_is_marked_wrong():
+async def test_mcq_wrong_key_is_marked_wrong():
     q = _question(question_type=QuestionType.mcq, answer="B")
-    assert evaluate(q, "A").is_correct is False
+    assert (await evaluate(q, "A")).is_correct is False
 
 
-def test_mcq_is_case_insensitive():
+async def test_mcq_is_case_insensitive():
     """Curl-style lowercased keys still grade — UI sends "B" but a
     debug client might send "b".
     """
     q = _question(question_type=QuestionType.mcq, answer="C")
-    assert evaluate(q, "c").is_correct is True
+    assert (await evaluate(q, "c")).is_correct is True
 
 
-def test_mcq_trims_whitespace():
+async def test_mcq_trims_whitespace():
     q = _question(question_type=QuestionType.mcq, answer="A")
-    assert evaluate(q, "  A  ").is_correct is True
+    assert (await evaluate(q, "  A  ")).is_correct is True
 
 
 # ── True / False ────────────────────────────────────────────────────────────
 
 
-def test_true_false_correct_true():
+async def test_true_false_correct_true():
     q = _question(question_type=QuestionType.true_false, answer="true")
-    assert evaluate(q, "true").is_correct is True
+    assert (await evaluate(q, "true")).is_correct is True
 
 
-def test_true_false_correct_false():
+async def test_true_false_correct_false():
     q = _question(question_type=QuestionType.true_false, answer="false")
-    assert evaluate(q, "false").is_correct is True
+    assert (await evaluate(q, "false")).is_correct is True
 
 
-def test_true_false_accepts_t_shorthand():
+async def test_true_false_accepts_t_shorthand():
     """A one-character button on the mobile UI is the most likely
     submission shape — the evaluator must accept "t" / "f".
     """
     q = _question(question_type=QuestionType.true_false, answer="true")
-    assert evaluate(q, "T").is_correct is True
-    assert evaluate(q, "f").is_correct is False
+    assert (await evaluate(q, "T")).is_correct is True
+    assert (await evaluate(q, "f")).is_correct is False
 
 
-def test_true_false_rejects_synonyms_as_wrong():
+async def test_true_false_rejects_synonyms_as_wrong():
     """"yes"/"no" aren't t/f synonyms in this evaluator — they grade
     as wrong rather than triggering an error. The client should have
     constrained the input.
     """
     q = _question(question_type=QuestionType.true_false, answer="true")
-    assert evaluate(q, "yes").is_correct is False
+    assert (await evaluate(q, "yes")).is_correct is False
 
 
 # ── Short answer ────────────────────────────────────────────────────────────
 
 
-def test_short_answer_exact_match():
+async def test_short_answer_exact_match():
     q = _question(question_type=QuestionType.short_answer, answer="chlorophyll")
-    assert evaluate(q, "chlorophyll").is_correct is True
+    assert (await evaluate(q, "chlorophyll")).is_correct is True
 
 
-def test_short_answer_case_insensitive():
+async def test_short_answer_case_insensitive():
     q = _question(question_type=QuestionType.short_answer, answer="chlorophyll")
-    assert evaluate(q, "CHLOROPHYLL").is_correct is True
+    assert (await evaluate(q, "CHLOROPHYLL")).is_correct is True
 
 
-def test_short_answer_strips_trailing_punctuation_and_whitespace():
+async def test_short_answer_strips_trailing_punctuation_and_whitespace():
     q = _question(question_type=QuestionType.short_answer, answer="DNA")
-    assert evaluate(q, "  dna. ").is_correct is True
+    assert (await evaluate(q, "  dna. ")).is_correct is True
 
 
-def test_short_answer_normalizes_diacritics():
+async def test_short_answer_normalizes_diacritics():
     """A student answering "cafe" for a canonical "café" matches —
     keyboard-tier UX is worse for matching diacritics than the actual
     correctness picture.
     """
     q = _question(question_type=QuestionType.short_answer, answer="café")
-    assert evaluate(q, "cafe").is_correct is True
+    assert (await evaluate(q, "cafe")).is_correct is True
 
 
-def test_short_answer_matches_acceptable_variants():
+async def test_short_answer_matches_acceptable_variants():
     q = _question(
         question_type=QuestionType.short_answer,
         answer="deoxyribonucleic acid",
         grading_hints=["DNA", "d.n.a."],
     )
-    assert evaluate(q, "DNA").is_correct is True
-    assert evaluate(q, "d.n.a").is_correct is True
+    assert (await evaluate(q, "DNA")).is_correct is True
+    assert (await evaluate(q, "d.n.a")).is_correct is True
 
 
-def test_short_answer_wrong_response_is_marked_wrong():
+async def test_short_answer_wrong_response_is_marked_wrong():
     q = _question(
         question_type=QuestionType.short_answer,
         answer="chlorophyll",
         grading_hints=["chlorophyll a"],
     )
-    assert evaluate(q, "mitochondria").is_correct is False
+    assert (await evaluate(q, "mitochondria")).is_correct is False
 
 
-def test_short_answer_collapses_internal_whitespace():
+async def test_short_answer_collapses_internal_whitespace():
     q = _question(question_type=QuestionType.short_answer, answer="two words")
-    assert evaluate(q, "two   words").is_correct is True
+    assert (await evaluate(q, "two   words")).is_correct is True
+
+@patch("app.services.answer_evaluation.azure_openai.chat_json")
+async def test_short_answer_accepts_semantic_synonyms(mock_chat):
+    """If exact substring / normalisation fails, semantic grading kicks in.
+    'spirilla' isn't exactly 'spirochetes', but the AI grades it correct.
+    """
+    mock_chat.return_value = {"is_correct": True}
+    q = _question(
+        question_type=QuestionType.short_answer,
+        answer="spirochetes",
+    )
+    result = await evaluate(q, "spirilla")
+    assert result.is_correct is True
+    mock_chat.assert_called_once()
+    args, kwargs = mock_chat.call_args
+    assert "spirilla" in kwargs["user_prompt"]
 
 
 # ── Long answer ─────────────────────────────────────────────────────────────
@@ -178,41 +197,41 @@ def _long(answer: str = "Reference text.") -> Question:
     )
 
 
-def test_long_answer_correct_when_all_hints_present():
+async def test_long_answer_correct_when_all_hints_present():
     q = _long()
     response = (
         "Chlorophyll absorbs photons. Water is split into oxygen and protons. "
         "ATP and NADPH are produced. Calvin cycle fixes CO2 into glucose."
     )
-    result = evaluate(q, response)
+    result = await evaluate(q, response)
     assert result.is_correct is True
     assert result.rubric_score == pytest.approx(1.0)
     assert len(result.matched_hints) == 4
 
 
-def test_long_answer_correct_at_half_threshold():
+async def test_long_answer_correct_at_half_threshold():
     """Exactly 2 of 4 hints = 50% = passes the threshold."""
     q = _long()
     response = (
         "Chlorophyll absorbs photons and ATP and NADPH are produced."
     )
-    result = evaluate(q, response)
+    result = await evaluate(q, response)
     assert result.is_correct is True
     assert result.rubric_score == pytest.approx(0.5)
     assert len(result.matched_hints) == 2
 
 
-def test_long_answer_wrong_below_threshold():
+async def test_long_answer_wrong_below_threshold():
     """1 of 4 hints = 25% = below the 50% threshold."""
     q = _long()
     response = "Chlorophyll absorbs photons and that is all I remember."
-    result = evaluate(q, response)
+    result = await evaluate(q, response)
     assert result.is_correct is False
     assert result.rubric_score == pytest.approx(0.25)
     assert result.matched_hints == ["Chlorophyll absorbs photons"]
 
 
-def test_long_answer_accepts_paraphrased_token_overlap():
+async def test_long_answer_accepts_paraphrased_token_overlap():
     """A student who paraphrases the key points in different word order
     should still pass — the token-overlap fallback kicks in when the
     exact-substring check misses. The response below mentions every
@@ -225,7 +244,7 @@ def test_long_answer_accepts_paraphrased_token_overlap():
         "are produced as energy carriers. Then the Calvin cycle uses "
         "those carriers to fix CO2 into glucose."
     )
-    result = evaluate(q, response)
+    result = await evaluate(q, response)
     assert result.is_correct is True
     # At least three of four hints should match via token overlap even
     # though none appear as exact substrings. The fourth ("Chlorophyll
@@ -236,7 +255,7 @@ def test_long_answer_accepts_paraphrased_token_overlap():
     assert result.rubric_score == pytest.approx(0.75)
 
 
-def test_long_answer_with_no_hints_falls_back_to_non_empty():
+async def test_long_answer_with_no_hints_falls_back_to_non_empty():
     """A degenerate question with no hints (shouldn't happen post-3.7
     but be defensive) treats any non-empty submission as correct.
     """
@@ -245,22 +264,22 @@ def test_long_answer_with_no_hints_falls_back_to_non_empty():
         answer="ref",
         grading_hints=[],
     )
-    assert evaluate(q, "any answer").is_correct is True
-    assert evaluate(q, "   ").is_correct is False
+    assert (await evaluate(q, "any answer")).is_correct is True
+    assert (await evaluate(q, "   ")).is_correct is False
 
 
 # ── Mathematical ────────────────────────────────────────────────────────────
 
 
-def test_mathematical_exact_latex_match():
+async def test_mathematical_exact_latex_match():
     q = _question(
         question_type=QuestionType.mathematical,
         answer="$2x + 3$",
     )
-    assert evaluate(q, "$2x + 3$").is_correct is True
+    assert (await evaluate(q, "$2x + 3$")).is_correct is True
 
 
-def test_mathematical_strips_latex_delimiters_and_spaces():
+async def test_mathematical_strips_latex_delimiters_and_spaces():
     """The student writes ``2x+3`` (no LaTeX dollars, no spaces); the
     canonical is ``$2x + 3$``. The normalization should collapse both
     to ``2x+3`` and grade correct.
@@ -269,10 +288,10 @@ def test_mathematical_strips_latex_delimiters_and_spaces():
         question_type=QuestionType.mathematical,
         answer="$2x + 3$",
     )
-    assert evaluate(q, "2x+3").is_correct is True
+    assert (await evaluate(q, "2x+3")).is_correct is True
 
 
-def test_mathematical_does_not_yet_accept_commutative_equivalence():
+async def test_mathematical_does_not_yet_accept_commutative_equivalence():
     """v1 limitation: ``"3+2x"`` is algebraically equivalent to
     ``"$2x + 3$"`` but the substring check doesn't catch it.
     Documented as a Sprint 5 polish item; this test pins the v1
@@ -283,31 +302,31 @@ def test_mathematical_does_not_yet_accept_commutative_equivalence():
         question_type=QuestionType.mathematical,
         answer="$2x + 3$",
     )
-    assert evaluate(q, "$3 + 2x$").is_correct is False
+    assert (await evaluate(q, "$3 + 2x$")).is_correct is False
 
 
-def test_mathematical_wrong_answer_is_marked_wrong():
+async def test_mathematical_wrong_answer_is_marked_wrong():
     q = _question(
         question_type=QuestionType.mathematical,
         answer="$2x + 3$",
     )
-    assert evaluate(q, "$x + 1$").is_correct is False
+    assert (await evaluate(q, "$x + 1$")).is_correct is False
 
 
-def test_mathematical_rubric_score_is_one_or_zero():
+async def test_mathematical_rubric_score_is_one_or_zero():
     """v1 mathematical scoring is boolean — no partial credit. The
     rubric_score still populates so the response shape stays uniform
     across rubric-scored types.
     """
     q = _question(question_type=QuestionType.mathematical, answer="$2x$")
-    assert evaluate(q, "$2x$").rubric_score == 1.0
-    assert evaluate(q, "$3x$").rubric_score == 0.0
+    assert (await evaluate(q, "$2x$")).rubric_score == 1.0
+    assert (await evaluate(q, "$3x$")).rubric_score == 0.0
 
 
 # ── Unknown question type ───────────────────────────────────────────────────
 
 
-def test_unknown_question_type_raises_value_error():
+async def test_unknown_question_type_raises_value_error():
     """Adding a QuestionType without an evaluator branch should fail
     loud, not silently grade everything as wrong.
     """
@@ -321,4 +340,4 @@ def test_unknown_question_type_raises_value_error():
     # backdoor.
     object.__setattr__(q, "question_type", "unknown_type")
     with pytest.raises(ValueError, match="No evaluation branch"):
-        evaluate(q, "A")
+        await evaluate(q, "A")

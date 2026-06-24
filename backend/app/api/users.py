@@ -9,7 +9,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
 
-from app.core.auth import get_current_user, require_role
+from app.core.auth import get_current_user, require_role, invalidate_user_cache
 from app.core.database import USERS, WORKSPACES, get_collection
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.models.base import utc_now
@@ -72,8 +72,19 @@ async def list_users(
     col = get_collection(current_user.tenant_id, USERS)
     query: dict = {"tenant_id": current_user.tenant_id, "deleted_at": None}
 
-    if workspace_id is not None:
-        query["workspace_memberships"] = {"$elemMatch": {"workspace_id": workspace_id}}
+    if current_user.role == UserRole.workspace_admin:
+        admin_wsp_ids = [m.workspace_id for m in current_user.workspace_memberships if m.role == UserRole.workspace_admin]
+        
+        if workspace_id is not None:
+            if workspace_id not in admin_wsp_ids:
+                from app.core.exceptions import ForbiddenError
+                raise ForbiddenError("You do not have access to view users in this workspace")
+            query["workspace_memberships"] = {"$elemMatch": {"workspace_id": workspace_id}}
+        else:
+            query["workspace_memberships"] = {"$elemMatch": {"workspace_id": {"$in": admin_wsp_ids}}}
+    else:
+        if workspace_id is not None:
+            query["workspace_memberships"] = {"$elemMatch": {"workspace_id": workspace_id}}
 
     cursor = col.find(query)
     return [UserResponse.from_doc(User.model_validate(doc)) async for doc in cursor]
@@ -86,12 +97,27 @@ async def deactivate_user(
 ) -> None:
     """Soft-delete a user (sets deleted_at). Auth cache will expire within 5 minutes."""
     col = get_collection(current_user.tenant_id, USERS)
+    user_doc = await col.find_one({"_id": user_id, "deleted_at": None})
+    if user_doc is None:
+        raise NotFoundError("User", user_id)
+        
+    user = User.model_validate(user_doc)
+    
     result = await col.update_one(
         {"_id": user_id, "deleted_at": None},
         {"$set": {"deleted_at": utc_now(), "updated_at": utc_now(), "is_active": False}},
     )
     if result.matched_count == 0:
         raise NotFoundError("User", user_id)
+        
+    # Remove user from all their workspaces
+    wsp_col = get_collection(current_user.tenant_id, "workspaces")
+    for membership in user.workspace_memberships:
+        await wsp_col.update_one(
+            {"_id": membership.workspace_id},
+            {"$pull": {"student_ids": user_id, "admin_ids": user_id}}
+        )
+    await invalidate_user_cache(user)
 
 
 # ── Invite code redemption ────────────────────────────────────────────────────
@@ -165,4 +191,5 @@ async def redeem_invite_code(
     )
     user.touch()
     await user_col.replace_one({"_id": user.id}, user.model_dump(by_alias=True))
+    await invalidate_user_cache(user)
     return UserResponse.from_doc(user)

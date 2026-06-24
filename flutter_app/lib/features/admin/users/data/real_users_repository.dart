@@ -37,13 +37,14 @@ class RealUsersRepository implements UsersRepository {
 
   @override
   Future<User> createUser({
+    required String workspaceId,
     required String email,
     required String displayName,
     required UserRole role,
   }) async {
     try {
       final response = await dio.post<Map<String, dynamic>>(
-        '$_apiPrefix/users/',
+        '$_apiPrefix/workspaces/$workspaceId/members',
         data: {
           'email': email,
           'display_name': displayName,
@@ -78,14 +79,13 @@ class RealUsersRepository implements UsersRepository {
 
   @override
   Future<User> changeRole({
+    required String workspaceId,
     required String userId,
     required UserRole role,
   }) async {
-    // PATCH /users/{id} is documented (plan §5.3) but not yet
-    // implemented on the backend — see UsersRepository's class doc.
     try {
       final response = await dio.patch<Map<String, dynamic>>(
-        '$_apiPrefix/users/$userId',
+        '$_apiPrefix/workspaces/$workspaceId/members/$userId',
         data: {'role': _roleWire[role]},
       );
       return User.fromJson(response.data!);

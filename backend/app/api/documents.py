@@ -12,7 +12,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, UploadFile, status
 
 from app.core.auth import get_current_user, require_role
-from app.core.database import DOCUMENTS, get_collection
+from app.core.database import DOCUMENTS, WORKSPACES, get_collection
 from app.core.exceptions import ForbiddenError, NotFoundError, ValidationError
 from app.models.base import utc_now
 from app.models.document import Document, DocumentResponse, DocumentStatus, DocumentType
@@ -40,10 +40,10 @@ _MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB
 async def upload_document(
     workspace_id: str,
     file: Annotated[UploadFile, File(description="PDF, DOCX, image, or plain text — max 50 MB")],
-    current_user: User = Depends(require_role(UserRole.tenant_admin, UserRole.workspace_admin)),
+    current_user: User = Depends(get_current_user),
 ) -> DocumentResponse:
     """Upload a study material file to blob storage and create a document record."""
-    _assert_workspace_access(current_user, workspace_id)
+    await _assert_admin(current_user, workspace_id)
 
     content_type = (
         file.content_type
@@ -96,6 +96,13 @@ async def upload_document(
     )
     col = get_collection(current_user.tenant_id, DOCUMENTS)
     await col.insert_one(doc.model_dump(by_alias=True))
+    
+    # Update workspace document count
+    wsp_col = get_collection(current_user.tenant_id, "workspaces")
+    await wsp_col.update_one(
+        {"_id": workspace_id},
+        {"$inc": {"document_count": 1}}
+    )
 
     # Hand off to the ingestion worker. If publish fails, mark the document
     # failed in Cosmos so the admin sees a clear error instead of a phantom
@@ -184,10 +191,10 @@ async def get_document(
 async def delete_document(
     workspace_id: str,
     document_id: str,
-    current_user: User = Depends(require_role(UserRole.tenant_admin, UserRole.workspace_admin)),
+    current_user: User = Depends(get_current_user),
 ) -> None:
     """Soft-delete a document record (blob is retained for audit; purge via worker)."""
-    _assert_workspace_access(current_user, workspace_id)
+    await _assert_admin(current_user, workspace_id)
     col = get_collection(current_user.tenant_id, DOCUMENTS)
     result = await col.update_one(
         {"_id": document_id, "workspace_id": workspace_id, "deleted_at": None},
@@ -195,6 +202,13 @@ async def delete_document(
     )
     if result.matched_count == 0:
         raise NotFoundError("Document", document_id)
+        
+    # Update workspace document count
+    wsp_col = get_collection(current_user.tenant_id, "workspaces")
+    await wsp_col.update_one(
+        {"_id": workspace_id},
+        {"$inc": {"document_count": -1}}
+    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -206,3 +220,28 @@ def _assert_workspace_access(user: User, workspace_id: str) -> None:
     ids = {m.workspace_id for m in user.workspace_memberships}
     if workspace_id not in ids:
         raise ForbiddenError("You are not a member of this workspace")
+
+
+async def _assert_admin(user: User, workspace_id: str) -> None:
+    """Raise ForbiddenError if the user is not an admin of this workspace."""
+    if user.role == UserRole.tenant_admin:
+        return
+
+    # Check if this is a collaborative workspace where the user is owner or editor
+    wsp_col = get_collection(user.tenant_id, WORKSPACES)
+    wsp = await wsp_col.find_one({"_id": workspace_id, "deleted_at": None})
+    if wsp and wsp.get("type", "personal") == "collaborative":
+        from app.core.database import WORKSPACE_MEMBERS
+        members_col = get_collection(user.tenant_id, WORKSPACE_MEMBERS)
+        member = await members_col.find_one({"workspace_id": workspace_id, "user_id": user.id, "deleted_at": None})
+        if member and member.get("role") in ("owner", "editor"):
+            return
+        raise ForbiddenError("Only workspace owners or editors can perform this action")
+
+    admin_memberships = {
+        m.workspace_id
+        for m in user.workspace_memberships
+        if m.role in (UserRole.workspace_admin, UserRole.tenant_admin)
+    }
+    if workspace_id not in admin_memberships:
+        raise ForbiddenError("You do not have admin access to this workspace")

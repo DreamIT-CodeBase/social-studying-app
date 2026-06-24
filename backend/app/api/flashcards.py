@@ -301,11 +301,21 @@ async def _try_candidate(
     if not retrieved.chunks:
         return _Skip(f"no grounding chunks (mode={retrieved.mode})")
 
+    # Fetch the fronts of flashcards this student has already seen so
+    # the generator can avoid repeating them. Query the ratings collection
+    # (append-only log of all cards served) for this student + topic.
+    seen_card_fronts = await _get_seen_card_fronts(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=current_user.id,
+        topic_name=candidate.topic_name,
+    )
+
     try:
         generated = await flashcard_generation.generate_flashcard(
             topic=candidate.topic_name,
             grounding_chunks=retrieved.chunks,
-            seen_card_fronts=None,  # Sprint 5/6 polish: query flashcard_ratings
+            seen_card_fronts=seen_card_fronts,
         )
     except InsufficientFlashcardSource as exc:
         return _Skip(f"generator: insufficient_source ({exc})")
@@ -331,6 +341,56 @@ async def _try_candidate(
     return _Skip(f"review rejected: {verdict.reason}")
 
 
+
+# How many past ratings to look back when building the seen-fronts list.
+# 30 covers a realistic session length without blowing the prompt context.
+_SEEN_FRONTS_LOOKBACK = 30
+
+
+async def _get_seen_card_fronts(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    student_id: str,
+    topic_name: str,
+) -> list[str]:
+    """Return front texts of flashcards this student has already seen for a topic.
+
+    Queries the ratings collection (append-only, one row per swipe) for the
+    most recent ``_SEEN_FRONTS_LOOKBACK`` events, then joins to the flashcards
+    collection to retrieve the front text. Returns an empty list on any error
+    so a DB hiccup degrades gracefully to the old (no-dedup) behaviour.
+    """
+    try:
+        ratings_col = get_collection(tenant_id, FLASHCARD_RATINGS)
+        cursor = ratings_col.find(
+            {
+                "workspace_id": workspace_id,
+                "student_id": student_id,
+                "topic": topic_name,
+            },
+            {"flashcard_id": 1},
+        ).limit(_SEEN_FRONTS_LOOKBACK)
+        rating_docs = await cursor.to_list(_SEEN_FRONTS_LOOKBACK)
+        if not rating_docs:
+            return []
+
+        seen_ids = [r["flashcard_id"] for r in rating_docs]
+        fc_col = get_collection(tenant_id, FLASHCARDS)
+        fc_cursor = fc_col.find({"_id": {"$in": seen_ids}}, {"front": 1})
+        fc_docs = await fc_cursor.to_list(len(seen_ids))
+        return [d["front"] for d in fc_docs if d.get("front")]
+    except Exception:
+        logger.warning(
+            "Failed to fetch seen card fronts for student=%s topic=%r — "
+            "falling back to no deduplication.",
+            student_id,
+            topic_name,
+            exc_info=True,
+        )
+        return []
+
+
 # ── Output safety (inline) ─────────────────────────────────────────────────
 
 
@@ -340,6 +400,7 @@ class _FlashcardVerdict:
 
     status: FlashcardStatus
     reason: str
+    safety: content_safety.SafetyVerdict | None = None
 
 
 async def _review(generated: GeneratedFlashcard) -> _FlashcardVerdict:
@@ -373,6 +434,7 @@ async def _review(generated: GeneratedFlashcard) -> _FlashcardVerdict:
                 f"{', '.join(safety.flagged_categories)} "
                 f"(max severity {max(safety.severities.values())}/6)."
             ),
+            safety=safety,
         )
 
     return _FlashcardVerdict(
@@ -453,6 +515,33 @@ async def _persist_flashcard(
 
     col = get_collection(current_user.tenant_id, FLASHCARDS)
     await col.insert_one(flashcard.model_dump(by_alias=True))
+
+    if verdict.status == FlashcardStatus.flagged:
+        from app.core.database import MODERATION_LOG
+        from app.models.moderation import ModerationAction, ModerationLog, ModerationTarget
+
+        entry = ModerationLog(
+            **{"_id": f"mod_{uuid4().hex}"},
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            target_type=ModerationTarget.flashcard,
+            target_id=flashcard.id,
+            action=ModerationAction.flagged,
+            performed_by="system",
+            reason=verdict.reason,
+            azure_safety_score=verdict.safety.max_severity_normalized if verdict.safety else None,
+            severities=verdict.safety.severities if verdict.safety else {},
+            flagged_categories=verdict.safety.flagged_categories if verdict.safety else [],
+        )
+        try:
+            mod_col = get_collection(current_user.tenant_id, MODERATION_LOG)
+            await mod_col.insert_one(entry.model_dump(by_alias=True))
+        except Exception:
+            logger.exception(
+                "Failed to write moderation_log entry for flashcard=%s",
+                flashcard.id,
+            )
+
     return flashcard
 
 

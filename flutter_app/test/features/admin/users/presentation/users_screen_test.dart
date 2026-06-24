@@ -155,6 +155,7 @@ void main() {
           : [_user(), _user(id: 'usr_2', name: 'Noah Kim')];
     });
     when(() => usersRepo.createUser(
+          workspaceId: any(named: 'workspaceId'),
           email: any(named: 'email'),
           displayName: any(named: 'displayName'),
           role: any(named: 'role'),
@@ -173,6 +174,7 @@ void main() {
     await tester.pumpAndSettle();
 
     verify(() => usersRepo.createUser(
+          workspaceId: _wsId,
           email: 'noah@example.com',
           displayName: 'Noah Kim',
           role: UserRole.student,
@@ -185,6 +187,7 @@ void main() {
     when(() => usersRepo.listWorkspaceUsers(any()))
         .thenAnswer((_) async => [_user()]);
     when(() => usersRepo.createUser(
+          workspaceId: any(named: 'workspaceId'),
           email: any(named: 'email'),
           displayName: any(named: 'displayName'),
           role: any(named: 'role'),
@@ -224,6 +227,7 @@ void main() {
 
     expect(find.text('Enter a valid email address'), findsOneWidget);
     verifyNever(() => usersRepo.createUser(
+          workspaceId: any(named: 'workspaceId'),
           email: any(named: 'email'),
           displayName: any(named: 'displayName'),
           role: any(named: 'role'),
@@ -289,6 +293,7 @@ void main() {
       ];
     });
     when(() => usersRepo.changeRole(
+          workspaceId: any(named: 'workspaceId'),
           userId: any(named: 'userId'),
           role: any(named: 'role'),
         )).thenAnswer((_) async => _user(role: UserRole.workspaceAdmin));
@@ -302,6 +307,7 @@ void main() {
     await tester.pumpAndSettle();
 
     verify(() => usersRepo.changeRole(
+          workspaceId: _wsId,
           userId: 'usr_1',
           role: UserRole.workspaceAdmin,
         )).called(1);

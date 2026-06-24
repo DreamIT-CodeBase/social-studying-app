@@ -1,9 +1,6 @@
 import 'dart:convert';
-import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:jwt_decoder/jwt_decoder.dart';
+import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/core/config/environment.dart';
 import 'package:social_study_app/shared/models/user.dart';
@@ -12,206 +9,114 @@ import 'package:social_study_app/shared/services/dio_client.dart';
 part 'auth_repository.g.dart';
 
 abstract class AuthRepository {
-  Future<User> signIn();
+  Future<User> signInWithMicrosoft();
   Future<void> signOut();
-  Future<void> deleteAccount(String userId);
   Future<User?> getStoredUser();
-  Future<String?> getValidAccessToken();
+  Future<void> updateStoredUser(User user);
+  Future<User> redeemInviteCode(String code);
 }
 
 @Riverpod(keepAlive: true)
-AuthRepository authRepository(AuthRepositoryRef ref) {
-  return RealAuthRepository(
-    dio: ref.read(dioClientProvider).dio,
-    secureStorage: const FlutterSecureStorage(),
-    appAuth: const FlutterAppAuth(),
-  );
-}
+AuthRepository authRepository(AuthRepositoryRef ref) => RealAuthRepository(ref);
 
 class RealAuthRepository implements AuthRepository {
-  RealAuthRepository({
-    required Dio dio,
-    required FlutterSecureStorage secureStorage,
-    required FlutterAppAuth appAuth,
-  })  : _dio = dio,
-        _storage = secureStorage,
-        _appAuth = appAuth;
+  RealAuthRepository(this._ref);
 
-  final Dio _dio;
-  final FlutterSecureStorage _storage;
-  final FlutterAppAuth _appAuth;
-
+  final AuthRepositoryRef _ref;
+  static const _storage = FlutterSecureStorage();
   static const _tokenKey = 'auth_token';
-  static const _refreshTokenKey = 'auth_refresh_token';
-  static const _userKey = 'auth_user_json';
+  static const _userKey = 'auth_user';
+  final _appAuth = const FlutterAppAuth();
 
   @override
-  Future<User> signIn() async {
+  Future<User> signInWithMicrosoft() async {
     try {
-      debugPrint('AuthRepository: Starting interactive sign in...');
+      final discoveryUrl = 'https://${Environment.b2cTenantSubdomain}.ciamlogin.com/'
+          '${Environment.b2cTenantId}/v2.0/.well-known/openid-configuration';
 
       final result = await _appAuth.authorizeAndExchangeCode(
         AuthorizationTokenRequest(
-          Environment.clientId,
-          Environment.redirectUri,
-          serviceConfiguration: const AuthorizationServiceConfiguration(
-            authorizationEndpoint: Environment.authorizationEndpoint,
-            tokenEndpoint: Environment.tokenEndpoint,
-            endSessionEndpoint: Environment.endSessionEndpoint,
-          ),
-          scopes: Environment.scopes,
+          Environment.b2cClientId,
+          Environment.b2cRedirectUri,
+          discoveryUrl: discoveryUrl,
           promptValues: ['login'],
-          externalUserAgent: ExternalUserAgent.ephemeralAsWebAuthenticationSession,
+          scopes: [
+            'openid',
+            'profile',
+            'offline_access',
+            'api://${Environment.b2cClientId}/access_as_user',
+          ],
         ),
       );
 
-      if (result == null || result.accessToken == null) {
-        debugPrint('AuthRepository: No access token returned');
-        throw Exception('Authentication failed: No access token returned');
+      if (result == null || result.idToken == null) {
+        throw Exception('Authentication returned empty result');
       }
 
-      debugPrint('AuthRepository: Login successful, received access token');
+      await _storage.write(key: _tokenKey, value: result.idToken);
 
-      await _storage.write(key: _refreshTokenKey, value: result.refreshToken);
-      final token = result.accessToken!;
-      await _storage.write(key: _tokenKey, value: token);
+      // Fetch the real user profile from the backend
+      final dio = _ref.read(dioClientProvider).dio;
+      final response = await dio.get('/api/v1/users/me');
+      final backendUser = User.fromJson(response.data as Map<String, dynamic>);
+      
+      await _storage.write(key: _userKey, value: jsonEncode(backendUser.toJson()));
 
-      debugPrint('AuthRepository: Fetching user profile from backend...');
-      try {
-        final response = await _dio.get(
-          '/api/v1/users/me',
-          options: Options(headers: {'Authorization': 'Bearer $token'}),
-        );
-        final user = User.fromJson(response.data);
-        await _storage.write(key: _userKey, value: jsonEncode(response.data));
-        debugPrint('AuthRepository: User profile loaded: ${user.displayName}');
-        return user;
-      } catch (e) {
-        debugPrint('AuthRepository: Profile fetch failed - $e');
-        if (e is DioException && e.response?.statusCode == 401) {
-          await signOut();
-        }
-        rethrow;
-      }
+      return backendUser;
     } catch (e) {
-      debugPrint('AuthRepository: signIn failed - $e');
-      rethrow;
+      throw Exception('Sign in failed: $e');
     }
   }
 
   @override
   Future<void> signOut() async {
-    debugPrint('AuthRepository: Signing out...');
     await _storage.delete(key: _tokenKey);
-    await _storage.delete(key: _refreshTokenKey);
     await _storage.delete(key: _userKey);
-
-    try {
-      await _appAuth.endSession(EndSessionRequest(
-        idTokenHint: null,
-        postLogoutRedirectUrl: Environment.redirectUri,
-        serviceConfiguration: const AuthorizationServiceConfiguration(
-          authorizationEndpoint: Environment.authorizationEndpoint,
-          tokenEndpoint: Environment.tokenEndpoint,
-          endSessionEndpoint: Environment.endSessionEndpoint,
-        ),
-      ));
-    } catch (e) {
-      debugPrint('AuthRepository: endSession best-effort failed - $e');
-    }
-  }
-
-  @override
-  Future<void> deleteAccount(String userId) async {
-    debugPrint('AuthRepository: Deleting account $userId...');
-    await _dio.delete('/api/v1/users/$userId');
-    await signOut();
   }
 
   @override
   Future<User?> getStoredUser() async {
-    final token = await getValidAccessToken();
-    if (token == null) return null;
-
+    final token = await _storage.read(key: _tokenKey);
+    final userJson = await _storage.read(key: _userKey);
+    if (token == null || userJson == null) {
+      return null;
+    }
     try {
-      final response = await _dio.get('/api/v1/users/me');
-      return User.fromJson(response.data);
+      return User.fromJson(jsonDecode(userJson) as Map<String, dynamic>);
     } catch (_) {
-      final cachedUserJson = await _storage.read(key: _userKey);
-      if (cachedUserJson != null) {
-        try {
-          return User.fromJson(jsonDecode(cachedUserJson));
-        } catch (_) {
-          return null;
-        }
-      }
       return null;
     }
   }
 
   @override
-  Future<String?> getValidAccessToken() async {
-    final accessToken = await _storage.read(key: _tokenKey);
-    final refreshToken = await _storage.read(key: _refreshTokenKey);
-
-    if (accessToken == null && refreshToken == null) return null;
-
-    bool isExpired = false;
-    if (accessToken != null) {
-      try {
-        isExpired = JwtDecoder.isExpired(accessToken);
-      } catch (_) {
-        isExpired = true;
-      }
-    } else {
-      isExpired = true;
-    }
-
-    if (!isExpired) {
-      return accessToken;
-    }
-
-    if (refreshToken != null) {
-      debugPrint('AuthRepository: Access token expired, attempting silent refresh...');
-      try {
-        final result = await _appAuth.token(TokenRequest(
-          Environment.clientId,
-          Environment.redirectUri,
-          serviceConfiguration: const AuthorizationServiceConfiguration(
-            authorizationEndpoint: Environment.authorizationEndpoint,
-            tokenEndpoint: Environment.tokenEndpoint,
-            endSessionEndpoint: Environment.endSessionEndpoint,
-          ),
-          refreshToken: refreshToken,
-          scopes: Environment.scopes,
-        ));
-
-        if (result != null && result.accessToken != null) {
-          debugPrint('AuthRepository: Silent refresh successful');
-          await _storage.write(key: _tokenKey, value: result.accessToken);
-          if (result.refreshToken != null) {
-            await _storage.write(key: _refreshTokenKey, value: result.refreshToken);
-          }
-          return result.accessToken;
-        }
-      } catch (e) {
-        debugPrint('AuthRepository: Silent refresh failed - $e');
-      }
-    }
-
-    return accessToken;
+  Future<void> updateStoredUser(User user) async {
+    await _storage.write(key: _userKey, value: jsonEncode(user.toJson()));
   }
-}
 
-class _MockAuthRepository implements AuthRepository {
   @override
-  Future<User> signIn() async => throw UnimplementedError();
-  @override
-  Future<void> signOut() async {}
-  @override
-  Future<void> deleteAccount(String userId) async {}
-  @override
-  Future<User?> getStoredUser() async => null;
-  @override
-  Future<String?> getValidAccessToken() async => null;
+  Future<User> redeemInviteCode(String code) async {
+    try {
+      final dio = _ref.read(dioClientProvider).dio;
+      final response = await dio.post(
+        '/api/v1/users/join',
+        data: {'code': code},
+      );
+      final updatedUser = User.fromJson(response.data as Map<String, dynamic>);
+      await updateStoredUser(updatedUser);
+      return updatedUser;
+    } catch (e) {
+      throw Exception('Redeem invite code failed: $e');
+    }
+  }
+
+  Map<String, dynamic> _parseJwt(String token) {
+    final parts = token.split('.');
+    if (parts.length != 3) {
+      throw const FormatException('Invalid token');
+    }
+    final payload = parts[1];
+    var normalized = base64Url.normalize(payload);
+    final resp = utf8.decode(base64Url.decode(normalized));
+    return jsonDecode(resp) as Map<String, dynamic>;
+  }
 }

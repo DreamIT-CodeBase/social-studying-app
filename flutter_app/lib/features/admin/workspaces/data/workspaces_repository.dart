@@ -1,6 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/features/admin/workspaces/data/demo_workspaces_repository.dart';
 import 'package:social_study_app/features/admin/workspaces/data/real_workspaces_repository.dart';
+import 'package:social_study_app/core/config/environment.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/shared/models/invite_code.dart';
 import 'package:social_study_app/shared/models/user.dart';
@@ -53,6 +54,33 @@ abstract class WorkspacesRepository {
   ///
   /// Throws [WorkspaceNotFoundException] (404).
   Future<GeneratedInviteCode> generateInviteCode(String workspaceId);
+
+  /// Create a collaborative workspace in the caller's tenant.
+  Future<Workspace> createCollaborative({required String name, String? description});
+
+  /// Join a collaborative workspace using a join code or invitation token.
+  Future<Workspace> joinCollaborative({String? joinCode, String? inviteToken});
+
+  /// Leave a collaborative workspace.
+  Future<void> leaveCollaborative(String workspaceId);
+
+  /// List members of a collaborative workspace.
+  Future<List<Map<String, dynamic>>> listMembers(String workspaceId);
+
+  /// List recent activity logs for a collaborative workspace.
+  Future<List<Map<String, dynamic>>> listActivity(String workspaceId);
+
+  /// Retrieve chat messages for the collaborative workspace.
+  Future<List<Map<String, dynamic>>> getMessages(String workspaceId);
+
+  /// Post a new discussion board message in the workspace.
+  Future<void> postMessage(String workspaceId, {required String content, List<String> attachments});
+
+  /// Change the role of a member (Owner only).
+  Future<void> changeMemberRole(String workspaceId, {required String userId, required String role});
+
+  /// Invite another student to join this collaborative workspace.
+  Future<Map<String, dynamic>> inviteToCollaborative(String workspaceId, {String? email, String? username, required String role});
 }
 
 /// Selects demo vs. real implementation by authenticated user — the
@@ -72,5 +100,8 @@ WorkspacesRepository workspacesRepository(WorkspacesRepositoryRef ref) {
   return RealWorkspacesRepository(dio: ref.read(dioClientProvider).dio);
 }
 
+// `!useRealBackend` so a `--dart-define=USE_REAL_BACKEND=true` build treats
+// nobody as a demo user and routes every call to the Real* impl over Dio.
 bool _isDemoUser(User user) =>
-    user.id == 'usr_demo_001' || user.email == 'demo@socialstudyapp.com';
+    !Environment.useRealBackend &&
+    (user.id == 'usr_demo_001' || user.email == 'demo@socialstudyapp.com');

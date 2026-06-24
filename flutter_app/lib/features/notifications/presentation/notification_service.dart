@@ -1,22 +1,17 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io' show Platform;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show
-    Column,
-    CrossAxisAlignment,
-    FontWeight,
-    MainAxisSize,
-    ScaffoldMessenger,
-    SnackBar,
-    Text,
-    TextStyle,
-    WidgetsBinding;
+    WidgetsBinding,
+    debugPrint;
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:social_study_app/core/services/sound_service.dart';
 import 'package:social_study_app/features/notifications/data/notification_token_repository.dart';
 import 'package:social_study_app/shared/models/notification_token.dart';
 
@@ -58,6 +53,8 @@ class NotificationService {
   final NotificationTokenRepository tokenRepository;
   final FlutterSecureStorage secureStorage;
   FirebaseMessaging? _messaging;
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
 
   static const _installationIdKey = 'notification_installation_id';
 
@@ -68,7 +65,6 @@ class NotificationService {
   /// Returns true on full success, false on any failure path (the
   /// caller treats false as "notifications won't work this session").
   Future<bool> initialize({
-    required void Function(RemoteMessage message) onForeground,
     required void Function(RemoteMessage message) onTap,
   }) async {
     try {
@@ -95,6 +91,11 @@ class NotificationService {
       debugPrint('NotificationService: no FCM token; skipping register');
       return false;
     }
+
+    debugPrint('\n\n========================================');
+    debugPrint('YOUR FCM TOKEN FOR FIREBASE CONSOLE:');
+    debugPrint(token);
+    debugPrint('========================================\n\n');
 
     final installationId = await _installationId();
     final platform = _detectPlatform();
@@ -132,10 +133,57 @@ class NotificationService {
       }
     });
 
+    // Initialize local notifications
+    const androidInitSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const iosInitSettings = DarwinInitializationSettings();
+    const initSettings = InitializationSettings(
+      android: androidInitSettings,
+      iOS: iosInitSettings,
+    );
+    
+    await _localNotifications.initialize(
+      settings: initSettings,
+      onDidReceiveNotificationResponse: (details) {
+        if (details.payload != null) {
+          try {
+            final data = jsonDecode(details.payload!) as Map<String, dynamic>;
+            onTap(RemoteMessage(data: data));
+          } catch (_) {}
+        }
+      },
+    );
+
+    // Allow iOS to show notifications in the foreground natively
+    await _messaging!.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
     // Foreground messages. FCM doesn't render a system notification
-    // when the app is in the foreground — that's where our in-app
-    // banner takes over.
-    _foregroundSubscription = FirebaseMessaging.onMessage.listen(onForeground);
+    // when the app is in the foreground on Android — we use local notifications.
+    _foregroundSubscription = FirebaseMessaging.onMessage.listen((message) {
+      final notification = message.notification;
+      if (notification != null) {
+        _localNotifications.show(
+          id: notification.hashCode,
+          title: notification.title,
+          body: notification.body,
+          notificationDetails: const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'social_study_channel',
+              'Social Study Notifications',
+              importance: Importance.max,
+              priority: Priority.high,
+            ),
+          ),
+          payload: jsonEncode(message.data),
+        );
+        // Play in-app notification chime (foreground only — the system
+        // handles sound when the app is backgrounded).
+        SoundService.instance.playNotification();
+      }
+    });
 
     // Background → tap path. ``getInitialMessage`` covers the
     // cold-start tap (app was terminated, tap launched it).
@@ -304,53 +352,5 @@ NotificationService notificationService(NotificationServiceRef ref) {
   );
 }
 
-
-// ─────────────────────────────────────────────────────────────────────────
-// In-app foreground banner
-// ─────────────────────────────────────────────────────────────────────────
-
-
-/// Quick helper for the wiring layer: show a `Material` SnackBar with
-/// the message's title + body when an FCM push lands while the app is
-/// in the foreground. Kept here rather than in widget code because
-/// the wiring (NotificationService.initialize) hands the
-/// ``onForeground`` callback in directly — colocating the rendering
-/// keeps the contract close to its only consumer.
-void showInAppNotificationBanner({
-  required RemoteMessage message,
-  required GoRouter router,
-}) {
-  final notification = message.notification;
-  if (notification == null) return;
-  final title = notification.title ?? '';
-  final body = notification.body ?? '';
-  if (title.isEmpty && body.isEmpty) return;
-  // Find any visible Scaffold via the GoRouter delegate's context.
-  // ScaffoldMessenger.of with rootScaffoldMessengerKey would be the
-  // canonical path; for the app we accept a transient miss if the
-  // top-level Scaffold isn't ready yet (e.g. cold start race) — the
-  // tap path will still navigate, the banner is the bonus.
-  final context =
-      router.routerDelegate.navigatorKey.currentContext;
-  if (context == null) return;
-  final messenger = ScaffoldMessenger.maybeOf(context);
-  messenger?.showSnackBar(
-    SnackBar(
-      content: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (title.isNotEmpty)
-            Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-          if (body.isNotEmpty) Text(body),
-        ],
-      ),
-      duration: const Duration(seconds: 4),
-    ),
-  );
-}
 
 

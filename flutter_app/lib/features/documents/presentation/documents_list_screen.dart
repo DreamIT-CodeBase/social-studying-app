@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/routing/routes.dart';
+import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/features/documents/data/demo_documents_repository.dart';
 import 'package:social_study_app/features/documents/presentation/documents_notifier.dart';
 import 'package:social_study_app/features/documents/presentation/upload_controller.dart';
@@ -37,7 +38,7 @@ class DocumentsListScreen extends ConsumerWidget {
       );
     });
 
-    return Stack(
+    final content = Stack(
       children: [
         RefreshIndicator(
           onRefresh: () async {
@@ -86,12 +87,41 @@ class DocumentsListScreen extends ConsumerWidget {
           ),
       ],
     );
+
+    if (currentFlavor == AppFlavor.student) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'My Study Materials',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+        body: content,
+      );
+    }
+
+    return content;
   }
 
   Future<void> _handleUpload(BuildContext context, WidgetRef ref) async {
-    final doc = await ref
-        .read(uploadControllerProvider.notifier)
-        .pickAndUpload(workspaceId: workspaceId);
+    final source = await showModalBottomSheet<_UploadSource>(
+      context: context,
+      builder: (_) => const _UploadSourceSheet(),
+    );
+    if (source == null) return;
+
+    final doc = switch (source) {
+      _UploadSource.camera => await ref
+          .read(uploadControllerProvider.notifier)
+          .pickFromCamera(workspaceId: workspaceId),
+      _UploadSource.gallery => await ref
+          .read(uploadControllerProvider.notifier)
+          .pickImageFromGallery(workspaceId: workspaceId),
+      _UploadSource.file => await ref
+          .read(uploadControllerProvider.notifier)
+          .pickAndUpload(workspaceId: workspaceId),
+    };
+
     if (doc != null) {
       // List view should reflect the new doc; provider invalidate
       // re-runs the list fetch.
@@ -116,8 +146,12 @@ class DocumentsListScreen extends ConsumerWidget {
   }
 }
 
-String _pollingRouteFor(String workspaceId, String documentId) =>
-    '${AppRoutes.adminDocuments}/$workspaceId/$documentId';
+String _pollingRouteFor(String workspaceId, String documentId) {
+  if (currentFlavor == AppFlavor.student) {
+    return '/student/documents/$workspaceId/$documentId';
+  }
+  return '${AppRoutes.adminDocuments}/$workspaceId/$documentId';
+}
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState({required this.onUpload});
@@ -259,6 +293,48 @@ class _DocTypeIcon extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
       ),
       child: Icon(icon, color: context.colorScheme.onPrimaryContainer),
+    );
+  }
+}
+
+
+enum _UploadSource { camera, gallery, file }
+
+class _UploadSourceSheet extends StatelessWidget {
+  const _UploadSourceSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(Spacing.lg),
+            child: Text(
+              'Upload Document',
+              style: context.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt_rounded),
+            title: const Text('Take Photo'),
+            onTap: () => Navigator.of(context).pop(_UploadSource.camera),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_rounded),
+            title: const Text('Choose from Gallery'),
+            onTap: () => Navigator.of(context).pop(_UploadSource.gallery),
+          ),
+          ListTile(
+            leading: const Icon(Icons.folder_rounded),
+            title: const Text('Choose File'),
+            onTap: () => Navigator.of(context).pop(_UploadSource.file),
+          ),
+        ],
+      ),
     );
   }
 }

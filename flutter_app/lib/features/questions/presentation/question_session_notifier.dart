@@ -8,6 +8,9 @@ import 'package:social_study_app/features/questions/data/demo_questions_reposito
 import 'package:social_study_app/features/questions/data/questions_repository.dart';
 import 'package:social_study_app/features/questions/domain/question_session.dart';
 import 'package:social_study_app/shared/models/question.dart';
+import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
+import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 
 part 'question_session_notifier.g.dart';
 
@@ -56,6 +59,20 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
     await _fetchNext();
   }
 
+  /// End the current study session, returning to the idle state.
+  ///
+  /// Valid from [ready] or [feedback]. Not valid from [loading] or
+  /// [submitting] — those are transient states with in-flight work
+  /// that should complete before the user can exit.
+  void endSession() {
+    if (state is QuestionSessionReady ||
+        state is QuestionSessionFeedback ||
+        state is QuestionSessionError ||
+        state is QuestionSessionUnavailable) {
+      state = const QuestionSession.idle();
+    }
+  }
+
   /// Store the student's in-progress response.
   ///
   /// Only valid from [ready] state (the question is shown and the
@@ -100,6 +117,7 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
         submittedAnswer: draft,
         feedback: feedback,
       );
+      _invalidateProfile();
     } on QuestionNotFoundException catch (e) {
       // The question was deleted between fetch and submit — rare
       // (admin moderation), but the student should see a clear
@@ -112,6 +130,17 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
       state = QuestionSession.error(message: e.message);
     } on Object catch (e) {
       state = QuestionSession.error(message: e.toString());
+    }
+  }
+
+  void _invalidateProfile() {
+    final authState = ref.read(authNotifierProvider).valueOrNull;
+    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    if (user != null) {
+      final key = (workspaceId: _workspaceId, userId: user.id);
+      ref.invalidate(gamificationProfileProvider(key));
+      ref.invalidate(streakSummaryProvider(key));
+      ref.invalidate(studentProgressNotifierProvider(_workspaceId));
     }
   }
 

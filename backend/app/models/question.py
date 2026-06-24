@@ -190,7 +190,7 @@ class AnswerFeedback(CosmosDocument.__base__):
     is_correct: bool
     canonical_answer: str
     explanation: str
-    xp_earned: int = Field(ge=0)
+    xp_earned: int
     new_topic_mastery: float = Field(ge=0.0, le=1.0)
     new_overall_mastery: float = Field(ge=0.0, le=1.0)
     rubric_score: float | None = Field(default=None, ge=0.0, le=1.0)

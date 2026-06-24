@@ -4,6 +4,7 @@ import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/shared/widgets/app_logo.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 
@@ -18,13 +19,17 @@ class LoginScreen extends ConsumerWidget {
       body: SafeArea(
         child: authAsync.when(
           data: (_) => _LoginBody(
-            onSignIn: () => ref.read(authNotifierProvider.notifier).signIn(),
+            onMicrosoftSignIn: () => ref
+                .read(authNotifierProvider.notifier)
+                .signInWithMicrosoft(),
           ),
           loading: () => const LoadingIndicator(message: 'Signing you in…'),
           error: (error, _) => ErrorView(
             message: error.toString(),
-            onRetry: () => ref.invalidate(authNotifierProvider),
-            retryLabel: 'Go Back',
+            onRetry: () => ref
+                .read(authNotifierProvider.notifier)
+                .signInWithMicrosoft(),
+            retryLabel: 'Try Again',
           ),
         ),
       ),
@@ -33,9 +38,11 @@ class LoginScreen extends ConsumerWidget {
 }
 
 class _LoginBody extends StatelessWidget {
-  const _LoginBody({required this.onSignIn});
+  const _LoginBody({
+    required this.onMicrosoftSignIn,
+  });
 
-  final VoidCallback onSignIn;
+  final VoidCallback onMicrosoftSignIn;
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +52,15 @@ class _LoginBody extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           const Spacer(flex: 2),
-          _AppLogo(),
+          AppLogo(
+            shadows: [
+              BoxShadow(
+                color: AppColors.primary.withAlpha(77),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
           const SizedBox(height: Spacing.xl),
           Text(
             'Social Study',
@@ -65,46 +80,16 @@ class _LoginBody extends StatelessWidget {
             ),
           ),
           const Spacer(flex: 3),
-          _MicrosoftSignInButton(onPressed: onSignIn),
+          _MicrosoftSignInButton(onPressed: onMicrosoftSignIn),
           const Spacer(),
           Text(
-            'Social Study App v1.0.0',
+            'Social Study App v0.1.0-demo',
             style: context.textTheme.bodySmall?.copyWith(
               color: context.colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: Spacing.lg),
         ],
-      ),
-    );
-  }
-}
-
-class _AppLogo extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 96,
-      height: 96,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.primary, Color(0xFF6366F1)],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withAlpha(77),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: const Icon(
-        Icons.auto_stories_rounded,
-        size: 48,
-        color: Colors.white,
       ),
     );
   }

@@ -10,6 +10,8 @@ import 'package:social_study_app/features/auth/data/auth_repository.dart';
 import 'package:social_study_app/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/models/workspace.dart';
+import 'package:social_study_app/shared/services/dio_client.dart';
+import 'package:dio/dio.dart';
 
 class _MockWorkspacesRepo extends Mock implements WorkspacesRepository {}
 
@@ -22,7 +24,7 @@ class _StubAuthRepo implements AuthRepository {
   const _StubAuthRepo();
 
   @override
-  Future<User> signIn() async => _user;
+  Future<User> signInWithMicrosoft() async => _user;
 
   @override
   Future<void> signOut() async {}
@@ -31,10 +33,10 @@ class _StubAuthRepo implements AuthRepository {
   Future<User?> getStoredUser() async => _user;
 
   @override
-  Future<String?> getValidAccessToken() async => 'fake_token';
+  Future<void> updateStoredUser(User user) async {}
 
   @override
-  Future<void> deleteAccount(String userId) async {}
+  Future<User> redeemInviteCode(String code) async => _user;
 
   static final _user = User(
     id: 'usr_test',
@@ -47,6 +49,9 @@ class _StubAuthRepo implements AuthRepository {
   );
 }
 
+
+class _MockDioClient extends Mock implements DioClient {}
+class _MockDio extends Mock implements Dio {}
 
 /// Builds a minimal app that renders the onboarding screen at ``/``
 /// and the post-onboarding dashboard stub at ``/admin/dashboard``.
@@ -69,10 +74,18 @@ Widget _wrap({required WorkspacesRepository repo}) {
       ),
     ],
   );
+  
+  final mockDioClient = _MockDioClient();
+  final mockDio = _MockDio();
+  when(() => mockDioClient.dio).thenReturn(mockDio);
+  when(() => mockDio.get(any(), queryParameters: any(named: 'queryParameters'), options: any(named: 'options'), cancelToken: any(named: 'cancelToken'), onReceiveProgress: any(named: 'onReceiveProgress')))
+      .thenThrow(DioException(requestOptions: RequestOptions(path: '/users/me')));
+
   return ProviderScope(
     overrides: [
       workspacesRepositoryProvider.overrideWithValue(repo),
       authRepositoryProvider.overrideWithValue(const _StubAuthRepo()),
+      dioClientProvider.overrideWithValue(mockDioClient),
     ],
     child: MaterialApp.router(
       theme: AppTheme.light,
