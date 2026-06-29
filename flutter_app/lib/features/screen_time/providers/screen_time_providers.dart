@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/features/home/providers/workspace_providers.dart';
 import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
 import 'package:social_study_app/shared/models/gamification.dart';
 import 'package:social_study_app/features/screen_time/models/screen_time_wallet.dart';
@@ -23,7 +24,11 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
       return ScreenTimeWallet.initial();
     }
 
-    final workspaceId = user.workspaceMemberships.first.workspaceId;
+    final workspaceId = ref.watch(activeWorkspaceIdProvider);
+    if (workspaceId == null) {
+      await _service.setCurrentUserId(null);
+      return ScreenTimeWallet.initial();
+    }
     final key = (workspaceId: workspaceId, userId: user.id);
 
     await _service.setCurrentUserId(user.id);
@@ -86,9 +91,10 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
   Future<void> refreshWallet() async {
     final authState = ref.read(authNotifierProvider).valueOrNull;
     final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
-    if (user == null || user.workspaceMemberships.isEmpty) return;
+    if (user == null) return;
 
-    final workspaceId = user.workspaceMemberships.first.workspaceId;
+    final workspaceId = ref.read(activeWorkspaceIdProvider);
+    if (workspaceId == null) return;
 
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
@@ -99,9 +105,10 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
   Future<void> syncXp() async {
     final authState = ref.read(authNotifierProvider).valueOrNull;
     final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
-    if (user == null || user.workspaceMemberships.isEmpty) return;
+    if (user == null) return;
 
-    final workspaceId = user.workspaceMemberships.first.workspaceId;
+    final workspaceId = ref.read(activeWorkspaceIdProvider);
+    if (workspaceId == null) return;
     final currentWallet = state.valueOrNull;
 
     try {
@@ -127,9 +134,10 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
   Future<void> updateXpToMinuteRatio(int ratio) async {
     final authState = ref.read(authNotifierProvider).valueOrNull;
     final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
-    if (user == null || user.workspaceMemberships.isEmpty) return;
+    if (user == null) return;
 
-    final workspaceId = user.workspaceMemberships.first.workspaceId;
+    final workspaceId = ref.read(activeWorkspaceIdProvider);
+    if (workspaceId == null) return;
 
     try {
       final updatedSettings = await ref.read(screenTimeRepositoryProvider).updateSettings(
@@ -149,9 +157,10 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
   Future<void> updateEnableBlocking(bool enable) async {
     final authState = ref.read(authNotifierProvider).valueOrNull;
     final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
-    if (user == null || user.workspaceMemberships.isEmpty) return;
+    if (user == null) return;
 
-    final workspaceId = user.workspaceMemberships.first.workspaceId;
+    final workspaceId = ref.read(activeWorkspaceIdProvider);
+    if (workspaceId == null) return;
 
     try {
       final updatedSettings = await ref.read(screenTimeRepositoryProvider).updateSettings(
@@ -167,9 +176,10 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
   Future<void> updateBlockedPackages(List<String> packages) async {
     final authState = ref.read(authNotifierProvider).valueOrNull;
     final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
-    if (user == null || user.workspaceMemberships.isEmpty) return;
+    if (user == null) return;
 
-    final workspaceId = user.workspaceMemberships.first.workspaceId;
+    final workspaceId = ref.read(activeWorkspaceIdProvider);
+    if (workspaceId == null) return;
 
     try {
       final updatedSettings = await ref.read(screenTimeRepositoryProvider).updateSettings(
@@ -185,9 +195,10 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
   Future<void> consumeMinutes(int minutes) async {
     final authState = ref.read(authNotifierProvider).valueOrNull;
     final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
-    if (user == null || user.workspaceMemberships.isEmpty) return;
+    if (user == null) return;
 
-    final workspaceId = user.workspaceMemberships.first.workspaceId;
+    final workspaceId = ref.read(activeWorkspaceIdProvider);
+    if (workspaceId == null) return;
 
     try {
       final serverWallet = await ref.read(screenTimeRepositoryProvider).consumeMinutes(
@@ -245,13 +256,15 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 Future<int> xpToMinuteRatio(XpToMinuteRatioRef ref) async {
   final authState = ref.watch(authNotifierProvider).valueOrNull;
   final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
-  if (user != null && user.workspaceMemberships.isNotEmpty) {
-    final workspaceId = user.workspaceMemberships.first.workspaceId;
-    try {
-      final settings = await ref.watch(screenTimeRepositoryProvider).fetchSettings(workspaceId: workspaceId);
-      return settings.xpToMinuteRatio;
-    } catch (_) {
-      // fallback
+  if (user != null) {
+    final workspaceId = ref.watch(activeWorkspaceIdProvider);
+    if (workspaceId != null) {
+      try {
+        final settings = await ref.watch(screenTimeRepositoryProvider).fetchSettings(workspaceId: workspaceId);
+        return settings.xpToMinuteRatio;
+      } catch (_) {
+        // fallback
+      }
     }
   }
   return ScreenTimeService().getXpToMinuteRatio();
@@ -261,13 +274,15 @@ Future<int> xpToMinuteRatio(XpToMinuteRatioRef ref) async {
 Future<bool> enableBlocking(EnableBlockingRef ref) async {
   final authState = ref.watch(authNotifierProvider).valueOrNull;
   final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
-  if (user != null && user.workspaceMemberships.isNotEmpty) {
-    final workspaceId = user.workspaceMemberships.first.workspaceId;
-    try {
-      final settings = await ref.watch(screenTimeRepositoryProvider).fetchSettings(workspaceId: workspaceId);
-      return settings.enableBlocking;
-    } catch (_) {
-      // fallback
+  if (user != null) {
+    final workspaceId = ref.watch(activeWorkspaceIdProvider);
+    if (workspaceId != null) {
+      try {
+        final settings = await ref.watch(screenTimeRepositoryProvider).fetchSettings(workspaceId: workspaceId);
+        return settings.enableBlocking;
+      } catch (_) {
+        // fallback
+      }
     }
   }
   return ScreenTimeService().getEnableBlocking();
@@ -277,13 +292,15 @@ Future<bool> enableBlocking(EnableBlockingRef ref) async {
 Future<List<String>> blockedPackages(BlockedPackagesRef ref) async {
   final authState = ref.watch(authNotifierProvider).valueOrNull;
   final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
-  if (user != null && user.workspaceMemberships.isNotEmpty) {
-    final workspaceId = user.workspaceMemberships.first.workspaceId;
-    try {
-      final settings = await ref.watch(screenTimeRepositoryProvider).fetchSettings(workspaceId: workspaceId);
-      return settings.blockedPackages;
-    } catch (_) {
-      // fallback
+  if (user != null) {
+    final workspaceId = ref.watch(activeWorkspaceIdProvider);
+    if (workspaceId != null) {
+      try {
+        final settings = await ref.watch(screenTimeRepositoryProvider).fetchSettings(workspaceId: workspaceId);
+        return settings.blockedPackages;
+      } catch (_) {
+        // fallback
+      }
     }
   }
   return ScreenTimeService().getBlockedPackages();

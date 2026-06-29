@@ -5,7 +5,9 @@ param environment string
 param tags object
 param keyVaultName string
 
-var redisName = 'redis-ssa-${environment}-ddjopeut37ed2'
+var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id)
+
+var redisName = 'redis-ssa-${environment}-${uniqueSuffix}'
 
 resource redisCache 'Microsoft.Cache/redis@2024-03-01' = {
   name: redisName

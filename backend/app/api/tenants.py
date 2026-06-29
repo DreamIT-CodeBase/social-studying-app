@@ -44,6 +44,21 @@ async def create_tenant(
         admin_email=body.admin_email,
     )
     await col.insert_one(tenant.model_dump(by_alias=True))
+
+    # Provision the tenant database with 400 RU/s shared database-level throughput
+    from app.core.config import settings
+    from app.core.database import _get_client
+    db_name = settings.get_db_name(tenant.id)
+    try:
+        client = _get_client()
+        await client[db_name].command({
+            "customAction": "CreateDatabase",
+            "offerThroughput": 400
+        })
+    except Exception:
+        # Non-blocking log or warning if Cosmos connection fails or doesn't support command (like local mongo)
+        pass
+
     return TenantResponse.from_doc(tenant)
 
 

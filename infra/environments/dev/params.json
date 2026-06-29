@@ -12,7 +12,7 @@
       "value": "ssa2"
     },
     "deployerObjectId": {
-      "value": "08455b40-54d9-42eb-8992-6dc8b40a64b2"
+      "value": "4b5a567c-d193-4870-8bef-86282d112e04"
     },
     "b2cTenantId": {
       "value": "cbf2e3d3-af81-40dd-a396-aae11d2c6b3f"
@@ -27,7 +27,7 @@
       "value": 10
     },
     "embeddingCapacity": {
-      "value": 30
+      "value": 50
     }
   }
 }

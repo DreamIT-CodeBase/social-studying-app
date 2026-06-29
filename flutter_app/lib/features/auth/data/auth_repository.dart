@@ -14,6 +14,7 @@ abstract class AuthRepository {
   Future<User?> getStoredUser();
   Future<void> updateStoredUser(User user);
   Future<User> redeemInviteCode(String code);
+  Future<void> deleteAccount(String userId);
 }
 
 @Riverpod(keepAlive: true)
@@ -106,6 +107,17 @@ class RealAuthRepository implements AuthRepository {
       return updatedUser;
     } catch (e) {
       throw Exception('Redeem invite code failed: $e');
+    }
+  }
+
+  @override
+  Future<void> deleteAccount(String userId) async {
+    try {
+      final dio = _ref.read(dioClientProvider).dio;
+      await dio.delete('/api/v1/users/$userId');
+      await signOut();
+    } catch (e) {
+      throw Exception('Delete account failed: $e');
     }
   }
 

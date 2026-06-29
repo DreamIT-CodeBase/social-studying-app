@@ -24,7 +24,9 @@ param keyVaultName string
 // Namespace name must be globally unique across Azure. Same naming
 // convention as ``service-bus.bicep`` (sb-ssa-<env>-<seed>) — the seed
 // is the pinned shared suffix from memory/infra_seed_and_rg_decisions.
-var namespaceName = 'nh-ns-ssa-${environment}-ddjopeut37ed2'
+var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id)
+
+var namespaceName = 'nh-ns-ssa-${environment}-${uniqueSuffix}'
 var hubName = 'study-app-${environment}'
 
 resource namespace 'Microsoft.NotificationHubs/namespaces@2023-09-01' = {

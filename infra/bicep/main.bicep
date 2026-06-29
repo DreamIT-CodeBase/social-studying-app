@@ -149,7 +149,7 @@ module openAi 'modules/openai.bicep' = {
   name: 'openai'
   scope: rg
   params: {
-    location: location
+    location: 'eastus2'
     environment: environment
     tags: tags
     keyVaultName: keyVault.outputs.keyVaultName

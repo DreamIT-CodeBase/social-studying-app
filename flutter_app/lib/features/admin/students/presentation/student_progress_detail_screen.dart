@@ -502,7 +502,7 @@ class _ActivityRow extends StatelessWidget {
                 children: [
                   Text(
                     entry.topic,
-                    style: context.textTheme.bodyLarge?.copyWith(
+                    style: context.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                     maxLines: 1,

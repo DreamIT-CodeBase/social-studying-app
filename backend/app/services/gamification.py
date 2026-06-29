@@ -94,11 +94,10 @@ CORRECT_BONUS_XP: dict[DifficultyLevel, int] = {
 }
 """Difficulty-weighted bonus added on a correct answer."""
 
-WRONG_ANSWER_PENALTY_XP: int = -5
-"""XP deducted when the student answers incorrectly. Applied after the
-attempt XP and streak bonus are computed — the net result can be
-negative for this event, but :func:`record_question_attempt` floors
-``xp_total`` at 0 so the cumulative total never goes below zero."""
+WRONG_ANSWER_PENALTY_XP: int = -7
+"""XP deducted when the student answers incorrectly. On wrong answers,
+attempt XP and streak bonus are not awarded, and only this penalty is
+applied. The returned value is negative; the caller floors total XP at 0."""
 
 STREAK_BONUS_CAP: int = 10
 """Maximum streak-day XP applied to a single submission. Streak XP =
@@ -367,21 +366,19 @@ def compute_question_xp(
     streak_days: int,
 ) -> int:
     """Pure XP rule: attempt + (correct?) bonus + capped streak bonus
-    − wrong-answer penalty.
+    or flat wrong-answer penalty.
 
     Always-on attempt XP rewards trying. Correct bonus scales with
     difficulty so hard questions are worth chasing. Streak bonus
     rewards regular study, capped so a 200-day streak doesn't
     trivialise the level curve. Wrong answers receive a flat
-    :data:`WRONG_ANSWER_PENALTY_XP` deduction — the returned value may
-    be negative; the caller is responsible for flooring ``xp_total``.
+    :data:`WRONG_ANSWER_PENALTY_XP` deduction — the returned value is
+    negative; the caller is responsible for flooring ``xp_total``.
     """
-    xp = ATTEMPT_XP
     if is_correct:
-        xp += CORRECT_BONUS_XP[difficulty]
+        xp = ATTEMPT_XP + CORRECT_BONUS_XP[difficulty] + min(streak_days, STREAK_BONUS_CAP)
     else:
-        xp += WRONG_ANSWER_PENALTY_XP
-    xp += min(streak_days, STREAK_BONUS_CAP)
+        xp = WRONG_ANSWER_PENALTY_XP
     return xp
 
 

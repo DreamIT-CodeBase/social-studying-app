@@ -5,7 +5,9 @@ param environment string
 param tags object
 param keyVaultName string
 
-var accountName = 'cosmos-ssa-${environment}-ddjopeut37ed2'
+var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id)
+
+var accountName = 'cosmos-ssa-${environment}-${uniqueSuffix}'
 
 resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
   name: accountName

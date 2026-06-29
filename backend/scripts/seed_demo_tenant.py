@@ -122,6 +122,27 @@ async def _seed(connection_string: str) -> None:
     db_name = settings.get_db_name(_TENANT_ID)
     try:
         await client.admin.command("ping")
+        
+        # Ensure platform database exists with shared throughput
+        try:
+            await client[_PLATFORM_DB].command({
+                "customAction": "CreateDatabase",
+                "offerThroughput": 400
+            })
+            print(f"  - Database '{_PLATFORM_DB}' verified with 400 RU/s shared throughput.")
+        except Exception as e:
+            print(f"  - Note/Warning creating platform DB: {e}")
+
+        # Ensure tenant database exists with shared throughput
+        try:
+            await client[db_name].command({
+                "customAction": "CreateDatabase",
+                "offerThroughput": 400
+            })
+            print(f"  - Database '{db_name}' verified with 400 RU/s shared throughput.")
+        except Exception as e:
+            print(f"  - Note/Warning creating tenant DB: {e}")
+
         plan = [
             (_PLATFORM_DB, _TENANTS, _TENANT_ID, tenant),
             (db_name, _WORKSPACES, _WORKSPACE_ID, workspace),

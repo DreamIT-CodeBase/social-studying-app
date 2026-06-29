@@ -40,13 +40,13 @@ from datetime import date
 
 
 def test_compute_xp_wrong_answer_applies_penalty():
-    """Wrong answer = attempt_xp + penalty + streak. No correct-bonus."""
+    """Wrong answer = penalty. No attempt-xp, no correct-bonus, no streak."""
     xp = compute_question_xp(
         is_correct=False,
         difficulty=DifficultyLevel.advanced,
-        streak_days=0,
+        streak_days=5,
     )
-    assert xp == ATTEMPT_XP + WRONG_ANSWER_PENALTY_XP
+    assert xp == WRONG_ANSWER_PENALTY_XP
 
 
 def test_compute_xp_wrong_answer_penalty_is_negative():
@@ -82,12 +82,12 @@ def test_compute_xp_streak_bonus_is_capped():
 def test_compute_xp_streak_bonus_scales_below_cap():
     """At streak < cap, each day adds 1 XP."""
     low = compute_question_xp(
-        is_correct=False,
+        is_correct=True,
         difficulty=DifficultyLevel.beginner,
         streak_days=3,
     )
     high = compute_question_xp(
-        is_correct=False,
+        is_correct=True,
         difficulty=DifficultyLevel.beginner,
         streak_days=5,
     )
@@ -510,8 +510,8 @@ async def test_record_question_attempt_persists_via_upsert():
 
 @pytest.mark.asyncio
 async def test_wrong_answer_deducts_xp_from_total():
-    """A wrong answer yields net negative XP for the event (attempt + penalty
-    + streak), and that net is subtracted from xp_total."""
+    """A wrong answer yields net negative XP for the event (penalty only),
+    and that net is subtracted from xp_total."""
     initial = _seed(xp_total=50, level=1, streak_days=0)
     col, store = _fake_collection(initial=initial)
     with patch.object(gamification_service, "get_collection", return_value=col):
@@ -524,9 +524,8 @@ async def test_wrong_answer_deducts_xp_from_total():
             is_correct=False,
             now="2026-05-23T10:00:00+00:00",
         )
-    # streak_days was 0 on the seed; first event sets it to 1 (streak bonus=1).
-    # xp_earned = ATTEMPT_XP + WRONG_ANSWER_PENALTY_XP + streak_bonus(1) = 10 - 5 + 1 = 6
-    assert delta.xp_earned == ATTEMPT_XP + WRONG_ANSWER_PENALTY_XP + 1
+    # Wrong answer receives exactly WRONG_ANSWER_PENALTY_XP (-7)
+    assert delta.xp_earned == WRONG_ANSWER_PENALTY_XP
     assert store["current"]["xp_total"] == 50 + delta.xp_earned
 
 
@@ -551,7 +550,6 @@ async def test_wrong_answer_floors_xp_total_at_zero():
             is_correct=False,
             now="2026-05-23T18:00:00+00:00",  # same day → no streak growth
         )
-    # xp_earned = 10 - 5 + 5 = 10, so 3 + 10 = 13 — but if it were say 3 + (-5+streak)
-    # The important invariant is xp_total >= 0:
-    assert store["current"]["xp_total"] >= 0
-    assert store["current"]["xp_total"] == max(0, 3 + delta.xp_earned)
+    # Wrong answer XP = -7. xp_total = max(0, 3 - 7) = 0.
+    assert delta.xp_earned == WRONG_ANSWER_PENALTY_XP
+    assert store["current"]["xp_total"] == 0

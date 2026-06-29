@@ -120,7 +120,7 @@ void main() {
     );
     expect(find.text('Chloroplast'), findsOneWidget);
     expect(find.text('Nucleus'), findsOneWidget);
-    expect(find.text('PHOTOSYNTHESIS'), findsOneWidget);
+    expect(find.text('Photosynthesis'), findsOneWidget);
   });
 
   testWidgets('submit is disabled until an option is selected',

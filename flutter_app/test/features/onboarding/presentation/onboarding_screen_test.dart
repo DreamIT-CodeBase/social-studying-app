@@ -38,6 +38,9 @@ class _StubAuthRepo implements AuthRepository {
   @override
   Future<User> redeemInviteCode(String code) async => _user;
 
+  @override
+  Future<void> deleteAccount(String userId) async {}
+
   static final _user = User(
     id: 'usr_test',
     email: 'test@example.com',
