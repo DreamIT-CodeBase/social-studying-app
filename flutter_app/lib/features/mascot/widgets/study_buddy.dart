@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/features/mascot/models/mascot_state.dart';
 
-class StudyBuddy extends StatelessWidget {
+class StudyBuddy extends ConsumerWidget {
   const StudyBuddy({
     super.key,
     this.state = MascotState.idle,
@@ -13,7 +15,12 @@ class StudyBuddy extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(appThemeModeProvider);
+    if (themeMode == AppThemeMode.mature) {
+      return const SizedBox.shrink();
+    }
+
     // Using ValueKey(state) so the animation triggers/restarts whenever the state changes.
     return SizedBox(
       width: size,

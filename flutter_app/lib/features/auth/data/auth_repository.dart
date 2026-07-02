@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/core/config/environment.dart';
 import 'package:social_study_app/shared/models/user.dart';
@@ -10,6 +11,7 @@ part 'auth_repository.g.dart';
 
 abstract class AuthRepository {
   Future<User> signInWithMicrosoft();
+  Future<User> signInWithGoogle();
   Future<void> signOut();
   Future<User?> getStoredUser();
   Future<void> updateStoredUser(User user);
@@ -28,6 +30,10 @@ class RealAuthRepository implements AuthRepository {
   static const _tokenKey = 'auth_token';
   static const _userKey = 'auth_user';
   final _appAuth = const FlutterAppAuth();
+  final _googleSignIn = GoogleSignIn(
+    serverClientId: Environment.googleWebClientId,
+    scopes: ['email', 'profile'],
+  );
 
   @override
   Future<User> signInWithMicrosoft() async {
@@ -70,9 +76,42 @@ class RealAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<User> signInWithGoogle() async {
+    try {
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        throw Exception('Google sign in cancelled by user');
+      }
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final String? idToken = googleAuth.idToken;
+
+      if (idToken == null) {
+        throw Exception('Google sign in failed: no ID token returned');
+      }
+
+      await _storage.write(key: _tokenKey, value: idToken);
+
+      // Fetch the real user profile from the backend
+      final dio = _ref.read(dioClientProvider).dio;
+      final response = await dio.get('/api/v1/users/me');
+      final backendUser = User.fromJson(response.data as Map<String, dynamic>);
+      
+      await _storage.write(key: _userKey, value: jsonEncode(backendUser.toJson()));
+
+      return backendUser;
+    } catch (e) {
+      throw Exception('Google Sign in failed: $e');
+    }
+  }
+
+  @override
   Future<void> signOut() async {
     await _storage.delete(key: _tokenKey);
     await _storage.delete(key: _userKey);
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {}
   }
 
   @override

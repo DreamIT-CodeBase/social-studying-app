@@ -24,10 +24,11 @@ class RealQuestionsRepository implements QuestionsRepository {
   static const _apiPrefix = '/api/v1';
 
   @override
-  Future<Question> next({required String workspaceId}) async {
+  Future<Question> next({required String workspaceId, bool revision = false}) async {
     try {
       final response = await dio.post<Map<String, dynamic>>(
         '$_apiPrefix/workspaces/$workspaceId/questions/next',
+        queryParameters: {'revision': revision},
       );
       return Question.fromJson(response.data!);
     } on DioException catch (e) {

@@ -409,12 +409,12 @@ def _require_string(raw: dict[str, Any], field_name: str) -> str:
 _PROMPT_REGISTRY: dict[QuestionType, _PromptSpec] = {
     QuestionType.mcq: _PromptSpec(
         name="question_mcq_v1",
-        max_output_tokens=600,
+        max_output_tokens=350,
         parser=_parse_mcq,
     ),
     QuestionType.short_answer: _PromptSpec(
         name="question_short_answer_v1",
-        max_output_tokens=400,
+        max_output_tokens=200,
         parser=_parse_short_answer,
     ),
     QuestionType.long_answer: _PromptSpec(

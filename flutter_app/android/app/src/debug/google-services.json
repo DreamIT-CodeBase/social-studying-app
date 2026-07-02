@@ -12,7 +12,20 @@
           "package_name": "com.socialstudyapp.social_study_app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "140186450317-k8bpisr2bp3o1gva3l865gau9enu8r6j.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.socialstudyapp.social_study_app",
+            "certificate_hash": "2f23aab1f28c22f437d9132497d03ef153de1d23"
+          }
+        },
+        {
+          "client_id": "140186450317-6d8qopjlvvmlad2847o3i8nru0saclv9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCYWPRd2sqkfFCLYT5B-TZOBGus878k4nI"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "140186450317-6d8qopjlvvmlad2847o3i8nru0saclv9.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

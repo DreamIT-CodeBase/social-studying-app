@@ -40,4 +40,9 @@ abstract final class Environment {
     'B2C_REDIRECT_URI',
     defaultValue: 'msauth://com.socialstudyapp.app/callback',
   );
+
+  static const String googleWebClientId = String.fromEnvironment(
+    'GOOGLE_WEB_CLIENT_ID',
+    defaultValue: '140186450317-6d8qopjlvvmlad2847o3i8nru0saclv9.apps.googleusercontent.com',
+  );
 }

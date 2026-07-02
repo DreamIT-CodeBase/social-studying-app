@@ -22,6 +22,7 @@ import 'package:social_study_app/features/home/presentation/admin_home_screen.da
 import 'package:social_study_app/features/home/presentation/student_home_screen.dart';
 import 'package:social_study_app/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:social_study_app/features/onboarding/presentation/permission_onboarding_screen.dart';
+import 'package:social_study_app/features/onboarding/presentation/theme_selection_screen.dart';
 import 'package:social_study_app/features/taxonomy/presentation/taxonomy_viewer_screen.dart';
 import 'package:social_study_app/features/screen_time/screens/screen_time_settings_screen.dart';
 
@@ -119,6 +120,10 @@ GoRouter router(RouterRef ref) {
       GoRoute(
         path: AppRoutes.login,
         builder: (_, __) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.themeSelection,
+        builder: (_, __) => const ThemeSelectionScreen(),
       ),
       GoRoute(
         path: AppRoutes.profile,

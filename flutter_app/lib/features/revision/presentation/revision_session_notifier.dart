@@ -221,7 +221,7 @@ class RevisionSessionNotifier extends _$RevisionSessionNotifier {
         case RevisionItemKind.question:
           final question = await ref
               .read(questionsRepositoryProvider)
-              .next(workspaceId: _workspaceId);
+              .next(workspaceId: _workspaceId, revision: true);
           state = RevisionSession.question(
             question: question,
             progress: progress,

@@ -73,7 +73,7 @@ class DemoQuestionsRepository implements QuestionsRepository {
   final Map<String, double> _topicMastery = {};
 
   @override
-  Future<Question> next({required String workspaceId}) async {
+  Future<Question> next({required String workspaceId, bool revision = false}) async {
     await Future<void>.delayed(const Duration(milliseconds: 250));
     final fixture = _fixtures[_index % _fixtures.length];
     _index++;

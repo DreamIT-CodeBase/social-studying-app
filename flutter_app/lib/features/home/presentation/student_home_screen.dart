@@ -1,4 +1,6 @@
 import 'dart:ui';
+import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +9,7 @@ import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
+import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/flashcards/presentation/flashcard_screen.dart';
 import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
@@ -21,10 +24,11 @@ import 'package:social_study_app/features/admin/workspaces/data/workspaces_repos
 import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/models/workspace.dart';
 
-
-
 final studentHomeTabProvider = StateProvider<int>((ref) => 0);
-final collaborativeHomeTabProvider = StateProvider.autoDispose<int>((ref) => 0);
+
+
+
+
 
 class StudentHomeScreen extends ConsumerStatefulWidget {
   const StudentHomeScreen({super.key});
@@ -90,7 +94,6 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
                       onSelect: (id) =>
                           ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(id),
                       onCreateWorkspace: () => _showCreateWorkspaceDialog(context),
-                      onCreateCollaborativeWorkspace: () => _showCreateCollaborativeWorkspaceDialog(context),
                       onJoinWorkspace: () => _showJoinWorkspaceDialog(context),
                     ),
                   ),
@@ -312,21 +315,13 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
                 Navigator.of(context).pop();
                 try {
                   _showLoadingIndicator(context);
-                  final isCollaborative = code.length == 6;
-                  if (isCollaborative) {
-                    final repo = ref.read(workspacesRepositoryProvider);
-                    final ws = await repo.joinCollaborative(joinCode: code);
-                    await ref.read(authNotifierProvider.notifier).refresh();
-                    ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(ws.id);
-                  } else {
-                    await ref.read(authNotifierProvider.notifier).redeemInviteCode(code);
-                    // Select the new workspace
-                    final authValue = ref.read(authNotifierProvider).valueOrNull;
-                    final user = authValue?.maybeWhen(authenticated: (u) => u, orElse: () => null);
-                    if (user != null && user.workspaceMemberships.isNotEmpty) {
-                      final joinedWorkspaceId = user.workspaceMemberships.last.workspaceId;
-                      ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(joinedWorkspaceId);
-                    }
+                  await ref.read(authNotifierProvider.notifier).redeemInviteCode(code);
+                  // Select the new workspace
+                  final authValue = ref.read(authNotifierProvider).valueOrNull;
+                  final user = authValue?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+                  if (user != null && user.workspaceMemberships.isNotEmpty) {
+                    final joinedWorkspaceId = user.workspaceMemberships.last.workspaceId;
+                    ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(joinedWorkspaceId);
                   }
                   if (context.mounted) {
                     Navigator.of(context).pop(); // Dismiss loading
@@ -379,14 +374,6 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
     );
   }
 
-  void _showCreateCollaborativeWorkspaceDialog(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const _CreateCollaborativeWorkspaceDialog(),
-    );
-  }
-
   void _showJoinWorkspaceDialog(BuildContext context) {
     showDialog<void>(
       context: context,
@@ -421,19 +408,12 @@ class _HomeTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activeWorkspace = ref.watch(activeStudentWorkspaceProvider);
-    final isCollaborative = activeWorkspace?.type == 'collaborative';
+    final themeMode = ref.watch(appThemeModeProvider);
     final progressAsync = workspaceId != null
         ? ref.watch(studentProgressNotifierProvider(workspaceId!))
         : const AsyncValue.loading();
     
-    // Check role for collaborative upload access
-    final roleAsync = workspaceId != null
-        ? ref.watch(currentCollaborativeRoleProvider(workspaceId!))
-        : const AsyncValue<String>.data('viewer');
-    final role = roleAsync.valueOrNull;
-    final isCollaborativeAdmin = role == 'owner' || role == 'editor';
-    final isStandardAdmin = ref.watch(isActiveWorkspaceAdminProvider);
-    final canManageStudy = isCollaborative ? isCollaborativeAdmin : isStandardAdmin;
+    final canManageStudy = ref.watch(isActiveWorkspaceAdminProvider);
 
     final authValue = ref.watch(authNotifierProvider).valueOrNull;
     final user = authValue?.maybeWhen(
@@ -484,17 +464,26 @@ class _HomeTab extends ConsumerWidget {
             child: Container(
               decoration: BoxDecoration(
                 color: isDark ? const Color(0xFF0F172A) : const Color(0xFFE0F2FE),
-                image: DecorationImage(
-                  image: const AssetImage('assets/mascot/headerherosection.png'),
-                  fit: BoxFit.cover,
-                  alignment: const Alignment(0.42, -0.1), // Zoomed-out alignment shows more of the image
-                  colorFilter: isDark
-                      ? ColorFilter.mode(
-                          Colors.black.withValues(alpha: 0.5),
+                image: themeMode == AppThemeMode.mature
+                    ? null
+                    : DecorationImage(
+                        image: const AssetImage('assets/mascot/headerherosection.png'),
+                        fit: BoxFit.cover,
+                        alignment: const Alignment(0.42, -0.1), // Zoomed-out alignment shows more of the image
+                        colorFilter: ColorFilter.mode(
+                          Colors.black.withOpacity(isDark ? 0.6 : 0.25),
                           BlendMode.srcOver,
-                        )
-                      : null,
-                ),
+                        ),
+                      ),
+                gradient: themeMode == AppThemeMode.mature
+                    ? LinearGradient(
+                        colors: isDark
+                            ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
+                            : [const Color(0xFFEFF6FF), const Color(0xFFDBEAFE)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : null,
               ),
             ),
           ),
@@ -553,11 +542,6 @@ class _HomeTab extends ConsumerWidget {
                             context: context,
                             barrierDismissible: false,
                             builder: (_) => const _CreateWorkspaceDialog(),
-                          ),
-                          onCreateCollaborativeWorkspace: () => showDialog<void>(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (_) => const _CreateCollaborativeWorkspaceDialog(),
                           ),
                           onJoinWorkspace: () => showDialog<void>(
                             context: context,
@@ -645,6 +629,11 @@ class _HomeTab extends ConsumerWidget {
                 ),
                 
                 const SizedBox(height: 20),
+
+                if (workspaceId != null) ...[
+                  _TopicMasteryDashboardCard(workspaceId: workspaceId!),
+                  const SizedBox(height: 20),
+                ],
                 
                 // Quick Actions Row
                 _QuickActionsSection(
@@ -756,78 +745,6 @@ class _HomeTab extends ConsumerWidget {
       );
     }
 
-    if (isCollaborative && workspaceId != null) {
-      final selectedSubTab = ref.watch(collaborativeHomeTabProvider);
-      return Column(
-        children: [
-          heroSection,
-          // Sub tabs chips row below hero section
-          Container(
-            color: Theme.of(context).scaffoldBackgroundColor,
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  _SubTabChip(
-                    label: 'Study Center',
-                    icon: Icons.school_rounded,
-                    selected: selectedSubTab == 0,
-                    onSelected: () => ref.read(collaborativeHomeTabProvider.notifier).state = 0,
-                  ),
-                  const SizedBox(width: 8),
-                  _SubTabChip(
-                    label: 'Discussion',
-                    icon: Icons.chat_bubble_rounded,
-                    selected: selectedSubTab == 1,
-                    onSelected: () => ref.read(collaborativeHomeTabProvider.notifier).state = 1,
-                  ),
-                  const SizedBox(width: 8),
-                  _SubTabChip(
-                    label: 'Activity Logs',
-                    icon: Icons.history_rounded,
-                    selected: selectedSubTab == 2,
-                    onSelected: () => ref.read(collaborativeHomeTabProvider.notifier).state = 2,
-                  ),
-                  const SizedBox(width: 8),
-                  _SubTabChip(
-                    label: 'Members',
-                    icon: Icons.people_rounded,
-                    selected: selectedSubTab == 3,
-                    onSelected: () => ref.read(collaborativeHomeTabProvider.notifier).state = 3,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const Divider(height: 1, thickness: 1),
-          Expanded(
-            child: IndexedStack(
-              index: selectedSubTab,
-              children: [
-                // Study Center list (without duplicating heroSection)
-                RefreshIndicator(
-                  onRefresh: () async {
-                    ref.read(authNotifierProvider.notifier).refresh();
-                    await ref.read(authNotifierProvider.future);
-                    ref.read(studentProgressNotifierProvider(workspaceId!).notifier).refresh();
-                    await ref.read(studentProgressNotifierProvider(workspaceId!).future);
-                  },
-                  child: buildStudyCenterContent(context, const SizedBox.shrink()),
-                ),
-                _CollaborativeChatWidget(workspaceId: workspaceId!),
-                _CollaborativeActivityWidget(workspaceId: workspaceId!),
-                _CollaborativeMembersWidget(
-                  workspaceId: workspaceId!,
-                  ownerId: activeWorkspace!.ownerId,
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
 
     // Standard workspace or no workspace
     return RefreshIndicator(
@@ -911,6 +828,15 @@ class _AnimatedHeadlineState extends State<_AnimatedHeadline>
     super.dispose();
   }
 
+  String _formatFirstName(String name) {
+    final cleanName = name.trim().replaceAll(RegExp(r'\.+$'), '').trim();
+    if (cleanName.isEmpty) return '';
+    final parts = cleanName.split(RegExp(r'\s+'));
+    final firstName = parts.first;
+    if (firstName.isEmpty) return '';
+    return firstName[0].toUpperCase() + firstName.substring(1).toLowerCase();
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -967,7 +893,7 @@ class _AnimatedHeadlineState extends State<_AnimatedHeadline>
             );
           },
           child: Text(
-            widget.displayName,
+            _formatFirstName(widget.displayName),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 30,
@@ -994,7 +920,6 @@ class _HeroWorkspaceSwitcher extends ConsumerWidget {
     required this.selectedId,
     required this.onSelect,
     required this.onCreateWorkspace,
-    required this.onCreateCollaborativeWorkspace,
     required this.onJoinWorkspace,
   });
 
@@ -1002,7 +927,6 @@ class _HeroWorkspaceSwitcher extends ConsumerWidget {
   final String? selectedId;
   final ValueChanged<String> onSelect;
   final VoidCallback onCreateWorkspace;
-  final VoidCallback onCreateCollaborativeWorkspace;
   final VoidCallback onJoinWorkspace;
 
   @override
@@ -1079,10 +1003,6 @@ class _HeroWorkspaceSwitcher extends ConsumerWidget {
         onCreateWorkspace: () {
           Navigator.of(context).pop();
           onCreateWorkspace();
-        },
-        onCreateCollaborativeWorkspace: () {
-          Navigator.of(context).pop();
-          onCreateCollaborativeWorkspace();
         },
         onJoinWorkspace: () {
           Navigator.of(context).pop();
@@ -1396,159 +1316,593 @@ class _ShieldPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _StartStudySessionCard extends StatelessWidget {
+class _StartStudySessionCard extends ConsumerStatefulWidget {
   const _StartStudySessionCard({required this.onStartStudy});
 
   final VoidCallback onStartStudy;
 
   @override
+  ConsumerState<_StartStudySessionCard> createState() => _StartStudySessionCardState();
+}
+
+class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard> with SingleTickerProviderStateMixin {
+  AnimationController? _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    bool isTest = false;
+    try {
+      isTest = Platform.environment.containsKey('FLUTTER_TEST');
+    } catch (_) {}
+    if (!isTest) {
+      _controller = AnimationController(
+        vsync: this,
+        duration: const Duration(seconds: 4),
+      )..repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final themeMode = ref.watch(appThemeModeProvider);
+    final isMature = themeMode == AppThemeMode.mature;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final gradient = isMature
+        ? const LinearGradient(
+            colors: [Color(0xFF1E1B4B), Color(0xFF311062)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          )
+        : const LinearGradient(
+            colors: [Color(0xFF2563EB), Color(0xFF8B5CF6)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          );
+
     return Container(
       height: 76,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF2563EB), Color(0xFF8B5CF6)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        gradient: gradient,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF2563EB).withValues(alpha: 0.35),
+            color: (isMature ? const Color(0xFF311062) : const Color(0xFF2563EB)).withOpacity(0.35),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
         ],
       ),
-      child: Stack(
-        children: [
-          // Star sparkle top-right
-          Positioned(
-            right: 100,
-            top: 12,
-            child: Icon(Icons.star_rounded, color: Colors.white.withValues(alpha: 0.2), size: 14),
-          ),
-          Positioned(
-            right: 60,
-            top: 32,
-            child: Icon(Icons.star_rounded, color: Colors.white.withValues(alpha: 0.15), size: 9),
-          ),
-          // Rocket bottom-right background
-          Positioned(
-            right: 8,
-            bottom: 0,
-            child: Transform.rotate(
-              angle: -0.25,
-              child: Opacity(
-                opacity: 0.7,
-                child: Image.asset(
-                  'assets/icons/icons8-rocket-48.png',
-                  width: 40,
-                  height: 40,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(
-                    Icons.rocket_launch_rounded,
-                    color: Colors.white54,
-                    size: 34,
-                  ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onStartStudy,
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            children: [
+              if (!isMature) ...[
+                Positioned(
+                  right: 100,
+                  top: 12,
+                  child: Icon(Icons.star_rounded, color: Colors.white.withOpacity(0.2), size: 14),
                 ),
-              ),
-            ),
-          ),
-          // Explore chip pinned to top-right corner
-          Positioned(
-            top: 8,
-            right: 12,
-            child: GestureDetector(
-              onTap: onStartStudy,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF3E8FF),
-                  borderRadius: BorderRadius.circular(20),
+                Positioned(
+                  right: 60,
+                  top: 32,
+                  child: Icon(Icons.star_rounded, color: Colors.white.withOpacity(0.15), size: 9),
                 ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.auto_awesome_rounded,
-                      color: Color(0xFF8B5CF6),
-                      size: 12,
-                    ),
-                    SizedBox(width: 4),
-                    Text(
-                      'Explore',
-                      style: TextStyle(
-                        color: Color(0xFF8B5CF6),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
+                Positioned(
+                  right: 8,
+                  bottom: 0,
+                  child: Transform.rotate(
+                    angle: -0.25,
+                    child: Opacity(
+                      opacity: 0.7,
+                      child: Image.asset(
+                        'assets/icons/icons8-rocket-48.png',
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.rocket_launch_rounded,
+                          color: Colors.white54,
+                          size: 34,
+                        ),
                       ),
                     ),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3E8FF),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.auto_awesome_rounded,
+                          color: Color(0xFF8B5CF6),
+                          size: 12,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          'Explore',
+                          style: TextStyle(
+                            color: Color(0xFF8B5CF6),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              if (isMature)
+                Positioned(
+                  right: 12,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: AnimatedBuilder(
+                      animation: _controller ?? const AlwaysStoppedAnimation(0.0),
+                      builder: (context, _) {
+                        return CustomPaint(
+                          size: const Size(60, 60),
+                          painter: _AtomPainter(
+                            animationValue: _controller?.value ?? 0.0,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.25),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white.withOpacity(0.6), width: 2),
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(
+                            'Start Study Session',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              height: 1.15,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            "Let's continue your learning journey!",
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.85),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              height: 1.25,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (isMature) const SizedBox(width: 60),
                   ],
                 ),
               ),
-            ),
+            ],
           ),
-          // Main content
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Play button
-                GestureDetector(
-                  onTap: onStartStudy,
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.25),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 2),
-                    ),
-                    child: const Icon(
-                      Icons.play_arrow_rounded,
-                      color: Colors.white,
-                      size: 22,
-                    ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AtomPainter extends CustomPainter {
+  _AtomPainter({required this.animationValue});
+
+  final double animationValue;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double cx = size.width / 2;
+    final double cy = size.height / 2;
+    final double r = size.width * 0.45;
+
+    final Paint orbitPaint = Paint()
+      ..color = Colors.white.withOpacity(0.18)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+
+    final Paint nucleusPaintBlue = Paint()..color = const Color(0xFF4285F4);
+    final Paint nucleusPaintPurple = Paint()..color = const Color(0xFF8B5CF6);
+    final Paint nucleusPaintRed = Paint()..color = const Color(0xFFEA4335);
+
+    // Orbit 1
+    canvas.save();
+    canvas.translate(cx, cy);
+    canvas.rotate(-30 * 3.14159 / 180);
+    canvas.drawOval(Rect.fromCenter(center: Offset.zero, width: r * 2, height: r * 0.5), orbitPaint);
+    final double e1Angle = animationValue * 2 * 3.14159;
+    final double e1x = r * math.cos(e1Angle);
+    final double e1y = r * 0.25 * math.sin(e1Angle);
+    canvas.drawCircle(Offset(e1x, e1y), 3.5, Paint()..color = const Color(0xFF60A5FA));
+    canvas.restore();
+
+    // Orbit 2
+    canvas.save();
+    canvas.translate(cx, cy);
+    canvas.rotate(30 * 3.14159 / 180);
+    canvas.drawOval(Rect.fromCenter(center: Offset.zero, width: r * 2, height: r * 0.5), orbitPaint);
+    final double e2Angle = (animationValue + 0.33) * 2 * 3.14159;
+    final double e2x = r * math.cos(e2Angle);
+    final double e2y = r * 0.25 * math.sin(e2Angle);
+    canvas.drawCircle(Offset(e2x, e2y), 3.5, Paint()..color = const Color(0xFFF472B6));
+    canvas.restore();
+
+    // Orbit 3
+    canvas.save();
+    canvas.translate(cx, cy);
+    canvas.rotate(90 * 3.14159 / 180);
+    canvas.drawOval(Rect.fromCenter(center: Offset.zero, width: r * 2, height: r * 0.5), orbitPaint);
+    final double e3Angle = (animationValue + 0.66) * 2 * 3.14159;
+    final double e3x = r * math.cos(e3Angle);
+    final double e3y = r * 0.25 * math.sin(e3Angle);
+    canvas.drawCircle(Offset(e3x, e3y), 3.5, Paint()..color = const Color(0xFF34D399));
+    canvas.restore();
+
+    // Nucleus
+    canvas.drawCircle(Offset(cx - 2, cy - 2), 4.5, nucleusPaintBlue);
+    canvas.drawCircle(Offset(cx + 2, cy - 1), 4.5, nucleusPaintPurple);
+    canvas.drawCircle(Offset(cx - 1, cy + 3), 4.0, nucleusPaintRed);
+    canvas.drawCircle(Offset(cx + 3, cy + 2), 4.0, nucleusPaintBlue);
+  }
+
+  @override
+  bool shouldRepaint(covariant _AtomPainter oldDelegate) =>
+      oldDelegate.animationValue != animationValue;
+}
+
+class _TopicMasteryDashboardCard extends ConsumerStatefulWidget {
+  const _TopicMasteryDashboardCard({required this.workspaceId});
+
+  final String workspaceId;
+
+  @override
+  ConsumerState<_TopicMasteryDashboardCard> createState() => _TopicMasteryDashboardCardState();
+}
+
+class _TopicMasteryDashboardCardState extends ConsumerState<_TopicMasteryDashboardCard> with SingleTickerProviderStateMixin {
+  AnimationController? _entranceController;
+
+  @override
+  void initState() {
+    super.initState();
+    bool isTest = false;
+    try {
+      isTest = Platform.environment.containsKey('FLUTTER_TEST');
+    } catch (_) {}
+
+    if (!isTest) {
+      _entranceController = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 1200),
+      );
+      _entranceController!.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _entranceController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progressAsync = ref.watch(studentProgressNotifierProvider(widget.workspaceId));
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return progressAsync.maybeWhen(
+      data: (progress) {
+        if (progress.topics.isEmpty) return const SizedBox.shrink();
+
+        final overallPercent = (progress.overallMastery.clamp(0.0, 1.0) * 100).round();
+        final topTopics = progress.topics.take(3).toList();
+
+        final animVal = _entranceController?.view ?? const AlwaysStoppedAnimation(1.0);
+
+        return AnimatedBuilder(
+          animation: animVal,
+          builder: (context, child) {
+            final double cardScale = 0.95 + (0.05 * CurvedAnimation(
+              parent: _entranceController ?? const AlwaysStoppedAnimation(1.0),
+              curve: Curves.easeOutCubic,
+            ).value);
+
+            return Transform.scale(
+              scale: cardScale,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                    width: 1.5,
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(isDark ? 0.2 : 0.04),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 14),
-                // Title + subtitle
-                Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text(
-                        'Start Study Session',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          height: 1.15,
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'TOPIC MASTERY',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                              color: isDark ? const Color(0xFFA78BFA) : const Color(0xFF4F46E5),
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () {
+                              ref.read(studentHomeTabProvider.notifier).state = 3;
+                            },
+                            child: Text(
+                              'View all',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        "Let's continue your learning journey!",
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.85),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                          height: 1.25,
-                        ),
+                      const SizedBox(height: 20),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 120,
+                            height: 120,
+                            child: Stack(
+                              children: [
+                                Positioned.fill(
+                                  child: CustomPaint(
+                                    painter: _DonutChartPainter(
+                                      overallPercent: overallPercent / 100,
+                                      topics: topTopics,
+                                      isDark: isDark,
+                                      entranceProgress: animVal.value,
+                                    ),
+                                  ),
+                                ),
+                                Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        '${(overallPercent * animVal.value).round()}%',
+                                        style: TextStyle(
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.w900,
+                                          color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                          letterSpacing: -0.5,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Overall',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 24),
+                          Expanded(
+                            child: Column(
+                              children: List.generate(topTopics.length, (index) {
+                                final topic = topTopics[index];
+                                final targetPercent = (topic.mastery.clamp(0.0, 1.0) * 100).round();
+                                final currentPercent = (targetPercent * animVal.value).round();
+                                final color = _getTopicColor(index);
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 6.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Container(
+                                            width: 8,
+                                            height: 8,
+                                            decoration: BoxDecoration(
+                                              color: color,
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              topic.topicName,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w700,
+                                                color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            '$currentPercent%',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: LinearProgressIndicator(
+                                          value: topic.mastery.clamp(0.0, 1.0) * animVal.value,
+                                          minHeight: 5,
+                                          backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                                          valueColor: AlwaysStoppedAnimation<Color>(color),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-              ],
-            ),
-          ),
-        ],
-      ),
+              ),
+            );
+          },
+        );
+      },
+      orElse: () => const SizedBox.shrink(),
     );
   }
+
+  Color _getTopicColor(int index) {
+    switch (index % 3) {
+      case 0:
+        return const Color(0xFF2563EB); // blue
+      case 1:
+        return const Color(0xFF8B5CF6); // purple
+      default:
+        return const Color(0xFF10B981); // green
+    }
+  }
+}
+
+class _DonutChartPainter extends CustomPainter {
+  _DonutChartPainter({
+    required this.overallPercent,
+    required this.topics,
+    required this.isDark,
+    required this.entranceProgress,
+  });
+
+  final double overallPercent;
+  final List<TopicMastery> topics;
+  final bool isDark;
+  final double entranceProgress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double radius = size.width / 2;
+    final Rect rect = Rect.fromCircle(center: Offset(radius, radius), radius: radius - 14);
+
+    final Paint bgPaint = Paint()
+      ..color = isDark ? const Color(0xFF334155).withOpacity(0.3) : const Color(0xFFF1F5F9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 24.0;
+
+    canvas.drawCircle(Offset(radius, radius), radius - 14, bgPaint);
+
+    if (topics.isEmpty) return;
+
+    double sum = 0.0;
+    for (final t in topics) {
+      sum += t.mastery.clamp(0.0, 1.0);
+    }
+    
+    final bool allZero = sum == 0.0;
+    double currentAngle = -3.14159 / 2; // Start from top
+
+    for (int i = 0; i < topics.length; i++) {
+      final double mastery = topics[i].mastery.clamp(0.0, 1.0);
+      final double fraction = allZero ? (1.0 / topics.length) : (mastery / sum);
+      final double sweepAngle = 2 * 3.14159 * fraction * entranceProgress;
+
+      final Paint segmentPaint = Paint()
+        ..color = _getTopicColor(i)
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.butt // Flat ends matching reference exactly
+        ..strokeWidth = 24.0; // Proportional thick band width
+
+      if (sweepAngle > 0.05) {
+        canvas.drawArc(rect, currentAngle + 0.015, sweepAngle - 0.03, false, segmentPaint);
+      }
+      currentAngle += sweepAngle;
+    }
+  }
+
+  Color _getTopicColor(int index) {
+    switch (index % 3) {
+      case 0:
+        return const Color(0xFF2563EB); // blue
+      case 1:
+        return const Color(0xFF8B5CF6); // purple
+      default:
+        return const Color(0xFF10B981); // green
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DonutChartPainter oldDelegate) =>
+      oldDelegate.entranceProgress != entranceProgress;
 }
 
 class _WeeklyProgressCard extends ConsumerWidget {
@@ -2520,21 +2874,13 @@ class _RedeemInviteCardState extends ConsumerState<_RedeemInviteCard>
     });
 
     try {
-      final isCollaborative = code.length == 6;
-      if (isCollaborative) {
-        final repo = ref.read(workspacesRepositoryProvider);
-        final ws = await repo.joinCollaborative(joinCode: code);
-        await ref.read(authNotifierProvider.notifier).refresh();
-        ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(ws.id);
-      } else {
-        await ref.read(authNotifierProvider.notifier).redeemInviteCode(code);
-        // Select the new workspace
-        final authValue = ref.read(authNotifierProvider).valueOrNull;
-        final user = authValue?.maybeWhen(authenticated: (u) => u, orElse: () => null);
-        if (user != null && user.workspaceMemberships.isNotEmpty) {
-          final joinedWorkspaceId = user.workspaceMemberships.last.workspaceId;
-          ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(joinedWorkspaceId);
-        }
+      await ref.read(authNotifierProvider.notifier).redeemInviteCode(code);
+      // Select the new workspace
+      final authValue = ref.read(authNotifierProvider).valueOrNull;
+      final user = authValue?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+      if (user != null && user.workspaceMemberships.isNotEmpty) {
+        final joinedWorkspaceId = user.workspaceMemberships.last.workspaceId;
+        ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(joinedWorkspaceId);
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2730,7 +3076,6 @@ class _StudentWorkspaceSwitcherButton extends ConsumerWidget {
     required this.selectedId,
     required this.onSelect,
     required this.onCreateWorkspace,
-    required this.onCreateCollaborativeWorkspace,
     required this.onJoinWorkspace,
   });
 
@@ -2738,7 +3083,6 @@ class _StudentWorkspaceSwitcherButton extends ConsumerWidget {
   final String? selectedId;
   final ValueChanged<String> onSelect;
   final VoidCallback onCreateWorkspace;
-  final VoidCallback onCreateCollaborativeWorkspace;
   final VoidCallback onJoinWorkspace;
 
   @override
@@ -2801,10 +3145,6 @@ class _StudentWorkspaceSwitcherButton extends ConsumerWidget {
           Navigator.of(context).pop();
           onCreateWorkspace();
         },
-        onCreateCollaborativeWorkspace: () {
-          Navigator.of(context).pop();
-          onCreateCollaborativeWorkspace();
-        },
         onJoinWorkspace: () {
           Navigator.of(context).pop();
           onJoinWorkspace();
@@ -2820,14 +3160,6 @@ void showStudentCreateWorkspaceDialog(BuildContext context) {
     context: context,
     barrierDismissible: false,
     builder: (_) => const _CreateWorkspaceDialog(),
-  );
-}
-
-void showStudentCreateCollaborativeWorkspaceDialog(BuildContext context) {
-  showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => const _CreateCollaborativeWorkspaceDialog(),
   );
 }
 
@@ -3238,7 +3570,6 @@ class StudentWorkspaceSwitcherSheet extends ConsumerWidget {
     required this.selectedId,
     required this.onSelect,
     required this.onCreateWorkspace,
-    required this.onCreateCollaborativeWorkspace,
     required this.onJoinWorkspace,
   });
 
@@ -3246,7 +3577,6 @@ class StudentWorkspaceSwitcherSheet extends ConsumerWidget {
   final String? selectedId;
   final ValueChanged<String> onSelect;
   final VoidCallback onCreateWorkspace;
-  final VoidCallback onCreateCollaborativeWorkspace;
   final VoidCallback onJoinWorkspace;
 
   void _showCreateOptionsChooser(BuildContext context) {
@@ -3302,18 +3632,6 @@ class StudentWorkspaceSwitcherSheet extends ConsumerWidget {
                     onTap: () {
                       Navigator.of(ctx).pop();
                       onCreateWorkspace();
-                    },
-                  ),
-                  const SizedBox(height: Spacing.sm),
-                  _buildActionItem(
-                    context: ctx,
-                    icon: Icons.group_add_rounded,
-                    iconColor: const Color(0xFF4F46E5),
-                    title: 'Create Collaborative Workspace',
-                    subtitle: 'Study with friends or join a class',
-                    onTap: () {
-                      Navigator.of(ctx).pop();
-                      onCreateCollaborativeWorkspace();
                     },
                   ),
                   const SizedBox(height: Spacing.sm),
@@ -3412,6 +3730,12 @@ class StudentWorkspaceSwitcherSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? const Color(0xFF0F172A) : Colors.white;
+    final auth = ref.watch(authNotifierProvider).valueOrNull;
+    final isStudent = auth?.maybeWhen(
+      authenticated: (user) => user.role == UserRole.student,
+      orElse: () => false,
+    ) ?? false;
+
     return Container(
       decoration: BoxDecoration(
         color: bgColor,
@@ -3724,139 +4048,7 @@ class StudentWorkspaceSwitcherSheet extends ConsumerWidget {
                   },
                 ),
               ),
-            const SizedBox(height: 4),
-
-            // Create New Workspace Button (Dashed RRect Card)
-            CustomPaint(
-              painter: _DashedBorderPainter(
-                color: const Color(0xFF8B5CF6),
-                borderRadius: 16,
-                strokeWidth: 1.5,
-                dashWidth: 6.0,
-                dashGap: 4.0,
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF2E1065).withOpacity(0.15) : const Color(0xFFF5F3FF),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: () => _showCreateOptionsChooser(context),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF4C1D95).withOpacity(0.4) : const Color(0xFFECE9FE),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.add_rounded,
-                              color: Color(0xFF8B5CF6),
-                              size: 22,
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Create New Workspace',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    color: isDark ? const Color(0xFFDDD6FE) : const Color(0xFF6D28D9),
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Create a personal or class workspace',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Icon(
-                            Icons.chevron_right_rounded,
-                            color: Color(0xFF8B5CF6),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Security Footer Card
-            Container(
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFFEF3C7),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.gpp_good_rounded,
-                        color: Color(0xFFD97706),
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Your data is always safe',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : const Color(0xFF1E1B4B),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Switching workspace keeps your progress secure.',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      color: Color(0xFF94A3B8),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            // Security footer removed per product decision
           ],
         ),
       ),
@@ -4045,21 +4237,13 @@ class _StudentJoinWorkspaceDialogState extends ConsumerState<_StudentJoinWorkspa
     });
 
     try {
-      final isCollaborative = code.length == 6;
-      if (isCollaborative) {
-        final repo = ref.read(workspacesRepositoryProvider);
-        final ws = await repo.joinCollaborative(joinCode: code);
-        await ref.read(authNotifierProvider.notifier).refresh();
-        ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(ws.id);
-      } else {
-        await ref.read(authNotifierProvider.notifier).redeemInviteCode(code);
-        // Select the new workspace
-        final authValue = ref.read(authNotifierProvider).valueOrNull;
-        final user = authValue?.maybeWhen(authenticated: (u) => u, orElse: () => null);
-        if (user != null && user.workspaceMemberships.isNotEmpty) {
-          final joinedWorkspaceId = user.workspaceMemberships.last.workspaceId;
-          ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(joinedWorkspaceId);
-        }
+      await ref.read(authNotifierProvider.notifier).redeemInviteCode(code);
+      // Select the new workspace
+      final authValue = ref.read(authNotifierProvider).valueOrNull;
+      final user = authValue?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+      if (user != null && user.workspaceMemberships.isNotEmpty) {
+        final joinedWorkspaceId = user.workspaceMemberships.last.workspaceId;
+        ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(joinedWorkspaceId);
       }
 
       if (mounted) {
@@ -4214,888 +4398,6 @@ class _SubTabChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
       ),
       side: selected ? BorderSide.none : BorderSide(color: context.colorScheme.outlineVariant),
-    );
-  }
-}
-
-class _CollaborativeChatWidget extends ConsumerStatefulWidget {
-  const _CollaborativeChatWidget({required this.workspaceId});
-  final String workspaceId;
-
-  @override
-  ConsumerState<_CollaborativeChatWidget> createState() => _CollaborativeChatWidgetState();
-}
-
-class _CollaborativeChatWidgetState extends ConsumerState<_CollaborativeChatWidget> {
-  final _messageController = TextEditingController();
-  final _scrollController = ScrollController();
-  bool _isSending = false;
-
-  @override
-  void dispose() {
-    _messageController.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _send() async {
-    final text = _messageController.text.trim();
-    if (text.isEmpty) return;
-    _messageController.clear();
-    setState(() => _isSending = true);
-    try {
-      await ref.read(workspaceMessagesProvider(widget.workspaceId).notifier).sendMessage(text);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to send message: $e'),
-            backgroundColor: context.colorScheme.error,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSending = false);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final messagesAsync = ref.watch(workspaceMessagesProvider(widget.workspaceId));
-    final roleAsync = ref.watch(currentCollaborativeRoleProvider(widget.workspaceId));
-    final role = roleAsync.valueOrNull;
-    final canPost = role == 'owner' || role == 'editor';
-
-    return Column(
-      children: [
-        Expanded(
-          child: messagesAsync.when(
-            data: (messages) {
-              if (messages.isEmpty) {
-                return const EmptyStateView(
-                  icon: Icons.chat_bubble_outline_rounded,
-                  title: 'No messages yet',
-                  subtitle: 'Start the conversation by posting a message below.',
-                  useMascot: true,
-                );
-              }
-
-              // Scroll to bottom after frame is built if needed
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (_scrollController.hasClients) {
-                  _scrollController.animateTo(
-                    _scrollController.position.maxScrollExtent,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOut,
-                  );
-                }
-              });
-
-              final currentUserId = ref.watch(authNotifierProvider).valueOrNull?.maybeWhen(
-                    authenticated: (u) => u.id,
-                    orElse: () => null,
-                  );
-
-              return ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(Spacing.md),
-                itemCount: messages.length,
-                itemBuilder: (context, index) {
-                  final msg = messages[index];
-                  final isMe = msg['sender_id'] == currentUserId;
-                  final timeStr = msg['created_at'] != null
-                      ? DateTime.tryParse(msg['created_at'].toString())
-                              ?.toLocal()
-                              .toString()
-                              .substring(11, 16) ??
-                          ''
-                      : '';
-
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: Spacing.sm),
-                    child: Align(
-                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Column(
-                        crossAxisAlignment:
-                            isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                        children: [
-                          if (!isMe)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 4, bottom: 2),
-                              child: Text(
-                                msg['sender_name'] ?? 'Unknown',
-                                style: context.textTheme.bodySmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  color: context.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ),
-                          Container(
-                            constraints: BoxConstraints(
-                              maxWidth: context.screenWidth * 0.75,
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: Spacing.md,
-                              vertical: Spacing.sm,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isMe
-                                  ? context.colorScheme.primary
-                                  : context.colorScheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.only(
-                                topLeft: const Radius.circular(16),
-                                topRight: const Radius.circular(16),
-                                bottomLeft: Radius.circular(isMe ? 16 : 4),
-                                bottomRight: Radius.circular(isMe ? 4 : 16),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  msg['content'] ?? '',
-                                  style: context.textTheme.bodyMedium?.copyWith(
-                                    color: isMe
-                                        ? context.colorScheme.onPrimary
-                                        : context.colorScheme.onSurface,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  timeStr,
-                                  style: context.textTheme.bodySmall?.copyWith(
-                                    fontSize: 9,
-                                    color: isMe
-                                        ? context.colorScheme.onPrimary.withOpacity(0.7)
-                                        : context.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (err, _) => Center(child: Text('Error loading messages: $err')),
-          ),
-        ),
-        if (canPost)
-          Container(
-            padding: const EdgeInsets.all(Spacing.sm),
-            decoration: BoxDecoration(
-              color: context.colorScheme.surface,
-              border: Border(
-                top: BorderSide(color: context.colorScheme.outlineVariant),
-              ),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _messageController,
-                    decoration: InputDecoration(
-                      hintText: 'Message workspace...',
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: Spacing.md,
-                        vertical: Spacing.sm,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
-                      ),
-                      filled: true,
-                      fillColor: context.colorScheme.surfaceContainer,
-                    ),
-                    textInputAction: TextInputAction.send,
-                    onFieldSubmitted: (_) => _send(),
-                  ),
-                ),
-                const SizedBox(width: Spacing.xs),
-                IconButton.filled(
-                  onPressed: _isSending ? null : _send,
-                  icon: _isSending
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.send_rounded),
-                ),
-              ],
-            ),
-          )
-        else
-          Container(
-            padding: const EdgeInsets.all(Spacing.md),
-            width: double.infinity,
-            color: context.colorScheme.surfaceContainerLow,
-            child: Text(
-              'You have view-only access to this Discussion Board.',
-              style: context.textTheme.bodySmall?.copyWith(
-                color: context.colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _CollaborativeActivityWidget extends ConsumerWidget {
-  const _CollaborativeActivityWidget({required this.workspaceId});
-  final String workspaceId;
-
-  IconData _iconForType(String? type) {
-    switch (type) {
-      case 'member_joined':
-        return Icons.person_add_rounded;
-      case 'member_left':
-        return Icons.person_remove_rounded;
-      case 'role_changed':
-        return Icons.manage_accounts_rounded;
-      case 'document_uploaded':
-        return Icons.description_rounded;
-      case 'flashcards_generated':
-        return Icons.style_rounded;
-      case 'questions_generated':
-        return Icons.quiz_rounded;
-      case 'chat_message':
-        return Icons.chat_bubble_outline_rounded;
-      default:
-        return Icons.info_outline_rounded;
-    }
-  }
-
-  Color _colorForType(BuildContext context, String? type) {
-    switch (type) {
-      case 'member_joined':
-        return Colors.green;
-      case 'member_left':
-        return Colors.red;
-      case 'role_changed':
-        return Colors.orange;
-      case 'document_uploaded':
-        return AppColors.primary;
-      case 'flashcards_generated':
-        return Colors.purple;
-      case 'questions_generated':
-        return Colors.teal;
-      default:
-        return context.colorScheme.secondary;
-    }
-  }
-
-  String _descriptionForActivity(Map<String, dynamic> act) {
-    final type = act['activity_type'] as String?;
-    final userName = act['user_name'] as String? ?? 'Someone';
-    final details = act['details'] as Map<String, dynamic>? ?? {};
-
-    switch (type) {
-      case 'member_joined':
-        return '$userName joined the workspace';
-      case 'member_left':
-        return '$userName left the workspace';
-      case 'role_changed':
-        return '$userName role changed to ${details['new_role']}';
-      case 'document_uploaded':
-        return '$userName uploaded "${details['document_name'] ?? 'document'}"';
-      case 'flashcards_generated':
-        return '$userName generated flashcards';
-      case 'questions_generated':
-        return '$userName generated study questions';
-      case 'chat_message':
-        return '$userName posted a message';
-      default:
-        return 'Activity logged by $userName';
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final activityAsync = ref.watch(workspaceActivityProvider(workspaceId));
-
-    return RefreshIndicator(
-      onRefresh: () async {
-        ref.invalidate(workspaceActivityProvider(workspaceId));
-      },
-      child: activityAsync.when(
-        data: (logs) {
-          if (logs.isEmpty) {
-            return const EmptyStateView(
-              icon: Icons.history_rounded,
-              title: 'No activity logs',
-              subtitle: 'Actions taken in this workspace will appear here.',
-            );
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(Spacing.md),
-            itemCount: logs.length,
-            itemBuilder: (context, index) {
-              final act = logs[index];
-              final date = act['created_at'] != null
-                  ? DateTime.tryParse(act['created_at'].toString())?.toLocal()
-                  : null;
-              final dateStr = date != null
-                  ? '${date.month}/${date.day} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}'
-                  : '';
-
-              return Card(
-                margin: const EdgeInsets.only(bottom: Spacing.sm),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: _colorForType(context, act['activity_type'] as String?).withOpacity(0.1),
-                    foregroundColor: _colorForType(context, act['activity_type'] as String?),
-                    child: Icon(_iconForType(act['activity_type'] as String?), size: 20),
-                  ),
-                  title: Text(
-                    _descriptionForActivity(act),
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                  ),
-                  trailing: Text(
-                    dateStr,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: context.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              );
-            },
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, _) => Center(child: Text('Error loading activity: $err')),
-      ),
-    );
-  }
-}
-
-class _CollaborativeMembersWidget extends ConsumerStatefulWidget {
-  const _CollaborativeMembersWidget({required this.workspaceId, required this.ownerId});
-  final String workspaceId;
-  final String? ownerId;
-
-  @override
-  ConsumerState<_CollaborativeMembersWidget> createState() => _CollaborativeMembersWidgetState();
-}
-
-class _CollaborativeMembersWidgetState extends ConsumerState<_CollaborativeMembersWidget> {
-  bool _isGeneratingInvite = false;
-  final _emailController = TextEditingController();
-  final _usernameController = TextEditingController();
-  String _selectedInviteRole = 'editor';
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _usernameController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _invite() async {
-    final email = _emailController.text.trim();
-    final username = _usernameController.text.trim();
-    if (email.isEmpty && username.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter an email or username')),
-      );
-      return;
-    }
-
-    setState(() => _isGeneratingInvite = true);
-    try {
-      await ref.read(workspacesRepositoryProvider).inviteToCollaborative(
-            widget.workspaceId,
-            email: email.isNotEmpty ? email : null,
-            username: username.isNotEmpty ? username : null,
-            role: _selectedInviteRole,
-          );
-      _emailController.clear();
-      _usernameController.clear();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Invitation sent successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to send invitation: $e'),
-            backgroundColor: context.colorScheme.error,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isGeneratingInvite = false);
-      }
-    }
-  }
-
-  Future<void> _leave() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Leave Workspace'),
-        content: const Text('Are you sure you want to leave this workspace? You will need an invite code to join again.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Leave'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    try {
-      await ref.read(workspacesRepositoryProvider).leaveCollaborative(widget.workspaceId);
-      await ref.read(authNotifierProvider.notifier).refresh();
-      ref.read(activeWorkspaceIdProvider.notifier).build(); // reset
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('You have left the workspace.')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to leave workspace: $e'),
-            backgroundColor: context.colorScheme.error,
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final membersAsync = ref.watch(workspaceMembersListProvider(widget.workspaceId));
-    final activeWorkspace = ref.watch(activeStudentWorkspaceProvider);
-    final joinCode = activeWorkspace?.joinCode ?? '';
-    final roleAsync = ref.watch(currentCollaborativeRoleProvider(widget.workspaceId));
-    final myRole = roleAsync.valueOrNull;
-    final isOwner = myRole == 'owner';
-    final isEditorOrOwner = myRole == 'owner' || myRole == 'editor';
-
-    return RefreshIndicator(
-      onRefresh: () async {
-        ref.invalidate(workspaceMembersListProvider(widget.workspaceId));
-      },
-      child: ListView(
-        padding: const EdgeInsets.all(Spacing.md),
-        children: [
-          if (joinCode.isNotEmpty) ...[
-            Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: const EdgeInsets.all(Spacing.md),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.share_rounded, color: context.colorScheme.primary),
-                        const SizedBox(width: Spacing.sm),
-                        Text(
-                          'Invite Collaborators',
-                          style: context.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: Spacing.sm),
-                    Text(
-                      'Share this 6-character code with other students so they can join and study with you.',
-                      style: context.textTheme.bodySmall?.copyWith(
-                        color: context.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: Spacing.md),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: Spacing.lg,
-                        vertical: Spacing.sm,
-                      ),
-                      decoration: BoxDecoration(
-                        color: context.colorScheme.surfaceContainer,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: context.colorScheme.outlineVariant),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            joinCode,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 22,
-                              letterSpacing: 1.5,
-                              color: context.colorScheme.primary,
-                            ),
-                          ),
-                          const SizedBox(width: Spacing.md),
-                          IconButton(
-                            icon: const Icon(Icons.copy_rounded),
-                            onPressed: () {
-                              Clipboard.setData(ClipboardData(text: joinCode));
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Join code copied to clipboard!')),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: Spacing.md),
-          ],
-          if (isEditorOrOwner) ...[
-            Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: const EdgeInsets.all(Spacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.mail_outline_rounded, color: context.colorScheme.primary),
-                        const SizedBox(width: Spacing.sm),
-                        Text(
-                          'Send Direct Invite',
-                          style: context.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: Spacing.md),
-                    TextFormField(
-                      controller: _emailController,
-                      decoration: const InputDecoration(
-                        labelText: 'Email Address (optional)',
-                        hintText: 'student@example.com',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: Spacing.sm),
-                    TextFormField(
-                      controller: _usernameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Username (optional)',
-                        hintText: 'john_doe',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: Spacing.sm),
-                    DropdownButtonFormField<String>(
-                      value: _selectedInviteRole,
-                      decoration: const InputDecoration(labelText: 'Invite Role'),
-                      items: const [
-                        DropdownMenuItem(value: 'editor', child: Text('Editor (Can upload/generate)')),
-                        DropdownMenuItem(value: 'viewer', child: Text('Viewer (View only)')),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() => _selectedInviteRole = val);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: Spacing.md),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: _isGeneratingInvite ? null : _invite,
-                        icon: _isGeneratingInvite
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                              )
-                            : const Icon(Icons.send_rounded),
-                        label: const Text('Send Invitation'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: Spacing.md),
-          ],
-          Text(
-            'Workspace Members',
-            style: context.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: Spacing.sm),
-          membersAsync.when(
-            data: (members) {
-              return Column(
-                children: [
-                  for (final m in members)
-                    Card(
-                      margin: const EdgeInsets.only(bottom: Spacing.xs),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          child: Text(
-                            m['display_name'] != null && m['display_name'].toString().isNotEmpty
-                                ? m['display_name'].toString()[0].toUpperCase()
-                                : 'U',
-                          ),
-                        ),
-                        title: Text(
-                          m['display_name'] ?? 'Unknown Member',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: Text(
-                          '${m['email'] ?? ''} • ${m['role'].toString().toUpperCase()}',
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                        trailing: isOwner && m['role'] != 'owner'
-                            ? PopupMenuButton<String>(
-                                icon: const Icon(Icons.more_vert_rounded),
-                                onSelected: (role) async {
-                                  try {
-                                    await ref
-                                        .read(workspaceMembersListProvider(widget.workspaceId).notifier)
-                                        .changeRole(m['user_id'], role);
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('Member role updated to $role.'),
-                                          backgroundColor: Colors.green,
-                                        ),
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('Failed to change role: $e'),
-                                          backgroundColor: context.colorScheme.error,
-                                        ),
-                                      );
-                                    }
-                                  }
-                                },
-                                itemBuilder: (context) => [
-                                  const PopupMenuItem(
-                                    value: 'editor',
-                                    child: Text('Make Editor'),
-                                  ),
-                                  const PopupMenuItem(
-                                    value: 'viewer',
-                                    child: Text('Make Viewer'),
-                                  ),
-                                ],
-                              )
-                            : null,
-                      ),
-                    ),
-                ],
-              );
-            },
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (err, _) => Center(child: Text('Failed to load members: $err')),
-          ),
-          const SizedBox(height: Spacing.lg),
-          if (!isOwner)
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red,
-                side: const BorderSide(color: Colors.red),
-              ),
-              onPressed: _leave,
-              icon: const Icon(Icons.logout_rounded),
-              label: const Text('Leave Workspace'),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CreateCollaborativeWorkspaceDialog extends ConsumerStatefulWidget {
-  const _CreateCollaborativeWorkspaceDialog();
-
-  @override
-  ConsumerState<_CreateCollaborativeWorkspaceDialog> createState() =>
-      _CreateCollaborativeWorkspaceDialogState();
-}
-
-class _CreateCollaborativeWorkspaceDialogState
-    extends ConsumerState<_CreateCollaborativeWorkspaceDialog> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  bool _isLoading = false;
-  String? _errorMessage;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final repo = ref.read(workspacesRepositoryProvider);
-      final newWorkspace =
-          await repo.createCollaborative(name: _nameController.text.trim());
-
-      // Refresh user memberships
-      await ref.read(authNotifierProvider.notifier).refresh();
-
-      // Switch active workspace to new workspace ID
-      ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(newWorkspace.id);
-
-      if (mounted) {
-        Navigator.of(context).pop(); // Dismiss dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                'Collaborative workspace "${newWorkspace.name}" created!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = e.toString().replaceAll('Exception: ', '');
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
-      ),
-      title: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(Spacing.sm),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE0E7FF),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.groups_rounded,
-              color: Color(0xFF6366F1),
-            ),
-          ),
-          const SizedBox(width: Spacing.md),
-          const Text(
-            'Collaborative Space',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 18,
-            ),
-          ),
-        ],
-      ),
-      content: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Create a collaborative space where multiple students can upload documents, chat, and study together.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
-            const SizedBox(height: Spacing.lg),
-            TextFormField(
-              controller: _nameController,
-              autofocus: true,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-              decoration: InputDecoration(
-                labelText: 'Workspace Name',
-                hintText: 'e.g. Study Group Biology',
-                errorText: _errorMessage,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                prefixIcon: const Icon(Icons.people_outline_rounded),
-              ),
-              validator: (val) {
-                if (val == null || val.trim().isEmpty) {
-                  return 'Please enter a name';
-                }
-                return null;
-              },
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        const SizedBox(width: Spacing.xs),
-        FilledButton(
-          onPressed: _isLoading ? null : _submit,
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF6366F1),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          child: _isLoading
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 2,
-                  ),
-                )
-              : const Text('Create'),
-        ),
-      ],
     );
   }
 }

@@ -14,6 +14,7 @@ import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/core/theme/theme_manager.dart';
 
 /// Question-answering interface (Sprint 4.7) and answer feedback
 /// (Sprint 4.8) — unified into a single visual page style.
@@ -296,10 +297,6 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
             Navigator.of(context).pop();
             showStudentCreateWorkspaceDialog(context);
           },
-          onCreateCollaborativeWorkspace: () {
-            Navigator.of(context).pop();
-            showStudentCreateCollaborativeWorkspaceDialog(context);
-          },
           onJoinWorkspace: () {
             Navigator.of(context).pop();
             showStudentJoinWorkspaceDialog(context);
@@ -339,6 +336,8 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
         ? user!.displayName[0].toUpperCase()
         : 'S';
 
+    final themeMode = ref.watch(appThemeModeProvider);
+
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
       body: Stack(
@@ -348,11 +347,23 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
             left: 0,
             right: 0,
             height: 230,
-            child: Image.asset(
-              'assets/mascot/studytabbackgroundimage.png',
-              fit: BoxFit.fitWidth,
-              alignment: Alignment.topCenter,
-            ),
+            child: themeMode == AppThemeMode.mature
+                ? Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: isDark
+                            ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
+                            : [const Color(0xFFEFF6FF), const Color(0xFFDBEAFE)],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                  )
+                : Image.asset(
+                    'assets/mascot/studytabbackgroundimage.png',
+                    fit: BoxFit.fitWidth,
+                    alignment: Alignment.topCenter,
+                  ),
           ),
           SafeArea(
             child: Column(

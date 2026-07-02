@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/mascot/models/mascot_state.dart';
@@ -15,11 +16,12 @@ class LoadingIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showMascot = useMascot && !Platform.environment.containsKey('FLUTTER_TEST');
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (useMascot)
+          if (showMascot)
             const StudyBuddy(state: MascotState.loading, size: 88)
           else
             const CircularProgressIndicator(color: AppColors.primary),

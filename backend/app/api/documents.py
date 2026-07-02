@@ -227,17 +227,6 @@ async def _assert_admin(user: User, workspace_id: str) -> None:
     if user.role == UserRole.tenant_admin:
         return
 
-    # Check if this is a collaborative workspace where the user is owner or editor
-    wsp_col = get_collection(user.tenant_id, WORKSPACES)
-    wsp = await wsp_col.find_one({"_id": workspace_id, "deleted_at": None})
-    if wsp and wsp.get("type", "personal") == "collaborative":
-        from app.core.database import WORKSPACE_MEMBERS
-        members_col = get_collection(user.tenant_id, WORKSPACE_MEMBERS)
-        member = await members_col.find_one({"workspace_id": workspace_id, "user_id": user.id, "deleted_at": None})
-        if member and member.get("role") in ("owner", "editor"):
-            return
-        raise ForbiddenError("Only workspace owners or editors can perform this action")
-
     admin_memberships = {
         m.workspace_id
         for m in user.workspace_memberships

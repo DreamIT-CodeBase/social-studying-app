@@ -9,6 +9,7 @@ import 'package:social_study_app/features/admin/workspaces/data/demo_workspaces_
 import 'package:social_study_app/features/admin/workspaces/data/workspaces_repository.dart';
 import 'package:social_study_app/features/admin/workspaces/presentation/workspaces_screen.dart';
 import 'package:social_study_app/shared/models/workspace.dart';
+import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 
 class _MockRepo extends Mock implements WorkspacesRepository {}
 
@@ -58,7 +59,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Loading workspaces…'), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsWidgets);
+    expect(find.byType(LoadingIndicator), findsOneWidget);
 
     completer.complete([]);
     await tester.pumpAndSettle();
@@ -104,7 +105,7 @@ void main() {
     var listCalls = 0;
     when(repo.list).thenAnswer((_) async {
       listCalls++;
-      return listCalls == 1 ? [_ws()] : [_ws(), _ws(id: 'wsp_2', name: 'Algebra')];
+      return listCalls == 1 ? <Workspace>[] : [_ws(id: 'wsp_2', name: 'Algebra')];
     });
     when(() => repo.create(
           name: any(named: 'name'),
@@ -114,12 +115,12 @@ void main() {
     await tester.pumpWidget(_wrap(repo));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FloatingActionButton, 'New Workspace'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Create Workspace').first);
     await tester.pumpAndSettle();
-    expect(find.text('New Workspace'), findsWidgets); // sheet title + FAB
+    expect(find.text('New Workspace'), findsWidgets); // sheet title
 
     await tester.enterText(find.byType(TextField).first, 'Algebra');
-    await tester.tap(find.widgetWithText(FilledButton, 'Create Workspace'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Create Workspace').last);
     await tester.pumpAndSettle();
 
     verify(() => repo.create(name: 'Algebra', description: null)).called(1);
@@ -129,7 +130,7 @@ void main() {
 
   testWidgets('a name conflict is shown inline on the name field',
       (tester) async {
-    when(repo.list).thenAnswer((_) async => [_ws()]);
+    when(repo.list).thenAnswer((_) async => <Workspace>[]);
     when(() => repo.create(
           name: any(named: 'name'),
           description: any(named: 'description'),
@@ -140,30 +141,30 @@ void main() {
     await tester.pumpWidget(_wrap(repo));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FloatingActionButton, 'New Workspace'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Create Workspace').first);
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).first, 'Grade 5 Science');
-    await tester.tap(find.widgetWithText(FilledButton, 'Create Workspace'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Create Workspace').last);
     await tester.pumpAndSettle();
 
     expect(find.text("Name 'Grade 5 Science' is taken"), findsOneWidget);
     // The sheet stays open so the admin can correct the name.
-    expect(find.widgetWithText(FilledButton, 'Create Workspace'),
+    expect(find.widgetWithText(FilledButton, 'Create Workspace').last,
         findsOneWidget);
   });
 
   testWidgets('empty name submission shows an inline validation error',
       (tester) async {
-    when(repo.list).thenAnswer((_) async => [_ws()]);
+    when(repo.list).thenAnswer((_) async => <Workspace>[]);
 
     await tester.pumpWidget(_wrap(repo));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FloatingActionButton, 'New Workspace'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Create Workspace').first);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Create Workspace'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Create Workspace').last);
     await tester.pumpAndSettle();
 
     expect(find.text('Enter a workspace name'), findsOneWidget);

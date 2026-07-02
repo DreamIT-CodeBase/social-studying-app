@@ -26,12 +26,6 @@ NOTIFICATION_DISPATCHES = "notification_dispatches"  # Sprint 5.7 — append-onl
 SCREEN_TIME_SETTINGS = "screen_time_settings"        # Cloud-backed workspace blocking config
 SCREEN_TIME_WALLETS  = "screen_time_wallets"          # Cloud-backed per-student usage wallet
 
-# Collaborative Workspaces
-COLLABORATIVE_WORKSPACES = "collaborative_workspaces"
-WORKSPACE_MEMBERS = "workspace_members"
-WORKSPACE_INVITATIONS = "workspace_invitations"
-WORKSPACE_ACTIVITY_LOGS = "workspace_activity_logs"
-WORKSPACE_MESSAGES = "workspace_messages"
 
 # Parental / Device Control
 DEVICE_USAGE_LOGS = "device_usage_logs"

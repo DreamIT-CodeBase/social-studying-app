@@ -41,6 +41,24 @@ async def test_validate_token_valid_returns_claims():
     assert claims["extension_TenantId"] == "ten_001"
 
 
+@pytest.mark.asyncio
+async def test_validate_token_google_returns_claims():
+    google_claims = {
+        "sub": "google_123",
+        "iss": "https://accounts.google.com",
+        "email": "google@example.com",
+        "name": "Google User",
+    }
+    with (
+        patch("app.core.auth._get_google_jwks", AsyncMock(return_value={"keys": []})),
+        patch("app.core.auth.jwt.get_unverified_claims", return_value={"iss": "https://accounts.google.com"}),
+        patch("app.core.auth.jwt.decode", return_value=google_claims),
+    ):
+        claims = await _validate_token("google.token.here")
+    assert claims["sub"] == "google_123"
+    assert claims["iss"] == "https://accounts.google.com"
+
+
 # ── get_current_user ──────────────────────────────────────────────────────────
 
 
@@ -101,6 +119,7 @@ async def test_get_current_user_happy_path_returns_user_and_sets_state():
             AsyncMock(return_value={"sub": "obj_123", "extension_TenantId": "ten_test001"}),
         ),
         patch("app.core.auth._lookup_or_create_user", AsyncMock(return_value=expected_user)),
+        patch("app.core.auth._ensure_self_learning_workspace", AsyncMock(side_effect=lambda u: u)),
     ):
         user = await get_current_user(request, credentials=creds)
 

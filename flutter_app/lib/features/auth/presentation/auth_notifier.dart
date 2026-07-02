@@ -36,6 +36,14 @@ class AuthNotifier extends _$AuthNotifier {
     });
   }
 
+  Future<void> signInWithGoogle() async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      final user = await ref.read(authRepositoryProvider).signInWithGoogle();
+      return AuthState.authenticated(user: user);
+    });
+  }
+
   Future<void> redeemInviteCode(String code) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {

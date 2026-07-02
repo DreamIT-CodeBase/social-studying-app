@@ -13,6 +13,7 @@ abstract final class AppRoutes {
   static const String studentDocuments = '/student/documents/:workspaceId';
   static const String studentDocumentPolling = '/student/documents/:workspaceId/:documentId';
   static const String studentOnboarding = '/student/onboarding';
+  static const String themeSelection = '/theme-selection';
 
 
   /// Sprint 2.10 polling screen route. The list screen pushes onto

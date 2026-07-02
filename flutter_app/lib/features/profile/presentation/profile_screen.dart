@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/config/app_flavor.dart';
+import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 
 // ─── Colours matching the reference exactly ───────────────────────────────
@@ -141,6 +142,11 @@ class ProfileScreen extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: _MenuCard(
                       items: [
+                        _MenuItem(
+                          icon: Icons.palette_rounded,
+                          label: 'Experience Style',
+                          onTap: () => context.push(AppRoutes.themeSelection),
+                        ),
                         if (!isStudent)
                           _MenuItem(
                             icon: Icons.screen_lock_portrait_rounded,

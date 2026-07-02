@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/services/sound_service.dart';
@@ -144,7 +146,7 @@ class _LevelUpOverlayState extends State<_LevelUpOverlay>
   }
 }
 
-class _LevelUpCard extends StatelessWidget {
+class _LevelUpCard extends ConsumerWidget {
   const _LevelUpCard({
     required this.newLevel,
     required this.controller,
@@ -154,7 +156,8 @@ class _LevelUpCard extends StatelessWidget {
   final AnimationController controller;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(appThemeModeProvider);
     // Bounce in for the first 40% of the timeline, hold, fade out for
     // the last 15%.
     final scale = CurvedAnimation(
@@ -203,10 +206,16 @@ class _LevelUpCard extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const StudyBuddy(
-                  state: MascotState.celebrate,
-                  size: 96,
-                ),
+                themeMode == AppThemeMode.mature
+                    ? const Icon(
+                        Icons.emoji_events_rounded,
+                        color: Colors.amber,
+                        size: 96,
+                      )
+                    : const StudyBuddy(
+                        state: MascotState.celebrate,
+                        size: 96,
+                      ),
                 const SizedBox(height: Spacing.lg),
                 Text(
                   'Level Up!',

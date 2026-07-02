@@ -17,11 +17,14 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
+from uuid import uuid4
 from app.core.config import settings
-from app.core.database import USERS, get_collection
+from app.core.database import USERS, WORKSPACES, get_collection
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.redis_client import get_redis
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, WorkspaceMembership
+from app.models.workspace import Workspace
+from app.models.base import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -61,19 +64,52 @@ async def _get_jwks() -> dict[str, Any]:
     return jwks  # type: ignore[no-any-return]
 
 
+async def _get_google_jwks() -> dict[str, Any]:
+    """Fetch JWKS from Google, cached in Redis."""
+    redis = await get_redis()
+    cached = await redis.get("google:jwks")
+    if cached:
+        return json.loads(cached)  # type: ignore[no-any-return]
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get("https://www.googleapis.com/oauth2/v3/certs", timeout=10)
+        response.raise_for_status()
+        jwks = response.json()
+
+    await redis.setex("google:jwks", _JWKS_TTL_SECONDS, json.dumps(jwks))
+    return jwks  # type: ignore[no-any-return]
+
+
 async def _validate_token(token: str) -> dict[str, Any]:
-    """Validate an Azure AD B2C RS256 JWT and return its claims."""
+    """Validate a JWT token (either Azure AD B2C or Google OAuth2 ID Token) and return its claims."""
     try:
-        # Azure AD B2C RS256 validation
-        jwks = await _get_jwks()
-        claims = jwt.decode(
-            token,
-            jwks,
-            algorithms=["RS256"],
-            audience=settings.b2c_client_id,
-            options={"verify_at_hash": False},
-        )
-        return claims
+        try:
+            unverified_claims = jwt.get_unverified_claims(token)
+            iss = unverified_claims.get("iss", "")
+        except Exception:
+            iss = ""
+
+        if "accounts.google.com" in iss:
+            # Google ID Token validation
+            jwks = await _get_google_jwks()
+            claims = jwt.decode(
+                token,
+                jwks,
+                algorithms=["RS256"],
+                options={"verify_at_hash": False, "verify_aud": False},
+            )
+            return claims
+        else:
+            # Azure AD B2C RS256 validation
+            jwks = await _get_jwks()
+            claims = jwt.decode(
+                token,
+                jwks,
+                algorithms=["RS256"],
+                audience=settings.b2c_client_id,
+                options={"verify_at_hash": False},
+            )
+            return claims
     except JWTError as exc:
         raise UnauthorizedError(f"Invalid token: {exc}") from exc
 
@@ -212,6 +248,49 @@ async def _lookup_or_create_user(b2c_object_id: str, tenant_id: str, claims: dic
 
 
 
+async def _ensure_self_learning_workspace(user: User) -> User:
+    """Ensure the user has a self-learning workspace.
+
+    Creates wsp_self_{user_id} workspace if missing and appends the membership.
+    """
+    self_ws_id = f"wsp_self_{user.id}"
+    has_self = any(m.workspace_id == self_ws_id for m in user.workspace_memberships)
+    if not has_self:
+        col = get_collection(user.tenant_id, WORKSPACES)
+        ws = await col.find_one({"_id": self_ws_id})
+        if not ws:
+            workspace = Workspace(
+                **{"_id": self_ws_id},
+                tenant_id=user.tenant_id,
+                name="Self Learning Workspace",
+                description="Your personal self-learning workspace",
+                admin_ids=[user.id],
+            )
+            await col.insert_one(workspace.model_dump(by_alias=True))
+            logger.info("Auto-created self-learning workspace %s for user %s", self_ws_id, user.id)
+
+        user.workspace_memberships.append(
+            WorkspaceMembership(
+                workspace_id=self_ws_id,
+                role=UserRole.workspace_admin,
+                joined_at=utc_now(),
+            )
+        )
+        user.touch()
+        user_col = get_collection(user.tenant_id, USERS)
+        await user_col.replace_one({"_id": user.id}, user.model_dump(by_alias=True))
+
+        # Bust the Redis cache so updates propagate
+        if user.b2c_object_id:
+            try:
+                redis = await get_redis()
+                cache_key = f"user:{user.tenant_id}:{user.b2c_object_id}"
+                await redis.delete(cache_key)
+            except Exception as e:
+                logger.warning("Failed to invalidate cache after adding self workspace: %s", e)
+    return user
+
+
 async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
@@ -239,6 +318,7 @@ async def get_current_user(
                 f"Dev auth user {user_id} not found in database for tenant {tenant_id}."
             )
         user = User.model_validate(doc)
+        user = await _ensure_self_learning_workspace(user)
         request.state.user = user
         return user
 
@@ -254,6 +334,7 @@ async def get_current_user(
     if not user.is_active:
         raise UnauthorizedError("Account is disabled")
 
+    user = await _ensure_self_learning_workspace(user)
     request.state.user = user
     return user
 

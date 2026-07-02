@@ -15,6 +15,13 @@ part 'screen_time_providers.g.dart';
 class ScreenTimeNotifier extends _$ScreenTimeNotifier {
   late final ScreenTimeService _service = ScreenTimeService();
 
+  // ── Notification throttle ─────────────────────────────────────────────────
+  // Only fire a notification once per 5 minutes, accumulating earned minutes
+  // across multiple syncXp() calls so the user doesn't get one every minute.
+  static const Duration _notifCooldown = Duration(minutes: 5);
+  DateTime? _lastNotificationTime;
+  int _pendingNotifMinutes = 0;
+
   @override
   Future<ScreenTimeWallet> build() async {
     final authState = ref.watch(authNotifierProvider).valueOrNull;
@@ -117,7 +124,16 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
       if (currentWallet != null) {
         final deltaMinutes = serverWallet.availableMinutes - currentWallet.availableMinutes;
         if (deltaMinutes > 0) {
-          await _service.showNotification(deltaMinutes);
+          _pendingNotifMinutes += deltaMinutes;
+          final now = DateTime.now();
+          final lastNotif = _lastNotificationTime;
+          // Only fire if no notification in the last 5 minutes
+          if (lastNotif == null || now.difference(lastNotif) >= _notifCooldown) {
+            await _service.showNotification(_pendingNotifMinutes);
+            _lastNotificationTime = now;
+            _pendingNotifMinutes = 0;
+          }
+          // else: silently accumulate — will fire on the next cooldown window
         }
       }
 

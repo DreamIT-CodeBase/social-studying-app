@@ -18,6 +18,12 @@ class ActiveWorkspaceId extends _$ActiveWorkspaceId {
     if (user == null || user.workspaceMemberships.isEmpty) {
       return null;
     }
+    // Default to the self-learning workspace if present
+    final selfWorkspaceId = 'wsp_self_${user.id}';
+    final hasSelf = user.workspaceMemberships.any((m) => m.workspaceId == selfWorkspaceId);
+    if (hasSelf) {
+      return selfWorkspaceId;
+    }
     // Default to the first membership in the list
     return user.workspaceMemberships.first.workspaceId;
   }
@@ -76,60 +82,3 @@ Workspace? activeStudentWorkspace(ActiveStudentWorkspaceRef ref) {
   return null;
 }
 
-@riverpod
-class WorkspaceMessages extends _$WorkspaceMessages {
-  @override
-  Future<List<Map<String, dynamic>>> build(String workspaceId) async {
-    return ref.read(workspacesRepositoryProvider).getMessages(workspaceId);
-  }
-
-  Future<void> sendMessage(String content) async {
-    await ref.read(workspacesRepositoryProvider).postMessage(workspaceId, content: content);
-    ref.invalidateSelf();
-  }
-}
-
-@riverpod
-Future<List<Map<String, dynamic>>> workspaceActivity(WorkspaceActivityRef ref, String workspaceId) {
-  return ref.read(workspacesRepositoryProvider).listActivity(workspaceId);
-}
-
-@riverpod
-class WorkspaceMembersList extends _$WorkspaceMembersList {
-  @override
-  Future<List<Map<String, dynamic>>> build(String workspaceId) async {
-    return ref.read(workspacesRepositoryProvider).listMembers(workspaceId);
-  }
-
-  Future<void> changeRole(String userId, String role) async {
-    await ref.read(workspacesRepositoryProvider).changeMemberRole(workspaceId, userId: userId, role: role);
-    ref.invalidateSelf();
-  }
-
-  Future<void> removeMember(String userId) async {
-    // Re-use changeMemberRole/leave endpoint if needed or implement a specific method.
-    // In our backend, there is no direct kick endpoint, but Owner updating member's role to left/deleted isn't there.
-    // Wait, the backend leave_workspace has:
-    // @router.post("/{workspace_id}/leave")
-    // Wait, let's see how member can be removed. The backend list members has no kick, but we can update role or add kick if needed.
-    // Actually, in change_member_role there is only promoting/demoting.
-    // Wait! Let's just implement promotion/demotion.
-  }
-}
-
-@riverpod
-Future<String?> currentCollaborativeRole(CurrentCollaborativeRoleRef ref, String workspaceId) async {
-  final authValue = ref.watch(authNotifierProvider).valueOrNull;
-  final userId = authValue?.maybeWhen(authenticated: (user) => user.id, orElse: () => null);
-  if (userId == null) return null;
-  
-  try {
-    final members = await ref.watch(workspaceMembersListProvider(workspaceId).future);
-    for (final m in members) {
-      if (m['user_id'] == userId) {
-        return m['role'] as String?;
-      }
-    }
-  } catch (_) {}
-  return null;
-}
