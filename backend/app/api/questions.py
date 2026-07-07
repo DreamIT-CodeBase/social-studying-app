@@ -244,6 +244,11 @@ async def next_question(
                 tenant_id=current_user.tenant_id,
                 workspace_id=workspace_id,
                 student_id=current_user.id,
+                limit=100,
+            )
+            all_seen_bodies = await _fetch_seen_question_bodies(
+                tenant_id=current_user.tenant_id,
+                question_ids=context.seen_question_ids,
             )
             question_type = _pick_question_type(enabled_types, context)
             try:
@@ -267,6 +272,7 @@ async def next_question(
                         candidate=candidate,
                         context=context,
                         question_type=question_type,
+                        all_seen_bodies=all_seen_bodies,
                     )
                     if isinstance(outcome, _Persisted):
                         logger.info("next_question (revision fallback generation) generated new question=%s", outcome.for_student.id)
@@ -279,10 +285,22 @@ async def next_question(
     # serve immediately — skipping the full generation pipeline. The
     # find-one-and-update ensures two concurrent /next calls can't
     # both consume the same row.
+    context_for_prefetch = await _fetch_student_context(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=current_user.id,
+        limit=100,
+    )
+    all_seen_bodies = await _fetch_seen_question_bodies(
+        tenant_id=current_user.tenant_id,
+        question_ids=context_for_prefetch.seen_question_ids,
+    )
     prefetched = await _claim_prefetched_question(
         tenant_id=current_user.tenant_id,
         workspace_id=workspace_id,
         student_id=current_user.id,
+        already_seen_ids=set(context_for_prefetch.seen_question_ids),
+        already_seen_bodies=all_seen_bodies,
     )
     if prefetched is not None:
         logger.info(
@@ -312,11 +330,10 @@ async def next_question(
         # Same 404 as access denial, no need to distinguish.
         raise NotFoundError("Workspace", workspace_id) from exc
 
-    context = await _fetch_student_context(
-        tenant_id=current_user.tenant_id,
-        workspace_id=workspace_id,
-        student_id=current_user.id,
-    )
+    # Re-use the context we already fetched for the prefetch check; if the
+    # prefetch path was taken, context_for_prefetch is available from the
+    # block above. We always have it because the prefetch guard runs first.
+    context = context_for_prefetch
 
     # One question type per request — see module docstring for why we
     # don't switch types mid-retry.
@@ -332,6 +349,7 @@ async def next_question(
             candidate=candidate,
             context=context,
             question_type=question_type,
+            all_seen_bodies=all_seen_bodies,
         )
         if isinstance(outcome, _Persisted):
             return outcome.for_student
@@ -380,6 +398,7 @@ async def _try_candidate(
     candidate: TopicScore,
     context: RetrieveStudentContextOutput,
     question_type: QuestionType,
+    all_seen_bodies: list[str],
 ) -> _Persisted | _Skip:
     """One full attempt: calibrate → retrieve → generate → review → persist.
 
@@ -408,18 +427,34 @@ async def _try_candidate(
             "indexed but search returned nothing"
         )
 
+    # Pass recently-seen question bodies to the generator so the prompt
+    # instructs GPT-4o to avoid exact-duplicate stems. Capped at 30 to
+    # keep prompt tokens reasonable but give it plenty of examples of what to avoid.
+    seen_bodies = all_seen_bodies[:30]
+
     try:
         generated = await question_generation.generate_question(
             topic=candidate.topic_name,
             difficulty=difficulty,
             question_type=question_type,
             grounding_chunks=retrieved.chunks,
-            seen_question_bodies=None,  # reverted: user prefers repeats over 503 errors on small workspaces
+            seen_question_bodies=seen_bodies or None,
         )
     except InsufficientSource as exc:
         return _Skip(f"generator: insufficient_source ({exc})")
     except question_generation.QuestionShapeError as exc:
         return _Skip(f"generator: shape error ({exc})")
+
+    # Strict check: is this question body (normalized) already answered by the student?
+    normalized_generated_body = generated.body.strip().lower().rstrip("?.!")
+    seen_bodies_normalized = {b.strip().lower().rstrip("?.!") for b in all_seen_bodies}
+    if normalized_generated_body in seen_bodies_normalized:
+        logger.warning(
+            "Generated question body duplicate of seen question for student=%s body=%r",
+            current_user.id,
+            generated.body
+        )
+        return _Skip("generated question body matches an already-seen question")
 
     review = await question_safety.review_question(generated)
     persisted = await _persist_question(
@@ -574,6 +609,7 @@ async def _fetch_student_context(
     tenant_id: str,
     workspace_id: str,
     student_id: str,
+    limit: int = 100,
 ) -> RetrieveStudentContextOutput:
     result = await invoke(
         "retrieve_student_context",
@@ -581,6 +617,7 @@ async def _fetch_student_context(
             tenant_id=tenant_id,
             workspace_id=workspace_id,
             student_id=student_id,
+            recent_interaction_limit=limit,
         ),
     )
     assert isinstance(result, RetrieveStudentContextOutput)
@@ -669,6 +706,7 @@ async def submit_answer(
     question_id: str,
     submission: AnswerSubmission,
     background_tasks: BackgroundTasks,
+    revision: bool = False,
     current_user: User = Depends(get_current_user),
 ) -> AnswerFeedback:
     """Evaluate a student's submitted answer and update their mastery.
@@ -720,6 +758,7 @@ async def submit_answer(
         topic=question.topic,
         difficulty=question.difficulty,
         is_correct=evaluation.is_correct,
+        revision=revision,
         now=timestamp,
     )
 
@@ -1017,6 +1056,8 @@ async def _claim_prefetched_question(
     tenant_id: str,
     workspace_id: str,
     student_id: str,
+    already_seen_ids: set[str] | None = None,
+    already_seen_bodies: list[str] | None = None,
 ) -> Question | None:
     """Atomically claim a prefetched question reserved for ``student_id``.
 
@@ -1024,6 +1065,11 @@ async def _claim_prefetched_question(
     can't both consume the same row — only one of them will see the
     pre-claim state where ``prefetched_for == student_id``; the other
     finds nothing and falls through to live generation.
+
+    ``already_seen_ids``: set of question_ids the student has already
+    answered. A prefetched question whose id is in this set is discarded
+    (deleted from the slot) rather than re-served — the student would
+    see the same question twice otherwise.
 
     Returns the question (already projected with prefetched_for=None)
     or None if no prefetched row is available.
@@ -1044,7 +1090,19 @@ async def _claim_prefetched_question(
     if raw is None:
         return None
     raw["prefetched_for"] = None
-    return Question.model_validate(raw)
+    question = Question.model_validate(raw)
+    
+    # Guard: if the student has already answered this question or one with the exact same body, discard it
+    normalized_prefetched_body = question.body.strip().lower().rstrip("?.!")
+    seen_bodies_normalized = {b.strip().lower().rstrip("?.!") for b in (already_seen_bodies or [])}
+    if (already_seen_ids and question.id in already_seen_ids) or normalized_prefetched_body in seen_bodies_normalized:
+        logger.info(
+            "Discarding stale prefetched question=%s (already seen or duplicate body) student=%s",
+            question.id,
+            student_id,
+        )
+        return None
+    return question
 
 
 async def prefetch_next_question(
@@ -1143,15 +1201,32 @@ async def _prefetch_impl(
     if not retrieved.chunks:
         return
 
+    all_seen_bodies = await _fetch_seen_question_bodies(
+        tenant_id=tenant_id,
+        question_ids=context_result.seen_question_ids,
+    )
+    seen_bodies_prefetch = all_seen_bodies[:30]
+
     try:
         generated = await question_generation.generate_question(
             topic=candidate.topic_name,
             difficulty=difficulty,
             question_type=question_type,
             grounding_chunks=retrieved.chunks,
-            seen_question_bodies=None,
+            seen_question_bodies=seen_bodies_prefetch or None,
         )
     except (InsufficientSource, question_generation.QuestionShapeError):
+        return
+
+    # Strict check: is this question body (normalized) already answered by the student?
+    normalized_generated_body = generated.body.strip().lower().rstrip("?.!")
+    seen_bodies_normalized = {b.strip().lower().rstrip("?.!") for b in all_seen_bodies}
+    if normalized_generated_body in seen_bodies_normalized:
+        logger.warning(
+            "Prefetch generated question body duplicate of seen question for student=%s body=%r",
+            student_id,
+            generated.body
+        )
         return
 
     review = await question_safety.review_question(generated)

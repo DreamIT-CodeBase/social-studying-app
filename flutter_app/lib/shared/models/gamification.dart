@@ -214,3 +214,20 @@ class LeaderboardResponse with _$LeaderboardResponse {
     visible: false,
   );
 }
+
+@freezed
+class SessionCompletionFeedback with _$SessionCompletionFeedback {
+  const factory SessionCompletionFeedback({
+    @JsonKey(name: 'xp_earned') required int xpEarned,
+    @JsonKey(name: 'new_level') required int newLevel,
+    @JsonKey(name: 'leveled_up') required bool leveledUp,
+    @JsonKey(name: 'streak_days') required int streakDays,
+    @JsonKey(name: 'streak_extended') required bool streakExtended,
+    @JsonKey(name: 'badges_unlocked')
+    @Default(<EarnedBadge>[])
+    List<EarnedBadge> badgesUnlocked,
+  }) = _SessionCompletionFeedback;
+
+  factory SessionCompletionFeedback.fromJson(Map<String, dynamic> json) =>
+      _$SessionCompletionFeedbackFromJson(json);
+}

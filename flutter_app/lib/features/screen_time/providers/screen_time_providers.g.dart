@@ -59,7 +59,7 @@ final blockedPackagesProvider =
 // ignore: unused_element
 typedef BlockedPackagesRef = AutoDisposeFutureProviderRef<List<String>>;
 String _$screenTimeNotifierHash() =>
-    r'7776f636c825a9b10acbb6d07fa1e53e7968ef55';
+    r'882924508e06c40d0e48d133662795f488233554';
 
 /// See also [ScreenTimeNotifier].
 @ProviderFor(ScreenTimeNotifier)

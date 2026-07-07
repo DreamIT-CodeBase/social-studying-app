@@ -47,6 +47,13 @@ abstract class GamificationRepository {
   Future<LeaderboardResponse> fetchLeaderboard({
     required String workspaceId,
   });
+
+  /// Award XP and get delta for completing a session.
+  Future<SessionCompletionFeedback> completeSession({
+    required String workspaceId,
+    required String userId,
+    required String sessionType,
+  });
 }
 
 /// Selects between the demo (in-process) and real (Dio → backend)

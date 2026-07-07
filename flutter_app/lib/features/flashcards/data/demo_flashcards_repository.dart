@@ -76,7 +76,10 @@ class DemoFlashcardsRepository implements FlashcardsRepository {
   final Set<String> _served = {};
 
   @override
-  Future<Flashcard> next({required String workspaceId}) async {
+  Future<Flashcard> next({
+    required String workspaceId,
+    List<String>? selectedTopicIds,
+  }) async {
     await Future<void>.delayed(const Duration(milliseconds: 250));
     final fixture = _fixtures[_index % _fixtures.length];
     _index++;

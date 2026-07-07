@@ -35,7 +35,10 @@ abstract class FlashcardsRepository {
   /// - [FlashcardGenerationUnavailableException] (503) when the
   ///   pipeline exhausted its retries. Carries `retryAfterSeconds`
   ///   from the `Retry-After` header so the UI can back off.
-  Future<Flashcard> next({required String workspaceId});
+  Future<Flashcard> next({
+    required String workspaceId,
+    List<String>? selectedTopicIds,
+  });
 
   /// Record a student's self-rating for a flashcard they've reviewed.
   ///

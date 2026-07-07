@@ -79,4 +79,12 @@ class FlashcardSession with _$FlashcardSession {
   /// message is the Dio interceptor's friendly text.
   const factory FlashcardSession.error({required String message}) =
       FlashcardSessionError;
+
+  /// Review session of 25 cards successfully completed.
+  /// Carries the counts of rated cards for summary UI.
+  const factory FlashcardSession.completed({
+    required int easyCount,
+    required int mediumCount,
+    required int hardCount,
+  }) = FlashcardSessionCompleted;
 }

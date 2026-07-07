@@ -19,6 +19,7 @@ import 'package:social_study_app/shared/models/question.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
+import 'package:social_study_app/features/gamification/data/gamification_repository.dart';
 
 part 'revision_session_notifier.g.dart';
 
@@ -110,6 +111,7 @@ class RevisionSessionNotifier extends _$RevisionSessionNotifier {
                 workspaceId: _workspaceId,
                 questionId: current.question.id,
                 submission: AnswerSubmission(answer: draft),
+                revision: true,
               );
       _questionsAnswered++;
       if (feedback.isCorrect) _questionsCorrect++;
@@ -195,6 +197,18 @@ class RevisionSessionNotifier extends _$RevisionSessionNotifier {
     }
     _position++;
     if (_position >= _plan.length) {
+      final authState = ref.read(authNotifierProvider).valueOrNull;
+      final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+      if (user != null) {
+        ref.read(gamificationRepositoryProvider).completeSession(
+              workspaceId: _workspaceId,
+              userId: user.id,
+              sessionType: 'revision',
+            ).then((_) {
+              _invalidateProfile();
+            }).catchError((_) {});
+      }
+
       state = RevisionSession.complete(
         summary: RevisionSummary(
           total: _plan.length,

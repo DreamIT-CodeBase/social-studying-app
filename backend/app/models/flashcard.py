@@ -96,6 +96,11 @@ class FlashcardRatingEvent(CosmosDocument):
     topic: str
     rating: FlashcardRating
     rated_at: str          # ISO 8601 UTC
+    selected_option: str | None = None
+    is_correct: bool | None = None
+    response_time_ms: int | None = None
+    session_progress: int | None = None
+    accuracy_percentage: float | None = None
 
 
 # ── Request / Response schemas ────────────────────────────────────────────────
@@ -131,6 +136,11 @@ class FlashcardRatingSubmission(CosmosDocument.__base__):
     """Request body for ``POST /flashcards/{id}/rate``."""
 
     rating: FlashcardRating
+    selected_option: str | None = None
+    is_correct: bool | None = None
+    response_time_ms: int | None = None
+    session_progress: int | None = None
+    accuracy_percentage: float | None = None
 
 
 class FlashcardRatingBadgeUnlock(CosmosDocument.__base__):

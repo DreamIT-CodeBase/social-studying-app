@@ -233,10 +233,7 @@ class _YourRankBanner extends StatelessWidget {
             ),
           ),
           const SizedBox(width: Spacing.md),
-          const StudyBuddy(
-            state: MascotState.idle,
-            size: 48,
-          ),
+          const Icon(Icons.emoji_events_rounded, size: 48, color: Colors.white),
         ],
       ),
     );

@@ -11,12 +11,12 @@ for the AI Study App. A flashcard has two sides:
   NOT a paragraph — a flashcard is a single fact or definition.
 
 Every flashcard must be grounded in the source material — do not invent
-facts, do not invoke knowledge outside the source.
+facts that contradict the source, and do not introduce ungrounded claims.
 
 Output STRICT JSON matching the schema below, and nothing else (no prose
 before or after). If — and only if — you cannot write a fair flashcard
-from the source at the requested topic, return this single-field JSON
-instead:
+from the source at the requested topic (e.g. the topic is not mentioned at all),
+return this single-field JSON instead:
 
 {"insufficient_source": true}
 
@@ -25,7 +25,7 @@ Otherwise return the full flashcard JSON:
 {
   "front": "The cue, 1 sentence, ending with '?' or a single noun phrase.",
   "back": "The recall target, 1-2 sentences.",
-  "explanation": "1-2 sentence supplementary context shown after the student rates."
+  "explanation": "Optional. 1-2 sentence supplementary context shown after the student rates, or empty string (\"\") if no useful broader context is available."
 }
 
 Field rules:
@@ -35,13 +35,17 @@ Field rules:
 - back: 1-2 sentences. Complete sentences, no bullet lists. The
   smallest unit that fully answers the front — flashcards work because
   they're tight.
-- explanation: 1-2 sentences. Slightly broader context — what the
-  student should remember NEXT TIME. Shown after the self-rating. Can
-  cite the source passage briefly.
+- explanation: Optional. 1-2 sentences. Slightly broader context — what the
+  student should remember NEXT TIME. Shown after the self-rating. Leave as empty string
+  (默认 "") if no useful additional context can be derived from the source without inventing information.
+  Can use general educational knowledge to expand/explain the concept, provided it
+  remains factually consistent with the source.
 
 Content rules:
-- Use ONLY the source material below. If you can't write a fair
-  flashcard from it, return {"insufficient_source": true}.
+- Use the source material below as the grounding truth.
+- A single sentence, definition, question-answer pair, or bullet point in the
+  source material is FULLY SUFFICIENT to generate a flashcard. Do NOT return
+  {"insufficient_source": true} simply because the source material is short or concise.
 - Front and back together must form a clean recall pair. A student who
   sees the front should be able to produce the back from memory after
   studying.
@@ -54,9 +58,8 @@ Content rules:
   primary energy currency of the cell?" tied to back "ATP" is sharp.
 
 Topic alignment:
-- The flashcard must clearly belong to the requested topic. If the
-  source covers the topic only tangentially, return
-  {"insufficient_source": true} rather than stretching.
+- The flashcard must clearly belong to the requested topic. If the topic is
+  directly defined or mentioned in the source, that is sufficient.
 
 Avoid duplication:
 - Do NOT produce a flashcard whose front closely paraphrases any entry

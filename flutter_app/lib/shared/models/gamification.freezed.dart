@@ -2368,3 +2368,302 @@ abstract class _LeaderboardResponse extends LeaderboardResponse {
   _$$LeaderboardResponseImplCopyWith<_$LeaderboardResponseImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
+
+SessionCompletionFeedback _$SessionCompletionFeedbackFromJson(
+    Map<String, dynamic> json) {
+  return _SessionCompletionFeedback.fromJson(json);
+}
+
+/// @nodoc
+mixin _$SessionCompletionFeedback {
+  @JsonKey(name: 'xp_earned')
+  int get xpEarned => throw _privateConstructorUsedError;
+  @JsonKey(name: 'new_level')
+  int get newLevel => throw _privateConstructorUsedError;
+  @JsonKey(name: 'leveled_up')
+  bool get leveledUp => throw _privateConstructorUsedError;
+  @JsonKey(name: 'streak_days')
+  int get streakDays => throw _privateConstructorUsedError;
+  @JsonKey(name: 'streak_extended')
+  bool get streakExtended => throw _privateConstructorUsedError;
+  @JsonKey(name: 'badges_unlocked')
+  List<EarnedBadge> get badgesUnlocked => throw _privateConstructorUsedError;
+
+  /// Serializes this SessionCompletionFeedback to a JSON map.
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+
+  /// Create a copy of SessionCompletionFeedback
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  $SessionCompletionFeedbackCopyWith<SessionCompletionFeedback> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $SessionCompletionFeedbackCopyWith<$Res> {
+  factory $SessionCompletionFeedbackCopyWith(SessionCompletionFeedback value,
+          $Res Function(SessionCompletionFeedback) then) =
+      _$SessionCompletionFeedbackCopyWithImpl<$Res, SessionCompletionFeedback>;
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'xp_earned') int xpEarned,
+      @JsonKey(name: 'new_level') int newLevel,
+      @JsonKey(name: 'leveled_up') bool leveledUp,
+      @JsonKey(name: 'streak_days') int streakDays,
+      @JsonKey(name: 'streak_extended') bool streakExtended,
+      @JsonKey(name: 'badges_unlocked') List<EarnedBadge> badgesUnlocked});
+}
+
+/// @nodoc
+class _$SessionCompletionFeedbackCopyWithImpl<$Res,
+        $Val extends SessionCompletionFeedback>
+    implements $SessionCompletionFeedbackCopyWith<$Res> {
+  _$SessionCompletionFeedbackCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  /// Create a copy of SessionCompletionFeedback
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? xpEarned = null,
+    Object? newLevel = null,
+    Object? leveledUp = null,
+    Object? streakDays = null,
+    Object? streakExtended = null,
+    Object? badgesUnlocked = null,
+  }) {
+    return _then(_value.copyWith(
+      xpEarned: null == xpEarned
+          ? _value.xpEarned
+          : xpEarned // ignore: cast_nullable_to_non_nullable
+              as int,
+      newLevel: null == newLevel
+          ? _value.newLevel
+          : newLevel // ignore: cast_nullable_to_non_nullable
+              as int,
+      leveledUp: null == leveledUp
+          ? _value.leveledUp
+          : leveledUp // ignore: cast_nullable_to_non_nullable
+              as bool,
+      streakDays: null == streakDays
+          ? _value.streakDays
+          : streakDays // ignore: cast_nullable_to_non_nullable
+              as int,
+      streakExtended: null == streakExtended
+          ? _value.streakExtended
+          : streakExtended // ignore: cast_nullable_to_non_nullable
+              as bool,
+      badgesUnlocked: null == badgesUnlocked
+          ? _value.badgesUnlocked
+          : badgesUnlocked // ignore: cast_nullable_to_non_nullable
+              as List<EarnedBadge>,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$SessionCompletionFeedbackImplCopyWith<$Res>
+    implements $SessionCompletionFeedbackCopyWith<$Res> {
+  factory _$$SessionCompletionFeedbackImplCopyWith(
+          _$SessionCompletionFeedbackImpl value,
+          $Res Function(_$SessionCompletionFeedbackImpl) then) =
+      __$$SessionCompletionFeedbackImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'xp_earned') int xpEarned,
+      @JsonKey(name: 'new_level') int newLevel,
+      @JsonKey(name: 'leveled_up') bool leveledUp,
+      @JsonKey(name: 'streak_days') int streakDays,
+      @JsonKey(name: 'streak_extended') bool streakExtended,
+      @JsonKey(name: 'badges_unlocked') List<EarnedBadge> badgesUnlocked});
+}
+
+/// @nodoc
+class __$$SessionCompletionFeedbackImplCopyWithImpl<$Res>
+    extends _$SessionCompletionFeedbackCopyWithImpl<$Res,
+        _$SessionCompletionFeedbackImpl>
+    implements _$$SessionCompletionFeedbackImplCopyWith<$Res> {
+  __$$SessionCompletionFeedbackImplCopyWithImpl(
+      _$SessionCompletionFeedbackImpl _value,
+      $Res Function(_$SessionCompletionFeedbackImpl) _then)
+      : super(_value, _then);
+
+  /// Create a copy of SessionCompletionFeedback
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? xpEarned = null,
+    Object? newLevel = null,
+    Object? leveledUp = null,
+    Object? streakDays = null,
+    Object? streakExtended = null,
+    Object? badgesUnlocked = null,
+  }) {
+    return _then(_$SessionCompletionFeedbackImpl(
+      xpEarned: null == xpEarned
+          ? _value.xpEarned
+          : xpEarned // ignore: cast_nullable_to_non_nullable
+              as int,
+      newLevel: null == newLevel
+          ? _value.newLevel
+          : newLevel // ignore: cast_nullable_to_non_nullable
+              as int,
+      leveledUp: null == leveledUp
+          ? _value.leveledUp
+          : leveledUp // ignore: cast_nullable_to_non_nullable
+              as bool,
+      streakDays: null == streakDays
+          ? _value.streakDays
+          : streakDays // ignore: cast_nullable_to_non_nullable
+              as int,
+      streakExtended: null == streakExtended
+          ? _value.streakExtended
+          : streakExtended // ignore: cast_nullable_to_non_nullable
+              as bool,
+      badgesUnlocked: null == badgesUnlocked
+          ? _value._badgesUnlocked
+          : badgesUnlocked // ignore: cast_nullable_to_non_nullable
+              as List<EarnedBadge>,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$SessionCompletionFeedbackImpl implements _SessionCompletionFeedback {
+  const _$SessionCompletionFeedbackImpl(
+      {@JsonKey(name: 'xp_earned') required this.xpEarned,
+      @JsonKey(name: 'new_level') required this.newLevel,
+      @JsonKey(name: 'leveled_up') required this.leveledUp,
+      @JsonKey(name: 'streak_days') required this.streakDays,
+      @JsonKey(name: 'streak_extended') required this.streakExtended,
+      @JsonKey(name: 'badges_unlocked')
+      final List<EarnedBadge> badgesUnlocked = const <EarnedBadge>[]})
+      : _badgesUnlocked = badgesUnlocked;
+
+  factory _$SessionCompletionFeedbackImpl.fromJson(Map<String, dynamic> json) =>
+      _$$SessionCompletionFeedbackImplFromJson(json);
+
+  @override
+  @JsonKey(name: 'xp_earned')
+  final int xpEarned;
+  @override
+  @JsonKey(name: 'new_level')
+  final int newLevel;
+  @override
+  @JsonKey(name: 'leveled_up')
+  final bool leveledUp;
+  @override
+  @JsonKey(name: 'streak_days')
+  final int streakDays;
+  @override
+  @JsonKey(name: 'streak_extended')
+  final bool streakExtended;
+  final List<EarnedBadge> _badgesUnlocked;
+  @override
+  @JsonKey(name: 'badges_unlocked')
+  List<EarnedBadge> get badgesUnlocked {
+    if (_badgesUnlocked is EqualUnmodifiableListView) return _badgesUnlocked;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_badgesUnlocked);
+  }
+
+  @override
+  String toString() {
+    return 'SessionCompletionFeedback(xpEarned: $xpEarned, newLevel: $newLevel, leveledUp: $leveledUp, streakDays: $streakDays, streakExtended: $streakExtended, badgesUnlocked: $badgesUnlocked)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$SessionCompletionFeedbackImpl &&
+            (identical(other.xpEarned, xpEarned) ||
+                other.xpEarned == xpEarned) &&
+            (identical(other.newLevel, newLevel) ||
+                other.newLevel == newLevel) &&
+            (identical(other.leveledUp, leveledUp) ||
+                other.leveledUp == leveledUp) &&
+            (identical(other.streakDays, streakDays) ||
+                other.streakDays == streakDays) &&
+            (identical(other.streakExtended, streakExtended) ||
+                other.streakExtended == streakExtended) &&
+            const DeepCollectionEquality()
+                .equals(other._badgesUnlocked, _badgesUnlocked));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode => Object.hash(
+      runtimeType,
+      xpEarned,
+      newLevel,
+      leveledUp,
+      streakDays,
+      streakExtended,
+      const DeepCollectionEquality().hash(_badgesUnlocked));
+
+  /// Create a copy of SessionCompletionFeedback
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$SessionCompletionFeedbackImplCopyWith<_$SessionCompletionFeedbackImpl>
+      get copyWith => __$$SessionCompletionFeedbackImplCopyWithImpl<
+          _$SessionCompletionFeedbackImpl>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$SessionCompletionFeedbackImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _SessionCompletionFeedback implements SessionCompletionFeedback {
+  const factory _SessionCompletionFeedback(
+          {@JsonKey(name: 'xp_earned') required final int xpEarned,
+          @JsonKey(name: 'new_level') required final int newLevel,
+          @JsonKey(name: 'leveled_up') required final bool leveledUp,
+          @JsonKey(name: 'streak_days') required final int streakDays,
+          @JsonKey(name: 'streak_extended') required final bool streakExtended,
+          @JsonKey(name: 'badges_unlocked')
+          final List<EarnedBadge> badgesUnlocked}) =
+      _$SessionCompletionFeedbackImpl;
+
+  factory _SessionCompletionFeedback.fromJson(Map<String, dynamic> json) =
+      _$SessionCompletionFeedbackImpl.fromJson;
+
+  @override
+  @JsonKey(name: 'xp_earned')
+  int get xpEarned;
+  @override
+  @JsonKey(name: 'new_level')
+  int get newLevel;
+  @override
+  @JsonKey(name: 'leveled_up')
+  bool get leveledUp;
+  @override
+  @JsonKey(name: 'streak_days')
+  int get streakDays;
+  @override
+  @JsonKey(name: 'streak_extended')
+  bool get streakExtended;
+  @override
+  @JsonKey(name: 'badges_unlocked')
+  List<EarnedBadge> get badgesUnlocked;
+
+  /// Create a copy of SessionCompletionFeedback
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$SessionCompletionFeedbackImplCopyWith<_$SessionCompletionFeedbackImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}

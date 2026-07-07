@@ -40,58 +40,45 @@ from datetime import date
 
 
 def test_compute_xp_wrong_answer_applies_penalty():
-    """Wrong answer = penalty. No attempt-xp, no correct-bonus, no streak."""
+    """Under new rules, wrong answer evaluates to 1 XP."""
     xp = compute_question_xp(
         is_correct=False,
         difficulty=DifficultyLevel.advanced,
         streak_days=5,
     )
-    assert xp == WRONG_ANSWER_PENALTY_XP
+    assert xp == 1
 
 
 def test_compute_xp_wrong_answer_penalty_is_negative():
-    """WRONG_ANSWER_PENALTY_XP must be a negative constant."""
-    assert WRONG_ANSWER_PENALTY_XP < 0
+    pass
 
 
 def test_compute_xp_correct_advanced_at_zero_streak():
-    """ATTEMPT_XP + CORRECT_BONUS_XP[advanced]; no streak bonus."""
+    """1 XP for advanced correct."""
     xp = compute_question_xp(
         is_correct=True,
         difficulty=DifficultyLevel.advanced,
         streak_days=0,
     )
-    assert xp == ATTEMPT_XP + CORRECT_BONUS_XP[DifficultyLevel.advanced]
+    assert xp == 1
 
 
 def test_compute_xp_streak_bonus_is_capped():
-    """A 200-day streak doesn't earn 200 streak XP — capped at the constant."""
     xp_long = compute_question_xp(
         is_correct=True,
         difficulty=DifficultyLevel.beginner,
         streak_days=200,
     )
-    xp_capped = compute_question_xp(
-        is_correct=True,
-        difficulty=DifficultyLevel.beginner,
-        streak_days=STREAK_BONUS_CAP,
-    )
-    assert xp_long == xp_capped
+    assert xp_long == 1
 
 
 def test_compute_xp_streak_bonus_scales_below_cap():
-    """At streak < cap, each day adds 1 XP."""
     low = compute_question_xp(
         is_correct=True,
         difficulty=DifficultyLevel.beginner,
         streak_days=3,
     )
-    high = compute_question_xp(
-        is_correct=True,
-        difficulty=DifficultyLevel.beginner,
-        streak_days=5,
-    )
-    assert high - low == 2
+    assert low == 1
 
 
 # ── Level curve ─────────────────────────────────────────────────────────────
@@ -322,8 +309,8 @@ async def test_record_question_attempt_initializes_state_on_first_event():
             now="2026-05-23T10:00:00+00:00",
         )
 
-    # Correct beginner, streak=1 → 10 + 5 + 1 = 16 XP.
-    assert delta.xp_earned == 16
+    # 1 XP for question + 2 XP daily login bonus = 3 XP.
+    assert delta.xp_earned == 3
     assert delta.streak_days == 1
     assert delta.streak_extended is True
     assert delta.leveled_up is False  # level 1 → still 1 below 100 XP
@@ -331,8 +318,8 @@ async def test_record_question_attempt_initializes_state_on_first_event():
     # State persisted.
     persisted = store["current"]
     assert persisted is not None
-    assert persisted["xp_total"] == 16
-    assert persisted["xp_by_topic"]["Photosynthesis"] == 16
+    assert persisted["xp_total"] == 3
+    assert persisted["xp_by_topic"]["Photosynthesis"] == 3
     assert persisted["questions_answered"] == 1
     assert persisted["questions_correct"] == 1
     assert persisted["daily_activity"]["2026-05-23"] == 1
@@ -361,13 +348,12 @@ async def test_record_question_attempt_unlocks_first_steps_badge():
 
 @pytest.mark.asyncio
 async def test_record_question_attempt_level_up_flag_fires_on_threshold_cross():
-    """At 95 XP (level 1), a correct advanced (10+20+1=31 XP) lands at
-    126 XP → level 2. ``leveled_up`` should be True."""
+    """At 99 XP (level 1), earning 1 XP lands at 100 XP → level 2."""
     initial = _seed(
-        xp_total=95,
+        xp_total=99,
         level=1,
-        streak_days=0,
-        last_active_date=None,
+        streak_days=1,
+        last_active_date="2026-05-23",
     )
     col, store = _fake_collection(initial=initial)
     with patch.object(gamification_service, "get_collection", return_value=col):
@@ -378,11 +364,11 @@ async def test_record_question_attempt_level_up_flag_fires_on_threshold_cross():
             topic="Photosynthesis",
             difficulty=DifficultyLevel.advanced,
             is_correct=True,
-            now="2026-05-23T10:00:00+00:00",
+            now="2026-05-23T10:00:00+00:00", # same day, no daily login bonus
         )
     assert delta.leveled_up is True
     assert delta.new_level == 2
-    assert store["current"]["xp_total"] == 126
+    assert store["current"]["xp_total"] == 100
 
 
 @pytest.mark.asyncio
@@ -442,7 +428,8 @@ async def test_record_flashcard_rating_is_flat_xp_and_separate_counter():
             rating=FlashcardRating.medium,
             now="2026-05-23T10:00:00+00:00",
         )
-    assert delta.xp_earned == FLASHCARD_XP
+    # 0 XP for rating + 2 XP daily login bonus = 2 XP.
+    assert delta.xp_earned == 2
     # Doesn't touch the question counters.
     persisted = store["current"]
     assert persisted["questions_answered"] == 0
@@ -510,9 +497,8 @@ async def test_record_question_attempt_persists_via_upsert():
 
 @pytest.mark.asyncio
 async def test_wrong_answer_deducts_xp_from_total():
-    """A wrong answer yields net negative XP for the event (penalty only),
-    and that net is subtracted from xp_total."""
-    initial = _seed(xp_total=50, level=1, streak_days=0)
+    """A wrong answer awards +1 XP under new rules."""
+    initial = _seed(xp_total=50, level=1, streak_days=1, last_active_date="2026-05-23")
     col, store = _fake_collection(initial=initial)
     with patch.object(gamification_service, "get_collection", return_value=col):
         delta = await record_question_attempt(
@@ -522,34 +508,39 @@ async def test_wrong_answer_deducts_xp_from_total():
             topic="Photosynthesis",
             difficulty=DifficultyLevel.beginner,
             is_correct=False,
-            now="2026-05-23T10:00:00+00:00",
+            now="2026-05-23T18:00:00+00:00",
         )
-    # Wrong answer receives exactly WRONG_ANSWER_PENALTY_XP (-7)
-    assert delta.xp_earned == WRONG_ANSWER_PENALTY_XP
-    assert store["current"]["xp_total"] == 50 + delta.xp_earned
+    assert delta.xp_earned == 1
+    assert store["current"]["xp_total"] == 51
 
 
 @pytest.mark.asyncio
-async def test_wrong_answer_floors_xp_total_at_zero():
-    """When the penalty would push xp_total below zero, it is clamped to 0."""
-    # Start with just 3 XP so the penalty brings it below 0.
-    initial = _seed(
-        xp_total=3,
-        level=1,
-        streak_days=5,
-        last_active_date="2026-05-23",  # same-day: no streak extension
-    )
-    col, store = _fake_collection(initial=initial)
+async def test_record_session_completion_awards_correct_xp():
+    col, store = _fake_collection(initial=None)
+    from app.services.gamification import record_session_completion
+
+    # 1. Study session completion with daily login (streak_extended = True)
     with patch.object(gamification_service, "get_collection", return_value=col):
-        delta = await record_question_attempt(
+        delta = await record_session_completion(
             tenant_id="ten_a",
             workspace_id="wsp_a",
             student_id="stu_a",
-            topic="Photosynthesis",
-            difficulty=DifficultyLevel.advanced,
-            is_correct=False,
-            now="2026-05-23T18:00:00+00:00",  # same day → no streak growth
+            session_type="study",
+            now="2026-05-23T10:00:00+00:00",
         )
-    # Wrong answer XP = -7. xp_total = max(0, 3 - 7) = 0.
-    assert delta.xp_earned == WRONG_ANSWER_PENALTY_XP
-    assert store["current"]["xp_total"] == 0
+    # +8 XP study session + 2 XP daily login bonus = 10 XP
+    assert delta.xp_earned == 10
+    assert store["current"]["xp_total"] == 10
+
+    # 2. Revision session completion on same day (streak_extended = False)
+    with patch.object(gamification_service, "get_collection", return_value=col):
+        delta = await record_session_completion(
+            tenant_id="ten_a",
+            workspace_id="wsp_a",
+            student_id="stu_a",
+            session_type="revision",
+            now="2026-05-23T12:00:00+00:00",
+        )
+    # +5 XP revision session, no login bonus
+    assert delta.xp_earned == 5
+    assert store["current"]["xp_total"] == 15

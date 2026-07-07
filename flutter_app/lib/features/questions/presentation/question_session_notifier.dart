@@ -11,6 +11,7 @@ import 'package:social_study_app/shared/models/question.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
+import 'package:social_study_app/features/gamification/data/gamification_repository.dart';
 
 part 'question_session_notifier.g.dart';
 
@@ -32,6 +33,7 @@ part 'question_session_notifier.g.dart';
 @riverpod
 class QuestionSessionNotifier extends _$QuestionSessionNotifier {
   late String _workspaceId;
+  int _questionsAnswered = 0;
 
   @override
   QuestionSession build(String workspaceId) {
@@ -46,6 +48,7 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
   /// doesn't accidentally double-fetch.
   Future<void> start() async {
     if (state is! QuestionSessionIdle) return;
+    _questionsAnswered = 0;
     await _fetchNext();
   }
 
@@ -69,6 +72,19 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
         state is QuestionSessionFeedback ||
         state is QuestionSessionError ||
         state is QuestionSessionUnavailable) {
+      if (_questionsAnswered > 0) {
+        final authState = ref.read(authNotifierProvider).valueOrNull;
+        final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+        if (user != null) {
+          ref.read(gamificationRepositoryProvider).completeSession(
+                workspaceId: _workspaceId,
+                userId: user.id,
+                sessionType: 'study',
+              ).then((_) {
+                _invalidateProfile();
+              }).catchError((_) {});
+        }
+      }
       state = const QuestionSession.idle();
     }
   }
@@ -112,6 +128,7 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
         questionId: current.question.id,
         submission: AnswerSubmission(answer: draft),
       );
+      _questionsAnswered++;
       state = QuestionSession.feedback(
         question: current.question,
         submittedAnswer: draft,

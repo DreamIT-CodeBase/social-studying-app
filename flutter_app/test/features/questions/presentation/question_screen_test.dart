@@ -8,6 +8,7 @@ import 'package:social_study_app/core/theme/app_theme.dart';
 import 'package:social_study_app/features/questions/data/demo_questions_repository.dart';
 import 'package:social_study_app/features/questions/data/questions_repository.dart';
 import 'package:social_study_app/features/questions/presentation/question_screen.dart';
+import 'package:social_study_app/features/questions/presentation/question_session_notifier.dart';
 import 'package:social_study_app/shared/models/question.dart';
 
 class _MockRepo extends Mock implements QuestionsRepository {}
@@ -153,6 +154,7 @@ void main() {
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback());
 
     await tester.pumpWidget(_wrap(repo));
@@ -161,18 +163,22 @@ void main() {
     await tester.tap(find.text('Chloroplast'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Submit Answer'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
 
     final captured = verify(() => repo.submitAnswer(
           workspaceId: _wsId,
           questionId: 'q_mcq',
           submission: captureAny(named: 'submission'),
+          revision: any(named: 'revision'),
         )).captured;
     expect((captured.single as AnswerSubmission).answer, 'B');
 
-    expect(find.text('Correct!'), findsOneWidget);
-    expect(find.text('+15'), findsOneWidget);
-    expect(find.textContaining('chlorophyll'), findsOneWidget);
+
+
+    expect(find.text('Correct!', skipOffstage: false), findsOneWidget);
+    expect(find.textContaining('chlorophyll', skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('an incorrect answer shows the canonical answer', (tester) async {
@@ -182,6 +188,7 @@ void main() {
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback(correct: false));
 
     await tester.pumpWidget(_wrap(repo));
@@ -190,11 +197,13 @@ void main() {
     await tester.tap(find.text('Mitochondria'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Submit Answer'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
 
-    expect(find.text('Not quite'), findsOneWidget);
-    expect(find.text('CORRECT ANSWER'), findsOneWidget);
-    expect(find.text('B.  Chloroplast'), findsOneWidget);
+    expect(find.text('Not quite', skipOffstage: false), findsOneWidget);
+    expect(find.text('CORRECT ANSWER', skipOffstage: false), findsOneWidget);
+    expect(find.text('B.  Chloroplast', skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('the Next Question button fetches a new question',
@@ -209,6 +218,7 @@ void main() {
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback());
 
     await tester.pumpWidget(_wrap(repo));
@@ -216,6 +226,8 @@ void main() {
     await tester.tap(find.text('Chloroplast'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Submit Answer'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
 
     await tester.tap(find.widgetWithText(FilledButton, 'Next Question'));
@@ -285,6 +297,7 @@ void main() {
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback());
 
     await tester.pumpWidget(_wrap(repo));
@@ -293,15 +306,18 @@ void main() {
     await tester.enterText(find.byType(TextField), 'oxygen');
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Submit Answer'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
 
     final captured = verify(() => repo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: captureAny(named: 'submission'),
+          revision: any(named: 'revision'),
         )).captured;
     expect((captured.single as AnswerSubmission).answer, 'oxygen');
-    expect(find.text('Correct!'), findsOneWidget);
+    expect(find.text('Correct!', skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('the no-topics state shows admin-targeted copy and no retry',
@@ -381,8 +397,10 @@ void main() {
     await tester.tap(find.text('Chloroplast'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Submit Answer'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
 
-    expect(find.text('Correct!'), findsOneWidget);
+    expect(find.text('Correct!', skipOffstage: false), findsOneWidget);
   });
 }

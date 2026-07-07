@@ -141,7 +141,10 @@ async def generate_flashcard(
 
     front = _require_string(response, "front")
     back = _require_string(response, "back")
-    explanation = _require_string(response, "explanation")
+    explanation = response.get("explanation", "")
+    if not isinstance(explanation, str):
+        explanation = ""
+    explanation = explanation.strip()
 
     logger.info(
         "Generated flashcard topic=%s front_chars=%d back_chars=%d",

@@ -127,13 +127,13 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
           _pendingNotifMinutes += deltaMinutes;
           final now = DateTime.now();
           final lastNotif = _lastNotificationTime;
-          // Only fire if no notification in the last 5 minutes
-          if (lastNotif == null || now.difference(lastNotif) >= _notifCooldown) {
+          // Only fire if accumulated minutes is at least 30, and cooldown has passed
+          if (_pendingNotifMinutes >= 30 && (lastNotif == null || now.difference(lastNotif) >= _notifCooldown)) {
             await _service.showNotification(_pendingNotifMinutes);
             _lastNotificationTime = now;
             _pendingNotifMinutes = 0;
           }
-          // else: silently accumulate — will fire on the next cooldown window
+          // else: silently accumulate — will fire once the threshold and cooldown are met
         }
       }
 

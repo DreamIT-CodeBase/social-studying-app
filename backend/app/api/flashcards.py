@@ -27,12 +27,17 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends
+from pydantic import BaseModel, Field
+import random
+from app.models.question import Question
 
 from app.core.auth import get_current_user
 from app.core.database import (
     FLASHCARD_RATINGS,
     FLASHCARDS,
     WORKSPACES,
+    INTERACTIONS,
+    QUESTION_QUEUE,
     get_collection,
 )
 from app.core.exceptions import (
@@ -46,6 +51,42 @@ from app.mcp_tools.retrieve_content import (
     RetrieveContentInput,
     RetrieveContentOutput,
 )
+
+class NextFlashcardRequest(BaseModel):
+    topics: list[str] | None = Field(default=None, description="Optional selected topic IDs/names to filter flashcards.")
+
+def _resolve_descendants(workspace: Workspace, selected_topic_ids: list[str]) -> list[str]:
+    # Build maps
+    topics_map = {t.id: t for t in workspace.taxonomy.topics}
+    parent_to_children = {}
+    for t in workspace.taxonomy.topics:
+        if t.parent_id:
+            parent_to_children.setdefault(t.parent_id, []).append(t.id)
+            
+    resolved_ids = set()
+    for start_id in selected_topic_ids:
+        # If it's a topic name (not starting with tpc_), we find its ID first
+        start_id_resolved = start_id
+        if not start_id.startswith("tpc_"):
+            for t in workspace.taxonomy.topics:
+                if t.name.casefold() == start_id.casefold():
+                    start_id_resolved = t.id
+                    break
+        
+        if start_id_resolved not in topics_map:
+            continue
+            
+        resolved_ids.add(start_id_resolved)
+        queue = [start_id_resolved]
+        while queue:
+            curr = queue.pop(0)
+            children = parent_to_children.get(curr, [])
+            for child in children:
+                if child not in resolved_ids:
+                    resolved_ids.add(child)
+                    queue.append(child)
+                    
+    return [topics_map[tid].name for tid in resolved_ids if tid in topics_map]
 from app.models.base import utc_now
 from app.models.flashcard import (
     Flashcard,
@@ -98,6 +139,7 @@ _MAX_BACK_CHARS = 500
 @router.post("/next", response_model=FlashcardForStudent)
 async def next_flashcard(
     workspace_id: str,
+    request_data: NextFlashcardRequest | None = None,
     current_user: User = Depends(get_current_user),
 ) -> FlashcardForStudent:
     """Generate and return a flashcard for the calling student.
@@ -113,35 +155,89 @@ async def next_flashcard(
     """
     _assert_workspace_access(current_user, workspace_id)
     workspace = await _read_workspace(current_user.tenant_id, workspace_id)
-    _ = workspace  # not used directly today, but the read enforces existence
 
-    try:
-        selection = await select_next_topic(
-            tenant_id=current_user.tenant_id,
-            workspace_id=workspace_id,
-            student_id=current_user.id,
-        )
-    except NoTopicsAvailable as exc:
+    if not workspace.taxonomy or not workspace.taxonomy.topics:
         raise ConflictError(
             "This workspace has no topics yet. Ask an admin to upload "
             "study material before requesting flashcards."
-        ) from exc
-    except WorkspaceNotFound as exc:
-        raise NotFoundError("Workspace", workspace_id) from exc
+        )
 
-    candidates = selection.candidates[:_MAX_ATTEMPTS]
+    # 1. Fetch correct interactions
+    interactions_col = get_collection(current_user.tenant_id, INTERACTIONS)
+    query = {
+        "workspace_id": workspace_id,
+        "student_id": current_user.id,
+        "is_correct": True,
+    }
+    
+    # 2. Apply topic filters (including child descendants)
+    if request_data and request_data.topics:
+        allowed_names = _resolve_descendants(workspace, request_data.topics)
+        if not allowed_names:
+            raise ConflictError(
+                "None of the selected topics exist in this workspace."
+            )
+        query["topic"] = {"$in": allowed_names}
+        
+    cursor = interactions_col.find(query)
+    interactions = await cursor.to_list(length=5000)
+    
+    if not interactions:
+        raise ConflictError(
+            "You haven't answered any questions correctly yet! "
+            "Go to the Study tab and answer questions correctly to unlock flashcards."
+        )
+        
+    # Sort descending by answered_at (newest first)
+    interactions.sort(key=lambda x: x.get("answered_at", ""), reverse=True)
+    
+    # 3. Apply recency gradient selection to pick unique candidate question IDs
+    decay = 0.95
+    candidates: list[dict] = []
+    available_indices = list(range(len(interactions)))
+    
+    for _ in range(min(_MAX_ATTEMPTS, len(interactions))):
+        current_weights = [decay ** idx for idx in available_indices]
+        curr_total = sum(current_weights)
+        if curr_total <= 0:
+            break
+        r = random.uniform(0, curr_total)
+        cumulative = 0.0
+        chosen_idx_in_list = 0
+        for i, w in enumerate(current_weights):
+            cumulative += w
+            if r <= cumulative:
+                chosen_idx_in_list = i
+                break
+        chosen_real_idx = available_indices.pop(chosen_idx_in_list)
+        candidates.append(interactions[chosen_real_idx])
+        
     attempt_log: list[str] = []
 
-    for attempt_index, candidate in enumerate(candidates, start=1):
+    for attempt_index, candidate_interaction in enumerate(candidates, start=1):
+        question_id = candidate_interaction.get("question_id")
+        topic_name = candidate_interaction.get("topic")
+        if not question_id or not topic_name:
+            continue
+            
+        q_col = get_collection(current_user.tenant_id, QUESTION_QUEUE)
+        q_doc_raw = await q_col.find_one({"_id": question_id})
+        if not q_doc_raw:
+            attempt_log.append(f"attempt={attempt_index} question={question_id} → question not found")
+            continue
+            
+        question_doc = Question.model_validate(q_doc_raw)
+        
         outcome = await _try_candidate(
             current_user=current_user,
             workspace_id=workspace_id,
-            candidate=candidate,
+            topic_name=topic_name,
+            question_doc=question_doc,
         )
         if isinstance(outcome, _Persisted):
             return outcome.for_student
         attempt_log.append(
-            f"attempt={attempt_index} topic={candidate.topic_name!r} → "
+            f"attempt={attempt_index} topic={topic_name!r} → "
             f"{outcome.reason}"
         )
 
@@ -207,6 +303,11 @@ async def rate_flashcard(
         topic=flashcard.topic,
         rating=submission.rating,
         rated_at=timestamp,
+        selected_option=submission.selected_option,
+        is_correct=submission.is_correct,
+        response_time_ms=submission.response_time_ms,
+        session_progress=submission.session_progress,
+        accuracy_percentage=submission.accuracy_percentage,
     )
     col = get_collection(current_user.tenant_id, FLASHCARD_RATINGS)
     await col.insert_one(event.model_dump(by_alias=True))
@@ -285,36 +386,57 @@ async def _try_candidate(
     *,
     current_user: User,
     workspace_id: str,
-    candidate: TopicScore,
+    topic_name: str,
+    question_doc: Question,
 ) -> _Persisted | _Skip:
-    retrieved = await invoke(
-        "retrieve_content",
-        RetrieveContentInput(
-            tenant_id=current_user.tenant_id,
-            workspace_id=workspace_id,
-            topic_ids=[candidate.topic_id],
-            query_text=candidate.topic_name,
-            top_k=_GROUNDING_CHUNK_LIMIT,
-        ),
+    from app.mcp_tools.retrieve_content import RetrievedChunk
+    
+    # Format question details into a single chunk text
+    question_text = f"Question: {question_doc.body}\n"
+    if question_doc.options:
+        question_text += "Options:\n"
+        for opt in question_doc.options:
+            question_text += f"- {opt.key}: {opt.text}\n"
+    question_text += f"Correct Answer: {question_doc.answer}\n"
+    if question_doc.explanation:
+        question_text += f"Explanation: {question_doc.explanation}\n"
+        
+    chunk = RetrievedChunk(
+        chunk_id="chk_q_" + question_doc.id,
+        chunk_index=0,
+        document_id=question_doc.document_id,
+        text=question_text,
+        topic_ids=[],
+        score=1.0,
     )
-    assert isinstance(retrieved, RetrieveContentOutput)
-    if not retrieved.chunks:
-        return _Skip(f"no grounding chunks (mode={retrieved.mode})")
 
-    # Fetch the fronts of flashcards this student has already seen so
-    # the generator can avoid repeating them. Query the ratings collection
-    # (append-only log of all cards served) for this student + topic.
+    # First check if we already have an approved flashcard for this topic in the workspace
+    fc_col = get_collection(current_user.tenant_id, FLASHCARDS)
+    existing_fc = await fc_col.find_one({
+        "workspace_id": workspace_id,
+        "topic": topic_name,
+        "status": FlashcardStatus.approved.value,
+        "deleted_at": None,
+    })
+    if existing_fc:
+        logger.info(
+            "Serving existing approved flashcard for topic=%s workspace=%s",
+            topic_name,
+            workspace_id,
+        )
+        return _Persisted(for_student=FlashcardForStudent.from_doc(Flashcard.model_validate(existing_fc)))
+
     seen_card_fronts = await _get_seen_card_fronts(
         tenant_id=current_user.tenant_id,
         workspace_id=workspace_id,
         student_id=current_user.id,
-        topic_name=candidate.topic_name,
+        topic_name=topic_name,
     )
 
     try:
         generated = await flashcard_generation.generate_flashcard(
-            topic=candidate.topic_name,
-            grounding_chunks=retrieved.chunks,
+            topic=topic_name,
+            grounding_chunks=[chunk],
             seen_card_fronts=seen_card_fronts,
         )
     except InsufficientFlashcardSource as exc:
@@ -326,8 +448,8 @@ async def _try_candidate(
     persisted = await _persist_flashcard(
         current_user=current_user,
         workspace_id=workspace_id,
-        candidate=candidate,
-        retrieved=retrieved,
+        topic_name=topic_name,
+        question_doc=question_doc,
         generated=generated,
         verdict=verdict,
     )
@@ -476,8 +598,8 @@ async def _persist_flashcard(
     *,
     current_user: User,
     workspace_id: str,
-    candidate: TopicScore,
-    retrieved: RetrieveContentOutput,
+    topic_name: str,
+    question_doc: Question,
     generated: GeneratedFlashcard,
     verdict: _FlashcardVerdict,
 ) -> Flashcard:
@@ -487,19 +609,16 @@ async def _persist_flashcard(
     rejection in Sprint 3.9. Flagged ones get stored with
     moderation_flagged=True for the admin moderation dashboard.
     """
-    document_id = (
-        retrieved.chunks[0].document_id if retrieved.chunks else "unknown"
-    )
     flashcard = Flashcard(
         **{"_id": f"fc_{uuid4().hex}"},
         tenant_id=current_user.tenant_id,
         workspace_id=workspace_id,
-        document_id=document_id,
-        topic=candidate.topic_name,
+        document_id=question_doc.document_id,
+        topic=topic_name,
         front=generated.front,
         back=generated.back,
         explanation=generated.explanation,
-        source_chunk_ids=[c.chunk_id for c in retrieved.chunks],
+        source_chunk_ids=question_doc.source_chunk_ids,
         status=verdict.status,
         prompt_version=generated.prompt_version,
         moderation_flagged=verdict.status == FlashcardStatus.flagged,
@@ -508,7 +627,7 @@ async def _persist_flashcard(
     if verdict.status == FlashcardStatus.rejected:
         logger.warning(
             "Discarding rejected flashcard topic=%s reason=%s",
-            candidate.topic_name,
+            topic_name,
             verdict.reason,
         )
         return flashcard

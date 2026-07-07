@@ -267,6 +267,16 @@ FlashcardRatingSubmission _$FlashcardRatingSubmissionFromJson(
 /// @nodoc
 mixin _$FlashcardRatingSubmission {
   FlashcardRating get rating => throw _privateConstructorUsedError;
+  @JsonKey(name: 'selected_option')
+  String? get selectedOption => throw _privateConstructorUsedError;
+  @JsonKey(name: 'is_correct')
+  bool? get isCorrect => throw _privateConstructorUsedError;
+  @JsonKey(name: 'response_time_ms')
+  int? get responseTimeMs => throw _privateConstructorUsedError;
+  @JsonKey(name: 'session_progress')
+  int? get sessionProgress => throw _privateConstructorUsedError;
+  @JsonKey(name: 'accuracy_percentage')
+  double? get accuracyPercentage => throw _privateConstructorUsedError;
 
   /// Serializes this FlashcardRatingSubmission to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -284,7 +294,13 @@ abstract class $FlashcardRatingSubmissionCopyWith<$Res> {
           $Res Function(FlashcardRatingSubmission) then) =
       _$FlashcardRatingSubmissionCopyWithImpl<$Res, FlashcardRatingSubmission>;
   @useResult
-  $Res call({FlashcardRating rating});
+  $Res call(
+      {FlashcardRating rating,
+      @JsonKey(name: 'selected_option') String? selectedOption,
+      @JsonKey(name: 'is_correct') bool? isCorrect,
+      @JsonKey(name: 'response_time_ms') int? responseTimeMs,
+      @JsonKey(name: 'session_progress') int? sessionProgress,
+      @JsonKey(name: 'accuracy_percentage') double? accuracyPercentage});
 }
 
 /// @nodoc
@@ -304,12 +320,37 @@ class _$FlashcardRatingSubmissionCopyWithImpl<$Res,
   @override
   $Res call({
     Object? rating = null,
+    Object? selectedOption = freezed,
+    Object? isCorrect = freezed,
+    Object? responseTimeMs = freezed,
+    Object? sessionProgress = freezed,
+    Object? accuracyPercentage = freezed,
   }) {
     return _then(_value.copyWith(
       rating: null == rating
           ? _value.rating
           : rating // ignore: cast_nullable_to_non_nullable
               as FlashcardRating,
+      selectedOption: freezed == selectedOption
+          ? _value.selectedOption
+          : selectedOption // ignore: cast_nullable_to_non_nullable
+              as String?,
+      isCorrect: freezed == isCorrect
+          ? _value.isCorrect
+          : isCorrect // ignore: cast_nullable_to_non_nullable
+              as bool?,
+      responseTimeMs: freezed == responseTimeMs
+          ? _value.responseTimeMs
+          : responseTimeMs // ignore: cast_nullable_to_non_nullable
+              as int?,
+      sessionProgress: freezed == sessionProgress
+          ? _value.sessionProgress
+          : sessionProgress // ignore: cast_nullable_to_non_nullable
+              as int?,
+      accuracyPercentage: freezed == accuracyPercentage
+          ? _value.accuracyPercentage
+          : accuracyPercentage // ignore: cast_nullable_to_non_nullable
+              as double?,
     ) as $Val);
   }
 }
@@ -323,7 +364,13 @@ abstract class _$$FlashcardRatingSubmissionImplCopyWith<$Res>
       __$$FlashcardRatingSubmissionImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({FlashcardRating rating});
+  $Res call(
+      {FlashcardRating rating,
+      @JsonKey(name: 'selected_option') String? selectedOption,
+      @JsonKey(name: 'is_correct') bool? isCorrect,
+      @JsonKey(name: 'response_time_ms') int? responseTimeMs,
+      @JsonKey(name: 'session_progress') int? sessionProgress,
+      @JsonKey(name: 'accuracy_percentage') double? accuracyPercentage});
 }
 
 /// @nodoc
@@ -342,12 +389,37 @@ class __$$FlashcardRatingSubmissionImplCopyWithImpl<$Res>
   @override
   $Res call({
     Object? rating = null,
+    Object? selectedOption = freezed,
+    Object? isCorrect = freezed,
+    Object? responseTimeMs = freezed,
+    Object? sessionProgress = freezed,
+    Object? accuracyPercentage = freezed,
   }) {
     return _then(_$FlashcardRatingSubmissionImpl(
       rating: null == rating
           ? _value.rating
           : rating // ignore: cast_nullable_to_non_nullable
               as FlashcardRating,
+      selectedOption: freezed == selectedOption
+          ? _value.selectedOption
+          : selectedOption // ignore: cast_nullable_to_non_nullable
+              as String?,
+      isCorrect: freezed == isCorrect
+          ? _value.isCorrect
+          : isCorrect // ignore: cast_nullable_to_non_nullable
+              as bool?,
+      responseTimeMs: freezed == responseTimeMs
+          ? _value.responseTimeMs
+          : responseTimeMs // ignore: cast_nullable_to_non_nullable
+              as int?,
+      sessionProgress: freezed == sessionProgress
+          ? _value.sessionProgress
+          : sessionProgress // ignore: cast_nullable_to_non_nullable
+              as int?,
+      accuracyPercentage: freezed == accuracyPercentage
+          ? _value.accuracyPercentage
+          : accuracyPercentage // ignore: cast_nullable_to_non_nullable
+              as double?,
     ));
   }
 }
@@ -355,17 +427,38 @@ class __$$FlashcardRatingSubmissionImplCopyWithImpl<$Res>
 /// @nodoc
 @JsonSerializable()
 class _$FlashcardRatingSubmissionImpl implements _FlashcardRatingSubmission {
-  const _$FlashcardRatingSubmissionImpl({required this.rating});
+  const _$FlashcardRatingSubmissionImpl(
+      {required this.rating,
+      @JsonKey(name: 'selected_option') this.selectedOption,
+      @JsonKey(name: 'is_correct') this.isCorrect,
+      @JsonKey(name: 'response_time_ms') this.responseTimeMs,
+      @JsonKey(name: 'session_progress') this.sessionProgress,
+      @JsonKey(name: 'accuracy_percentage') this.accuracyPercentage});
 
   factory _$FlashcardRatingSubmissionImpl.fromJson(Map<String, dynamic> json) =>
       _$$FlashcardRatingSubmissionImplFromJson(json);
 
   @override
   final FlashcardRating rating;
+  @override
+  @JsonKey(name: 'selected_option')
+  final String? selectedOption;
+  @override
+  @JsonKey(name: 'is_correct')
+  final bool? isCorrect;
+  @override
+  @JsonKey(name: 'response_time_ms')
+  final int? responseTimeMs;
+  @override
+  @JsonKey(name: 'session_progress')
+  final int? sessionProgress;
+  @override
+  @JsonKey(name: 'accuracy_percentage')
+  final double? accuracyPercentage;
 
   @override
   String toString() {
-    return 'FlashcardRatingSubmission(rating: $rating)';
+    return 'FlashcardRatingSubmission(rating: $rating, selectedOption: $selectedOption, isCorrect: $isCorrect, responseTimeMs: $responseTimeMs, sessionProgress: $sessionProgress, accuracyPercentage: $accuracyPercentage)';
   }
 
   @override
@@ -373,12 +466,23 @@ class _$FlashcardRatingSubmissionImpl implements _FlashcardRatingSubmission {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
             other is _$FlashcardRatingSubmissionImpl &&
-            (identical(other.rating, rating) || other.rating == rating));
+            (identical(other.rating, rating) || other.rating == rating) &&
+            (identical(other.selectedOption, selectedOption) ||
+                other.selectedOption == selectedOption) &&
+            (identical(other.isCorrect, isCorrect) ||
+                other.isCorrect == isCorrect) &&
+            (identical(other.responseTimeMs, responseTimeMs) ||
+                other.responseTimeMs == responseTimeMs) &&
+            (identical(other.sessionProgress, sessionProgress) ||
+                other.sessionProgress == sessionProgress) &&
+            (identical(other.accuracyPercentage, accuracyPercentage) ||
+                other.accuracyPercentage == accuracyPercentage));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(runtimeType, rating);
+  int get hashCode => Object.hash(runtimeType, rating, selectedOption,
+      isCorrect, responseTimeMs, sessionProgress, accuracyPercentage);
 
   /// Create a copy of FlashcardRatingSubmission
   /// with the given fields replaced by the non-null parameter values.
@@ -399,14 +503,34 @@ class _$FlashcardRatingSubmissionImpl implements _FlashcardRatingSubmission {
 
 abstract class _FlashcardRatingSubmission implements FlashcardRatingSubmission {
   const factory _FlashcardRatingSubmission(
-          {required final FlashcardRating rating}) =
-      _$FlashcardRatingSubmissionImpl;
+      {required final FlashcardRating rating,
+      @JsonKey(name: 'selected_option') final String? selectedOption,
+      @JsonKey(name: 'is_correct') final bool? isCorrect,
+      @JsonKey(name: 'response_time_ms') final int? responseTimeMs,
+      @JsonKey(name: 'session_progress') final int? sessionProgress,
+      @JsonKey(name: 'accuracy_percentage')
+      final double? accuracyPercentage}) = _$FlashcardRatingSubmissionImpl;
 
   factory _FlashcardRatingSubmission.fromJson(Map<String, dynamic> json) =
       _$FlashcardRatingSubmissionImpl.fromJson;
 
   @override
   FlashcardRating get rating;
+  @override
+  @JsonKey(name: 'selected_option')
+  String? get selectedOption;
+  @override
+  @JsonKey(name: 'is_correct')
+  bool? get isCorrect;
+  @override
+  @JsonKey(name: 'response_time_ms')
+  int? get responseTimeMs;
+  @override
+  @JsonKey(name: 'session_progress')
+  int? get sessionProgress;
+  @override
+  @JsonKey(name: 'accuracy_percentage')
+  double? get accuracyPercentage;
 
   /// Create a copy of FlashcardRatingSubmission
   /// with the given fields replaced by the non-null parameter values.

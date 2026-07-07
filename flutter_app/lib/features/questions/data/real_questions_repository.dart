@@ -41,11 +41,13 @@ class RealQuestionsRepository implements QuestionsRepository {
     required String workspaceId,
     required String questionId,
     required AnswerSubmission submission,
+    bool revision = false,
   }) async {
     try {
       final response = await dio.post<Map<String, dynamic>>(
         '$_apiPrefix/workspaces/$workspaceId/questions/$questionId/answer',
         data: submission.toJson(),
+        queryParameters: {'revision': revision},
       );
       return AnswerFeedback.fromJson(response.data!);
     } on DioException catch (e) {

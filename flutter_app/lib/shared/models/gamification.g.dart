@@ -194,3 +194,28 @@ Map<String, dynamic> _$$LeaderboardResponseImplToJson(
       'current_user_rank': instance.currentUserRank,
       'visible': instance.visible,
     };
+
+_$SessionCompletionFeedbackImpl _$$SessionCompletionFeedbackImplFromJson(
+        Map<String, dynamic> json) =>
+    _$SessionCompletionFeedbackImpl(
+      xpEarned: (json['xp_earned'] as num).toInt(),
+      newLevel: (json['new_level'] as num).toInt(),
+      leveledUp: json['leveled_up'] as bool,
+      streakDays: (json['streak_days'] as num).toInt(),
+      streakExtended: json['streak_extended'] as bool,
+      badgesUnlocked: (json['badges_unlocked'] as List<dynamic>?)
+              ?.map((e) => EarnedBadge.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const <EarnedBadge>[],
+    );
+
+Map<String, dynamic> _$$SessionCompletionFeedbackImplToJson(
+        _$SessionCompletionFeedbackImpl instance) =>
+    <String, dynamic>{
+      'xp_earned': instance.xpEarned,
+      'new_level': instance.newLevel,
+      'leveled_up': instance.leveledUp,
+      'streak_days': instance.streakDays,
+      'streak_extended': instance.streakExtended,
+      'badges_unlocked': instance.badgesUnlocked,
+    };

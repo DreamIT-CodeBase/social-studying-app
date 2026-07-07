@@ -24,10 +24,14 @@ class RealFlashcardsRepository implements FlashcardsRepository {
   static const _apiPrefix = '/api/v1';
 
   @override
-  Future<Flashcard> next({required String workspaceId}) async {
+  Future<Flashcard> next({
+    required String workspaceId,
+    List<String>? selectedTopicIds,
+  }) async {
     try {
       final response = await dio.post<Map<String, dynamic>>(
         '$_apiPrefix/workspaces/$workspaceId/flashcards/next',
+        data: selectedTopicIds != null ? {'topics': selectedTopicIds} : null,
       );
       return Flashcard.fromJson(response.data!);
     } on DioException catch (e) {

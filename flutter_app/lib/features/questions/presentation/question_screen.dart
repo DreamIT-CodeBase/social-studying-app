@@ -476,92 +476,156 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                     children: [
-                      Container(
-                        margin: EdgeInsets.only(top: math.max(0.0, 105.0 - MediaQuery.of(context).padding.top)),
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                            color: isDark ? const Color(0xFF2D3748) : const Color(0xFFF1F5F9),
-                            width: 1.5,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.04),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
+                      if (themeMode == AppThemeMode.mature)
+                        // ── Teen & College theme: clean card, no topic/level pills ──
+                        Container(
+                          margin: EdgeInsets.only(top: math.max(0.0, 60.0 - MediaQuery.of(context).padding.top)),
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF2D3748) : const Color(0xFFF1F5F9),
+                              width: 1.5,
                             ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Icon + Subject Tag Column
-                                Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      width: 60,
-                                      height: 60,
-                                      decoration: BoxDecoration(
-                                        color: subjectBgColor,
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
-                                      child: Icon(
-                                        subjectIcon,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.04),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 60,
+                                    height: 60,
+                                    decoration: BoxDecoration(
+                                      color: subjectBgColor,
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: Icon(subjectIcon, color: subjectColor, size: 28),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: subjectBgColor,
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      subject.toUpperCase(),
+                                      style: TextStyle(
                                         color: subjectColor,
-                                        size: 28,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
                                       ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: subjectBgColor,
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Text(
-                                        subject.toUpperCase(),
-                                        style: TextStyle(
-                                          color: subjectColor,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(width: 14),
-                                // Question Text
-                                Expanded(
-                                  child: Text(
-                                    question.body,
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                      color: isDark ? Colors.white : const Color(0xFF0F172A),
-                                      height: 1.4,
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              child: Divider(
-                                height: 1,
-                                thickness: 1,
-                                color: isDark ? const Color(0xFF2D3748) : const Color(0xFFF1F5F9),
+                                ],
                               ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Text(
+                                  question.body,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        // ── Kids theme: original layout with topic + level pills ──
+                        Container(
+                          margin: EdgeInsets.only(top: math.max(0.0, 105.0 - MediaQuery.of(context).padding.top)),
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF2D3748) : const Color(0xFFF1F5F9),
+                              width: 1.5,
                             ),
-                            _UnifiedQuestionHeader(question: question),
-                          ],
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.04),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 60,
+                                        height: 60,
+                                        decoration: BoxDecoration(
+                                          color: subjectBgColor,
+                                          borderRadius: BorderRadius.circular(16),
+                                        ),
+                                        child: Icon(subjectIcon, color: subjectColor, size: 28),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: subjectBgColor,
+                                          borderRadius: BorderRadius.circular(20),
+                                        ),
+                                        child: Text(
+                                          subject.toUpperCase(),
+                                          style: TextStyle(
+                                            color: subjectColor,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Text(
+                                      question.body,
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                child: Divider(
+                                  height: 1,
+                                  thickness: 1,
+                                  color: isDark ? const Color(0xFF2D3748) : const Color(0xFFF1F5F9),
+                                ),
+                              ),
+                              _UnifiedQuestionHeader(question: question),
+                            ],
+                          ),
                         ),
-                      ),
                       const SizedBox(height: 12),
                       // Option Cards / Text Input
                       AnswerInput(

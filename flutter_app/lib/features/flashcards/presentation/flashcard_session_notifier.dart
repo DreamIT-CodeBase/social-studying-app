@@ -11,6 +11,7 @@ import 'package:social_study_app/shared/models/flashcard.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
+import 'package:social_study_app/features/gamification/data/gamification_repository.dart';
 
 part 'flashcard_session_notifier.g.dart';
 
@@ -34,6 +35,13 @@ part 'flashcard_session_notifier.g.dart';
 @riverpod
 class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
   late String _workspaceId;
+  List<String>? _selectedTopicIds;
+  final List<FlashcardRating> _sessionRatings = [];
+  int _currentIndex = 1;
+
+  int get currentIndex => _currentIndex;
+  List<String>? get selectedTopicIds => _selectedTopicIds;
+  List<FlashcardRating> get sessionRatings => List.unmodifiable(_sessionRatings);
 
   @override
   FlashcardSession build(String workspaceId) {
@@ -48,6 +56,8 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
   /// doesn't accidentally double-fetch.
   Future<void> start() async {
     if (state is! FlashcardSessionIdle) return;
+    _currentIndex = 1;
+    _sessionRatings.clear();
     await _fetchNext();
   }
 
@@ -58,7 +68,41 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
   /// away an in-flight rating.
   Future<void> next() async {
     if (state is! FlashcardSessionRated) return;
-    await _fetchNext();
+    if (_currentIndex < 25) {
+      _currentIndex++;
+      await _fetchNext();
+    } else {
+      _transitionToCompleted();
+    }
+  }
+
+  void _transitionToCompleted() {
+    int easy = 0;
+    int medium = 0;
+    int hard = 0;
+    for (final r in _sessionRatings) {
+      if (r == FlashcardRating.easy) easy++;
+      if (r == FlashcardRating.medium) medium++;
+      if (r == FlashcardRating.hard) hard++;
+    }
+
+    final authState = ref.read(authNotifierProvider).valueOrNull;
+    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    if (user != null) {
+      ref.read(gamificationRepositoryProvider).completeSession(
+            workspaceId: _workspaceId,
+            userId: user.id,
+            sessionType: 'flashcard',
+          ).then((_) {
+            _invalidateProfile();
+          }).catchError((_) {});
+    }
+
+    state = FlashcardSession.completed(
+      easyCount: easy,
+      mediumCount: medium,
+      hardCount: hard,
+    );
   }
 
   /// Reveal the back of the card.
@@ -78,7 +122,14 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
   /// Only valid from [FlashcardSession.revealed] — the student must
   /// have flipped the card before rating their recall. From any other
   /// state this is a no-op.
-  Future<void> rate(FlashcardRating rating) async {
+  Future<void> rate(
+    FlashcardRating rating, {
+    String? selectedOption,
+    bool? isCorrect,
+    int? responseTimeMs,
+    int? sessionProgress,
+    double? accuracyPercentage,
+  }) async {
     final current = state;
     if (current is! FlashcardSessionRevealed) return;
     final card = current.card;
@@ -90,8 +141,16 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
       final response = await repo.rate(
         workspaceId: _workspaceId,
         flashcardId: card.id,
-        submission: FlashcardRatingSubmission(rating: rating),
+        submission: FlashcardRatingSubmission(
+          rating: rating,
+          selectedOption: selectedOption,
+          isCorrect: isCorrect,
+          responseTimeMs: responseTimeMs,
+          sessionProgress: sessionProgress,
+          accuracyPercentage: accuracyPercentage,
+        ),
       );
+      _sessionRatings.add(rating);
       state = FlashcardSession.rated(card: card, response: response);
       _invalidateProfile();
     } on FlashcardNotFoundException catch (e) {
@@ -107,6 +166,17 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
     } on Object catch (e) {
       state = FlashcardSession.error(message: e.toString());
     }
+  }
+
+  Future<void> updateFilters(List<String>? topicIds) async {
+    _selectedTopicIds = topicIds;
+    state = const FlashcardSession.idle();
+    await start();
+  }
+
+  Future<void> resetSession() async {
+    state = const FlashcardSession.idle();
+    await start();
   }
 
   void _invalidateProfile() {
@@ -126,7 +196,10 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
     state = const FlashcardSession.loading();
     try {
       final repo = ref.read(flashcardsRepositoryProvider);
-      final card = await repo.next(workspaceId: _workspaceId);
+      final card = await repo.next(
+        workspaceId: _workspaceId,
+        selectedTopicIds: _selectedTopicIds,
+      );
       state = FlashcardSession.viewingFront(card: card);
     } on NoFlashcardTopicsException catch (e) {
       state = FlashcardSession.unavailable(

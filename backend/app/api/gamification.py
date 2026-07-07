@@ -442,3 +442,61 @@ async def _fetch_display_names(
         }
     )
     return {doc["_id"]: doc.get("display_name", "Unknown") async for doc in cursor}
+
+
+class SessionCompletionRequest(BaseModel):
+    session_type: str = Field(pattern="^(study|revision|flashcard)$")
+
+
+class SessionCompletionFeedback(BaseModel):
+    xp_earned: int
+    new_level: int
+    leveled_up: bool
+    streak_days: int
+    streak_extended: bool
+    badges_unlocked: list[EarnedBadgeView]
+
+
+@router.post(
+    "/users/{student_id}/gamification/complete-session",
+    response_model=SessionCompletionFeedback,
+)
+async def complete_session(
+    workspace_id: str,
+    student_id: str,
+    payload: SessionCompletionRequest,
+    current_user: User = Depends(get_current_user),
+) -> SessionCompletionFeedback:
+    """Award XP for completing a study, revision, or flashcard session."""
+    if current_user.id != student_id and current_user.role != UserRole.admin:
+        raise ForbiddenError("Cannot submit session completion for another student.")
+
+    await _read_workspace(current_user.tenant_id, workspace_id)
+    is_member = any(m.workspace_id == workspace_id for m in current_user.workspace_memberships)
+    if not is_member and current_user.role != UserRole.admin:
+        raise ForbiddenError("Not a member of this workspace.")
+
+    delta = await gamification_service.record_session_completion(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=student_id,
+        session_type=payload.session_type,
+    )
+
+    return SessionCompletionFeedback(
+        xp_earned=delta.xp_earned,
+        new_level=delta.new_level,
+        leveled_up=delta.leveled_up,
+        streak_days=delta.streak_days,
+        streak_extended=delta.streak_extended,
+        badges_unlocked=[
+            EarnedBadgeView(
+                badge_id=b.badge_id,
+                name=b.name,
+                description=b.description,
+                icon=b.icon,
+                earned_at=b.earned_at,
+            )
+            for b in delta.badges_unlocked
+        ],
+    )

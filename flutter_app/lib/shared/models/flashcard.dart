@@ -67,6 +67,11 @@ class Flashcard with _$Flashcard {
 class FlashcardRatingSubmission with _$FlashcardRatingSubmission {
   const factory FlashcardRatingSubmission({
     required FlashcardRating rating,
+    @JsonKey(name: 'selected_option') String? selectedOption,
+    @JsonKey(name: 'is_correct') bool? isCorrect,
+    @JsonKey(name: 'response_time_ms') int? responseTimeMs,
+    @JsonKey(name: 'session_progress') int? sessionProgress,
+    @JsonKey(name: 'accuracy_percentage') double? accuracyPercentage,
   }) = _FlashcardRatingSubmission;
 
   factory FlashcardRatingSubmission.fromJson(Map<String, dynamic> json) =>

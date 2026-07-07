@@ -85,6 +85,8 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               actions: [
+                if (selectedIndex == 2 && workspaceId != null)
+                  FlashcardFilterButton(workspaceId: workspaceId),
                 if (memberships.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(right: Spacing.sm),
@@ -615,6 +617,8 @@ class _HomeTab extends ConsumerWidget {
                           icon: Icons.my_library_books_rounded,
                           label: 'Manage Study',
                           onTap: onManageStudy!,
+                          isDark: isDark,
+                          themeMode: themeMode,
                         ),
                       ),
                     ],
@@ -2729,16 +2733,76 @@ class _SmallPillButton extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.isDark = false,
+    this.themeMode = AppThemeMode.kids,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final bool isDark;
+  final AppThemeMode themeMode;
 
   @override
   Widget build(BuildContext context) {
+    final isMature = themeMode == AppThemeMode.mature;
+
+    if (isMature) {
+      // ── Teen & College: full-width gradient accent button ──
+      return Container(
+        height: 46,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: isDark
+                ? [const Color(0xFF1D4ED8), const Color(0xFF4F46E5)]
+                : [const Color(0xFF2563EB), const Color(0xFF4F46E5)],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF2563EB).withValues(alpha: 0.25),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: onTap,
+            splashColor: Colors.white.withValues(alpha: 0.1),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 16, color: Colors.white),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // ── Kids: original plain white pill ──
+    final bgColor = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final borderColor = isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0);
+    final contentColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+
     return Material(
-      color: Colors.white,
+      color: bgColor,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -2747,19 +2811,19 @@ class _SmallPillButton extends StatelessWidget {
           height: 36,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+            border: Border.all(color: borderColor, width: 1.2),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 14, color: const Color(0xFF64748B)),
+              Icon(icon, size: 14, color: contentColor),
               const SizedBox(width: 5),
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11.5,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF64748B),
+                  color: contentColor,
                 ),
               ),
             ],

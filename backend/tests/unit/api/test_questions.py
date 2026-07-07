@@ -253,6 +253,12 @@ def _patches(
     # Tests that set ``prefetched`` get back the pre-update doc; the
     # default (None) exercises the live-generation path.
     docs_col.find_one_and_update = AsyncMock(return_value=prefetched)
+    # _fetch_seen_question_bodies calls col.find(...).to_list(length=None).
+    # The cursor returned by find() must have an awaitable to_list so the
+    # test doesn't raise "MagicMock can't be awaited".
+    _find_cursor = MagicMock()
+    _find_cursor.to_list = AsyncMock(return_value=[])
+    docs_col.find = MagicMock(return_value=_find_cursor)
     mod_col = MagicMock()
     mod_col.insert_one = AsyncMock(
         side_effect=lambda d: moderation.append(d) or MagicMock(inserted_id=d["_id"])

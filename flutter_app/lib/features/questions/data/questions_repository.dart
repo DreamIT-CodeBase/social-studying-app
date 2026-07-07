@@ -49,6 +49,7 @@ abstract class QuestionsRepository {
     required String workspaceId,
     required String questionId,
     required AnswerSubmission submission,
+    bool revision = false,
   });
 }
 

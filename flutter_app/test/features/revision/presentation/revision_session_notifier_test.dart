@@ -99,8 +99,10 @@ void main() {
 
   test('start builds an alternating plan and fetches the first item',
       () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
 
     final container =
         _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
@@ -116,12 +118,15 @@ void main() {
 
   test('alternating plan: Q → graded → advance fetches a flashcard',
       () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback());
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
@@ -146,12 +151,15 @@ void main() {
   });
 
   test('flashcard phase: front → flip → back → rate → rated', () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback());
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
@@ -185,12 +193,15 @@ void main() {
 
   test('advancing past the last item transitions to complete with tallies',
       () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback(correct: true));
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
@@ -226,12 +237,15 @@ void main() {
   });
 
   test('incorrect answers do not bump the correct tally', () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback(correct: false));
 
     final container =
@@ -251,8 +265,10 @@ void main() {
 
   test('a NoTopicsAvailable from the question fetch lands in unavailable',
       () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenThrow(const NoTopicsAvailableException());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenThrow(const NoTopicsAvailableException());
 
     final container =
         _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
@@ -266,12 +282,15 @@ void main() {
   });
 
   test('a NoFlashcardTopics surfaces unavailable as well', () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback());
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenThrow(const NoFlashcardTopicsException());
@@ -292,8 +311,10 @@ void main() {
 
   test('a generator-busy exception lands in unavailable without no-topics',
       () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenThrow(const QuestionGenerationUnavailableException());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenThrow(const QuestionGenerationUnavailableException());
 
     final container =
         _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
@@ -307,8 +328,10 @@ void main() {
   });
 
   test('a generic transport error lands in error', () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenThrow(Exception('network down'));
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenThrow(Exception('network down'));
 
     final container =
         _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
@@ -323,12 +346,15 @@ void main() {
   });
 
   test('submitAnswer is a no-op from a flashcard state', () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback());
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
@@ -350,8 +376,10 @@ void main() {
   });
 
   test('rate is a no-op from a question state', () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
 
     final container =
         _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
@@ -367,8 +395,10 @@ void main() {
   });
 
   test('start is a no-op when not idle', () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
 
     final container =
         _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
@@ -380,7 +410,10 @@ void main() {
     final state = container.read(revisionSessionNotifierProvider(_wsId));
     expect((state as RevisionSessionQuestion).progress.total, 5);
 
-    verify(() => qRepo.next(workspaceId: _wsId)).called(1);
+    verify(() => qRepo.next(
+          workspaceId: _wsId,
+          revision: any(named: 'revision'),
+        )).called(1);
   });
 
   test('the demo repositories drive a real revision session', () async {
