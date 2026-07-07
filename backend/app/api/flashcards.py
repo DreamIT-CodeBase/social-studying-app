@@ -54,6 +54,7 @@ from app.mcp_tools.retrieve_content import (
 
 class NextFlashcardRequest(BaseModel):
     topics: list[str] | None = Field(default=None, description="Optional selected topic IDs/names to filter flashcards.")
+    mastery: float | None = Field(default=None, ge=0.0, le=1.0, description="Student's current overall mastery (0–1). Used to bias difficulty.")
 
 def _resolve_descendants(workspace: Workspace, selected_topic_ids: list[str]) -> list[str]:
     # Build maps
@@ -122,6 +123,21 @@ router = APIRouter(
 )
 
 
+def _mastery_tier(mastery: float | None) -> str:
+    """Map a 0–1 mastery score to a difficulty tier string.
+
+    Tiers (aligned with the product spec):
+    - beginner    mastery < 0.40
+    - intermediate 0.40 ≤ mastery < 0.75
+    - expert       mastery ≥ 0.75
+    """
+    if mastery is None or mastery < 0.40:
+        return "beginner"
+    if mastery < 0.75:
+        return "intermediate"
+    return "expert"
+
+
 # Mirrors the question orchestrator's retry budget — same UX
 # trade-off (~3-6s total wait vs. tolerating one bad GPT-4o roll).
 _MAX_ATTEMPTS = 3
@@ -187,16 +203,31 @@ async def next_flashcard(
             "You haven't answered any questions correctly yet! "
             "Go to the Study tab and answer questions correctly to unlock flashcards."
         )
-        
+
+    # Determine mastery tier for difficulty calibration
+    mastery = request_data.mastery if request_data else None
+    mastery_tier = _mastery_tier(mastery)
+
     # Sort descending by answered_at (newest first)
     interactions.sort(key=lambda x: x.get("answered_at", ""), reverse=True)
     
-    # 3. Apply recency gradient selection to pick unique candidate question IDs
-    decay = 0.95
+    # 3. Apply recency gradient — decay varies by tier:
+    #    - BEGINNER : high decay (0.95) → strong preference for recent,
+    #      simpler interactions so the student reinforces recent learning.
+    #    - INTERMEDIATE: moderate decay (0.80) → balanced mix.
+    #    - EXPERT   : low decay (0.60) → flattened weights → older,
+    #      harder material resurfaces more often.
+    decay_by_tier = {"beginner": 0.95, "intermediate": 0.80, "expert": 0.60}
+    decay = decay_by_tier[mastery_tier]
+
+    # Candidate pool size grows with mastery to increase variety.
+    pool_by_tier = {"beginner": 3, "intermediate": 5, "expert": 8}
+    pool_size = pool_by_tier[mastery_tier]
+
     candidates: list[dict] = []
     available_indices = list(range(len(interactions)))
     
-    for _ in range(min(_MAX_ATTEMPTS, len(interactions))):
+    for _ in range(min(pool_size, len(interactions))):
         current_weights = [decay ** idx for idx in available_indices]
         curr_total = sum(current_weights)
         if curr_total <= 0:
@@ -233,6 +264,7 @@ async def next_flashcard(
             workspace_id=workspace_id,
             topic_name=topic_name,
             question_doc=question_doc,
+            mastery_tier=mastery_tier,
         )
         if isinstance(outcome, _Persisted):
             return outcome.for_student
@@ -388,6 +420,7 @@ async def _try_candidate(
     workspace_id: str,
     topic_name: str,
     question_doc: Question,
+    mastery_tier: str = "beginner",
 ) -> _Persisted | _Skip:
     from app.mcp_tools.retrieve_content import RetrievedChunk
     
@@ -438,6 +471,7 @@ async def _try_candidate(
             topic=topic_name,
             grounding_chunks=[chunk],
             seen_card_fronts=seen_card_fronts,
+            mastery_tier=mastery_tier,
         )
     except InsufficientFlashcardSource as exc:
         return _Skip(f"generator: insufficient_source ({exc})")

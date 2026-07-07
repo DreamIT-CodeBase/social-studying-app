@@ -70,6 +70,9 @@ Avoid duplication:
 [USER]
 Generate one flashcard on the topic: {{topic}}
 
+Difficulty guidance (follow this carefully):
+{{difficulty_instruction}}
+
 Source material (use ONLY this content):
 ---
 {{source_content}}

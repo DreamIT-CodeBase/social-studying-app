@@ -242,6 +242,7 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
       final card = await repo.next(
         workspaceId: _workspaceId,
         selectedTopicIds: _selectedTopicIds,
+        mastery: _lastMastery,
       );
       state = FlashcardSession.viewingFront(card: card);
       _cardStartTime = DateTime.now();

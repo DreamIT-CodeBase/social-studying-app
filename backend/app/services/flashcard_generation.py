@@ -87,6 +87,7 @@ async def generate_flashcard(
     topic: str,
     grounding_chunks: list[RetrievedChunk],
     seen_card_fronts: list[str] | None = None,
+    mastery_tier: str = "beginner",
 ) -> GeneratedFlashcard:
     """Call GPT-4o with the flashcard prompt and parse the response.
 
@@ -98,6 +99,9 @@ async def generate_flashcard(
         seen_card_fronts: optional list of previously-served fronts
             (per-student) so the prompt's avoid-duplication block has
             real data.
+        mastery_tier: one of ``"beginner"``, ``"intermediate"``,
+            ``"expert"``. Controls how complex/abstract the card should
+            be (injected into the prompt as a difficulty instruction).
 
     Returns:
         :class:`GeneratedFlashcard` with front + back + explanation +
@@ -117,6 +121,8 @@ async def generate_flashcard(
             "refusing to call GPT-4o without source material."
         )
 
+    difficulty_instruction = _difficulty_instruction(mastery_tier)
+
     template = load_prompt(_PROMPT_NAME)
     system_prompt, user_template = split_system_user(template)
     source_content = _format_source(grounding_chunks)
@@ -126,6 +132,7 @@ async def generate_flashcard(
         topic=topic,
         source_content=source_content,
         seen_cards=seen_section,
+        difficulty_instruction=difficulty_instruction,
     )
 
     response = await azure_openai.chat_json(
@@ -175,6 +182,40 @@ def _format_seen(fronts: list[str]) -> str:
     if not fronts:
         return "(none)"
     return "\n".join(f"- {f.strip()}" for f in fronts)
+
+
+def _difficulty_instruction(tier: str) -> str:
+    """Return a difficulty-calibration paragraph to inject into the prompt.
+
+    Each tier escalates cognitive demand, following Bloom's Taxonomy:
+    - beginner     → Remember / Understand   (simple definitions, single facts)
+    - intermediate → Apply / Analyse          (processes, comparisons, cause-effect)
+    - expert       → Evaluate / Create        (trade-offs, synthesis, edge cases)
+    """
+    if tier == "expert":
+        return (
+            "DIFFICULTY LEVEL: EXPERT. "
+            "Generate a card that requires deep analysis, evaluation, or synthesis. "
+            "Front should ask about trade-offs, edge cases, mechanisms, or "
+            "multi-step reasoning (e.g. \"Why does X lead to Y under condition Z?\"). "
+            "Back should be a precise, nuanced 1–2 sentence answer. "
+            "Avoid simple recall of isolated facts."
+        )
+    if tier == "intermediate":
+        return (
+            "DIFFICULTY LEVEL: INTERMEDIATE. "
+            "Generate a card that tests application or analysis. "
+            "Front should ask about a process, comparison, cause-effect relationship, "
+            "or how/why something works (e.g. \"How does X achieve Y?\"). "
+            "Back should fully explain in 1–2 clear sentences."
+        )
+    # beginner (default)
+    return (
+        "DIFFICULTY LEVEL: BEGINNER. "
+        "Generate a simple recall card targeting a single clear fact, "
+        "definition, or term. Front should be a direct question or noun phrase. "
+        "Back should be concise and unambiguous (e.g. one sentence or a short phrase)."
+    )
 
 
 def _require_string(raw: dict[str, Any], field_name: str) -> str:

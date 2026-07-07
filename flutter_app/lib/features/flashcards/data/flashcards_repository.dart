@@ -38,6 +38,7 @@ abstract class FlashcardsRepository {
   Future<Flashcard> next({
     required String workspaceId,
     List<String>? selectedTopicIds,
+    double? mastery,
   });
 
   /// Record a student's self-rating for a flashcard they've reviewed.
