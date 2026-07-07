@@ -171,9 +171,7 @@ class _ProgressBodyState extends State<_ProgressBody> {
         _AIInsightsCard(insights: insights),
         const SizedBox(height: Spacing.lg),
 
-        // Weekly Activity spline line chart and consistency heatmap
-        const _WeeklyTrendAndHeatmapCard(),
-        const SizedBox(height: Spacing.xl),
+
 
         if (!widget.progress.hasActivity)
           const _ZeroStatePlaceholder()
