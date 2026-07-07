@@ -52,7 +52,13 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
   @override
   void initState() {
     super.initState();
-    // Start with the idle setup screen where they choose level
+    // Auto-start the session immediately — skip the idle landing screen.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final progressVal =
+          ref.read(studentProgressNotifierProvider(widget.workspaceId)).valueOrNull;
+      _notifier.start(mastery: progressVal?.overallMastery);
+    });
   }
 
   @override
