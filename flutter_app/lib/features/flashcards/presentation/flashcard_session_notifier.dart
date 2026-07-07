@@ -40,7 +40,8 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
   List<String>? _selectedTopicIds;
   final List<FlashcardRating> _sessionRatings = [];
   int _currentIndex = 1;
-  int _sessionTargetLength = 25;
+  int _sessionTargetLength = 4;
+  double? _lastMastery;
   DateTime? _cardStartTime;
 
   int get currentIndex => _currentIndex;
@@ -61,12 +62,35 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
   /// doesn't accidentally double-fetch.
   Future<void> start({double? mastery}) async {
     if (state is! FlashcardSessionIdle) return;
-    
-    _sessionTargetLength = 20;
-
+    _lastMastery = mastery;
+    _sessionTargetLength = _sessionLengthForMastery(mastery);
     _currentIndex = 1;
     _sessionRatings.clear();
     await _fetchNext();
+  }
+
+  /// Returns how many flashcards to show this session based on mastery level.
+  ///
+  /// Tiers (from product spec):
+  /// - BEGINNER  mastery < 0.40  → 3–4 cards
+  /// - INTER     mastery < 0.75  → 10–13 cards
+  /// - EXPERT    mastery ≥ 0.75  → 18–25 cards
+  static int _sessionLengthForMastery(double? mastery) {
+    final rng = math.Random();
+    if (mastery == null || mastery < 0.40) {
+      return 3 + rng.nextInt(2); // 3 or 4
+    } else if (mastery < 0.75) {
+      return 10 + rng.nextInt(4); // 10, 11, 12, or 13
+    } else {
+      return 18 + rng.nextInt(8); // 18–25
+    }
+  }
+
+  /// Returns the human-readable mastery tier label for the current session.
+  String get masteryTierLabel {
+    if (_lastMastery == null || _lastMastery! < 0.40) return 'Beginner';
+    if (_lastMastery! < 0.75) return 'Intermediate';
+    return 'Expert';
   }
 
   /// Fetch the next card after the student has rated the current one.
@@ -191,8 +215,11 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
   }
 
   Future<void> resetSession() async {
+    // Re-read the latest mastery so a long session doesn't lock the tier.
+    final progressVal =
+        ref.read(studentProgressNotifierProvider(_workspaceId)).valueOrNull;
     state = const FlashcardSession.idle();
-    await start();
+    await start(mastery: progressVal?.overallMastery);
   }
 
   void _invalidateProfile() {

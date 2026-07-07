@@ -128,10 +128,12 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
     final notifier =
         ref.read(flashcardSessionNotifierProvider(widget.workspaceId).notifier);
     final currentIndex = notifier.currentIndex;
+    final sessionTarget = notifier.sessionTargetLength;
+    final tierLabel = notifier.masteryTierLabel;
     final isAdmin = ref.watch(isActiveWorkspaceAdminProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return session.when(
+    final child = session.when(
       idle: () => Scaffold(
         backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
         body: Center(
@@ -181,7 +183,11 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
           ),
         ),
       ),
-      loading: () => const LoadingIndicator(message: 'Finding a card…'),
+      loading: () => _CardTransitionScreen(
+        currentIndex: currentIndex,
+        sessionTarget: sessionTarget,
+        tierLabel: tierLabel,
+      ),
       // Key by card id so _CardViewState resets when a new card arrives.
       viewingFront: (card) => _CardView(
         key: ValueKey(card.id),
@@ -239,6 +245,17 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
               ),
       ),
       error: (message) => ErrorView(message: message, onRetry: _restart),
+    );
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      transitionBuilder: (child, animation) {
+        return FadeTransition(opacity: animation, child: child);
+      },
+      child: KeyedSubtree(
+        key: ValueKey(session.runtimeType),
+        child: child,
+      ),
     );
   }
 }
@@ -1705,6 +1722,257 @@ class _FilterBottomSheetState extends ConsumerState<_FilterBottomSheet> {
           ),
         );
       },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _CardTransitionScreen — professional loading screen between cards
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Shown while the next card is being fetched from the backend.
+///
+/// Replaces the bare white flash with a premium animated screen that:
+/// - Shows a pulsing flashcard icon so the UI feels alive
+/// - Displays card progress ("Card 3 of 7") and a progress bar
+/// - Shows the current mastery tier badge
+class _CardTransitionScreen extends StatefulWidget {
+  const _CardTransitionScreen({
+    required this.currentIndex,
+    required this.sessionTarget,
+    required this.tierLabel,
+  });
+
+  final int currentIndex;
+  final int sessionTarget;
+  final String tierLabel;
+
+  @override
+  State<_CardTransitionScreen> createState() => _CardTransitionScreenState();
+}
+
+class _CardTransitionScreenState extends State<_CardTransitionScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+  late final Animation<double> _scale;
+  late final Animation<double> _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+
+    _scale = Tween<double>(begin: 0.88, end: 1.06).animate(
+      CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+    );
+    _opacity = Tween<double>(begin: 0.55, end: 1.0).animate(
+      CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  IconData _tierIcon(String label) {
+    switch (label) {
+      case 'Expert':
+        return Icons.workspace_premium_rounded;
+      case 'Intermediate':
+        return Icons.auto_graph_rounded;
+      default:
+        return Icons.school_rounded;
+    }
+  }
+
+  Color _tierColor(String label, ColorScheme cs) {
+    switch (label) {
+      case 'Expert':
+        return const Color(0xFFFFB347); // amber-gold
+      case 'Intermediate':
+        return const Color(0xFF4FC3F7); // sky-blue
+      default:
+        return const Color(0xFF81C784); // mint-green
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
+    final progress = widget.sessionTarget > 0
+        ? (widget.currentIndex - 1) / widget.sessionTarget
+        : 0.0;
+    final tierColor = _tierColor(widget.tierLabel, cs);
+
+    return Scaffold(
+      backgroundColor: bg,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ── Top progress bar ─────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Card ${widget.currentIndex} of ${widget.sessionTarget}',
+                        style: tt.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: cs.onSurface,
+                        ),
+                      ),
+                      // Tier badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: tierColor.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                              color: tierColor.withOpacity(0.4), width: 1),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(_tierIcon(widget.tierLabel),
+                                size: 13, color: tierColor),
+                            const SizedBox(width: 5),
+                            Text(
+                              widget.tierLabel,
+                              style: tt.labelSmall?.copyWith(
+                                color: tierColor,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  // Progress bar
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: progress.clamp(0.0, 1.0),
+                      minHeight: 5,
+                      backgroundColor: cs.surfaceContainerHighest,
+                      valueColor: AlwaysStoppedAnimation<Color>(tierColor),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Central pulsing icon ─────────────────────────────────────
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnimatedBuilder(
+                      animation: _pulse,
+                      builder: (context, child) {
+                        return Opacity(
+                          opacity: _opacity.value,
+                          child: Transform.scale(
+                            scale: _scale.value,
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          gradient: RadialGradient(
+                            colors: [
+                              cs.primary.withOpacity(0.25),
+                              cs.primary.withOpacity(0.05),
+                            ],
+                          ),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: cs.primary.withOpacity(0.20),
+                              blurRadius: 28,
+                              spreadRadius: 4,
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.style_rounded,
+                          size: 48,
+                          color: cs.primary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    Text(
+                      'Loading next card…',
+                      style: tt.bodyLarge?.copyWith(
+                        color: cs.onSurface.withOpacity(0.55),
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Keep it up! Every card builds your mastery.',
+                      textAlign: TextAlign.center,
+                      style: tt.bodySmall?.copyWith(
+                        color: cs.onSurface.withOpacity(0.35),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── Bottom decorative dots ────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.only(bottom: 40),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  widget.sessionTarget.clamp(1, 10),
+                  (i) {
+                    final filled = i < widget.currentIndex - 1;
+                    final active = i == widget.currentIndex - 1;
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      width: active ? 22 : 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: filled
+                            ? tierColor
+                            : active
+                                ? cs.primary
+                                : cs.onSurface.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
