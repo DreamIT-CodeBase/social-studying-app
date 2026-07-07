@@ -30,7 +30,7 @@ class RealTelemetryRepository implements TelemetryRepository {
   Future<void> sendEvents(List<Map<String, dynamic>> events) async {
     try {
       await dio.post(
-        '/student/device/db-stats',
+        '/api/v1/student/device/db-stats',
         data: {'events': events},
       );
     } catch (e) {
