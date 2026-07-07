@@ -34,6 +34,7 @@ SCREEN_TIME_LOGS = "screen_time_logs"
 APP_RESTRICTIONS = "app_restrictions"
 PARENTAL_CONTROLS = "parental_controls"
 PERMISSION_STATUS = "permission_status"
+DB_STATS = "db_stats"
 
 
 

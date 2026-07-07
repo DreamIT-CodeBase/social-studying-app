@@ -6,9 +6,12 @@ import 'package:social_study_app/core/routing/router.dart';
 import 'package:social_study_app/core/theme/app_theme.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/notifications/presentation/notification_service.dart';
+import 'package:social_study_app/shared/services/session_persistence_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   setAppFlavor(AppFlavor.student);
+  await SessionPersistenceService.init();
   runApp(const ProviderScope(child: _StudentApp()));
 }
 

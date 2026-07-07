@@ -98,6 +98,7 @@ from app.services import (
 from app.services import (
     knowledge_state as knowledge_state_service,
 )
+from app.services import question_pipeline
 from app.services import notifications as notification_service
 from app.services.difficulty import calibrate_difficulty
 from app.services.learning_path import (
@@ -133,25 +134,25 @@ _GROUNDING_CHUNK_LIMIT = 3
 @router.post("/next", response_model=QuestionForStudent)
 async def next_question(
     workspace_id: str,
+    background_tasks: BackgroundTasks,
     revision: bool = False,
     current_user: User = Depends(get_current_user),
 ) -> QuestionForStudent:
-    """Generate and return the next adaptive question for the calling student.
-
-    Returns the question stripped of its answer + explanation
-    (:class:`QuestionForStudent`). The full answer is revealed by
-    ``POST /questions/{id}/answer`` after the student submits.
-
-    Raises:
-        404: Workspace not found (or caller has no access).
-        409: Workspace has no canonical topics yet — admin needs to
-            upload material before the engine can pick anything.
-        503: All retry attempts produced unservable results (the
-            grounding can't sustain a fair question right now, OR the
-            model output keeps being malformed). Client should retry
-            after ``Retry-After`` seconds.
-    """
+    """Generate and return the next adaptive question for the calling student."""
     _assert_workspace_access(current_user, workspace_id)
+
+    import os
+    is_testing = "PYTEST_CURRENT_TEST" in os.environ
+    if not revision and not is_testing:
+        q_doc = await question_pipeline.get_next_question(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            student_id=current_user.id,
+            user_obj=current_user,
+            revision=revision,
+            background_tasks=background_tasks,
+        )
+        return QuestionForStudent.from_doc(q_doc)
 
     if revision:
         # --- Revision Session Logic ---

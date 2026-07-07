@@ -30,7 +30,7 @@
 | Key Vault | `kv-ssa-dev-ddjopeut37ed2` |
 | API container app | `ca-api-dev` (also runs the notification scheduler endpoint) |
 | Worker apps | `ca-worker-dev`, `ca-topic-extractor-dev`, `ca-chunker-dev`, `ca-vectorizer-dev` |
-| API URL | https://ca-api-dev.salmonmushroom-d5e027eb.centralus.azurecontainerapps.io |
+| API URL | https://ca-api-dev.ambitiouswave-1e406ff3.centralus.azurecontainerapps.io |
 | Notification Hub | namespace `nh-ns-ssa-dev-ddjopeut37ed2`, hub `study-app-dev` |
 | Document Intelligence | `di-ssa-dev-cm` (S0, centralus), `prebuilt-read`, kind `FormRecognizer` |
 

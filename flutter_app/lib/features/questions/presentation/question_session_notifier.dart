@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/features/questions/data/demo_questions_repository.dart'
     show
@@ -12,6 +13,7 @@ import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 import 'package:social_study_app/features/gamification/data/gamification_repository.dart';
+import 'package:social_study_app/features/progress/services/recall_service.dart';
 
 part 'question_session_notifier.g.dart';
 
@@ -34,6 +36,13 @@ part 'question_session_notifier.g.dart';
 class QuestionSessionNotifier extends _$QuestionSessionNotifier {
   late String _workspaceId;
   int _questionsAnswered = 0;
+  int _questionsCorrect = 0;
+  int _sessionTargetLength = 5;
+  DateTime? _questionStartTime;
+
+  int get questionsAnswered => _questionsAnswered;
+  int get questionsCorrect => _questionsCorrect;
+  int get sessionTargetLength => _sessionTargetLength;
 
   @override
   QuestionSession build(String workspaceId) {
@@ -46,9 +55,13 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
   /// No-op from any other state so a screen that calls [start] in
   /// initState() and later calls [next] from a "next question" button
   /// doesn't accidentally double-fetch.
-  Future<void> start() async {
+  Future<void> start({double? mastery}) async {
     if (state is! QuestionSessionIdle) return;
+    
+    _sessionTargetLength = 20;
+
     _questionsAnswered = 0;
+    _questionsCorrect = 0;
     await _fetchNext();
   }
 
@@ -59,7 +72,29 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
   /// in-flight submit.
   Future<void> next() async {
     if (state is! QuestionSessionFeedback) return;
-    await _fetchNext();
+    if (_questionsAnswered >= _sessionTargetLength) {
+      _transitionToCompleted();
+    } else {
+      await _fetchNext();
+    }
+  }
+
+  void _transitionToCompleted() {
+    final authState = ref.read(authNotifierProvider).valueOrNull;
+    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    if (user != null) {
+      ref.read(gamificationRepositoryProvider).completeSession(
+            workspaceId: _workspaceId,
+            userId: user.id,
+            sessionType: 'study',
+          ).then((_) {
+            _invalidateProfile();
+          }).catchError((_) {});
+    }
+    state = QuestionSession.completed(
+      correctCount: _questionsCorrect,
+      totalCount: _sessionTargetLength,
+    );
   }
 
   /// End the current study session, returning to the idle state.
@@ -71,8 +106,9 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
     if (state is QuestionSessionReady ||
         state is QuestionSessionFeedback ||
         state is QuestionSessionError ||
-        state is QuestionSessionUnavailable) {
-      if (_questionsAnswered > 0) {
+        state is QuestionSessionUnavailable ||
+        state is QuestionSessionCompleted) {
+      if (_questionsAnswered > 0 && state is! QuestionSessionCompleted) {
         final authState = ref.read(authNotifierProvider).valueOrNull;
         final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
         if (user != null) {
@@ -129,6 +165,16 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
         submission: AnswerSubmission(answer: draft),
       );
       _questionsAnswered++;
+      if (_questionStartTime != null) {
+        final durationMs = DateTime.now().difference(_questionStartTime!).inMilliseconds;
+        RecallService.instance.recordQuestionAnswered(
+          topic: current.question.topic,
+          durationMs: durationMs,
+        ).catchError((_) {});
+      }
+      if (feedback.isCorrect) {
+        _questionsCorrect++;
+      }
       state = QuestionSession.feedback(
         question: current.question,
         submittedAnswer: draft,
@@ -169,6 +215,7 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
       final repo = ref.read(questionsRepositoryProvider);
       final question = await repo.next(workspaceId: _workspaceId);
       state = QuestionSession.ready(question: question);
+      _questionStartTime = DateTime.now();
     } on NoTopicsAvailableException catch (e) {
       state = QuestionSession.unavailable(
         message: e.message,

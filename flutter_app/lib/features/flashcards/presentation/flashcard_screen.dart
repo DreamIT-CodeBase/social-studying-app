@@ -16,6 +16,7 @@ import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 import 'package:social_study_app/features/taxonomy/presentation/taxonomy_notifier.dart';
+import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 
 /// Flashcard review interface — Sprint 4.9 (MCQ redesign).
 ///
@@ -51,9 +52,7 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
   @override
   void initState() {
     super.initState();
-    // `start` is a no-op unless the session is idle, so safe across tab
-    // switches while the IndexedStack keeps the screen alive.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _notifier.start());
+    // Start with the idle setup screen where they choose level
   }
 
   @override
@@ -62,11 +61,7 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
     if (widget.workspaceId != oldWidget.workspaceId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          ref
-              .read(
-                flashcardSessionNotifierProvider(widget.workspaceId).notifier,
-              )
-              .start();
+          ref.invalidate(flashcardSessionNotifierProvider(widget.workspaceId));
         }
       });
     }
@@ -93,12 +88,12 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
     }
   }
 
-  /// Reset the family provider to a fresh idle session and re-fetch.
   void _restart() {
     ref.invalidate(flashcardSessionNotifierProvider(widget.workspaceId));
+    final progressVal = ref.read(studentProgressNotifierProvider(widget.workspaceId)).valueOrNull;
     ref
         .read(flashcardSessionNotifierProvider(widget.workspaceId).notifier)
-        .start();
+        .start(mastery: progressVal?.overallMastery);
   }
 
   @override
@@ -108,7 +103,16 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
       flashcardSessionNotifierProvider(widget.workspaceId),
       (prev, next) {
         next.whenOrNull(
-          rated: (_, response) => _playCelebrations(context, response),
+          rated: (_, response) {
+            _playCelebrations(context, response);
+            Future.delayed(const Duration(milliseconds: 400), () {
+              if (context.mounted) {
+                ref
+                    .read(flashcardSessionNotifierProvider(widget.workspaceId).notifier)
+                    .next();
+              }
+            });
+          },
         );
       },
     );
@@ -119,9 +123,58 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
         ref.read(flashcardSessionNotifierProvider(widget.workspaceId).notifier);
     final currentIndex = notifier.currentIndex;
     final isAdmin = ref.watch(isActiveWorkspaceAdminProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return session.when(
-      idle: () => const LoadingIndicator(),
+      idle: () => Scaffold(
+        backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        body: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(Spacing.xl),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(Spacing.lg),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.style_rounded, size: 72, color: Theme.of(context).colorScheme.primary),
+                ),
+                const SizedBox(height: Spacing.xl),
+                Text(
+                  'Flashcard Review',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: Spacing.sm),
+                Text(
+                  'Your review session length is automatically customized based on your mastery.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: Spacing.xl),
+                FilledButton.icon(
+                  onPressed: () {
+                    final progressVal = ref.read(studentProgressNotifierProvider(widget.workspaceId)).valueOrNull;
+                    _notifier.start(mastery: progressVal?.overallMastery);
+                  },
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: const Text('Start Review Session'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
       loading: () => const LoadingIndicator(message: 'Finding a card…'),
       // Key by card id so _CardViewState resets when a new card arrives.
       viewingFront: (card) => _CardView(
@@ -220,102 +273,41 @@ class _CardView extends ConsumerStatefulWidget {
 }
 
 class _CardViewState extends ConsumerState<_CardView> {
-  /// Whether the MCQ panel is visible (card still on front).
-  bool _showMcq = false;
-
-  /// Index of the option the student tapped. Null = not yet answered.
-  int? _selectedOptionIndex;
-
-  /// String value of what option text was selected by the student.
-  String? _selectedOptionText;
-
-  /// Which index [0 or 1] holds the correct answer. Fixed in [initState].
-  late int _correctOptionIndex;
-
-  /// The two displayed options. Built once in [initState].
-  late List<String> _options;
-
-  /// Stopwatch for tracking student response time
+  double _dragOffset = 0.0;
   late Stopwatch _stopwatch;
-
-  bool get _isAnswered => _selectedOptionIndex != null;
-  bool get _isCorrect =>
-      _isAnswered && _selectedOptionIndex == _correctOptionIndex;
+  bool _revealed = false;
 
   @override
   void initState() {
     super.initState();
     _stopwatch = Stopwatch()..start();
-    _buildOptions();
+    _revealed = widget.phase != _Phase.front;
   }
 
-  /// Generate the correct + distractor option pair. Uses the card id as
-  /// an RNG seed so the layout is stable within a session but varies
-  /// across cards — students can't learn "correct is always left".
-  void _buildOptions() {
-    final cleanCorrect = _getConciseAnswer(widget.card.back);
-    final distractor = _generateDistractor(widget.card, cleanCorrect);
-    final rng = math.Random(widget.card.id.hashCode);
-    final correctFirst = rng.nextBool();
-    _correctOptionIndex = correctFirst ? 0 : 1;
-    _options = correctFirst ? [cleanCorrect, distractor] : [distractor, cleanCorrect];
+  @override
+  void didUpdateWidget(_CardView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.card.id != oldWidget.card.id) {
+      _stopwatch.reset();
+      _stopwatch.start();
+      _dragOffset = 0.0;
+      _revealed = widget.phase != _Phase.front;
+    }
+    if (widget.phase != oldWidget.phase) {
+      _revealed = widget.phase != _Phase.front;
+    }
   }
 
-  /// Tap on the front card → show MCQ options without flipping.
-  void _onCardTap() {
-    if (_showMcq || _isAnswered) return;
-    HapticFeedback.selectionClick();
-    setState(() => _showMcq = true);
-  }
-
-  /// Calculate session accuracy based on current list of ratings plus the new rating.
   double _calculateAccuracy(List<FlashcardRating> ratings, FlashcardRating currentRating) {
     final allRatings = [...ratings, currentRating];
     final correctCount = allRatings.where((r) => r == FlashcardRating.easy).length;
     return (correctCount / allRatings.length) * 100.0;
   }
 
-  /// Student picks an option → briefly highlight → flip card + submit implicit rating with rich metrics.
-  void _selectOption(int index) async {
-    if (_isAnswered) return; // guard against double-tap
-
-    // 1. Highlight selected option immediately
-    setState(() {
-      _selectedOptionIndex = index;
-      _selectedOptionText = _options[index];
-    });
-    HapticFeedback.selectionClick();
-
-    // 2. Measure response time
-    final responseTimeMs = _stopwatch.elapsedMilliseconds;
-    _stopwatch.stop();
-
-    // 3. Wait for highlight delay (250ms) before flipping the card
-    await Future.delayed(const Duration(milliseconds: 250));
-
-    if (!mounted) return;
-
-    final notifier = ref.read(
-      flashcardSessionNotifierProvider(widget.workspaceId).notifier,
-    );
-
-    // 4. Trigger proper flip animation
+  void _onCardTap() {
+    if (widget.phase != _Phase.front) return;
     SoundService.instance.playCardFlip();
-    notifier.flip(); // viewingFront → revealed (sync)
-
-    // 5. Submit rating with extended metrics to API
-    final rating =
-        index == _correctOptionIndex ? FlashcardRating.easy : FlashcardRating.hard;
-    final accuracy = _calculateAccuracy(notifier.sessionRatings, rating);
-
-    notifier.rate(
-      rating,
-      selectedOption: _options[index],
-      isCorrect: index == _correctOptionIndex,
-      responseTimeMs: responseTimeMs,
-      sessionProgress: widget.currentIndex,
-      accuracyPercentage: accuracy,
-    );
+    ref.read(flashcardSessionNotifierProvider(widget.workspaceId).notifier).flip();
   }
 
   @override
@@ -323,9 +315,20 @@ class _CardViewState extends ConsumerState<_CardView> {
     final notifier = ref.read(
       flashcardSessionNotifierProvider(widget.workspaceId).notifier,
     );
-    final answerResult = _isAnswered
-        ? (_isCorrect ? _AnswerResult.correct : _AnswerResult.incorrect)
-        : null;
+    final targetLength = notifier.sessionTargetLength;
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseBorder = isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0);
+    
+    Color borderColor = baseBorder;
+    double borderWidth = 1.0;
+    
+    if (widget.phase == _Phase.revealed && _dragOffset != 0) {
+      final progress = (_dragOffset.abs() / 150).clamp(0.0, 1.0);
+      final activeColor = _dragOffset > 0 ? const Color(0xFF22C55E) : const Color(0xFFEF4444);
+      borderColor = Color.lerp(baseBorder, activeColor, progress)!;
+      borderWidth = 1.0 + (progress * 2.0);
+    }
 
     return Column(
       children: [
@@ -350,7 +353,7 @@ class _CardViewState extends ConsumerState<_CardView> {
                     ),
                   ),
                   Text(
-                    '${widget.currentIndex} of 25',
+                    '${widget.currentIndex} of $targetLength',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
@@ -363,7 +366,7 @@ class _CardViewState extends ConsumerState<_CardView> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
-                  value: widget.currentIndex / 25,
+                  value: widget.currentIndex / targetLength,
                   minHeight: 6,
                   backgroundColor:
                       context.colorScheme.primaryContainer.withAlpha(50),
@@ -380,39 +383,101 @@ class _CardViewState extends ConsumerState<_CardView> {
           child: Padding(
             padding: const EdgeInsets.all(Spacing.lg),
             child: GestureDetector(
-              // Tap the front card (before MCQ appears) to show MCQ options.
-              onTap: widget.phase == _Phase.front && !_showMcq
-                  ? _onCardTap
-                  : null,
-              child: FlipCard(
-                key: ValueKey('card:${widget.card.id}'),
-                showBack: widget._showBack,
-                front: FlashcardFace(
-                  card: widget.card,
-                  side: FlashcardSide.front,
-                  showMcq: _showMcq,
-                  options: _options,
-                  selectedOptionIndex: _selectedOptionIndex,
-                  correctOptionIndex: _correctOptionIndex,
-                  onSelectOption: _selectOption,
-                ),
-                back: FlashcardFace(
-                  card: widget.card,
-                  side: FlashcardSide.back,
-                  answerResult: answerResult,
-                  selectedOptionText: _selectedOptionText,
+              onTap: widget.phase == _Phase.front ? _onCardTap : null,
+              onHorizontalDragUpdate: (details) {
+                setState(() {
+                  _dragOffset += details.delta.dx;
+                });
+              },
+              onHorizontalDragEnd: (details) async {
+                if (_dragOffset.abs() > 120) {
+                  final isRight = _dragOffset > 0;
+                  final rating = isRight ? FlashcardRating.hard : FlashcardRating.easy;
+                  
+                  setState(() {
+                    _dragOffset = isRight ? 600 : -600;
+                  });
+                  
+                  final responseTimeMs = _stopwatch.elapsedMilliseconds;
+                  _stopwatch.stop();
+                  
+                  final accuracy = _calculateAccuracy(notifier.sessionRatings, rating);
+                  
+                  // Submit rating
+                  notifier.rate(
+                    rating,
+                    isCorrect: !isRight,
+                    responseTimeMs: responseTimeMs,
+                    sessionProgress: widget.currentIndex,
+                    accuracyPercentage: accuracy,
+                  );
+                } else {
+                  setState(() {
+                    _dragOffset = 0.0;
+                  });
+                }
+              },
+              child: Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()
+                  ..translate(_dragOffset, 0.0, 0.0)
+                  ..rotateZ(_dragOffset / 1000.0),
+                child: Stack(
+                  children: [
+                    FlipCard(
+                      key: ValueKey('card:${widget.card.id}'),
+                      showBack: _revealed,
+                      front: FlashcardFace(
+                        card: widget.card,
+                        side: FlashcardSide.front,
+                        swipeColor: _dragOffset != 0 ? borderColor : null,
+                        swipeBorderWidth: borderWidth,
+                      ),
+                      back: FlashcardFace(
+                        card: widget.card,
+                        side: FlashcardSide.back,
+                        swipeColor: _dragOffset != 0 ? borderColor : null,
+                        swipeBorderWidth: borderWidth,
+                      ),
+                    ),
+                    // Floating status overlays during swipe
+                    if (_dragOffset.abs() > 20)
+                      Positioned(
+                        top: 40,
+                        left: _dragOffset > 0 ? 40 : null,
+                        right: _dragOffset < 0 ? 40 : null,
+                        child: Transform.rotate(
+                          angle: _dragOffset > 0 ? -0.2 : 0.2,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: (_dragOffset > 0 ? const Color(0xFFEF4444) : const Color(0xFF22C55E)).withAlpha(220),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: _dragOffset > 0 ? const Color(0xFFEF4444) : const Color(0xFF22C55E),
+                                width: 2,
+                              ),
+                            ),
+                            child: Text(
+                              _dragOffset > 0 ? 'FORGOT' : 'REMEMBERED',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
           ),
         ),
         // ── Bottom action area ──────────────────────────────────────────
-        _ActionArea(
-          phase: widget.phase,
-          showMcq: _showMcq,
-          onNext: notifier.next,
-          isLastCard: notifier.currentIndex == 25,
-        ),
+        _ActionArea(phase: widget.phase),
       ],
     );
   }
@@ -517,10 +582,14 @@ class FlashcardFace extends StatelessWidget {
     this.selectedOptionIndex,
     this.correctOptionIndex,
     this.onSelectOption,
+    this.swipeColor,
+    this.swipeBorderWidth,
   });
 
   final Flashcard card;
   final FlashcardSide side;
+  final Color? swipeColor;
+  final double? swipeBorderWidth;
 
   /// When non-null (back face only), renders a colour-coded result banner
   /// above the explanation — green for correct, red for incorrect.
@@ -559,21 +628,28 @@ class FlashcardFace extends StatelessWidget {
         color: surfaceColor,
         borderRadius: BorderRadius.circular(28),
         border: Border.all(
-          color:
-              isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0),
-          width: 1,
+          color: swipeColor ?? (isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+          width: swipeBorderWidth ?? 1,
         ),
         boxShadow: [
-          BoxShadow(
-            color: accent.withAlpha(isDark ? 25 : 18),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-          BoxShadow(
-            color: Colors.black.withAlpha(isDark ? 40 : 10),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
+          if (swipeColor != null)
+            BoxShadow(
+              color: swipeColor!.withAlpha(isDark ? 40 : 25),
+              blurRadius: 16,
+              spreadRadius: 2,
+            )
+          else ...[
+            BoxShadow(
+              color: accent.withAlpha(isDark ? 25 : 18),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+            BoxShadow(
+              color: Colors.black.withAlpha(isDark ? 40 : 10),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ],
       ),
       child: ClipRRect(
@@ -804,31 +880,43 @@ class FlashcardFace extends StatelessWidget {
                                 ),
                               ],
                               
-                              // ── Back: Explanation box ───────────────────
-                              if (card.explanation.isNotEmpty) ...[
-                                const SizedBox(height: Spacing.lg),
-                                Container(
-                                  padding: const EdgeInsets.all(14),
-                                  decoration: BoxDecoration(
-                                    color: subtleColor,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: isDark
-                                          ? const Color(0xFF334155)
-                                          : const Color(0xFFE2E8F0),
-                                    ),
+                              () {
+                                String explanationText = card.explanation;
+                                final tipIndex = card.explanation.indexOf('Memory Tip:');
+                                final pointIndex = card.explanation.indexOf('Important Point:');
+
+                                if (tipIndex != -1) {
+                                  explanationText = card.explanation.substring(0, tipIndex).trim();
+                                } else if (pointIndex != -1) {
+                                  explanationText = card.explanation.substring(0, pointIndex).trim();
+                                }
+
+                                if (explanationText.isEmpty) return const SizedBox.shrink();
+
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 20),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      Divider(
+                                        height: 1,
+                                        thickness: 1,
+                                        color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        explanationText,
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: onSurfaceVariant,
+                                          fontSize: 14,
+                                          height: 1.5,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  child: Text(
-                                    card.explanation,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: onSurfaceVariant,
-                                      fontSize: 13,
-                                      height: 1.6,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                                );
+                              }(),
                             ],
                           ],
                         ),
@@ -981,67 +1069,86 @@ class _OptionButton extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ActionArea extends StatelessWidget {
-  const _ActionArea({
-    required this.phase,
-    required this.showMcq,
-    required this.onNext,
-    required this.isLastCard,
-  });
+  const _ActionArea({required this.phase});
 
   final _Phase phase;
-  final bool showMcq;
-  final Future<void> Function() onNext;
-  final bool isLastCard;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      elevation: 8,
-      color: context.colorScheme.surface,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.all(Spacing.lg),
-          child: _buildContent(context),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isFront = phase == _Phase.front;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        border: Border(
+          top: BorderSide(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+            width: 1,
+          ),
         ),
       ),
-    );
-  }
-
-  Widget _buildContent(BuildContext context) {
-    // Phase is front — either waiting for the first tap or MCQ visible.
-    if (phase == _Phase.front) {
-      if (!showMcq) {
-        return const _HintText(
-          text: 'Recall the answer, then tap the card.',
-        );
-      }
-      return const _HintText(
-        text: 'Select an option to check your answer.',
-      );
-    }
-
-    // Card has been flipped — show prominent Next Card button (no redundant statuses).
-    final isLoading = phase == _Phase.revealed || phase == _Phase.rating;
-    return FilledButton.icon(
-      style: FilledButton.styleFrom(
-        minimumSize: const Size(double.infinity, 52),
-      ),
-      onPressed: isLoading ? null : () => onNext(),
-      icon: isLoading
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Icon(
-              isLastCard
-                  ? Icons.done_all_rounded
-                  : Icons.arrow_forward_rounded,
-            ),
-      label: Text(
-        isLastCard ? 'Finish Session' : 'Next Card',
-        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+      child: SafeArea(
+        top: false,
+        child: isFront
+            ? const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.touch_app_rounded, color: AppColors.primary, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'Tap card to reveal answer',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF22C55E).withAlpha(20),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.arrow_back_rounded, color: Color(0xFF22C55E), size: 16),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Swipe Left\nRemembered',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12, color: Color(0xFF22C55E), fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  Container(
+                    width: 1,
+                    height: 32,
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                  ),
+                  Row(
+                    children: [
+                      const Text(
+                        'Swipe Right\nForgot',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12, color: AppColors.error, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: AppColors.error.withAlpha(20),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.arrow_forward_rounded, color: AppColors.error, size: 16),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
       ),
     );
   }

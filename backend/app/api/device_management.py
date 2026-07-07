@@ -1,6 +1,7 @@
 """API endpoints for device management, app usage, limits, and parental controls."""
 
 from __future__ import annotations
+from typing import Any
 import logging
 from uuid import uuid4
 from fastapi import APIRouter, Depends, status
@@ -16,6 +17,7 @@ from app.core.database import (
     APP_USAGE_LOGS,
     SCREEN_TIME_LOGS,
     DEVICE_USAGE_LOGS,
+    DB_STATS,
 )
 from app.models.user import User, UserRole, UserResponse
 from app.models.device_management import (
@@ -27,6 +29,7 @@ from app.models.device_management import (
     DeviceUsageLog,
     TimeRange,
 )
+from app.models.db_stats import DbStatEvent
 from app.core.exceptions import ForbiddenError, NotFoundError
 from app.models.base import utc_now
 
@@ -63,6 +66,20 @@ class RestrictionsPayload(BaseModel):
 class UsageLogsPayload(BaseModel):
     app_logs: list[AppUsageLog]
     screen_time_log: ScreenTimeLog
+
+
+class DbStatEventPayload(BaseModel):
+    event_type: str
+    details: dict[str, Any] = Field(default_factory=dict)
+    occurred_at: str
+
+
+class DbStatsPayload(BaseModel):
+    events: list[DbStatEventPayload]
+
+
+DbStatEventPayload.model_rebuild()
+DbStatsPayload.model_rebuild()
 
 
 # ── Parent Endpoints ─────────────────────────────────────────────────────────
@@ -324,3 +341,44 @@ async def report_usage_logs(
         await device_col.insert_one(device_obj.model_dump(by_alias=True))
 
     return {"status": "ok"}
+
+
+@router.post("/student/device/db-stats", response_model=dict)
+async def report_db_stats(
+    payload: DbStatsPayload,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Sync telemetry / DB stats from the student device."""
+    col = get_collection(current_user.tenant_id, DB_STATS)
+    saved_count = 0
+    for event_data in payload.events:
+        doc = DbStatEvent(
+            **{"_id": f"ev_{uuid4().hex}"},
+            tenant_id=current_user.tenant_id,
+            student_id=current_user.id,
+            event_type=event_data.event_type,
+            details=event_data.details,
+            occurred_at=event_data.occurred_at,
+        )
+        await col.insert_one(doc.model_dump(by_alias=True))
+        saved_count += 1
+    return {"status": "ok", "count": saved_count}
+
+
+@router.get("/parent/students/{student_id}/db-stats", response_model=list)
+async def get_student_db_stats(
+    student_id: str,
+    current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    """Get the telemetry/DB stats log history for a specific student."""
+    if current_user.role not in (UserRole.tenant_admin, UserRole.workspace_admin):
+        raise ForbiddenError("Only parents or admins can query student DB stats")
+
+    col = get_collection(current_user.tenant_id, DB_STATS)
+    cursor = col.find({"student_id": student_id, "deleted_at": None}).sort("occurred_at", -1).limit(500)
+    
+    results = []
+    async for doc in cursor:
+        doc["id"] = doc.pop("_id")
+        results.append(doc)
+    return results

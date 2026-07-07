@@ -84,7 +84,11 @@ async def list_workspaces(
     col = get_collection(current_user.tenant_id, WORKSPACES)
 
     if current_user.role == UserRole.tenant_admin:
-        cursor = col.find({"tenant_id": current_user.tenant_id, "deleted_at": None})
+        cursor = col.find({
+            "tenant_id": current_user.tenant_id,
+            "_id": {"$not": {"$regex": "^wsp_self_"}},
+            "deleted_at": None,
+        })
     else:
         member_ids = [m.workspace_id for m in current_user.workspace_memberships]
         cursor = col.find({"_id": {"$in": member_ids}, "deleted_at": None})

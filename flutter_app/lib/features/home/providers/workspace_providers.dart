@@ -3,6 +3,7 @@ import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/models/workspace.dart';
 import 'package:social_study_app/features/admin/workspaces/data/workspaces_repository.dart';
+import 'package:social_study_app/shared/services/session_persistence_service.dart';
 
 part 'workspace_providers.g.dart';
 
@@ -18,6 +19,13 @@ class ActiveWorkspaceId extends _$ActiveWorkspaceId {
     if (user == null || user.workspaceMemberships.isEmpty) {
       return null;
     }
+
+    // Try to get the synchronously loaded workspace from persistence
+    final savedId = SessionPersistenceService.instance.getWorkspaceSync();
+    if (savedId != null && user.workspaceMemberships.any((m) => m.workspaceId == savedId)) {
+      return savedId;
+    }
+
     // Default to the self-learning workspace if present
     final selfWorkspaceId = 'wsp_self_${user.id}';
     final hasSelf = user.workspaceMemberships.any((m) => m.workspaceId == selfWorkspaceId);
@@ -30,6 +38,7 @@ class ActiveWorkspaceId extends _$ActiveWorkspaceId {
 
   void setWorkspaceId(String workspaceId) {
     state = workspaceId;
+    SessionPersistenceService.instance.saveWorkspace(workspaceId).catchError((_) {});
   }
 }
 

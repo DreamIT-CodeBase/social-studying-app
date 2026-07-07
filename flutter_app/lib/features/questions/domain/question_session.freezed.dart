@@ -29,6 +29,7 @@ mixin _$QuestionSession {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int correctCount, int totalCount) completed,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -43,6 +44,7 @@ mixin _$QuestionSession {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int correctCount, int totalCount)? completed,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -57,6 +59,7 @@ mixin _$QuestionSession {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int correctCount, int totalCount)? completed,
     required TResult orElse(),
   }) =>
       throw _privateConstructorUsedError;
@@ -69,6 +72,7 @@ mixin _$QuestionSession {
     required TResult Function(QuestionSessionFeedback value) feedback,
     required TResult Function(QuestionSessionUnavailable value) unavailable,
     required TResult Function(QuestionSessionError value) error,
+    required TResult Function(QuestionSessionCompleted value) completed,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -80,6 +84,7 @@ mixin _$QuestionSession {
     TResult? Function(QuestionSessionFeedback value)? feedback,
     TResult? Function(QuestionSessionUnavailable value)? unavailable,
     TResult? Function(QuestionSessionError value)? error,
+    TResult? Function(QuestionSessionCompleted value)? completed,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -91,6 +96,7 @@ mixin _$QuestionSession {
     TResult Function(QuestionSessionFeedback value)? feedback,
     TResult Function(QuestionSessionUnavailable value)? unavailable,
     TResult Function(QuestionSessionError value)? error,
+    TResult Function(QuestionSessionCompleted value)? completed,
     required TResult orElse(),
   }) =>
       throw _privateConstructorUsedError;
@@ -170,6 +176,7 @@ class _$QuestionSessionIdleImpl implements QuestionSessionIdle {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int correctCount, int totalCount) completed,
   }) {
     return idle();
   }
@@ -187,6 +194,7 @@ class _$QuestionSessionIdleImpl implements QuestionSessionIdle {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int correctCount, int totalCount)? completed,
   }) {
     return idle?.call();
   }
@@ -204,6 +212,7 @@ class _$QuestionSessionIdleImpl implements QuestionSessionIdle {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int correctCount, int totalCount)? completed,
     required TResult orElse(),
   }) {
     if (idle != null) {
@@ -222,6 +231,7 @@ class _$QuestionSessionIdleImpl implements QuestionSessionIdle {
     required TResult Function(QuestionSessionFeedback value) feedback,
     required TResult Function(QuestionSessionUnavailable value) unavailable,
     required TResult Function(QuestionSessionError value) error,
+    required TResult Function(QuestionSessionCompleted value) completed,
   }) {
     return idle(this);
   }
@@ -236,6 +246,7 @@ class _$QuestionSessionIdleImpl implements QuestionSessionIdle {
     TResult? Function(QuestionSessionFeedback value)? feedback,
     TResult? Function(QuestionSessionUnavailable value)? unavailable,
     TResult? Function(QuestionSessionError value)? error,
+    TResult? Function(QuestionSessionCompleted value)? completed,
   }) {
     return idle?.call(this);
   }
@@ -250,6 +261,7 @@ class _$QuestionSessionIdleImpl implements QuestionSessionIdle {
     TResult Function(QuestionSessionFeedback value)? feedback,
     TResult Function(QuestionSessionUnavailable value)? unavailable,
     TResult Function(QuestionSessionError value)? error,
+    TResult Function(QuestionSessionCompleted value)? completed,
     required TResult orElse(),
   }) {
     if (idle != null) {
@@ -318,6 +330,7 @@ class _$QuestionSessionLoadingImpl implements QuestionSessionLoading {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int correctCount, int totalCount) completed,
   }) {
     return loading();
   }
@@ -335,6 +348,7 @@ class _$QuestionSessionLoadingImpl implements QuestionSessionLoading {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int correctCount, int totalCount)? completed,
   }) {
     return loading?.call();
   }
@@ -352,6 +366,7 @@ class _$QuestionSessionLoadingImpl implements QuestionSessionLoading {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int correctCount, int totalCount)? completed,
     required TResult orElse(),
   }) {
     if (loading != null) {
@@ -370,6 +385,7 @@ class _$QuestionSessionLoadingImpl implements QuestionSessionLoading {
     required TResult Function(QuestionSessionFeedback value) feedback,
     required TResult Function(QuestionSessionUnavailable value) unavailable,
     required TResult Function(QuestionSessionError value) error,
+    required TResult Function(QuestionSessionCompleted value) completed,
   }) {
     return loading(this);
   }
@@ -384,6 +400,7 @@ class _$QuestionSessionLoadingImpl implements QuestionSessionLoading {
     TResult? Function(QuestionSessionFeedback value)? feedback,
     TResult? Function(QuestionSessionUnavailable value)? unavailable,
     TResult? Function(QuestionSessionError value)? error,
+    TResult? Function(QuestionSessionCompleted value)? completed,
   }) {
     return loading?.call(this);
   }
@@ -398,6 +415,7 @@ class _$QuestionSessionLoadingImpl implements QuestionSessionLoading {
     TResult Function(QuestionSessionFeedback value)? feedback,
     TResult Function(QuestionSessionUnavailable value)? unavailable,
     TResult Function(QuestionSessionError value)? error,
+    TResult Function(QuestionSessionCompleted value)? completed,
     required TResult orElse(),
   }) {
     if (loading != null) {
@@ -514,6 +532,7 @@ class _$QuestionSessionReadyImpl implements QuestionSessionReady {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int correctCount, int totalCount) completed,
   }) {
     return ready(question, draftAnswer);
   }
@@ -531,6 +550,7 @@ class _$QuestionSessionReadyImpl implements QuestionSessionReady {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int correctCount, int totalCount)? completed,
   }) {
     return ready?.call(question, draftAnswer);
   }
@@ -548,6 +568,7 @@ class _$QuestionSessionReadyImpl implements QuestionSessionReady {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int correctCount, int totalCount)? completed,
     required TResult orElse(),
   }) {
     if (ready != null) {
@@ -566,6 +587,7 @@ class _$QuestionSessionReadyImpl implements QuestionSessionReady {
     required TResult Function(QuestionSessionFeedback value) feedback,
     required TResult Function(QuestionSessionUnavailable value) unavailable,
     required TResult Function(QuestionSessionError value) error,
+    required TResult Function(QuestionSessionCompleted value) completed,
   }) {
     return ready(this);
   }
@@ -580,6 +602,7 @@ class _$QuestionSessionReadyImpl implements QuestionSessionReady {
     TResult? Function(QuestionSessionFeedback value)? feedback,
     TResult? Function(QuestionSessionUnavailable value)? unavailable,
     TResult? Function(QuestionSessionError value)? error,
+    TResult? Function(QuestionSessionCompleted value)? completed,
   }) {
     return ready?.call(this);
   }
@@ -594,6 +617,7 @@ class _$QuestionSessionReadyImpl implements QuestionSessionReady {
     TResult Function(QuestionSessionFeedback value)? feedback,
     TResult Function(QuestionSessionUnavailable value)? unavailable,
     TResult Function(QuestionSessionError value)? error,
+    TResult Function(QuestionSessionCompleted value)? completed,
     required TResult orElse(),
   }) {
     if (ready != null) {
@@ -723,6 +747,7 @@ class _$QuestionSessionSubmittingImpl implements QuestionSessionSubmitting {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int correctCount, int totalCount) completed,
   }) {
     return submitting(question, draftAnswer);
   }
@@ -740,6 +765,7 @@ class _$QuestionSessionSubmittingImpl implements QuestionSessionSubmitting {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int correctCount, int totalCount)? completed,
   }) {
     return submitting?.call(question, draftAnswer);
   }
@@ -757,6 +783,7 @@ class _$QuestionSessionSubmittingImpl implements QuestionSessionSubmitting {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int correctCount, int totalCount)? completed,
     required TResult orElse(),
   }) {
     if (submitting != null) {
@@ -775,6 +802,7 @@ class _$QuestionSessionSubmittingImpl implements QuestionSessionSubmitting {
     required TResult Function(QuestionSessionFeedback value) feedback,
     required TResult Function(QuestionSessionUnavailable value) unavailable,
     required TResult Function(QuestionSessionError value) error,
+    required TResult Function(QuestionSessionCompleted value) completed,
   }) {
     return submitting(this);
   }
@@ -789,6 +817,7 @@ class _$QuestionSessionSubmittingImpl implements QuestionSessionSubmitting {
     TResult? Function(QuestionSessionFeedback value)? feedback,
     TResult? Function(QuestionSessionUnavailable value)? unavailable,
     TResult? Function(QuestionSessionError value)? error,
+    TResult? Function(QuestionSessionCompleted value)? completed,
   }) {
     return submitting?.call(this);
   }
@@ -803,6 +832,7 @@ class _$QuestionSessionSubmittingImpl implements QuestionSessionSubmitting {
     TResult Function(QuestionSessionFeedback value)? feedback,
     TResult Function(QuestionSessionUnavailable value)? unavailable,
     TResult Function(QuestionSessionError value)? error,
+    TResult Function(QuestionSessionCompleted value)? completed,
     required TResult orElse(),
   }) {
     if (submitting != null) {
@@ -956,6 +986,7 @@ class _$QuestionSessionFeedbackImpl implements QuestionSessionFeedback {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int correctCount, int totalCount) completed,
   }) {
     return feedback(question, submittedAnswer, this.feedback);
   }
@@ -973,6 +1004,7 @@ class _$QuestionSessionFeedbackImpl implements QuestionSessionFeedback {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int correctCount, int totalCount)? completed,
   }) {
     return feedback?.call(question, submittedAnswer, this.feedback);
   }
@@ -990,6 +1022,7 @@ class _$QuestionSessionFeedbackImpl implements QuestionSessionFeedback {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int correctCount, int totalCount)? completed,
     required TResult orElse(),
   }) {
     if (feedback != null) {
@@ -1008,6 +1041,7 @@ class _$QuestionSessionFeedbackImpl implements QuestionSessionFeedback {
     required TResult Function(QuestionSessionFeedback value) feedback,
     required TResult Function(QuestionSessionUnavailable value) unavailable,
     required TResult Function(QuestionSessionError value) error,
+    required TResult Function(QuestionSessionCompleted value) completed,
   }) {
     return feedback(this);
   }
@@ -1022,6 +1056,7 @@ class _$QuestionSessionFeedbackImpl implements QuestionSessionFeedback {
     TResult? Function(QuestionSessionFeedback value)? feedback,
     TResult? Function(QuestionSessionUnavailable value)? unavailable,
     TResult? Function(QuestionSessionError value)? error,
+    TResult? Function(QuestionSessionCompleted value)? completed,
   }) {
     return feedback?.call(this);
   }
@@ -1036,6 +1071,7 @@ class _$QuestionSessionFeedbackImpl implements QuestionSessionFeedback {
     TResult Function(QuestionSessionFeedback value)? feedback,
     TResult Function(QuestionSessionUnavailable value)? unavailable,
     TResult Function(QuestionSessionError value)? error,
+    TResult Function(QuestionSessionCompleted value)? completed,
     required TResult orElse(),
   }) {
     if (feedback != null) {
@@ -1167,6 +1203,7 @@ class _$QuestionSessionUnavailableImpl implements QuestionSessionUnavailable {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int correctCount, int totalCount) completed,
   }) {
     return unavailable(message, isNoTopics, retryAfterSeconds);
   }
@@ -1184,6 +1221,7 @@ class _$QuestionSessionUnavailableImpl implements QuestionSessionUnavailable {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int correctCount, int totalCount)? completed,
   }) {
     return unavailable?.call(message, isNoTopics, retryAfterSeconds);
   }
@@ -1201,6 +1239,7 @@ class _$QuestionSessionUnavailableImpl implements QuestionSessionUnavailable {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int correctCount, int totalCount)? completed,
     required TResult orElse(),
   }) {
     if (unavailable != null) {
@@ -1219,6 +1258,7 @@ class _$QuestionSessionUnavailableImpl implements QuestionSessionUnavailable {
     required TResult Function(QuestionSessionFeedback value) feedback,
     required TResult Function(QuestionSessionUnavailable value) unavailable,
     required TResult Function(QuestionSessionError value) error,
+    required TResult Function(QuestionSessionCompleted value) completed,
   }) {
     return unavailable(this);
   }
@@ -1233,6 +1273,7 @@ class _$QuestionSessionUnavailableImpl implements QuestionSessionUnavailable {
     TResult? Function(QuestionSessionFeedback value)? feedback,
     TResult? Function(QuestionSessionUnavailable value)? unavailable,
     TResult? Function(QuestionSessionError value)? error,
+    TResult? Function(QuestionSessionCompleted value)? completed,
   }) {
     return unavailable?.call(this);
   }
@@ -1247,6 +1288,7 @@ class _$QuestionSessionUnavailableImpl implements QuestionSessionUnavailable {
     TResult Function(QuestionSessionFeedback value)? feedback,
     TResult Function(QuestionSessionUnavailable value)? unavailable,
     TResult Function(QuestionSessionError value)? error,
+    TResult Function(QuestionSessionCompleted value)? completed,
     required TResult orElse(),
   }) {
     if (unavailable != null) {
@@ -1354,6 +1396,7 @@ class _$QuestionSessionErrorImpl implements QuestionSessionError {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int correctCount, int totalCount) completed,
   }) {
     return error(message);
   }
@@ -1371,6 +1414,7 @@ class _$QuestionSessionErrorImpl implements QuestionSessionError {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int correctCount, int totalCount)? completed,
   }) {
     return error?.call(message);
   }
@@ -1388,6 +1432,7 @@ class _$QuestionSessionErrorImpl implements QuestionSessionError {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int correctCount, int totalCount)? completed,
     required TResult orElse(),
   }) {
     if (error != null) {
@@ -1406,6 +1451,7 @@ class _$QuestionSessionErrorImpl implements QuestionSessionError {
     required TResult Function(QuestionSessionFeedback value) feedback,
     required TResult Function(QuestionSessionUnavailable value) unavailable,
     required TResult Function(QuestionSessionError value) error,
+    required TResult Function(QuestionSessionCompleted value) completed,
   }) {
     return error(this);
   }
@@ -1420,6 +1466,7 @@ class _$QuestionSessionErrorImpl implements QuestionSessionError {
     TResult? Function(QuestionSessionFeedback value)? feedback,
     TResult? Function(QuestionSessionUnavailable value)? unavailable,
     TResult? Function(QuestionSessionError value)? error,
+    TResult? Function(QuestionSessionCompleted value)? completed,
   }) {
     return error?.call(this);
   }
@@ -1434,6 +1481,7 @@ class _$QuestionSessionErrorImpl implements QuestionSessionError {
     TResult Function(QuestionSessionFeedback value)? feedback,
     TResult Function(QuestionSessionUnavailable value)? unavailable,
     TResult Function(QuestionSessionError value)? error,
+    TResult Function(QuestionSessionCompleted value)? completed,
     required TResult orElse(),
   }) {
     if (error != null) {
@@ -1453,5 +1501,208 @@ abstract class QuestionSessionError implements QuestionSession {
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
   _$$QuestionSessionErrorImplCopyWith<_$QuestionSessionErrorImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class _$$QuestionSessionCompletedImplCopyWith<$Res> {
+  factory _$$QuestionSessionCompletedImplCopyWith(
+          _$QuestionSessionCompletedImpl value,
+          $Res Function(_$QuestionSessionCompletedImpl) then) =
+      __$$QuestionSessionCompletedImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({int correctCount, int totalCount});
+}
+
+/// @nodoc
+class __$$QuestionSessionCompletedImplCopyWithImpl<$Res>
+    extends _$QuestionSessionCopyWithImpl<$Res, _$QuestionSessionCompletedImpl>
+    implements _$$QuestionSessionCompletedImplCopyWith<$Res> {
+  __$$QuestionSessionCompletedImplCopyWithImpl(
+      _$QuestionSessionCompletedImpl _value,
+      $Res Function(_$QuestionSessionCompletedImpl) _then)
+      : super(_value, _then);
+
+  /// Create a copy of QuestionSession
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? correctCount = null,
+    Object? totalCount = null,
+  }) {
+    return _then(_$QuestionSessionCompletedImpl(
+      correctCount: null == correctCount
+          ? _value.correctCount
+          : correctCount // ignore: cast_nullable_to_non_nullable
+              as int,
+      totalCount: null == totalCount
+          ? _value.totalCount
+          : totalCount // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
+  }
+}
+
+/// @nodoc
+
+class _$QuestionSessionCompletedImpl implements QuestionSessionCompleted {
+  const _$QuestionSessionCompletedImpl(
+      {required this.correctCount, required this.totalCount});
+
+  @override
+  final int correctCount;
+  @override
+  final int totalCount;
+
+  @override
+  String toString() {
+    return 'QuestionSession.completed(correctCount: $correctCount, totalCount: $totalCount)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$QuestionSessionCompletedImpl &&
+            (identical(other.correctCount, correctCount) ||
+                other.correctCount == correctCount) &&
+            (identical(other.totalCount, totalCount) ||
+                other.totalCount == totalCount));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, correctCount, totalCount);
+
+  /// Create a copy of QuestionSession
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$QuestionSessionCompletedImplCopyWith<_$QuestionSessionCompletedImpl>
+      get copyWith => __$$QuestionSessionCompletedImplCopyWithImpl<
+          _$QuestionSessionCompletedImpl>(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function() idle,
+    required TResult Function() loading,
+    required TResult Function(Question question, String? draftAnswer) ready,
+    required TResult Function(Question question, String draftAnswer) submitting,
+    required TResult Function(
+            Question question, String submittedAnswer, AnswerFeedback feedback)
+        feedback,
+    required TResult Function(
+            String message, bool isNoTopics, int? retryAfterSeconds)
+        unavailable,
+    required TResult Function(String message) error,
+    required TResult Function(int correctCount, int totalCount) completed,
+  }) {
+    return completed(correctCount, totalCount);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function()? idle,
+    TResult? Function()? loading,
+    TResult? Function(Question question, String? draftAnswer)? ready,
+    TResult? Function(Question question, String draftAnswer)? submitting,
+    TResult? Function(
+            Question question, String submittedAnswer, AnswerFeedback feedback)?
+        feedback,
+    TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
+        unavailable,
+    TResult? Function(String message)? error,
+    TResult? Function(int correctCount, int totalCount)? completed,
+  }) {
+    return completed?.call(correctCount, totalCount);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function()? idle,
+    TResult Function()? loading,
+    TResult Function(Question question, String? draftAnswer)? ready,
+    TResult Function(Question question, String draftAnswer)? submitting,
+    TResult Function(
+            Question question, String submittedAnswer, AnswerFeedback feedback)?
+        feedback,
+    TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
+        unavailable,
+    TResult Function(String message)? error,
+    TResult Function(int correctCount, int totalCount)? completed,
+    required TResult orElse(),
+  }) {
+    if (completed != null) {
+      return completed(correctCount, totalCount);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(QuestionSessionIdle value) idle,
+    required TResult Function(QuestionSessionLoading value) loading,
+    required TResult Function(QuestionSessionReady value) ready,
+    required TResult Function(QuestionSessionSubmitting value) submitting,
+    required TResult Function(QuestionSessionFeedback value) feedback,
+    required TResult Function(QuestionSessionUnavailable value) unavailable,
+    required TResult Function(QuestionSessionError value) error,
+    required TResult Function(QuestionSessionCompleted value) completed,
+  }) {
+    return completed(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(QuestionSessionIdle value)? idle,
+    TResult? Function(QuestionSessionLoading value)? loading,
+    TResult? Function(QuestionSessionReady value)? ready,
+    TResult? Function(QuestionSessionSubmitting value)? submitting,
+    TResult? Function(QuestionSessionFeedback value)? feedback,
+    TResult? Function(QuestionSessionUnavailable value)? unavailable,
+    TResult? Function(QuestionSessionError value)? error,
+    TResult? Function(QuestionSessionCompleted value)? completed,
+  }) {
+    return completed?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(QuestionSessionIdle value)? idle,
+    TResult Function(QuestionSessionLoading value)? loading,
+    TResult Function(QuestionSessionReady value)? ready,
+    TResult Function(QuestionSessionSubmitting value)? submitting,
+    TResult Function(QuestionSessionFeedback value)? feedback,
+    TResult Function(QuestionSessionUnavailable value)? unavailable,
+    TResult Function(QuestionSessionError value)? error,
+    TResult Function(QuestionSessionCompleted value)? completed,
+    required TResult orElse(),
+  }) {
+    if (completed != null) {
+      return completed(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class QuestionSessionCompleted implements QuestionSession {
+  const factory QuestionSessionCompleted(
+      {required final int correctCount,
+      required final int totalCount}) = _$QuestionSessionCompletedImpl;
+
+  int get correctCount;
+  int get totalCount;
+
+  /// Create a copy of QuestionSession
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$QuestionSessionCompletedImplCopyWith<_$QuestionSessionCompletedImpl>
       get copyWith => throw _privateConstructorUsedError;
 }

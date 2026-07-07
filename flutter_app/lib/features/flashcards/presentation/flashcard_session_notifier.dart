@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/features/flashcards/data/demo_flashcards_repository.dart'
     show
@@ -12,6 +13,7 @@ import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 import 'package:social_study_app/features/gamification/data/gamification_repository.dart';
+import 'package:social_study_app/features/progress/services/recall_service.dart';
 
 part 'flashcard_session_notifier.g.dart';
 
@@ -38,8 +40,11 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
   List<String>? _selectedTopicIds;
   final List<FlashcardRating> _sessionRatings = [];
   int _currentIndex = 1;
+  int _sessionTargetLength = 25;
+  DateTime? _cardStartTime;
 
   int get currentIndex => _currentIndex;
+  int get sessionTargetLength => _sessionTargetLength;
   List<String>? get selectedTopicIds => _selectedTopicIds;
   List<FlashcardRating> get sessionRatings => List.unmodifiable(_sessionRatings);
 
@@ -54,8 +59,11 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
   /// No-op from any other state so a screen that calls [start] in
   /// initState() and later calls [next] from a "next card" button
   /// doesn't accidentally double-fetch.
-  Future<void> start() async {
+  Future<void> start({double? mastery}) async {
     if (state is! FlashcardSessionIdle) return;
+    
+    _sessionTargetLength = 20;
+
     _currentIndex = 1;
     _sessionRatings.clear();
     await _fetchNext();
@@ -68,7 +76,7 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
   /// away an in-flight rating.
   Future<void> next() async {
     if (state is! FlashcardSessionRated) return;
-    if (_currentIndex < 25) {
+    if (_currentIndex < _sessionTargetLength) {
       _currentIndex++;
       await _fetchNext();
     } else {
@@ -151,6 +159,14 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
         ),
       );
       _sessionRatings.add(rating);
+      if (_cardStartTime != null) {
+        final durationMs = DateTime.now().difference(_cardStartTime!).inMilliseconds;
+        RecallService.instance.recordCardReview(
+          topic: card.topic,
+          rating: rating,
+          durationMs: durationMs,
+        ).catchError((_) {});
+      }
       state = FlashcardSession.rated(card: card, response: response);
       _invalidateProfile();
     } on FlashcardNotFoundException catch (e) {
@@ -201,6 +217,7 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
         selectedTopicIds: _selectedTopicIds,
       );
       state = FlashcardSession.viewingFront(card: card);
+      _cardStartTime = DateTime.now();
     } on NoFlashcardTopicsException catch (e) {
       state = FlashcardSession.unavailable(
         message: e.message,

@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,7 +14,7 @@ import 'package:social_study_app/shared/models/question.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
-import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 import 'package:social_study_app/core/theme/theme_manager.dart';
 
 /// Question-answering interface (Sprint 4.7) and answer feedback
@@ -36,7 +37,8 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _notifier.start();
+        final progressVal = ref.read(studentProgressNotifierProvider(widget.workspaceId)).valueOrNull;
+        _notifier.start(mastery: progressVal?.overallMastery);
       }
     });
   }
@@ -47,7 +49,8 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
     if (widget.workspaceId != oldWidget.workspaceId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          _notifier.start();
+          final progressVal = ref.read(studentProgressNotifierProvider(widget.workspaceId)).valueOrNull;
+          _notifier.start(mastery: progressVal?.overallMastery);
         }
       });
     }
@@ -55,7 +58,8 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
 
   void _restart() {
     ref.invalidate(questionSessionNotifierProvider(widget.workspaceId));
-    _notifier.start();
+    final progressVal = ref.read(studentProgressNotifierProvider(widget.workspaceId)).valueOrNull;
+    _notifier.start(mastery: progressVal?.overallMastery);
   }
 
   @override
@@ -63,16 +67,53 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
     final session =
         ref.watch(questionSessionNotifierProvider(widget.workspaceId));
     final isAdmin = ref.watch(isActiveWorkspaceAdminProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return session.when(
-      idle: () => EmptyStateView(
-        icon: Icons.quiz_rounded,
-        title: 'Ready to study?',
-        subtitle: 'Tap below to start a new question session.',
-        action: FilledButton.icon(
-          onPressed: _restart,
-          icon: const Icon(Icons.play_arrow_rounded),
-          label: const Text('Start Study Session'),
+      idle: () => Scaffold(
+        backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        body: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(Spacing.xl),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(Spacing.lg),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.quiz_rounded, size: 72, color: Theme.of(context).colorScheme.primary),
+                ),
+                const SizedBox(height: Spacing.xl),
+                Text(
+                  'Ready to study?',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: Spacing.sm),
+                Text(
+                  'Your study session length is automatically customized based on your mastery.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: Spacing.xl),
+                FilledButton.icon(
+                  onPressed: _restart,
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: const Text('Start Study Session'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
       loading: () =>
@@ -104,6 +145,11 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
         feedback: feedback,
         onNext: _notifier.next,
         onEndSession: _notifier.endSession,
+      ),
+      completed: (correctCount, totalCount) => _StudyCompleteView(
+        correctCount: correctCount,
+        totalCount: totalCount,
+        onDone: _notifier.endSession,
       ),
       unavailable: (message, isNoTopics, retryAfterSeconds) => EmptyStateView(
         icon: isNoTopics
@@ -217,11 +263,37 @@ class _UnifiedQuestionView extends ConsumerStatefulWidget {
 
 class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
   bool _triggerConfetti = false;
+  Timer? _timer;
+  int _seconds = 0;
+
+  String get _timerText {
+    final minutes = (_seconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (_seconds % 60).toString().padLeft(2, '0');
+    return "$minutes:$seconds";
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _seconds++;
+        });
+      }
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     _updateMascotAndTriggers();
+    _startTimer();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -268,44 +340,6 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
     }
   }
 
-  void _showWorkspaceSwitcher(BuildContext context, WidgetRef ref) {
-    final authValue = ref.read(authNotifierProvider).valueOrNull;
-    final user = authValue?.maybeWhen(
-      authenticated: (u) => u,
-      orElse: () => null,
-    );
-    final memberships = user?.workspaceMemberships ?? [];
-    final activeId = widget.workspaceId;
-    
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (context) {
-        return StudentWorkspaceSwitcherSheet(
-          memberships: memberships,
-          selectedId: activeId,
-          onSelect: (id) {
-            ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(id);
-            Navigator.of(context).pop();
-          },
-          onCreateWorkspace: () {
-            Navigator.of(context).pop();
-            showStudentCreateWorkspaceDialog(context);
-          },
-          onJoinWorkspace: () {
-            Navigator.of(context).pop();
-            showStudentJoinWorkspaceDialog(context);
-          },
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -322,19 +356,6 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
     final subjectBgColor = _getSubjectBgColor(subject);
     final subjectIcon = _getIconForSubject(subject);
     
-    final authValue = ref.watch(authNotifierProvider).valueOrNull;
-    final user = authValue?.maybeWhen(
-      authenticated: (u) => u,
-      orElse: () => null,
-    );
-    final memberships = user?.workspaceMemberships ?? [];
-    final activeId = widget.workspaceId;
-    final activeWorkspace = memberships.where((m) => m.workspaceId == activeId).firstOrNull;
-    final workspaceName = activeWorkspace?.workspaceName ?? 'Switch';
-    
-    final userInitial = user?.displayName.isNotEmpty == true
-        ? user!.displayName[0].toUpperCase()
-        : 'S';
 
     final themeMode = ref.watch(appThemeModeProvider);
 
@@ -400,82 +421,147 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
                           ),
                         ),
                       ),
-                      const Spacer(),
-                      // Workspace Switcher Pill
-                      if (memberships.isNotEmpty) ...[
-                        Container(
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.03),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(16),
-                              onTap: () => _showWorkspaceSwitcher(context, ref),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.people_alt_rounded,
-                                      size: 16,
-                                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      workspaceName,
-                                      style: TextStyle(
-                                        color: isDark ? Colors.white : const Color(0xFF0F172A),
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    const Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      size: 16,
-                                      color: Color(0xFF64748B),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
+                      const SizedBox(width: 8),
+                      // Timer Pill
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
                         ),
-                        const SizedBox(width: 8),
-                      ],
-                      // Profile Avatar
-                      CircleAvatar(
-                        radius: 18,
-                        backgroundColor: isDark ? const Color(0xFF1E3A8A) : const Color(0xFFDBEAFE),
-                        child: Text(
-                          userInitial,
-                          style: TextStyle(
-                            color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF1E40AF),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.timer_outlined, size: 13, color: Color(0xFF6366F1)),
+                            const SizedBox(width: 4),
+                            Text(
+                              _timerText,
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                            ),
+                          ],
                         ),
                       ),
+                      const SizedBox(width: 6),
+                      // XP Pill
+                      Consumer(
+                        builder: (context, ref, _) {
+                          final notifier = ref.read(questionSessionNotifierProvider(widget.workspaceId).notifier);
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.star_rounded, size: 13, color: Color(0xFFFFC93C)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${notifier.questionsCorrect * 15} XP',
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 6),
+                      // Accuracy Pill
+                      Consumer(
+                        builder: (context, ref, _) {
+                          final notifier = ref.read(questionSessionNotifierProvider(widget.workspaceId).notifier);
+                          final acc = notifier.questionsAnswered > 0
+                              ? (notifier.questionsCorrect / notifier.questionsAnswered * 100).round()
+                              : 100;
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.gps_fixed_rounded, size: 13, color: Color(0xFF22C55E)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '$acc%',
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+
                     ],
                   ),
                 ),
                 
+                // Study Session Progress Bar
+                Consumer(
+                  builder: (context, ref, _) {
+                    final notifier = ref.read(questionSessionNotifierProvider(widget.workspaceId).notifier);
+                    final isFeedback = widget.feedback != null;
+                    final currentProgressIndex = (notifier.questionsAnswered + (isFeedback ? 0 : 1)).clamp(1, notifier.sessionTargetLength);
+                    final progressText = "Question $currentProgressIndex of ${notifier.sessionTargetLength}";
+                    final progressPercent = (currentProgressIndex - (isFeedback ? 0 : 1)) / notifier.sessionTargetLength;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                progressText,
+                                style: TextStyle(
+                                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                "${(progressPercent * 100).round()}% Completed",
+                                style: TextStyle(
+                                  color: isDark ? const Color(0xFF64748B) : const Color(0xFF64748B),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: progressPercent,
+                              minHeight: 6,
+                              backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                
                 // Question / Input Body
                 Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    children: [
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: ListView(
+                      key: ValueKey('qst:${question.id}'),
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                      children: [
                       if (themeMode == AppThemeMode.mature)
                         // ── Teen & College theme: clean card, no topic/level pills ──
                         Container(
@@ -644,6 +730,7 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
                     ],
                   ),
                 ),
+              ),
                 
                 // Bottom Submit / Next Button Bar
                 _UnifiedSubmitBar(
@@ -1874,6 +1961,153 @@ class _UnifiedSubmitBar extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StudyCompleteView extends StatelessWidget {
+  const _StudyCompleteView({
+    required this.correctCount,
+    required this.totalCount,
+    required this.onDone,
+  });
+
+  final int correctCount;
+  final int totalCount;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final percent = totalCount > 0 ? (correctCount / totalCount * 100).round() : 0;
+    
+    return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(Spacing.xl),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.emoji_events_rounded,
+                  size: 54,
+                  color: Color(0xFF10B981),
+                ),
+              ),
+              const SizedBox(height: Spacing.xl),
+              Text(
+                'Session Completed!',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: Spacing.md),
+              Text(
+                'Great job! You\'ve completed your study session requirements.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                ),
+              ),
+              const SizedBox(height: Spacing.xxl),
+              
+              // Score breakdown card
+              Container(
+                padding: const EdgeInsets.all(Spacing.xl),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.03),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Questions Answered',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          '$totalCount',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Correct Answers',
+                          style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF10B981)),
+                        ),
+                        Text(
+                          '$correctCount',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Color(0xFF10B981),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Accuracy',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          '$percent%',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: percent >= 70 ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: Spacing.xxl),
+              FilledButton.icon(
+                onPressed: onDone,
+                icon: const Icon(Icons.done_all_rounded),
+                label: const Text('Finish Study'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(200, 54),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

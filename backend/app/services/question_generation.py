@@ -433,3 +433,78 @@ _PROMPT_REGISTRY: dict[QuestionType, _PromptSpec] = {
         parser=_parse_mathematical,
     ),
 }
+
+
+async def generate_batch_questions(
+    *,
+    topic: str,
+    difficulty: DifficultyLevel,
+    count: int = 5,
+    grounding_chunks: list[RetrievedChunk],
+    seen_question_bodies: list[str] | None = None,
+) -> list[GeneratedQuestion]:
+    """Generate a batch of diverse questions using question_batch_v1 prompt."""
+    if not grounding_chunks:
+        raise InsufficientSource(
+            "No grounding chunks supplied for batch generation; refusing "
+            "to call GPT-4o without source material."
+        )
+
+    template = load_prompt("question_batch_v1")
+    system_prompt, user_template = split_system_user(template)
+
+    source_content = _format_source(grounding_chunks)
+    seen_section = _format_seen(seen_question_bodies or [])
+    user_prompt = render(
+        user_template,
+        topic=topic,
+        difficulty=difficulty.value,
+        source_content=source_content,
+        seen_questions=seen_section,
+        count=str(count),
+    )
+
+    response = await azure_openai.chat_json(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        max_output_tokens=3500,
+    )
+
+    if response.get("insufficient_source") is True:
+        raise InsufficientSource(
+            f"Model returned insufficient_source for batch topic={topic!r}"
+        )
+
+    raw_questions = response.get("questions")
+    if not isinstance(raw_questions, list):
+        raise QuestionShapeError("Expected 'questions' field to be a list in response.")
+
+    results: list[GeneratedQuestion] = []
+    for raw in raw_questions:
+        try:
+            q_type_str = raw.get("question_type")
+            q_type = QuestionType(q_type_str)
+            
+            spec = _PROMPT_REGISTRY[q_type]
+            answer, explanation, options, grading_hints = spec.parser(raw)
+            
+            body = raw.get("body")
+            if not isinstance(body, str) or not body.strip():
+                continue
+
+            results.append(
+                GeneratedQuestion(
+                    body=body.strip(),
+                    answer=answer,
+                    explanation=explanation,
+                    question_type=q_type,
+                    difficulty=difficulty,
+                    prompt_version="question_batch_v1",
+                    options=options,
+                    grading_hints=grading_hints,
+                )
+            )
+        except Exception as e:
+            logger.warning("Failed to parse question in batch: %s", e)
+
+    return results

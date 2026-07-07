@@ -16,6 +16,7 @@ import 'package:social_study_app/shared/models/question.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
+import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 
 /// Revision mode (Sprint 4.10).
 ///
@@ -51,10 +52,11 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final count = RevisionScreen.debugItemCount;
-      count == null ? _notifier.start() : _notifier.start(itemCount: count);
-    });
+    if (RevisionScreen.debugItemCount != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _notifier.start(itemCount: RevisionScreen.debugItemCount);
+      });
+    }
   }
 
   /// Reset the family provider to a fresh idle session, then fetch —
@@ -64,7 +66,10 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
     final notifier = ref
         .read(revisionSessionNotifierProvider(widget.workspaceId).notifier);
     final count = RevisionScreen.debugItemCount;
-    count == null ? notifier.start() : notifier.start(itemCount: count);
+    final progressVal = ref.read(studentProgressNotifierProvider(widget.workspaceId)).valueOrNull;
+    count == null
+        ? notifier.start(mastery: progressVal?.overallMastery)
+        : notifier.start(itemCount: count, mastery: progressVal?.overallMastery);
   }
 
   @override
@@ -86,7 +91,58 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
         bottom: _RevisionProgressBar(progress: _progressFor(session)),
       ),
       body: session.when(
-        idle: () => const LoadingIndicator(),
+        idle: () {
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          return Scaffold(
+            backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+            body: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(Spacing.xl),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(Spacing.lg),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.psychology_rounded, size: 72, color: Theme.of(context).colorScheme.primary),
+                    ),
+                    const SizedBox(height: Spacing.xl),
+                    Text(
+                      'Daily Revision',
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: Spacing.sm),
+                    Text(
+                      'Practice a custom mix of questions and flashcards. The session length is automatically customized based on your mastery.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: Spacing.xl),
+                    FilledButton.icon(
+                      onPressed: () {
+                        final progressVal = ref.read(studentProgressNotifierProvider(widget.workspaceId)).valueOrNull;
+                        _notifier.start(mastery: progressVal?.overallMastery);
+                      },
+                      icon: const Icon(Icons.play_arrow_rounded),
+                      label: const Text('Start Revision Session'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
         loading: (progress) => LoadingIndicator(
           message: 'Loading item ${progress.position} of ${progress.total}…',
         ),

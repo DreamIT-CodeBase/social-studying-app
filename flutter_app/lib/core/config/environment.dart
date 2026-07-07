@@ -1,10 +1,10 @@
 abstract final class Environment {
   // Default points at the host machine from the Android emulator (10.0.2.2).
   // Override for production deploys:
-  //   --dart-define=API_BASE_URL=https://ca-api-dev.salmonmushroom-d5e027eb.centralus.azurecontainerapps.io
+  //   --dart-define=API_BASE_URL=https://ca-api-dev.ambitiouswave-1e406ff3.centralus.azurecontainerapps.io
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8000',
+    defaultValue: 'https://ca-api-dev.ambitiouswave-1e406ff3.centralus.azurecontainerapps.io',
   );
 
   // When true, all repository providers route through Dio → real backend.

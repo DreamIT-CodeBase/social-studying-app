@@ -23,8 +23,12 @@ import 'package:social_study_app/features/home/providers/workspace_providers.dar
 import 'package:social_study_app/features/admin/workspaces/data/workspaces_repository.dart';
 import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/models/workspace.dart';
+import 'package:social_study_app/shared/services/session_persistence_service.dart';
+import 'package:social_study_app/features/screen_time/services/telemetry_service.dart';
 
-final studentHomeTabProvider = StateProvider<int>((ref) => 0);
+final studentHomeTabProvider = StateProvider<int>((ref) {
+  return SessionPersistenceService.instance.getTabSync() ?? 0;
+});
 
 
 
@@ -38,6 +42,7 @@ class StudentHomeScreen extends ConsumerStatefulWidget {
 }
 
 class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
+  bool _restoring = true;
 
   static const _tabs = [
     (icon: Icons.home_rounded, label: 'Home'),
@@ -47,7 +52,51 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        TelemetryService.instance.initialize(ref);
+        _restoreSession();
+      }
+    });
+  }
+
+  Future<void> _restoreSession() async {
+    try {
+      final savedWorkspaceId = await SessionPersistenceService.instance.getWorkspace();
+      final savedTab = await SessionPersistenceService.instance.getTab();
+      
+      if (savedWorkspaceId != null) {
+        ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(savedWorkspaceId);
+      }
+      if (savedTab != null) {
+        ref.read(studentHomeTabProvider.notifier).state = savedTab;
+      }
+    } catch (_) {
+      // Swallowed silently
+    } finally {
+      if (mounted) {
+        setState(() {
+          _restoring = false;
+        });
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_restoring) {
+      return const _StudentHomeScreenSkeleton();
+    }
+
+    ref.listen<int>(studentHomeTabProvider, (previous, next) {
+      final prevTabName = previous != null ? _tabs[previous].label : 'Unknown';
+      final nextTabName = _tabs[next].label;
+      TelemetryService.instance.logTabSwitch(prevTabName, nextTabName);
+      SessionPersistenceService.instance.saveTab(next).catchError((_) {});
+    });
+
     ref.listen<String?>(pendingInviteCodeProvider, (previous, next) {
       if (next != null && next.isNotEmpty) {
         _showRedeemDialog(context, next);
@@ -87,18 +136,6 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
               actions: [
                 if (selectedIndex == 2 && workspaceId != null)
                   FlashcardFilterButton(workspaceId: workspaceId),
-                if (memberships.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(right: Spacing.sm),
-                    child: _StudentWorkspaceSwitcherButton(
-                      memberships: memberships,
-                      selectedId: workspaceId,
-                      onSelect: (id) =>
-                          ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(id),
-                      onCreateWorkspace: () => _showCreateWorkspaceDialog(context),
-                      onJoinWorkspace: () => _showJoinWorkspaceDialog(context),
-                    ),
-                  ),
                 Padding(
                   padding: const EdgeInsets.only(right: Spacing.lg),
                   child: GestureDetector(
@@ -3133,91 +3170,6 @@ class _RedeemInviteCardState extends ConsumerState<_RedeemInviteCard>
   }
 }
 
-class _StudentWorkspaceSwitcherButton extends ConsumerWidget {
-  const _StudentWorkspaceSwitcherButton({
-    super.key,
-    required this.memberships,
-    required this.selectedId,
-    required this.onSelect,
-    required this.onCreateWorkspace,
-    required this.onJoinWorkspace,
-  });
-
-  final List<WorkspaceMembership> memberships;
-  final String? selectedId;
-  final ValueChanged<String> onSelect;
-  final VoidCallback onCreateWorkspace;
-  final VoidCallback onJoinWorkspace;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final selected = memberships.where((m) => m.workspaceId == selectedId).firstOrNull;
-    final workspaces = ref.watch(studentWorkspacesProvider).valueOrNull ?? [];
-    Workspace? workspace;
-    for (final w in workspaces) {
-      if (w.id == selectedId) {
-        workspace = w;
-        break;
-      }
-    }
-    final displayName = workspace?.name ?? selected?.workspaceName ?? 'Switch';
-    return TextButton.icon(
-      style: TextButton.styleFrom(
-        foregroundColor: context.colorScheme.onSurface,
-        padding: const EdgeInsets.symmetric(horizontal: Spacing.xs),
-        visualDensity: VisualDensity.compact,
-      ),
-      onPressed: () => _showSwitcher(context),
-      icon: const Icon(Icons.workspaces_rounded, size: 16),
-      label: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 100),
-            child: Text(
-              displayName,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-            ),
-          ),
-          const SizedBox(width: 1),
-          const Icon(Icons.arrow_drop_down_rounded, size: 16),
-        ],
-      ),
-    );
-  }
-
-  void _showSwitcher(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (_) => StudentWorkspaceSwitcherSheet(
-        memberships: memberships,
-        selectedId: selectedId,
-        onSelect: (id) {
-          Navigator.of(context).pop();
-          onSelect(id);
-        },
-        onCreateWorkspace: () {
-          Navigator.of(context).pop();
-          onCreateWorkspace();
-        },
-        onJoinWorkspace: () {
-          Navigator.of(context).pop();
-          onJoinWorkspace();
-        },
-      ),
-    );
-  }
-}
-
 // Helper functions to show private dialogs from other files
 void showStudentCreateWorkspaceDialog(BuildContext context) {
   showDialog<void>(
@@ -4462,6 +4414,138 @@ class _SubTabChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
       ),
       side: selected ? BorderSide.none : BorderSide(color: context.colorScheme.outlineVariant),
+    );
+  }
+}
+
+class _StudentHomeScreenSkeleton extends StatefulWidget {
+  const _StudentHomeScreenSkeleton();
+  @override
+  State<_StudentHomeScreenSkeleton> createState() => _StudentHomeScreenSkeletonState();
+}
+
+class _StudentHomeScreenSkeletonState extends State<_StudentHomeScreenSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseColor = isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
+    return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+      body: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          return Opacity(
+            opacity: 0.35 + (_controller.value * 0.45),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 20),
+                  // Appbar skeleton
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        width: 140,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: baseColor,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: baseColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+                  // Large card skeleton
+                  Container(
+                    width: double.infinity,
+                    height: 180,
+                    decoration: BoxDecoration(
+                      color: baseColor,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // Subtitle skeleton
+                  Container(
+                    width: 100,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: baseColor,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Grid card skeleton
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          height: 100,
+                          decoration: BoxDecoration(
+                            color: baseColor,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Container(
+                          height: 100,
+                          decoration: BoxDecoration(
+                            color: baseColor,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  // List item skeletons
+                  for (int i = 0; i < 3; i++) ...[
+                    Container(
+                      width: double.infinity,
+                      height: 72,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: baseColor,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
