@@ -20,13 +20,11 @@ XP model
 --------
 Question XP::
 
-    attempt_xp = 10                              # every submission
-    correct_bonus = {beg: 5, int: 10, adv: 20}   # on correct only
-    streak_bonus = min(streak_days, 10)          # capped, both correct+miss
+    correct_xp = 7          # on correct answer
+    incorrect_xp = 1        # on wrong attempt (no penalty)
+    streak_bonus = +2 XP    # awarded when streak extends to a new day
 
-So a correct intermediate answer on day-3 of a streak earns 23 XP.
-The streak cap stops late-streak bonuses from dwarfing the difficulty
-bonus and keeps levelling at the higher end driven by harder content.
+So a correct answer on a new streak day earns 9 XP.
 
 Flashcard XP::
 
@@ -428,8 +426,8 @@ def compute_question_xp(
     streak_days: int,
     revision: bool = False,
 ) -> int:
-    """Award 1 XP for completing any question under the new XP system."""
-    return 1
+    """Award 7 XP for a correct answer, 1 XP for an incorrect attempt."""
+    return 7 if is_correct else 1
 
 
 def level_for_xp(xp_total: int) -> int:
