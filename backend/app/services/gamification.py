@@ -20,11 +20,12 @@ XP model
 --------
 Question XP::
 
-    correct_xp = 7          # on correct answer
-    incorrect_xp = 1        # on wrong attempt (no penalty)
-    streak_bonus = +2 XP    # awarded when streak extends to a new day
+    correct_xp = 7           # on correct answer
+    incorrect_xp = -1        # on wrong attempt (penalty)
+    streak_bonus = +2 XP     # awarded when streak extends to a new day
 
 So a correct answer on a new streak day earns 9 XP.
+A wrong answer deducts 1 XP (floor at 0 so total never goes negative).
 
 Flashcard XP::
 
@@ -426,8 +427,8 @@ def compute_question_xp(
     streak_days: int,
     revision: bool = False,
 ) -> int:
-    """Award 7 XP for a correct answer, 1 XP for an incorrect attempt."""
-    return 7 if is_correct else 1
+    """Award 7 XP for a correct answer, deduct 1 XP for an incorrect attempt."""
+    return 7 if is_correct else -1
 
 
 def level_for_xp(xp_total: int) -> int:
