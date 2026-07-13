@@ -1,12 +1,6 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import 'package:social_study_app/core/constants/spacing.dart';
-import 'package:social_study_app/core/extensions/context_extensions.dart';
-import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
-import 'package:social_study_app/shared/widgets/app_logo.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 
@@ -53,204 +47,219 @@ class _LoginBody extends StatelessWidget {
   final VoidCallback onMicrosoftSignIn;
   final VoidCallback onGoogleSignIn;
 
-  bool _isTestEnvironment() {
-    try {
-      return Platform.environment.containsKey('FLUTTER_TEST');
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Widget _animateIfReal(Widget child, {required Widget Function(Widget) animation}) {
-    if (_isTestEnvironment()) {
-      return child;
-    }
-    return animation(child);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    // Ambient background gradient
-    final bgGradient = isDark
-        ? const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF0F172A),
-              Color(0xFF1E1E38),
-              Color(0xFF0F172A),
-            ],
-          )
-        : const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFFF8FAFC),
-              Color(0xFFEEF2F6),
-              Color(0xFFEFF6FF),
-            ],
-          );
-
-    return Container(
-      decoration: BoxDecoration(gradient: bgGradient),
-      child: Stack(
+    return Scaffold(
+      body: Stack(
         children: [
-          // Background decorative glow blur 1
-          Positioned(
-            top: -100,
-            right: -50,
-            child: _animateIfReal(
-              Container(
-                width: 300,
-                height: 300,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isDark
-                      ? const Color(0xFF3B82F6).withOpacity(0.15)
-                      : const Color(0xFFDBEAFE),
-                ),
-              ),
-              animation: (w) => w.animate().fade(duration: 1200.ms).scale(
-                    begin: const Offset(0.8, 0.8),
-                    end: const Offset(1.2, 1.2),
-                    duration: 8.seconds,
-                    curve: Curves.easeInOut,
-                  ),
+          // Background Image
+          Positioned.fill(
+            child: Image.asset(
+              'assets/icons/loginpagebgimage.jpeg',
+              fit: BoxFit.cover,
             ),
           ),
-          // Background decorative glow blur 2
-          Positioned(
-            bottom: -80,
-            left: -80,
-            child: _animateIfReal(
-              Container(
-                width: 250,
-                height: 250,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isDark
-                      ? const Color(0xFF8B5CF6).withOpacity(0.12)
-                      : const Color(0xFFF3E8FF),
-                ),
-              ),
-              animation: (w) => w.animate().fade(duration: 1200.ms).scale(
-                    begin: const Offset(1.2, 1.2),
-                    end: const Offset(0.9, 0.9),
-                    duration: 6.seconds,
-                    curve: Curves.easeInOut,
-                  ),
+          // Subtle Dark Layer for Contrast
+          Positioned.fill(
+            child: Container(
+              color: Colors.black.withValues(alpha: 0.12),
             ),
           ),
+          // Scrollable Layout
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: Spacing.xl),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const SizedBox(height: Spacing.lg),
-                    // Floating card design
+                    // Spacing to push main box downward
+                    const SizedBox(height: 120),
+                    // Floating White Overlay Card
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: Spacing.lg,
-                        vertical: Spacing.xl * 1.5,
-                      ),
+                      padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0xFF1E293B).withOpacity(0.8)
-                            : Colors.white.withOpacity(0.9),
-                        borderRadius: BorderRadius.circular(28),
+                        color: Colors.white.withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(38),
                         border: Border.all(
-                          color: isDark
-                              ? Colors.white.withOpacity(0.08)
-                              : const Color(0xFFE2E8F0),
+                          color: Colors.white.withValues(alpha: 0.6),
                           width: 1.5,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(isDark ? 0.25 : 0.06),
-                            blurRadius: 24,
-                            offset: const Offset(0, 12),
+                            color: Colors.black.withValues(alpha: 0.15),
+                            blurRadius: 25,
+                            offset: const Offset(0, 10),
                           ),
                         ],
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Pulse Animated App Logo
-                          _animateIfReal(
-                            AppLogo(
-                              shadows: [
+                          // App Logo square card
+                          Container(
+                            width: 80,
+                            height: 80,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0F172A),
+                              borderRadius: BorderRadius.circular(24),
+                              boxShadow: [
                                 BoxShadow(
-                                  color: AppColors.primary.withOpacity(0.3),
-                                  blurRadius: 24,
-                                  offset: const Offset(0, 8),
+                                  color: Colors.black.withValues(alpha: 0.2),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
                                 ),
                               ],
                             ),
-                            animation: (w) => w.animate(
-                              onPlay: (controller) => controller.repeat(reverse: true),
-                            ).scale(
-                              begin: const Offset(1.0, 1.0),
-                              end: const Offset(1.03, 1.03),
-                              duration: 2.seconds,
-                              curve: Curves.easeInOut,
-                            ),
-                          ),
-                          const SizedBox(height: Spacing.lg),
-                          _animateIfReal(
-                            Text(
-                              'Social Study',
-                              style: context.textTheme.displaySmall?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                color: context.colorScheme.onSurface,
-                                letterSpacing: -0.8,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(22),
+                              child: Image.asset(
+                                'assets/branding/app_logo.jpg',
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      ShaderMask(
+                                        shaderCallback: (bounds) => const LinearGradient(
+                                          colors: [Color(0xFF00F2FE), Color(0xFF4FACFE), Color(0xFFF355DA)],
+                                        ).createShader(bounds),
+                                        child: const Text(
+                                          'S',
+                                          style: TextStyle(
+                                            fontSize: 38,
+                                            fontWeight: FontWeight.w900,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                      const Text(
+                                        'Studying AI',
+                                        style: TextStyle(
+                                          fontSize: 7,
+                                          color: Colors.white60,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
                               ),
                             ),
-                            animation: (w) => w.animate().fade(delay: 100.ms).slideY(begin: 0.1),
                           ),
-                          const SizedBox(height: Spacing.sm),
-                          _animateIfReal(
-                            Text(
-                              'AI-powered adaptive learning\nfor families and schools',
-                              textAlign: TextAlign.center,
-                              style: context.textTheme.bodyLarge?.copyWith(
-                                color: context.colorScheme.onSurfaceVariant,
-                                height: 1.45,
+                          const SizedBox(height: 18),
+                          // Title text
+                          const Text(
+                            'Welcome to',
+                            style: TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF0F172A),
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          ShaderMask(
+                            shaderCallback: (bounds) => const LinearGradient(
+                              colors: [Color(0xFF7C5CFC), Color(0xFF2563EB)],
+                            ).createShader(bounds),
+                            child: const Text(
+                              'Social Studying AI',
+                              style: TextStyle(
+                                fontSize: 32,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: -0.5,
                               ),
                             ),
-                            animation: (w) => w.animate().fade(delay: 200.ms).slideY(begin: 0.1),
                           ),
-                          const SizedBox(height: Spacing.xl),
-                          
-                          // Sign In Portals
-                          _animateIfReal(
-                            _MicrosoftSignInButton(onPressed: onMicrosoftSignIn),
-                            animation: (w) => w.animate().fade(delay: 350.ms).slideY(begin: 0.15),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'AI-powered adaptive learning\nfor families and schools',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF475569),
+                              fontWeight: FontWeight.w500,
+                              height: 1.4,
+                            ),
                           ),
-                          const SizedBox(height: Spacing.md),
-                          _animateIfReal(
-                            _GoogleSignInButton(onPressed: onGoogleSignIn),
-                            animation: (w) => w.animate().fade(delay: 450.ms).slideY(begin: 0.15),
+                          const SizedBox(height: 24),
+                          // Features Row
+                          const Row(
+                            children: [
+                              _FeatureItem(
+                                icon: Icons.track_changes_rounded,
+                                iconColor: Color(0xFF7C5CFC),
+                                title: 'Smart Learning',
+                                desc: 'Adaptive quizzes\njust for you',
+                              ),
+                              _FeatureDivider(),
+                              _FeatureItem(
+                                icon: Icons.bar_chart_rounded,
+                                iconColor: Color(0xFF3B82F6),
+                                title: 'Track Progress',
+                                desc: 'See your growth\nand insights',
+                              ),
+                              _FeatureDivider(),
+                              _FeatureItem(
+                                icon: Icons.emoji_events_rounded,
+                                iconColor: Color(0xFF10B981),
+                                title: 'Earn & Achieve',
+                                desc: 'Earn XP and\nunlock new levels',
+                              ),
+                            ],
                           ),
+                          const SizedBox(height: 24),
+                          // Microsoft Button
+                          _MicrosoftSignInButton(onPressed: onMicrosoftSignIn),
+                          const SizedBox(height: 12),
+                          // Google Button
+                          _GoogleSignInButton(onPressed: onGoogleSignIn),
+
                         ],
                       ),
                     ),
-                    const SizedBox(height: Spacing.xl * 1.5),
-                    _animateIfReal(
-                      Text(
-                        'Social Study App v0.1.0-demo',
-                        style: context.textTheme.bodySmall?.copyWith(
-                          color: context.colorScheme.onSurfaceVariant.withOpacity(0.7),
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: 0.5,
-                        ),
+                    const SizedBox(height: 24),
+                    // Terms footer
+                    const Text(
+                      'By continuing, you agree to our',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w500,
                       ),
-                      animation: (w) => w.animate().fade(delay: 600.ms),
                     ),
-                    const SizedBox(height: Spacing.lg),
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Terms of Service',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                        Text(
+                          ' and ',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Text(
+                          'Privacy Policy',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -262,6 +271,79 @@ class _LoginBody extends StatelessWidget {
   }
 }
 
+class _FeatureItem extends StatelessWidget {
+  const _FeatureItem({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.desc,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String desc;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              color: iconColor,
+              size: 16,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            desc,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 8.5,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF64748B),
+              height: 1.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeatureDivider extends StatelessWidget {
+  const _FeatureDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 44,
+      color: const Color(0xFFE2E8F0),
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+    );
+  }
+}
+
+
+
 class _MicrosoftSignInButton extends StatelessWidget {
   const _MicrosoftSignInButton({required this.onPressed});
 
@@ -269,31 +351,68 @@ class _MicrosoftSignInButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return Container(
       width: double.infinity,
-      height: 52,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.microsoftBlue,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.2,
-          ),
+      height: 56,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF7C5CFC), Color(0xFF2563EB)],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
         ),
-        onPressed: onPressed,
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _MicrosoftLogoIcon(),
-            SizedBox(width: Spacing.md),
-            Text('Sign in with Microsoft'),
-          ],
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF7C5CFC).withValues(alpha: 0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const _MicrosoftLogoIcon(),
+                ),
+                const Spacer(),
+                const Text(
+                  'Sign in with Microsoft',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.1,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.arrow_forward_rounded,
+                    color: Color(0xFF2563EB),
+                    size: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -332,36 +451,65 @@ class _GoogleSignInButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return SizedBox(
+    return Container(
       width: double.infinity,
-      height: 52,
-      child: OutlinedButton(
-        style: OutlinedButton.styleFrom(
-          backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-          foregroundColor: isDark ? Colors.white : const Color(0xFF1F2937),
-          elevation: 0,
-          side: BorderSide(
-            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-            width: 1.5,
+      height: 56,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const _GoogleLogoIcon(),
+                ),
+                const Spacer(),
+                const Text(
+                  'Sign in with Google',
+                  style: TextStyle(
+                    color: Color(0xFF1E293B),
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.1,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF7C5CFC).withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.arrow_forward_rounded,
+                    color: Color(0xFF7C5CFC),
+                    size: 16,
+                  ),
+                ),
+              ],
+            ),
           ),
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.2,
-          ),
-        ),
-        onPressed: onPressed,
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _GoogleLogoIcon(),
-            SizedBox(width: Spacing.md),
-            Text('Sign in with Google'),
-          ],
         ),
       ),
     );

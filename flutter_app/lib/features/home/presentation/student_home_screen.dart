@@ -121,7 +121,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
     );
 
     final selectedIndex = ref.watch(studentHomeTabProvider);
-    final showCustomAppBar = selectedIndex == 0 || selectedIndex == 1;
+    final showCustomAppBar = selectedIndex == 0 || selectedIndex == 1 || selectedIndex == 3;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(

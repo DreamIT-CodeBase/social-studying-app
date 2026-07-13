@@ -10,6 +10,8 @@ import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/flashcards/domain/flashcard_session.dart';
 import 'package:social_study_app/features/flashcards/presentation/flashcard_session_notifier.dart';
 import 'package:social_study_app/features/gamification/presentation/widgets/celebration_overlay.dart';
+import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
+import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/home/providers/workspace_providers.dart';
 import 'package:social_study_app/shared/models/flashcard.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
@@ -275,6 +277,29 @@ enum _AnswerResult { correct, incorrect }
 // _CardView — stateful, owns MCQ local state
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─── Design tokens ───────────────────────────────────────────────────────────
+const _kBg          = Color(0xFF0D0D1F);
+const _kCardBg      = Color(0xFF13132A);
+const _kPurple      = Color(0xFF7C5CFC);
+const _kPurpleLight = Color(0xFFA78BFA);
+const _kGreen       = Color(0xFF22C55E);
+const _kGreenDark   = Color(0xFF16A34A);
+const _kRed         = Color(0xFFEF4444);
+const _kRedDark     = Color(0xFFDC2626);
+const _kStarGold    = Color(0xFFFBBF24);
+const _kSurface2    = Color(0xFF1A1A3A);
+const _kBorder      = Color(0xFF2A2A50);
+const _kTextMuted   = Color(0xFF8888AA);
+
+/// Maps a numeric [level] to a tier label shown in the stats strip.
+String _levelTitle(int level) {
+  if (level <= 3) return 'Novice';
+  if (level <= 6) return 'Apprentice';
+  if (level <= 9) return 'Scholar';
+  if (level <= 13) return 'Expert';
+  return 'Master';
+}
+
 class _CardView extends ConsumerStatefulWidget {
   const _CardView({
     super.key,
@@ -321,190 +346,247 @@ class _CardViewState extends ConsumerState<_CardView> {
     }
   }
 
-  double _calculateAccuracy(List<FlashcardRating> ratings, FlashcardRating currentRating) {
+  double _calculateAccuracy(
+      List<FlashcardRating> ratings, FlashcardRating currentRating) {
     final allRatings = [...ratings, currentRating];
-    final correctCount = allRatings.where((r) => r == FlashcardRating.easy).length;
+    final correctCount =
+        allRatings.where((r) => r == FlashcardRating.easy).length;
     return (correctCount / allRatings.length) * 100.0;
   }
 
   void _onCardTap() {
     if (widget.phase != _Phase.front) return;
     SoundService.instance.playCardFlip();
-    ref.read(flashcardSessionNotifierProvider(widget.workspaceId).notifier).flip();
+    ref
+        .read(flashcardSessionNotifierProvider(widget.workspaceId).notifier)
+        .flip();
   }
 
   @override
   Widget build(BuildContext context) {
-    final notifier = ref.read(
-      flashcardSessionNotifierProvider(widget.workspaceId).notifier,
-    );
+    final notifier =
+        ref.read(flashcardSessionNotifierProvider(widget.workspaceId).notifier);
     final targetLength = notifier.sessionTargetLength;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final baseBorder = isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0);
-    
-    Color borderColor = baseBorder;
-    double borderWidth = 1.0;
-    
-    if (widget.phase == _Phase.revealed && _dragOffset != 0) {
+    final _kBg = isDark ? const Color(0xFF0D0D1F) : const Color(0xFFFAF4E8);
+    final _kCardBg = isDark ? const Color(0xFF13132A) : Colors.white;
+    final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF4EDE0);
+    final _kBorder = isDark ? const Color(0xFF2A2A50) : const Color(0xFFEFE6D4);
+    final _kTextMuted = isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C);
+    final _kPrimaryText = isDark ? Colors.white : const Color(0xFF1A1A2E);
+
+    // Gamification stats for stats strip
+    final authState = ref.watch(authNotifierProvider).valueOrNull;
+    final authUser = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final gamProfile = authUser == null
+        ? null
+        : ref
+            .watch(gamificationProfileProvider(
+                (workspaceId: widget.workspaceId, userId: authUser.id)))
+            .valueOrNull;
+
+    final streakDays   = gamProfile?.streakDays ?? 0;
+    final xpToday      = gamProfile?.xpThisWeek ?? 0;
+    final level        = gamProfile?.level ?? 1;
+    final levelLabel   = _levelTitle(level);
+
+    // Swipe border lerp colour
+    Color swipeColor = _kBorder;
+    if (_dragOffset.abs() > 10) {
       final progress = (_dragOffset.abs() / 150).clamp(0.0, 1.0);
-      final activeColor = _dragOffset > 0 ? const Color(0xFF22C55E) : const Color(0xFFEF4444);
-      borderColor = Color.lerp(baseBorder, activeColor, progress)!;
-      borderWidth = 1.0 + (progress * 2.0);
+      final target = _dragOffset > 0 ? _kRed : _kGreen;
+      swipeColor = Color.lerp(_kBorder, target, progress)!;
     }
 
-    return Column(
-      children: [
-        // ── Session progress bar ────────────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: Spacing.lg,
-            vertical: Spacing.sm,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Session Progress',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: context.colorScheme.onSurfaceVariant,
+    return Scaffold(
+      backgroundColor: _kBg,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // Notch/Status Bar Safe Spacing
+            const SizedBox(height: 6),
+            // ── Session progress (compact) ────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Session Progress',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: _kTextMuted,
+                        letterSpacing: 0.2,
+                      ),
                     ),
-                  ),
-                  Text(
-                    '${widget.currentIndex} of $targetLength',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: context.colorScheme.primary,
+                    Text(
+                      '${widget.currentIndex} of $targetLength',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: _kPurpleLight,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: Spacing.xs),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: widget.currentIndex / targetLength,
-                  minHeight: 6,
-                  backgroundColor:
-                      context.colorScheme.primaryContainer.withAlpha(50),
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    context.colorScheme.primary,
+                  ],
+                ),
+                const SizedBox(height: 5),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: (widget.currentIndex / targetLength).clamp(0.0, 1.0),
+                    minHeight: 4,
+                    backgroundColor: _kBorder,
+                    valueColor: const AlwaysStoppedAnimation<Color>(_kPurple),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        // ── Flip card ───────────────────────────────────────────────────
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.all(Spacing.lg),
-            child: GestureDetector(
-              onTap: widget.phase == _Phase.front ? _onCardTap : null,
-              onHorizontalDragUpdate: (details) {
-                setState(() {
-                  _dragOffset += details.delta.dx;
-                });
-              },
-              onHorizontalDragEnd: (details) async {
-                if (_dragOffset.abs() > 120) {
-                  final isRight = _dragOffset > 0;
-                  final rating = isRight ? FlashcardRating.hard : FlashcardRating.easy;
-                  
+
+          // ── Flip card ─────────────────────────────────────────────────
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: GestureDetector(
+                onTap: widget.phase == _Phase.front ? _onCardTap : null,
+                onHorizontalDragUpdate: (details) {
+                  if (widget.phase != _Phase.revealed) return;
                   setState(() {
-                    _dragOffset = isRight ? 600 : -600;
+                    _dragOffset += details.delta.dx;
                   });
-                  
-                  final responseTimeMs = _stopwatch.elapsedMilliseconds;
-                  _stopwatch.stop();
-                  
-                  final accuracy = _calculateAccuracy(notifier.sessionRatings, rating);
-                  
-                  // Submit rating
-                  notifier.rate(
-                    rating,
-                    isCorrect: !isRight,
-                    responseTimeMs: responseTimeMs,
-                    sessionProgress: widget.currentIndex,
-                    accuracyPercentage: accuracy,
-                  );
-                } else {
-                  setState(() {
-                    _dragOffset = 0.0;
-                  });
-                }
-              },
-              child: Transform(
-                alignment: Alignment.center,
-                transform: Matrix4.identity()
-                  ..translate(_dragOffset, 0.0, 0.0)
-                  ..rotateZ(_dragOffset / 1000.0),
-                child: Stack(
-                  children: [
-                    FlipCard(
-                      key: ValueKey('card:${widget.card.id}'),
-                      showBack: _revealed,
-                      front: FlashcardFace(
-                        card: widget.card,
-                        side: FlashcardSide.front,
-                        swipeColor: _dragOffset != 0 ? borderColor : null,
-                        swipeBorderWidth: borderWidth,
+                },
+                onHorizontalDragEnd: (details) async {
+                  if (widget.phase != _Phase.revealed) return;
+                  if (_dragOffset.abs() > 120) {
+                    final isRight = _dragOffset > 0;
+                    final rating =
+                        isRight ? FlashcardRating.hard : FlashcardRating.easy;
+                    setState(() {
+                      _dragOffset = isRight ? 600 : -600;
+                    });
+                    final responseTimeMs = _stopwatch.elapsedMilliseconds;
+                    _stopwatch.stop();
+                    final accuracy =
+                        _calculateAccuracy(notifier.sessionRatings, rating);
+                    notifier.rate(
+                      rating,
+                      isCorrect: !isRight,
+                      responseTimeMs: responseTimeMs,
+                      sessionProgress: widget.currentIndex,
+                      accuracyPercentage: accuracy,
+                    );
+                  } else {
+                    setState(() {
+                      _dragOffset = 0.0;
+                    });
+                  }
+                },
+                child: Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..translate(_dragOffset, 0.0, 0.0)
+                    ..rotateZ(_dragOffset / 1000.0),
+                  child: Stack(
+                    children: [
+                      FlipCard(
+                        key: ValueKey('card:${widget.card.id}'),
+                        showBack: _revealed,
+                        front: FlashcardFace(
+                          card: widget.card,
+                          side: FlashcardSide.front,
+                          swipeColor: swipeColor,
+                        ),
+                        back: FlashcardFace(
+                          card: widget.card,
+                          side: FlashcardSide.back,
+                          swipeColor: swipeColor,
+                        ),
                       ),
-                      back: FlashcardFace(
-                        card: widget.card,
-                        side: FlashcardSide.back,
-                        swipeColor: _dragOffset != 0 ? borderColor : null,
-                        swipeBorderWidth: borderWidth,
-                      ),
-                    ),
-                    // Floating status overlays during swipe
-                    if (_dragOffset.abs() > 20)
-                      Positioned(
-                        top: 40,
-                        left: _dragOffset > 0 ? 40 : null,
-                        right: _dragOffset < 0 ? 40 : null,
-                        child: Transform.rotate(
-                          angle: _dragOffset > 0 ? -0.2 : 0.2,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: (_dragOffset > 0 ? const Color(0xFFEF4444) : const Color(0xFF22C55E)).withAlpha(220),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: _dragOffset > 0 ? const Color(0xFFEF4444) : const Color(0xFF22C55E),
-                                width: 2,
+                      // Swipe overlay labels
+                      if (_dragOffset.abs() > 20)
+                        Positioned(
+                          top: 32,
+                          left: _dragOffset > 0 ? 24 : null,
+                          right: _dragOffset < 0 ? 24 : null,
+                          child: Transform.rotate(
+                            angle: _dragOffset > 0 ? -0.2 : 0.2,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 7),
+                              decoration: BoxDecoration(
+                                color: (_dragOffset > 0 ? _kRed : _kGreen)
+                                    .withOpacity(0.9),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: _dragOffset > 0 ? _kRed : _kGreen,
+                                  width: 2,
+                                ),
                               ),
-                            ),
-                            child: Text(
-                              _dragOffset > 0 ? 'FORGOT' : 'REMEMBERED',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 1.0,
+                              child: Text(
+                                _dragOffset > 0 ? 'FORGOT' : 'REMEMBERED',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.2,
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-        // ── Bottom action area ──────────────────────────────────────────
-        _ActionArea(phase: widget.phase),
-      ],
-    );
+
+          // ── Bottom action area ─────────────────────────────────────────
+          _ActionArea(
+            phase: widget.phase,
+            workspaceId: widget.workspaceId,
+            card: widget.card,
+            currentIndex: widget.currentIndex,
+            onRemembered: () {
+              final responseTimeMs = _stopwatch.elapsedMilliseconds;
+              _stopwatch.stop();
+              final accuracy =
+                  _calculateAccuracy(notifier.sessionRatings, FlashcardRating.easy);
+              notifier.rate(
+                FlashcardRating.easy,
+                isCorrect: true,
+                responseTimeMs: responseTimeMs,
+                sessionProgress: widget.currentIndex,
+                accuracyPercentage: accuracy,
+              );
+            },
+            onForgot: () {
+              final responseTimeMs = _stopwatch.elapsedMilliseconds;
+              _stopwatch.stop();
+              final accuracy =
+                  _calculateAccuracy(notifier.sessionRatings, FlashcardRating.hard);
+              notifier.rate(
+                FlashcardRating.hard,
+                isCorrect: false,
+                responseTimeMs: responseTimeMs,
+                sessionProgress: widget.currentIndex,
+                accuracyPercentage: accuracy,
+              );
+            },
+          ),
+        ],
+      ),
+    ),
+  );
   }
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Flip card (unchanged)
@@ -590,7 +672,112 @@ class FlipCardState extends State<FlipCard>
 enum FlashcardSide { front, back }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FlashcardFace
+// _StatsStrip — Streak / XP Today / Level chips
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StatsStrip extends StatelessWidget {
+  const _StatsStrip({
+    required this.streakDays,
+    required this.xpToday,
+    required this.level,
+    required this.levelLabel,
+  });
+
+  final int streakDays;
+  final int xpToday;
+  final int level;
+  final String levelLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _StatChip(
+          icon: '🔥',
+          value: '$streakDays',
+          label: 'Day Streak',
+        ),
+        const SizedBox(width: 8),
+        _StatChip(
+          icon: '⭐',
+          value: '$xpToday',
+          label: 'XP Today',
+        ),
+        const SizedBox(width: 8),
+        _StatChip(
+          icon: '⚡',
+          value: 'Level $level',
+          label: levelLabel,
+        ),
+      ],
+    );
+  }
+}
+
+class _StatChip extends StatelessWidget {
+  const _StatChip({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  final String icon;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final _kBg = isDark ? const Color(0xFF0D0D1F) : const Color(0xFFFAF4E8);
+    final _kCardBg = isDark ? const Color(0xFF13132A) : Colors.white;
+    final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF4EDE0);
+    final _kBorder = isDark ? const Color(0xFF2A2A50) : const Color(0xFFEFE6D4);
+    final _kTextMuted = isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C);
+    final _kPrimaryText = isDark ? Colors.white : const Color(0xFF1A1A2E);
+
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: _kSurface2,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _kBorder),
+        ),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(icon, style: const TextStyle(fontSize: 14)),
+                const SizedBox(width: 4),
+                Text(
+                  value,
+                  style: TextStyle(
+                    color: _kPrimaryText,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                color: _kTextMuted,
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FlashcardFace — redesigned premium dark card
 // ─────────────────────────────────────────────────────────────────────────────
 
 class FlashcardFace extends StatelessWidget {
@@ -613,15 +800,8 @@ class FlashcardFace extends StatelessWidget {
   final FlashcardSide side;
   final Color? swipeColor;
   final double? swipeBorderWidth;
-
-  /// When non-null (back face only), renders a colour-coded result banner
-  /// above the explanation — green for correct, red for incorrect.
   final _AnswerResult? answerResult;
-
-  /// The text of the option the student selected.
   final String? selectedOptionText;
-
-  // MCQ parameters (front face only)
   final bool showMcq;
   final List<String>? options;
   final int? selectedOptionIndex;
@@ -633,359 +813,176 @@ class FlashcardFace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = _isFront ? context.colorScheme.primary : AppColors.tertiary;
-    final surfaceColor = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final subtleColor =
-        isDark ? const Color(0xFF334155) : const Color(0xFFF8FAFC);
-    final onSurface = isDark ? Colors.white : const Color(0xFF0F172A);
-    final onSurfaceVariant =
-        isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+    final _kBg = isDark ? const Color(0xFF0D0D1F) : const Color(0xFFFAF4E8);
+    final _kCardBg = isDark ? const Color(0xFF13132A) : Colors.white;
+    final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF4EDE0);
+    final _kBorder = isDark ? const Color(0xFF2A2A50) : const Color(0xFFEFE6D4);
+    final _kTextMuted = isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C);
+    final _kPrimaryText = isDark ? Colors.white : const Color(0xFF1A1A2E);
 
-    final resultColor = answerResult == _AnswerResult.correct
-        ? const Color(0xFF22C55E)
-        : AppColors.error;
+    final accent     = _isFront ? _kPurple : _kGreen;
+    final accentDark = _isFront ? const Color(0xFF5B3FD6) : _kGreenDark;
 
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: surfaceColor,
-        borderRadius: BorderRadius.circular(28),
+        color: _kCardBg,
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: swipeColor ?? (isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
-          width: swipeBorderWidth ?? 1,
+          color: swipeColor ?? (_isFront
+              ? _kPurple.withOpacity(0.35)
+              : _kGreen.withOpacity(0.35)),
+          width: swipeBorderWidth ?? 1.5,
         ),
         boxShadow: [
-          if (swipeColor != null)
-            BoxShadow(
-              color: swipeColor!.withAlpha(isDark ? 40 : 25),
-              blurRadius: 16,
-              spreadRadius: 2,
-            )
-          else ...[
-            BoxShadow(
-              color: accent.withAlpha(isDark ? 25 : 18),
-              blurRadius: 24,
-              offset: const Offset(0, 8),
-            ),
-            BoxShadow(
-              color: Colors.black.withAlpha(isDark ? 40 : 10),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          BoxShadow(
+            color: accent.withOpacity(0.18),
+            blurRadius: 28,
+            offset: const Offset(0, 8),
+          ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: Stack(
+        borderRadius: BorderRadius.circular(23),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Subtle top accent gradient strip
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
+            // Top accent bar
+            Container(
               height: 3,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      accent.withAlpha(0),
-                      accent,
-                      accent.withAlpha(0),
-                    ],
-                  ),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    accent.withOpacity(0),
+                    accent,
+                    accent.withOpacity(0),
+                  ],
                 ),
               ),
             ),
-            // Main content
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Header row: topic chip + side badge
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          card.topic,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: onSurfaceVariant,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: 0.3,
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Header row: topic chip + QUESTION/ANSWER badge
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: accent.withOpacity(0.18),
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: accent.withAlpha(isDark ? 30 : 18),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          _isFront ? 'QUESTION' : 'ANSWER',
-                          style: TextStyle(
+                          child: Icon(
+                            _isFront
+                                ? Icons.quiz_rounded
+                                : Icons.menu_book_rounded,
                             color: accent,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.0,
+                            size: 18,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  // Divider
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Divider(
-                      height: 1,
-                      thickness: 1,
-                      color: isDark
-                          ? const Color(0xFF2D3748)
-                          : const Color(0xFFF1F5F9),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            card.topic,
+                            style: TextStyle(
+                              color: _kPrimaryText,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: accent,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            _isFront ? 'QUESTION' : 'ANSWER',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  // Main body — centred, scrollable
-                  Expanded(
-                    child: Center(
-                      child: SingleChildScrollView(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (_isFront) ...[
-                              // ── Front: Question text ───────────────────
-                              Text(
-                                card.front,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: showMcq ? 18 : 22,
-                                  fontWeight: FontWeight.w700,
-                                  color: onSurface,
-                                  height: 1.4,
-                                  letterSpacing: -0.3,
-                                ),
-                              ),
-                              // ── Front: MCQ panel INSIDE card ───────────
-                              if (showMcq && options != null) ...[
-                                const SizedBox(height: Spacing.lg),
-                                Text(
-                                  'Choose the correct answer:',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: onSurfaceVariant,
-                                  ),
-                                ),
-                                const SizedBox(height: Spacing.sm),
-                                _OptionButton(
-                                  text: options![0],
-                                  isSelected: selectedOptionIndex == 0,
-                                  isCorrect: 0 == correctOptionIndex,
-                                  isAnswered: selectedOptionIndex != null,
-                                  onTap: () => onSelectOption!(0),
-                                ),
-                                _OptionButton(
-                                  text: options![1],
-                                  isSelected: selectedOptionIndex == 1,
-                                  isCorrect: 1 == correctOptionIndex,
-                                  isAnswered: selectedOptionIndex != null,
-                                  onTap: () => onSelectOption!(1),
-                                ),
-                              ],
-                            ] else ...[
-                              // ── Back: Success/Error status badge ────────
-                              if (answerResult != null) ...[
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: resultColor.withAlpha(
-                                      isDark ? 35 : 22,
-                                    ),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
-                                      color: resultColor,
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        answerResult == _AnswerResult.correct
-                                            ? Icons.check_circle_rounded
-                                            : Icons.cancel_rounded,
-                                        size: 16,
-                                        color: resultColor,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        answerResult == _AnswerResult.correct
-                                            ? 'Correct!'
-                                            : 'Incorrect',
-                                        style: TextStyle(
-                                          color: resultColor,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+
+                    const SizedBox(height: 12),
+
+                    // Main body
+                    Expanded(
+                      child: Center(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_isFront) ...[
+                                // Glowing hexagon icon
+                                _GlowHexagon(color: _kPurple),
                                 const SizedBox(height: 20),
-                              ],
-                              
-                              // ── Back: Dynamic Correction Details ────────
-                              if (answerResult == _AnswerResult.incorrect && selectedOptionText != null) ...[
                                 Text(
-                                  'You selected:',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.error.withAlpha(220),
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  selectedOptionText!,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: onSurface.withAlpha(180),
-                                    decoration: TextDecoration.lineThrough,
-                                    decorationColor: AppColors.error,
-                                    decorationThickness: 2,
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Correct answer:',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: const Color(0xFF22C55E),
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  card.back,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w800,
-                                    color: onSurface,
-                                  ),
-                                ),
-                              ] else ...[
-                                // Correct or unrated: standard correct answer text
-                                Text(
-                                  card.back,
+                                  card.front,
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 22,
                                     fontWeight: FontWeight.w800,
-                                    color: onSurface,
+                                    color: _kPrimaryText,
                                     height: 1.4,
                                     letterSpacing: -0.3,
                                   ),
                                 ),
-                              ],
-                              
-                              () {
-                                String explanationText = card.explanation;
-                                final tipIndex = card.explanation.indexOf('Memory Tip:');
-                                final pointIndex = card.explanation.indexOf('Important Point:');
-
-                                if (tipIndex != -1) {
-                                  explanationText = card.explanation.substring(0, tipIndex).trim();
-                                } else if (pointIndex != -1) {
-                                  explanationText = card.explanation.substring(0, pointIndex).trim();
-                                }
-
-                                if (explanationText.isEmpty) return const SizedBox.shrink();
-
-                                return Padding(
-                                  padding: const EdgeInsets.only(top: 20),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                                    children: [
-                                      Divider(
-                                        height: 1,
-                                        thickness: 1,
-                                        color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0),
-                                      ),
-                                      const SizedBox(height: 16),
-                                      Text(
-                                        explanationText,
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          color: onSurfaceVariant,
-                                          fontSize: 14,
-                                          height: 1.5,
-                                        ),
-                                      ),
-                                    ],
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Tap the card to reveal the answer',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: _kTextMuted,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w400,
                                   ),
-                                );
-                              }(),
+                                ),
+                              ] else ...[
+                                // Green check hexagon
+                                _GlowHexagon(
+                                  color: _kGreen,
+                                  isCheck: true,
+                                ),
+                                const SizedBox(height: 20),
+                                // Answer — key words in green
+                                _RichAnswerText(text: card.back),
+                                // Explanation
+                                if (card.explanation.isNotEmpty) ...[
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    _trimExplanation(card.explanation),
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.9),
+                                      fontSize: 14.5,
+                                      height: 1.5,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                               ],
                             ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  // ── Bottom hint pill (front face only) ──────────────
-                  if (_isFront && !showMcq)
-                    Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          color: subtleColor,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: isDark
-                                ? const Color(0xFF334155)
-                                : const Color(0xFFE2E8F0),
                           ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.touch_app_rounded,
-                              size: 14,
-                              color: onSurfaceVariant,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Tap to answer',
-                              style: TextStyle(
-                                color: onSurfaceVariant,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
                       ),
                     ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -993,7 +990,16 @@ class FlashcardFace extends StatelessWidget {
       ),
     );
   }
+
+  String _trimExplanation(String explanation) {
+    for (final marker in ['Memory Tip:', 'Important Point:']) {
+      final idx = explanation.indexOf(marker);
+      if (idx != -1) return explanation.substring(0, idx).trim();
+    }
+    return explanation.trim();
+  }
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MCQ Option Button Widget
@@ -1088,99 +1094,575 @@ class _OptionButton extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Bottom action area
+// _GlowHexagon — pulsing icon with sparkles
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ActionArea extends StatelessWidget {
-  const _ActionArea({required this.phase});
+class _GlowHexagon extends StatefulWidget {
+  const _GlowHexagon({required this.color, this.isCheck = false});
 
-  final _Phase phase;
+  final Color color;
+  final bool isCheck;
+
+  @override
+  State<_GlowHexagon> createState() => _GlowHexagonState();
+}
+
+class _GlowHexagonState extends State<_GlowHexagon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+    _scale = Tween<double>(begin: 0.92, end: 1.06).animate(
+      CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.color;
+    return SizedBox(
+      width: 140,
+      height: 140,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Outer glow
+          AnimatedBuilder(
+            animation: _scale,
+            builder: (_, __) => Transform.scale(
+              scale: _scale.value,
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color.withOpacity(0.10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: color.withOpacity(0.30),
+                      blurRadius: 36,
+                      spreadRadius: 6,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Hexagon
+          CustomPaint(
+            size: const Size(80, 80),
+            painter: _HexPainter(color: color),
+          ),
+          // Icon inside
+          Icon(
+            widget.isCheck ? Icons.check_rounded : Icons.question_mark_rounded,
+            color: Colors.white,
+            size: 34,
+          ),
+          // Sparkles
+          ..._sparklePositions.map((pos) => Positioned(
+                left: pos.dx,
+                top: pos.dy,
+                child: AnimatedBuilder(
+                  animation: _pulse,
+                  builder: (_, __) => Opacity(
+                    opacity: (_pulse.value * 0.7).clamp(0.2, 0.9),
+                    child: Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: pos.color,
+                      ),
+                    ),
+                  ),
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
+  static final _sparklePositions = [
+    _Sparkle(dx: 8,   dy: 32,  color: const Color(0xFFFBBF24)),
+    _Sparkle(dx: 118, dy: 20,  color: const Color(0xFF60A5FA)),
+    _Sparkle(dx: 20,  dy: 98,  color: const Color(0xFFF472B6)),
+    _Sparkle(dx: 110, dy: 95,  color: const Color(0xFF34D399)),
+    _Sparkle(dx: 65,  dy: 4,   color: const Color(0xFFA78BFA)),
+    _Sparkle(dx: 55,  dy: 126, color: const Color(0xFFFBBF24)),
+  ];
+}
+
+class _Sparkle {
+  const _Sparkle({required this.dx, required this.dy, required this.color});
+  final double dx;
+  final double dy;
+  final Color color;
+}
+
+class _HexPainter extends CustomPainter {
+  const _HexPainter({required this.color});
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final r  = size.width / 2;
+    final path = Path();
+    for (var i = 0; i < 6; i++) {
+      final angle = (math.pi / 180) * (60 * i - 30);
+      final x = cx + r * math.cos(angle);
+      final y = cy + r * math.sin(angle);
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    path.close();
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.fill,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_HexPainter old) => old.color != color;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _RichAnswerText — highlights last 2-3 words in green
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _RichAnswerText extends StatelessWidget {
+  const _RichAnswerText({required this.text});
+  final String text;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isFront = phase == _Phase.front;
+    final _kPrimaryText = isDark ? Colors.white : const Color(0xFF1A1A2E);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        border: Border(
-          top: BorderSide(
-            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-            width: 1,
-          ),
+    final words = text.trim().split(' ');
+    if (words.length <= 3) {
+      // All green for short answers
+      return Text(
+        text,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w800,
+          color: _kGreen,
+          height: 1.4,
         ),
+      );
+    }
+    // First part white, last ~3 words green
+    final splitAt = words.length - 3;
+    final firstPart = words.sublist(0, splitAt).join(' ');
+    final greenPart = words.sublist(splitAt).join(' ');
+    return Text.rich(
+      TextSpan(
+        style: const TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w800,
+          height: 1.4,
+        ),
+        children: [
+          TextSpan(
+            text: '$firstPart ',
+            style: TextStyle(color: _kPrimaryText),
+          ),
+          TextSpan(
+            text: greenPart,
+            style: const TextStyle(color: _kGreen),
+          ),
+        ],
       ),
-      child: SafeArea(
-        top: false,
-        child: isFront
-            ? const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.touch_app_rounded, color: AppColors.primary, size: 20),
-                  SizedBox(width: 8),
-                  Text(
-                    'Tap card to reveal answer',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              )
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF22C55E).withAlpha(20),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.arrow_back_rounded, color: Color(0xFF22C55E), size: 16),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Swipe Left\nRemembered',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12, color: Color(0xFF22C55E), fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                  Container(
-                    width: 1,
-                    height: 32,
-                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                  ),
-                  Row(
-                    children: [
-                      const Text(
-                        'Swipe Right\nForgot',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12, color: AppColors.error, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: AppColors.error.withAlpha(20),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.arrow_forward_rounded, color: AppColors.error, size: 16),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+      textAlign: TextAlign.center,
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _XpChip — gold star + XP number
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _XpChip extends StatelessWidget {
+  const _XpChip({required this.xp});
+  final int xp;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: _kStarGold.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _kStarGold.withOpacity(0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('⭐', style: TextStyle(fontSize: 16)),
+          const SizedBox(width: 6),
+          Text(
+            '+$xp XP',
+            style: const TextStyle(
+              color: _kStarGold,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Hint text (pre-MCQ state)
+// Bottom action area — redesigned Remembered / Forgot buttons
 // ─────────────────────────────────────────────────────────────────────────────
 
+class _ActionArea extends StatelessWidget {
+  const _ActionArea({
+    required this.phase,
+    required this.workspaceId,
+    required this.card,
+    required this.currentIndex,
+    required this.onRemembered,
+    required this.onForgot,
+  });
+
+  final _Phase phase;
+  final String workspaceId;
+  final Flashcard card;
+  final int currentIndex;
+  final VoidCallback onRemembered;
+  final VoidCallback onForgot;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final _kBg = isDark ? const Color(0xFF0D0D1F) : const Color(0xFFFAF4E8);
+    final _kCardBg = isDark ? const Color(0xFF13132A) : Colors.white;
+    final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF4EDE0);
+    final _kBorder = isDark ? const Color(0xFF2A2A50) : const Color(0xFFEFE6D4);
+    final _kTextMuted = isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C);
+    final _kPrimaryText = isDark ? Colors.white : const Color(0xFF1A1A2E);
+
+    final isRevealed = phase == _Phase.revealed || phase == _Phase.rating;
+    final isFront    = phase == _Phase.front;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      color: _kBg,
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isFront)
+              // Minimal tap hint
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.touch_app_rounded, color: _kTextMuted, size: 14),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Tap card to reveal answer',
+                      style: TextStyle(
+                        color: _kTextMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              // Single unified pill: ← Swipe Left | Swipe Right →
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: _kSurface2,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: _kBorder, width: 1.5),
+                  ),
+                  child: Row(
+                    children: [
+                      // ── Left: Remembered ──────────────────────────────
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: isRevealed ? onRemembered : null,
+                          behavior: HitTestBehavior.opaque,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 18, horizontal: 12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                // Arrow circle
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: _kGreen, width: 1.5),
+                                  ),
+                                  child: const Icon(
+                                    Icons.arrow_back_rounded,
+                                    color: _kGreen,
+                                    size: 18,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                const Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Swipe Left',
+                                      style: TextStyle(
+                                        color: _kGreen,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Remembered',
+                                      style: TextStyle(
+                                        color: _kGreen,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      // ── Divider ────────────────────────────────────────
+                      Container(
+                        width: 1,
+                        height: 48,
+                        color: _kBorder,
+                      ),
+                      // ── Right: Forgot ──────────────────────────────────
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: isRevealed ? onForgot : null,
+                          behavior: HitTestBehavior.opaque,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 18, horizontal: 12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      'Swipe Right',
+                                      style: TextStyle(
+                                        color: _kRed,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Forgot',
+                                      style: TextStyle(
+                                        color: _kRed,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(width: 10),
+                                // Arrow circle
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: _kRed, width: 1.5),
+                                  ),
+                                  child: const Icon(
+                                    Icons.arrow_forward_rounded,
+                                    color: _kRed,
+                                    size: 18,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+/// Motivational strip shown while on the front of the card.
+class _MotivationalStrip extends ConsumerWidget {
+  const _MotivationalStrip({required this.workspaceId});
+  final String workspaceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authNotifierProvider).valueOrNull;
+    final authUser = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final gamProfile = authUser == null
+        ? null
+        : ref
+            .watch(gamificationProfileProvider(
+                (workspaceId: workspaceId, userId: authUser.id)))
+            .valueOrNull;
+    final streak = gamProfile?.streakDays ?? 0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(
+        color: _kSurface2,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _kBorder),
+      ),
+      child: Row(
+        children: [
+          const Text('🔥', style: TextStyle(fontSize: 18)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Keep going! You\'re doing great! 🔥',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  'Streak: $streak days',
+                  style: const TextStyle(
+                    color: _kPurpleLight,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Dot progress indicator
+          Row(
+            children: List.generate(
+              4,
+              (i) => Container(
+                width: i < 2 ? 10 : 8,
+                height: i < 2 ? 10 : 8,
+                margin: const EdgeInsets.only(left: 4),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: i < 2
+                      ? _kPurple
+                      : _kBorder,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Gold XP reward banner shown after card is revealed.
+class _XpRewardBar extends StatelessWidget {
+  const _XpRewardBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: _kSurface2,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _kBorder),
+      ),
+      child: Row(
+        children: [
+          const Text('🏆', style: TextStyle(fontSize: 20)),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Great job! You\'re on fire! 🔥',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  'Keep it up and win the day!',
+                  style: TextStyle(
+                    color: _kTextMuted,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Text(
+            '+7 XP',
+            style: TextStyle(
+              color: _kStarGold,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Legacy hint text widget (kept for compatibility).
 class _HintText extends StatelessWidget {
   const _HintText({required this.text});
 
@@ -1197,6 +1679,7 @@ class _HintText extends StatelessWidget {
     );
   }
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Concise correct answer formatter

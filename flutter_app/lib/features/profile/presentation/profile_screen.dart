@@ -15,7 +15,6 @@ const _kAmberR    = Color(0xFFFFD86B); // amber card right (lighter)
 const _kMenuBg    = Color(0xFFFFFFFF);
 const _kMenuText  = Color(0xFF2C2C2C);
 const _kChevron   = Color(0xFFCCCCCC);
-const _kDivider   = Color(0xFFF0F0F0);
 const _kNameColor = Color(0xFF1A1A2E);
 const _kSubColor  = Color(0xFF7A7A8C);
 const _kTreeGreen = Color(0xFF4CAF50);
@@ -39,18 +38,21 @@ class ProfileScreen extends ConsumerWidget {
     // avatar initial
     final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color bgColor = isDark ? const Color(0xFF070714) : _kCream;
+
     // Sky section height
     const double skyH = 260;
     // Avatar radius
     const double avatarR = 48.0;
 
     return Scaffold(
-      backgroundColor: _kCream,
+      backgroundColor: bgColor,
       body: Stack(
         children: [
           // ── Cream body (full height) ───────────────────────────────────
           Positioned.fill(
-            child: Container(color: _kCream),
+            child: Container(color: bgColor),
           ),
 
           // ── Sky header ────────────────────────────────────────────────
@@ -60,7 +62,7 @@ class ProfileScreen extends ConsumerWidget {
             right: 0,
             height: skyH,
             child: CustomPaint(
-              painter: _SkyPainter(),
+              painter: _SkyPainter(isDark: isDark),
             ),
           ),
 
@@ -68,14 +70,14 @@ class ProfileScreen extends ConsumerWidget {
           Positioned(
             top: skyH - 100,
             left: -10,
-            child: const _TreeDecoration(mirrored: false),
+            child: _TreeDecoration(mirrored: false, isDark: isDark),
           ),
 
           // ── Right tree decoration ─────────────────────────────────────
           Positioned(
             top: skyH - 100,
             right: -10,
-            child: const _TreeDecoration(mirrored: true),
+            child: _TreeDecoration(mirrored: true, isDark: isDark),
           ),
 
           // ── Content ───────────────────────────────────────────────────
@@ -101,17 +103,17 @@ class ProfileScreen extends ConsumerWidget {
                   const SizedBox(height: 36),
 
                   // Avatar centred
-                  _AvatarBadge(initial: initial, radius: avatarR),
+                  _AvatarBadge(initial: initial, radius: avatarR, isDark: isDark),
 
                   const SizedBox(height: 14),
 
                   // Name
                   Text(
                     displayName,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
-                      color: _kNameColor,
+                      color: isDark ? Colors.white : _kNameColor,
                       letterSpacing: 0.2,
                     ),
                   ),
@@ -120,9 +122,9 @@ class ProfileScreen extends ConsumerWidget {
                   // Email (user requested email instead of ID)
                   Text(
                     email,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
-                      color: _kSubColor,
+                      color: isDark ? const Color(0xFF8888AA) : _kSubColor,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -132,7 +134,7 @@ class ProfileScreen extends ConsumerWidget {
                   // ── Amber promo card ─────────────────────────────────
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: _PromoCard(),
+                    child: _PromoCard(isDark: isDark),
                   ),
 
                   const SizedBox(height: Spacing.xl),
@@ -141,6 +143,7 @@ class ProfileScreen extends ConsumerWidget {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: _MenuCard(
+                      isDark: isDark,
                       items: [
                         _MenuItem(
                           icon: Icons.palette_rounded,
@@ -211,18 +214,23 @@ class ProfileScreen extends ConsumerWidget {
   }
 }
 
-// ─── Sky painter (replaces boxdecoration for gradient + no hard corners) ───
+// ─── Sky painter ───
 class _SkyPainter extends CustomPainter {
+  const _SkyPainter({required this.isDark});
+  final bool isDark;
+
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Rect.fromLTWH(0, 0, size.width, size.height);
-    final gradient = const LinearGradient(
-      colors: [_kSkyTop, _kSkyBottom],
+    final skyTop = isDark ? const Color(0xFF13132A) : _kSkyTop;
+    final skyBottom = isDark ? const Color(0xFF1E1B4B) : _kSkyBottom;
+
+    final gradient = LinearGradient(
+      colors: [skyTop, skyBottom],
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
     );
     final paint = Paint()..shader = gradient.createShader(rect);
-    // flat at top, rounded at bottom
     final path = Path()
       ..moveTo(0, 0)
       ..lineTo(size.width, 0)
@@ -238,8 +246,9 @@ class _SkyPainter extends CustomPainter {
 
 // ─── Decorative tree ────────────────────────────────────────────────────────
 class _TreeDecoration extends StatelessWidget {
-  const _TreeDecoration({required this.mirrored});
+  const _TreeDecoration({required this.mirrored, required this.isDark});
   final bool mirrored;
+  final bool isDark;
 
   @override
   Widget build(BuildContext context) {
@@ -247,18 +256,21 @@ class _TreeDecoration extends StatelessWidget {
       scaleX: mirrored ? -1 : 1,
       child: CustomPaint(
         size: const Size(80, 110),
-        painter: _TreePainter(),
+        painter: _TreePainter(isDark: isDark),
       ),
     );
   }
 }
 
 class _TreePainter extends CustomPainter {
+  const _TreePainter({required this.isDark});
+  final bool isDark;
+
   @override
   void paint(Canvas canvas, Size size) {
-    final trunkPaint = Paint()..color = _kTrunk;
-    final leafPaint1 = Paint()..color = _kTreeGreen;
-    final leafPaint2 = Paint()..color = _kTreeDark;
+    final trunkPaint = Paint()..color = isDark ? const Color(0xFF475569) : _kTrunk;
+    final leafPaint1 = Paint()..color = isDark ? const Color(0xFF312E81) : _kTreeGreen;
+    final leafPaint2 = Paint()..color = isDark ? const Color(0xFF1E1B4B) : _kTreeDark;
 
     // trunk
     canvas.drawRRect(
@@ -312,28 +324,32 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleCol = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final btnIconCol = isDark ? Colors.white : const Color(0xFF2C2C2C);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         children: [
           _CircleBtn(
             onTap: onBack,
-            child: const Icon(Icons.chevron_left_rounded, color: Color(0xFF2C2C2C), size: 24),
+            child: Icon(Icons.chevron_left_rounded, color: btnIconCol, size: 24),
           ),
-          const Expanded(
+          Expanded(
             child: Text(
               'Profile',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
-                color: Color(0xFF1A1A2E),
+                color: titleCol,
               ),
             ),
           ),
           _CircleBtn(
             onTap: onEdit,
-            child: const Icon(Icons.edit_outlined, color: Color(0xFF2C2C2C), size: 18),
+            child: Icon(Icons.edit_outlined, color: btnIconCol, size: 18),
           ),
         ],
       ),
@@ -348,14 +364,19 @@ class _CircleBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgCol = isDark ? const Color(0xFF1A1A3A) : Colors.white.withValues(alpha: 0.55);
+    final borderColor = isDark ? const Color(0xFF2A2A50) : Colors.transparent;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 36,
         height: 36,
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.55),
+          color: bgCol,
           shape: BoxShape.circle,
+          border: Border.all(color: borderColor, width: isDark ? 1.2 : 0.0),
           boxShadow: const [
             BoxShadow(color: Color(0x14000000), blurRadius: 6, offset: Offset(0, 2)),
           ],
@@ -368,16 +389,21 @@ class _CircleBtn extends StatelessWidget {
 
 // ─── Avatar ─────────────────────────────────────────────────────────────────
 class _AvatarBadge extends StatelessWidget {
-  const _AvatarBadge({required this.initial, required this.radius});
+  const _AvatarBadge({required this.initial, required this.radius, required this.isDark});
   final String initial;
   final double radius;
+  final bool isDark;
 
   @override
   Widget build(BuildContext context) {
+    final ringBg = isDark ? const Color(0xFF1E1B4B) : Colors.white;
+    final badgeBg = isDark ? const Color(0xFF312E81) : const Color(0xFFFDE8C8);
+    final textCol = isDark ? const Color(0xFF818CF8) : const Color(0xFFE65100);
+
     return Container(
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.white,
+        color: ringBg,
         boxShadow: const [
           BoxShadow(color: Color(0x30000000), blurRadius: 18, offset: Offset(0, 6)),
         ],
@@ -386,10 +412,9 @@ class _AvatarBadge extends StatelessWidget {
       child: Container(
         width: radius * 2,
         height: radius * 2,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           shape: BoxShape.circle,
-          // Soft peach/orange tint like reference avatar bg
-          color: Color(0xFFFDE8C8),
+          color: badgeBg,
         ),
         child: Center(
           child: Text(
@@ -397,7 +422,7 @@ class _AvatarBadge extends StatelessWidget {
             style: TextStyle(
               fontSize: radius * 0.9,
               fontWeight: FontWeight.w900,
-              color: const Color(0xFFE65100),
+              color: textCol,
             ),
           ),
         ),
@@ -408,73 +433,87 @@ class _AvatarBadge extends StatelessWidget {
 
 // ─── Promo amber card ───────────────────────────────────────────────────────
 class _PromoCard extends StatelessWidget {
+  const _PromoCard({required this.isDark});
+  final bool isDark;
+
   @override
   Widget build(BuildContext context) {
+    final gradientColors = isDark
+        ? const [Color(0xFF3B0764), Color(0xFF1E1B4B)]
+        : const [_kAmberL, _kAmberR];
+        
+    final shadowColor = isDark
+        ? const Color(0xFF3B0764).withValues(alpha: 0.4)
+        : const Color(0x55FFA000);
+
+    final titleCol = isDark ? Colors.white : const Color(0xFF3E2000);
+    final descCol = isDark ? const Color(0xFFCBD5E1) : const Color(0xFF5A3300);
+    final btnBg = isDark ? const Color(0xFF7C5CFC) : Colors.white;
+    final btnText = isDark ? Colors.white : const Color(0xFFCC6B00);
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [_kAmberL, _kAmberR],
+        gradient: LinearGradient(
+          colors: gradientColors,
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
         ),
         borderRadius: BorderRadius.circular(18),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
-            color: Color(0x55FFA000),
+            color: shadowColor,
             blurRadius: 14,
-            offset: Offset(0, 5),
+            offset: const Offset(0, 5),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // title row
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
-            children: const [
-              Text('⭐ ', style: TextStyle(fontSize: 15)),
-              SizedBox(width: 4),
+            children: [
+              const Text('⭐ ', style: TextStyle(fontSize: 15)),
+              const SizedBox(width: 4),
               Text(
                 'Grow Your Study Power',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF3E2000),
+                  color: titleCol,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 7),
-          const Text(
+          Text(
             'Unlock your full study superpower! Get access to\nAI questions, adaptive flashcards, and live\nanalytics from the engine.',
             style: TextStyle(
               fontSize: 12,
-              color: Color(0xFF5A3300),
+              color: descCol,
               height: 1.45,
             ),
           ),
           const SizedBox(height: 14),
-          // CTA button
           GestureDetector(
             onTap: () {},
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: btnBg,
                 borderRadius: BorderRadius.circular(22),
                 boxShadow: const [
                   BoxShadow(color: Color(0x22000000), blurRadius: 6, offset: Offset(0, 2)),
                 ],
               ),
-              child: const Text(
+              child: Text(
                 'Start My Quest Now',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFFCC6B00),
+                  color: btnText,
                 ),
               ),
             ),
@@ -487,15 +526,20 @@ class _PromoCard extends StatelessWidget {
 
 // ─── Menu card ──────────────────────────────────────────────────────────────
 class _MenuCard extends StatelessWidget {
-  const _MenuCard({required this.items});
+  const _MenuCard({required this.items, required this.isDark});
   final List<_MenuItem> items;
+  final bool isDark;
 
   @override
   Widget build(BuildContext context) {
+    final cardBg = isDark ? const Color(0xFF13132A) : _kMenuBg;
+    final borderColor = isDark ? const Color(0xFF2A2A50) : const Color(0xFFF0F0F0);
+
     return Container(
       decoration: BoxDecoration(
-        color: _kMenuBg,
+        color: cardBg,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: borderColor, width: isDark ? 1.5 : 0.0),
         boxShadow: const [
           BoxShadow(color: Color(0x12000000), blurRadius: 10, offset: Offset(0, 3)),
         ],
@@ -505,7 +549,7 @@ class _MenuCard extends StatelessWidget {
           for (int i = 0; i < items.length; i++) ...[
             items[i],
             if (i < items.length - 1)
-              const Divider(height: 1, thickness: 1, color: _kDivider, indent: 54),
+              Divider(height: 1, thickness: 1, color: borderColor, indent: 54),
           ],
         ],
       ),
@@ -526,6 +570,13 @@ class _MenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    final iconBg = isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF2F2F2);
+    final iconCol = isDark ? const Color(0xFFA78BFA) : const Color(0xFF555555);
+    final textCol = isDark ? Colors.white : _kMenuText;
+    final chevronCol = isDark ? const Color(0xFF475569) : _kChevron;
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
@@ -533,28 +584,27 @@ class _MenuItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            // icon circle — light grey tint like reference
             Container(
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: const Color(0xFFF2F2F2),
+                color: iconBg,
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, size: 20, color: const Color(0xFF555555)),
+              child: Icon(icon, size: 20, color: iconCol),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: _kMenuText,
+                  color: textCol,
                 ),
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: _kChevron, size: 22),
+            Icon(Icons.chevron_right_rounded, color: chevronCol, size: 22),
           ],
         ),
       ),
@@ -569,12 +619,21 @@ class _SignOutTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    final cardBg = isDark ? const Color(0xFF13132A) : _kMenuBg;
+    final borderColor = isDark ? const Color(0xFF2A2A50) : const Color(0xFFF0F0F0);
+    final iconBg = isDark ? const Color(0xFF451A1A) : const Color(0xFFFEEAEA);
+    final iconColor = const Color(0xFFE53935);
+    final textCol = const Color(0xFFE53935);
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: _kMenuBg,
+          color: cardBg,
           borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: borderColor, width: isDark ? 1.5 : 0.0),
           boxShadow: const [
             BoxShadow(color: Color(0x12000000), blurRadius: 10, offset: Offset(0, 3)),
           ],
@@ -585,24 +644,24 @@ class _SignOutTile extends StatelessWidget {
             Container(
               width: 38,
               height: 38,
-              decoration: const BoxDecoration(
-                color: Color(0xFFFEEAEA),
+              decoration: BoxDecoration(
+                color: iconBg,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.logout_rounded, size: 20, color: Color(0xFFE53935)),
+              child: Icon(Icons.logout_rounded, size: 20, color: iconColor),
             ),
             const SizedBox(width: 14),
-            const Expanded(
+            Expanded(
               child: Text(
                 'Sign Out',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFFE53935),
+                  color: textCol,
                 ),
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: _kChevron, size: 22),
+            Icon(Icons.chevron_right_rounded, color: isDark ? const Color(0xFF475569) : _kChevron, size: 22),
           ],
         ),
       ),
