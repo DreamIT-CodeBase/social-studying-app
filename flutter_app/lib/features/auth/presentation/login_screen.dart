@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/shared/widgets/app_logo.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 
@@ -49,297 +52,118 @@ class _LoginBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Background Image
-          Positioned.fill(
-            child: Image.asset(
-              'assets/icons/loginpagebgimage.jpeg',
-              fit: BoxFit.cover,
-            ),
-          ),
-          // Subtle Dark Layer for Contrast
-          Positioned.fill(
-            child: Container(
-              color: Colors.black.withValues(alpha: 0.12),
-            ),
-          ),
-          // Scrollable Layout
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Spacing to push main box downward
-                    const SizedBox(height: 120),
-                    // Floating White Overlay Card
-                    Container(
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.92),
-                        borderRadius: BorderRadius.circular(38),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.6),
-                          width: 1.5,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.15),
-                            blurRadius: 25,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // App Logo square card
-                          Container(
-                            width: 80,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0F172A),
-                              borderRadius: BorderRadius.circular(24),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.2),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(22),
-                              child: Image.asset(
-                                'assets/branding/app_logo.jpg',
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      ShaderMask(
-                                        shaderCallback: (bounds) => const LinearGradient(
-                                          colors: [Color(0xFF00F2FE), Color(0xFF4FACFE), Color(0xFFF355DA)],
-                                        ).createShader(bounds),
-                                        child: const Text(
-                                          'S',
-                                          style: TextStyle(
-                                            fontSize: 38,
-                                            fontWeight: FontWeight.w900,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ),
-                                      const Text(
-                                        'Studying AI',
-                                        style: TextStyle(
-                                          fontSize: 7,
-                                          color: Colors.white60,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          // Title text
-                          const Text(
-                            'Welcome to',
-                            style: TextStyle(
-                              fontSize: 26,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF0F172A),
-                              letterSpacing: -0.5,
-                            ),
-                          ),
-                          ShaderMask(
-                            shaderCallback: (bounds) => const LinearGradient(
-                              colors: [Color(0xFF7C5CFC), Color(0xFF2563EB)],
-                            ).createShader(bounds),
-                            child: const Text(
-                              'Social Studying AI',
-                              style: TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'AI-powered adaptive learning\nfor families and schools',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFF475569),
-                              fontWeight: FontWeight.w500,
-                              height: 1.4,
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          // Features Row
-                          const Row(
-                            children: [
-                              _FeatureItem(
-                                icon: Icons.track_changes_rounded,
-                                iconColor: Color(0xFF7C5CFC),
-                                title: 'Smart Learning',
-                                desc: 'Adaptive quizzes\njust for you',
-                              ),
-                              _FeatureDivider(),
-                              _FeatureItem(
-                                icon: Icons.bar_chart_rounded,
-                                iconColor: Color(0xFF3B82F6),
-                                title: 'Track Progress',
-                                desc: 'See your growth\nand insights',
-                              ),
-                              _FeatureDivider(),
-                              _FeatureItem(
-                                icon: Icons.emoji_events_rounded,
-                                iconColor: Color(0xFF10B981),
-                                title: 'Earn & Achieve',
-                                desc: 'Earn XP and\nunlock new levels',
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-                          // Microsoft Button
-                          _MicrosoftSignInButton(onPressed: onMicrosoftSignIn),
-                          const SizedBox(height: 12),
-                          // Google Button
-                          _GoogleSignInButton(onPressed: onGoogleSignIn),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? const Color(0xFFF8FAFC) : const Color(0xFF1E1B4B);
+    final subtitleColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF4B5563);
 
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    // Terms footer
-                    const Text(
-                      'By continuing, you agree to our',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.white70,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'Terms of Service',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                        Text(
-                          ' and ',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.white70,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        Text(
-                          'Privacy Policy',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            decoration: TextDecoration.underline,
-                          ),
+    return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                  Center(
+                    child: AppLogo(
+                      size: 80,
+                      shadows: [
+                        BoxShadow(
+                          color: isDark
+                              ? const Color(0x66000000)
+                              : const Color(0x260F172A),
+                          blurRadius: 14,
+                          offset: Offset(0, 5),
                         ),
                       ],
                     ),
-                  ],
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Welcome to Social Studying',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: titleColor),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Sign in to continue learning.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 15, color: subtitleColor),
+                  ),
+                  const SizedBox(height: 40),
+                  _MicrosoftSignInButton(onPressed: onMicrosoftSignIn),
+                  const SizedBox(height: 12),
+                  _GoogleSignInButton(onPressed: onGoogleSignIn),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
+                const SizedBox(height: 12),
+                _LegalFooter(
+                  onTermsTap: () => context.push(AppRoutes.terms),
+                  onPrivacyTap: () => context.push(AppRoutes.privacy),
+                  isDark: isDark,
+                ),
+                ],
               ),
             ),
           ),
-        ],
       ),
     );
   }
 }
 
-class _FeatureItem extends StatelessWidget {
-  const _FeatureItem({
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    required this.desc,
-  });
+class _LegalFooter extends StatelessWidget {
+  const _LegalFooter({required this.onTermsTap, required this.onPrivacyTap, required this.isDark});
 
-  final IconData icon;
-  final Color iconColor;
-  final String title;
-  final String desc;
+  final VoidCallback onTermsTap;
+  final VoidCallback onPrivacyTap;
+  final bool isDark;
 
   @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
+  Widget build(BuildContext context) => Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              color: iconColor,
-              size: 16,
-            ),
-          ),
-          const SizedBox(height: 6),
           Text(
-            title,
+            'By continuing, you agree to our',
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF0F172A),
-            ),
+            style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF6B7280)),
           ),
-          const SizedBox(height: 2),
-          Text(
-            desc,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 8.5,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF64748B),
-              height: 1.2,
-            ),
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              TextButton(
+                onPressed: onTermsTap,
+                style: TextButton.styleFrom(
+                  minimumSize: Size.zero,
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('Terms & Conditions'),
+              ),
+              Text('and', style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF6B7280))),
+              TextButton(
+                onPressed: onPrivacyTap,
+                style: TextButton.styleFrom(
+                  minimumSize: Size.zero,
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('Privacy Policy'),
+              ),
+            ],
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _FeatureDivider extends StatelessWidget {
-  const _FeatureDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 1,
-      height: 44,
-      color: const Color(0xFFE2E8F0),
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-    );
-  }
+      );
 }
 
 
@@ -351,65 +175,35 @@ class _MicrosoftSignInButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: double.infinity,
-      height: 56,
+      height: 52,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF7C5CFC), Color(0xFF2563EB)],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF7C5CFC).withValues(alpha: 0.25),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        color: const Color(0xFF1D4ED8),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onPressed,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const _MicrosoftLogoIcon(),
-                ),
-                const Spacer(),
-                const Text(
+                const _MicrosoftLogoIcon(),
+                const SizedBox(width: 14),
+                const Expanded(child: Text(
                   'Sign in with Microsoft',
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 15.5,
+                    fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    letterSpacing: 0.1,
                   ),
-                ),
-                const Spacer(),
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.arrow_forward_rounded,
-                    color: Color(0xFF2563EB),
-                    size: 16,
-                  ),
-                ),
+                )),
+                const SizedBox(width: 20),
               ],
             ),
           ),
@@ -451,62 +245,39 @@ class _GoogleSignInButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       width: double.infinity,
-      height: 56,
+      height: 52,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: isDark ? const Color(0xFF475569) : const Color(0xFFD1D5DB)),
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onPressed,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const _GoogleLogoIcon(),
-                ),
-                const Spacer(),
-                const Text(
-                  'Sign in with Google',
-                  style: TextStyle(
-                    color: Color(0xFF1E293B),
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.1,
+                const _GoogleLogoIcon(),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    'Sign in with Google',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-                const Spacer(),
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF7C5CFC).withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.arrow_forward_rounded,
-                    color: Color(0xFF7C5CFC),
-                    size: 16,
-                  ),
-                ),
+                const SizedBox(width: 20),
               ],
             ),
           ),

@@ -53,7 +53,7 @@ class _AdminAppState extends ConsumerState<_AdminApp> {
     });
 
     return MaterialApp.router(
-      title: 'Social Study — Admin',
+      title: 'Social Studying — Admin',
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,

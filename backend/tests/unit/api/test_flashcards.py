@@ -466,7 +466,9 @@ def test_next_rejected_first_candidate_not_persisted(client, student):
         _generated(),
     ])
 
-    async def _generate(*, topic, grounding_chunks, seen_card_fronts=None):
+    async def _generate(
+        *, topic, grounding_chunks, seen_card_fronts=None, mastery_tier="beginner"
+    ):
         return next(generated_iter)
 
     mocks, persisted, *_ = _next_patches(
@@ -494,7 +496,9 @@ def test_next_insufficient_source_skips_to_next_candidate(client, student):
         _generated(),
     ])
 
-    async def _generate(*, topic, grounding_chunks, seen_card_fronts=None):
+    async def _generate(
+        *, topic, grounding_chunks, seen_card_fronts=None, mastery_tier="beginner"
+    ):
         item = next(generated_iter)
         if isinstance(item, Exception):
             raise item
@@ -623,7 +627,9 @@ def test_next_empty_retrieval_skips_candidate_without_calling_generator(
 def test_next_all_candidates_fail_returns_503_with_retry_after(client, student):
     cands = [_topic_score(id_=f"tpc_{i}", name=f"T{i}") for i in range(3)]
 
-    async def _generate(*, topic, grounding_chunks, seen_card_fronts=None):
+    async def _generate(
+        *, topic, grounding_chunks, seen_card_fronts=None, mastery_tier="beginner"
+    ):
         # Front==back structural failure → all rejected.
         return _generated(front="X", back="X")
 

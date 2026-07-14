@@ -69,6 +69,7 @@ def _state(
     badges: list[Badge] | None = None,
     xp_by_topic: dict[str, int] | None = None,
     daily_activity: dict[str, int] | None = None,
+    daily_xp: dict[str, int] | None = None,
 ) -> GamificationState:
     return GamificationState(
         **{"_id": f"gam_{student_id}"},
@@ -86,6 +87,7 @@ def _state(
         badges=badges or [],
         xp_by_topic=xp_by_topic or {"Photosynthesis": 250},
         daily_activity=daily_activity or {"2026-05-23": 5},
+        daily_xp=daily_xp or {"2026-05-23": 42},
     )
 
 
@@ -125,6 +127,7 @@ def test_profile_returns_full_view_with_progress_hints(client, student):
     assert body["xp_for_next_level"] == 300
     assert body["xp_by_topic"] == {"Photosynthesis": 250}
     assert body["daily_activity"] == {"2026-05-23": 5}
+    assert body["daily_xp"] == {"2026-05-23": 42}
 
 
 def test_profile_student_cannot_read_other_students(client, student):

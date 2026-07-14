@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/features/auth/data/auth_repository.dart';
 import 'package:social_study_app/features/auth/domain/auth_state.dart';
@@ -7,6 +8,8 @@ import 'package:social_study_app/shared/services/dio_client.dart';
 
 part 'auth_notifier.g.dart';
 
+final dailyLoginRewardProvider = StateProvider<int?>((ref) => null);
+
 @Riverpod(keepAlive: true)
 class AuthNotifier extends _$AuthNotifier {
   @override
@@ -14,6 +17,7 @@ class AuthNotifier extends _$AuthNotifier {
     final storedUser = await ref.read(authRepositoryProvider).getStoredUser();
     if (storedUser != null) {
       _refreshBackground();
+      _claimDailyLogin(storedUser);
       return AuthState.authenticated(user: storedUser);
     }
     return const AuthState.unauthenticated();
@@ -32,6 +36,7 @@ class AuthNotifier extends _$AuthNotifier {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final user = await ref.read(authRepositoryProvider).signInWithMicrosoft();
+      await _claimDailyLogin(user);
       return AuthState.authenticated(user: user);
     });
   }
@@ -40,6 +45,7 @@ class AuthNotifier extends _$AuthNotifier {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final user = await ref.read(authRepositoryProvider).signInWithGoogle();
+      await _claimDailyLogin(user);
       return AuthState.authenticated(user: user);
     });
   }
@@ -79,6 +85,7 @@ class AuthNotifier extends _$AuthNotifier {
       final updatedUser = User.fromJson(response.data as Map<String, dynamic>);
       
       await ref.read(authRepositoryProvider).updateStoredUser(updatedUser);
+      await _claimDailyLogin(updatedUser);
       state = AsyncData(AuthState.authenticated(user: updatedUser));
     } catch (_) {
       // Fallback to local storage if network fails
@@ -87,6 +94,23 @@ class AuthNotifier extends _$AuthNotifier {
         state = const AsyncData(AuthState.unauthenticated());
       } else {
         state = AsyncData(AuthState.authenticated(user: user));
+      }
+    }
+  }
+
+  Future<void> _claimDailyLogin(User user) async {
+    for (final membership in user.workspaceMemberships) {
+      try {
+        final response = await ref.read(dioClientProvider).dio.post<Map<String, dynamic>>(
+              '/api/v1/workspaces/${membership.workspaceId}/users/me/gamification/daily-login',
+            );
+        final data = response.data;
+        if (data?['awarded'] == true) {
+          ref.read(dailyLoginRewardProvider.notifier).state =
+              (data?['xp_earned'] as num?)?.toInt() ?? 2;
+        }
+      } catch (_) {
+        // A later refresh safely retries; the backend claim is idempotent.
       }
     }
   }

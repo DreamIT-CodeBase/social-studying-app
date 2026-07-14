@@ -71,7 +71,7 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
 
     return session.when(
       idle: () => Scaffold(
-        backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
         body: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(Spacing.xl),
@@ -360,7 +360,7 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
     final themeMode = ref.watch(appThemeModeProvider);
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+      backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
       body: Stack(
         children: [
           Positioned(
@@ -1984,7 +1984,7 @@ class _StudyCompleteView extends StatelessWidget {
     final percent = totalCount > 0 ? (correctCount / totalCount * 100).round() : 0;
     
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+      backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(Spacing.xl),

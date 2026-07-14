@@ -56,9 +56,9 @@ class FlashcardRating(StrEnum):
     cognitive load on the student).
     """
 
-    easy = "easy"          # recalled instantly, push out the next review
-    medium = "medium"      # recalled with some effort
-    hard = "hard"          # didn't recall, surface again soon
+    easy = "easy"  # recalled instantly, push out the next review
+    medium = "medium"  # recalled with some effort
+    hard = "hard"  # didn't recall, surface again soon
 
 
 class Flashcard(CosmosDocument):
@@ -69,10 +69,10 @@ class Flashcard(CosmosDocument):
 
     tenant_id: str
     workspace_id: str
-    document_id: str       # source attribution (first grounding chunk's doc)
-    topic: str             # display name
-    front: str             # the cue side
-    back: str              # the recall target
+    document_id: str  # source attribution (first grounding chunk's doc)
+    topic: str  # display name
+    front: str  # the cue side
+    back: str  # the recall target
     explanation: str = ""  # optional extra context shown after the rating
     source_chunk_ids: list[str] = Field(default_factory=list)
     status: FlashcardStatus = FlashcardStatus.pending_review
@@ -95,7 +95,7 @@ class FlashcardRatingEvent(CosmosDocument):
     flashcard_id: str
     topic: str
     rating: FlashcardRating
-    rated_at: str          # ISO 8601 UTC
+    rated_at: str  # ISO 8601 UTC
     selected_option: str | None = None
     is_correct: bool | None = None
     response_time_ms: int | None = None
@@ -155,6 +155,7 @@ class FlashcardRatingBadgeUnlock(CosmosDocument.__base__):
     name: str
     description: str
     icon: str
+    xp_reward: int = 0
 
 
 class FlashcardRatingResponse(CosmosDocument.__base__):

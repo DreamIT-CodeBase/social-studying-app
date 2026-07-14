@@ -15,6 +15,7 @@ class Interaction(CosmosDocument):
     tenant_id: str
     workspace_id: str
     student_id: str
+    session_id: str | None = None
     question_id: str
     topic: str
     is_correct: bool

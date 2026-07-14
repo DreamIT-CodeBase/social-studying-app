@@ -38,6 +38,68 @@ import 'package:social_study_app/features/mascot/widgets/study_buddy.dart';
 /// taps through quickly; the whole thing wraps in ~1.6s.
 const Duration _levelBurstDuration = Duration(milliseconds: 1600);
 
+/// Full-screen confetti used for every correct learning action.
+///
+/// [trigger] is a monotonically increasing event id rather than a boolean so
+/// two consecutive correct answers always restart the animation.
+class CorrectAnswerCelebration extends StatefulWidget {
+  const CorrectAnswerCelebration({
+    super.key,
+    required this.trigger,
+  });
+
+  final int trigger;
+
+  @override
+  State<CorrectAnswerCelebration> createState() =>
+      _CorrectAnswerCelebrationState();
+}
+
+class _CorrectAnswerCelebrationState extends State<CorrectAnswerCelebration>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    if (widget.trigger > 0) _controller.forward();
+  }
+
+  @override
+  void didUpdateWidget(covariant CorrectAnswerCelebration oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.trigger != oldWidget.trigger && widget.trigger > 0) {
+      _controller
+        ..reset()
+        ..forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            if (!_controller.isAnimating) return const SizedBox.shrink();
+            return CustomPaint(
+              size: Size.infinite,
+              painter: _ConfettiPainter(progress: _controller.value),
+            );
+          },
+        ),
+      );
+}
+
 /// Show a full-screen level-up celebration. Resolves once the animation
 /// completes (or the user taps to skip — currently no skip surface).
 Future<void> showLevelUpBurst(

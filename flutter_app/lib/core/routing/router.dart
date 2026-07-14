@@ -12,6 +12,7 @@ import 'package:social_study_app/features/admin/workspaces/presentation/workspac
 import 'package:social_study_app/features/admin/analytics/presentation/workspace_analytics_screen.dart';
 import 'package:social_study_app/features/admin/students/presentation/student_progress_detail_screen.dart';
 import 'package:social_study_app/features/auth/presentation/login_screen.dart';
+import 'package:social_study_app/features/auth/presentation/legal_document_screen.dart';
 import 'package:social_study_app/features/documents/presentation/document_polling_screen.dart';
 import 'package:social_study_app/features/documents/presentation/documents_list_screen.dart';
 import 'package:social_study_app/features/gamification/presentation/badges_screen.dart';
@@ -25,7 +26,8 @@ import 'package:social_study_app/features/onboarding/presentation/permission_onb
 import 'package:social_study_app/features/onboarding/presentation/theme_selection_screen.dart';
 import 'package:social_study_app/features/taxonomy/presentation/taxonomy_viewer_screen.dart';
 import 'package:social_study_app/features/screen_time/screens/screen_time_settings_screen.dart';
-
+import 'package:social_study_app/features/study_sessions/domain/adaptive_session_models.dart';
+import 'package:social_study_app/features/study_sessions/presentation/adaptive_session_screen.dart';
 
 part 'router.g.dart';
 
@@ -121,6 +123,15 @@ GoRouter router(RouterRef ref) {
         path: AppRoutes.login,
         builder: (_, __) => const LoginScreen(),
       ),
+      // ── Legal screens — accessible from the login footer ─────────────
+      GoRoute(
+        path: AppRoutes.terms,
+        builder: (_, __) => const TermsAndConditionsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.privacy,
+        builder: (_, __) => const PrivacyPolicyScreen(),
+      ),
       GoRoute(
         path: AppRoutes.themeSelection,
         builder: (_, __) => const ThemeSelectionScreen(),
@@ -184,12 +195,24 @@ GoRouter router(RouterRef ref) {
         path: AppRoutes.studentScreenTimeSettings,
         builder: (_, __) => const ScreenTimeSettingsScreen(),
       ),
-
+      GoRoute(
+        path: AppRoutes.studentAdaptiveSession,
+        builder: (_, state) => AdaptiveSessionScreen(
+          workspaceId: state.pathParameters['workspaceId']!,
+          mode: adaptiveSessionModeFromWire(
+            state.uri.queryParameters['mode'],
+          ),
+        ),
+      ),
       GoRoute(
         path: AppRoutes.studentRevisionSession,
-        builder: (_, state) => RevisionScreen(
-          workspaceId: state.pathParameters['workspaceId']!,
-        ),
+        builder: (_, state) {
+          final autoStart = state.uri.queryParameters['autoStart'] == 'true';
+          return RevisionScreen(
+            workspaceId: state.pathParameters['workspaceId']!,
+            autoStart: autoStart,
+          );
+        },
       ),
       GoRoute(
         path: AppRoutes.studentDocuments,

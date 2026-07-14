@@ -137,7 +137,7 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
 
     final child = session.when(
       idle: () => Scaffold(
-        backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
         body: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(Spacing.xl),
@@ -369,10 +369,10 @@ class _CardViewState extends ConsumerState<_CardView> {
     final targetLength = notifier.sessionTargetLength;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final _kBg = isDark ? const Color(0xFF0D0D1F) : const Color(0xFFFAF4E8);
+    final _kBg = isDark ? const Color(0xFF0D0D1F) : Colors.white;
     final _kCardBg = isDark ? const Color(0xFF13132A) : Colors.white;
-    final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF4EDE0);
-    final _kBorder = isDark ? const Color(0xFF2A2A50) : const Color(0xFFEFE6D4);
+    final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : Colors.white;
+    final _kBorder = isDark ? const Color(0xFF2A2A50) : const Color(0xFFE5E7EB);
     final _kTextMuted = isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C);
     final _kPrimaryText = isDark ? Colors.white : const Color(0xFF1A1A2E);
 
@@ -728,10 +728,10 @@ class _StatChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final _kBg = isDark ? const Color(0xFF0D0D1F) : const Color(0xFFFAF4E8);
+    final _kBg = isDark ? const Color(0xFF0D0D1F) : Colors.white;
     final _kCardBg = isDark ? const Color(0xFF13132A) : Colors.white;
-    final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF4EDE0);
-    final _kBorder = isDark ? const Color(0xFF2A2A50) : const Color(0xFFEFE6D4);
+    final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : Colors.white;
+    final _kBorder = isDark ? const Color(0xFF2A2A50) : const Color(0xFFE5E7EB);
     final _kTextMuted = isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C);
     final _kPrimaryText = isDark ? Colors.white : const Color(0xFF1A1A2E);
 
@@ -813,10 +813,10 @@ class FlashcardFace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final _kBg = isDark ? const Color(0xFF0D0D1F) : const Color(0xFFFAF4E8);
+    final _kBg = isDark ? const Color(0xFF0D0D1F) : Colors.white;
     final _kCardBg = isDark ? const Color(0xFF13132A) : Colors.white;
-    final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF4EDE0);
-    final _kBorder = isDark ? const Color(0xFF2A2A50) : const Color(0xFFEFE6D4);
+    final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : Colors.white;
+    final _kBorder = isDark ? const Color(0xFF2A2A50) : const Color(0xFFE5E7EB);
     final _kTextMuted = isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C);
     final _kPrimaryText = isDark ? Colors.white : const Color(0xFF1A1A2E);
 
@@ -1360,10 +1360,10 @@ class _ActionArea extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final _kBg = isDark ? const Color(0xFF0D0D1F) : const Color(0xFFFAF4E8);
+    final _kBg = isDark ? const Color(0xFF0D0D1F) : Colors.white;
     final _kCardBg = isDark ? const Color(0xFF13132A) : Colors.white;
-    final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF4EDE0);
-    final _kBorder = isDark ? const Color(0xFF2A2A50) : const Color(0xFFEFE6D4);
+    final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : Colors.white;
+    final _kBorder = isDark ? const Color(0xFF2A2A50) : const Color(0xFFE5E7EB);
     final _kTextMuted = isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C);
     final _kPrimaryText = isDark ? Colors.white : const Color(0xFF1A1A2E);
 
@@ -2289,7 +2289,7 @@ class _CardTransitionScreenState extends State<_CardTransitionScreen>
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC);
+    final bg = isDark ? const Color(0xFF0F172A) : Colors.white;
     final progress = widget.sessionTarget > 0
         ? (widget.currentIndex - 1) / widget.sessionTarget
         : 0.0;

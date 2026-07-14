@@ -80,7 +80,7 @@ final activeStudentWorkspaceProvider = AutoDisposeProvider<Workspace?>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ActiveStudentWorkspaceRef = AutoDisposeProviderRef<Workspace?>;
-String _$activeWorkspaceIdHash() => r'57fd598d3653ce3536e3ef7176b0dcc49108fd58';
+String _$activeWorkspaceIdHash() => r'b492f321b6ce08da946e0b6d992565fe30dd7852';
 
 /// See also [ActiveWorkspaceId].
 @ProviderFor(ActiveWorkspaceId)

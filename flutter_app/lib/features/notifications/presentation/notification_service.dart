@@ -92,10 +92,8 @@ class NotificationService {
       return false;
     }
 
-    debugPrint('\n\n========================================');
-    debugPrint('YOUR FCM TOKEN FOR FIREBASE CONSOLE:');
-    debugPrint(token);
-    debugPrint('========================================\n\n');
+    // FCM tokens identify app installations and must never be printed.
+    debugPrint('NotificationService: FCM token acquired');
 
     final installationId = await _installationId();
     final platform = _detectPlatform();

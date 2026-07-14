@@ -52,9 +52,18 @@ from app.mcp_tools.retrieve_content import (
     RetrieveContentOutput,
 )
 
+
 class NextFlashcardRequest(BaseModel):
-    topics: list[str] | None = Field(default=None, description="Optional selected topic IDs/names to filter flashcards.")
-    mastery: float | None = Field(default=None, ge=0.0, le=1.0, description="Student's current overall mastery (0–1). Used to bias difficulty.")
+    topics: list[str] | None = Field(
+        default=None, description="Optional selected topic IDs/names to filter flashcards."
+    )
+    mastery: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Student's current overall mastery (0–1). Used to bias difficulty.",
+    )
+
 
 def _resolve_descendants(workspace: Workspace, selected_topic_ids: list[str]) -> list[str]:
     # Build maps
@@ -63,7 +72,7 @@ def _resolve_descendants(workspace: Workspace, selected_topic_ids: list[str]) ->
     for t in workspace.taxonomy.topics:
         if t.parent_id:
             parent_to_children.setdefault(t.parent_id, []).append(t.id)
-            
+
     resolved_ids = set()
     for start_id in selected_topic_ids:
         # If it's a topic name (not starting with tpc_), we find its ID first
@@ -73,10 +82,10 @@ def _resolve_descendants(workspace: Workspace, selected_topic_ids: list[str]) ->
                 if t.name.casefold() == start_id.casefold():
                     start_id_resolved = t.id
                     break
-        
+
         if start_id_resolved not in topics_map:
             continue
-            
+
         resolved_ids.add(start_id_resolved)
         queue = [start_id_resolved]
         while queue:
@@ -86,8 +95,10 @@ def _resolve_descendants(workspace: Workspace, selected_topic_ids: list[str]) ->
                 if child not in resolved_ids:
                     resolved_ids.add(child)
                     queue.append(child)
-                    
+
     return [topics_map[tid].name for tid in resolved_ids if tid in topics_map]
+
+
 from app.models.base import utc_now
 from app.models.flashcard import (
     Flashcard,
@@ -185,19 +196,17 @@ async def next_flashcard(
         "student_id": current_user.id,
         "is_correct": True,
     }
-    
+
     # 2. Apply topic filters (including child descendants)
     if request_data and request_data.topics:
         allowed_names = _resolve_descendants(workspace, request_data.topics)
         if not allowed_names:
-            raise ConflictError(
-                "None of the selected topics exist in this workspace."
-            )
+            raise ConflictError("None of the selected topics exist in this workspace.")
         query["topic"] = {"$in": allowed_names}
-        
+
     cursor = interactions_col.find(query)
     interactions = await cursor.to_list(length=5000)
-    
+
     if not interactions:
         raise ConflictError(
             "You haven't answered any questions correctly yet! "
@@ -210,7 +219,7 @@ async def next_flashcard(
 
     # Sort descending by answered_at (newest first)
     interactions.sort(key=lambda x: x.get("answered_at", ""), reverse=True)
-    
+
     # 3. Apply recency gradient — decay varies by tier:
     #    - BEGINNER : high decay (0.95) → strong preference for recent,
     #      simpler interactions so the student reinforces recent learning.
@@ -226,9 +235,9 @@ async def next_flashcard(
 
     candidates: list[dict] = []
     available_indices = list(range(len(interactions)))
-    
+
     for _ in range(min(pool_size, len(interactions))):
-        current_weights = [decay ** idx for idx in available_indices]
+        current_weights = [decay**idx for idx in available_indices]
         curr_total = sum(current_weights)
         if curr_total <= 0:
             break
@@ -242,7 +251,7 @@ async def next_flashcard(
                 break
         chosen_real_idx = available_indices.pop(chosen_idx_in_list)
         candidates.append(interactions[chosen_real_idx])
-        
+
     attempt_log: list[str] = []
 
     for attempt_index, candidate_interaction in enumerate(candidates, start=1):
@@ -250,15 +259,17 @@ async def next_flashcard(
         topic_name = candidate_interaction.get("topic")
         if not question_id or not topic_name:
             continue
-            
+
         q_col = get_collection(current_user.tenant_id, QUESTION_QUEUE)
         q_doc_raw = await q_col.find_one({"_id": question_id})
         if not q_doc_raw:
-            attempt_log.append(f"attempt={attempt_index} question={question_id} → question not found")
+            attempt_log.append(
+                f"attempt={attempt_index} question={question_id} → question not found"
+            )
             continue
-            
+
         question_doc = Question.model_validate(q_doc_raw)
-        
+
         outcome = await _try_candidate(
             current_user=current_user,
             workspace_id=workspace_id,
@@ -268,10 +279,7 @@ async def next_flashcard(
         )
         if isinstance(outcome, _Persisted):
             return outcome.for_student
-        attempt_log.append(
-            f"attempt={attempt_index} topic={topic_name!r} → "
-            f"{outcome.reason}"
-        )
+        attempt_log.append(f"attempt={attempt_index} topic={topic_name!r} → {outcome.reason}")
 
     logger.warning(
         "next_flashcard exhausted attempts workspace=%s student=%s log=%s",
@@ -357,8 +365,7 @@ async def rate_flashcard(
     )
 
     logger.info(
-        "Flashcard rated flashcard=%s student=%s rating=%s "
-        "xp=%d level=%d streak=%d badges=%d",
+        "Flashcard rated flashcard=%s student=%s rating=%s xp=%d level=%d streak=%d badges=%d",
         flashcard_id,
         current_user.id,
         submission.rating.value,
@@ -395,6 +402,7 @@ async def rate_flashcard(
                 name=b.name,
                 description=b.description,
                 icon=b.icon,
+                xp_reward=b.xp_reward,
             )
             for b in delta.badges_unlocked
         ],
@@ -423,7 +431,7 @@ async def _try_candidate(
     mastery_tier: str = "beginner",
 ) -> _Persisted | _Skip:
     from app.mcp_tools.retrieve_content import RetrievedChunk
-    
+
     # Format question details into a single chunk text
     question_text = f"Question: {question_doc.body}\n"
     if question_doc.options:
@@ -433,7 +441,7 @@ async def _try_candidate(
     question_text += f"Correct Answer: {question_doc.answer}\n"
     if question_doc.explanation:
         question_text += f"Explanation: {question_doc.explanation}\n"
-        
+
     chunk = RetrievedChunk(
         chunk_id="chk_q_" + question_doc.id,
         chunk_index=0,
@@ -445,19 +453,23 @@ async def _try_candidate(
 
     # First check if we already have an approved flashcard for this topic in the workspace
     fc_col = get_collection(current_user.tenant_id, FLASHCARDS)
-    existing_fc = await fc_col.find_one({
-        "workspace_id": workspace_id,
-        "topic": topic_name,
-        "status": FlashcardStatus.approved.value,
-        "deleted_at": None,
-    })
+    existing_fc = await fc_col.find_one(
+        {
+            "workspace_id": workspace_id,
+            "topic": topic_name,
+            "status": FlashcardStatus.approved.value,
+            "deleted_at": None,
+        }
+    )
     if existing_fc:
         logger.info(
             "Serving existing approved flashcard for topic=%s workspace=%s",
             topic_name,
             workspace_id,
         )
-        return _Persisted(for_student=FlashcardForStudent.from_doc(Flashcard.model_validate(existing_fc)))
+        return _Persisted(
+            for_student=FlashcardForStudent.from_doc(Flashcard.model_validate(existing_fc))
+        )
 
     seen_card_fronts = await _get_seen_card_fronts(
         tenant_id=current_user.tenant_id,
@@ -495,7 +507,6 @@ async def _try_candidate(
         return _Skip(f"safety flagged ({verdict.reason})")
     # Rejected — not persisted (see _persist_flashcard).
     return _Skip(f"review rejected: {verdict.reason}")
-
 
 
 # How many past ratings to look back when building the seen-fronts list.
@@ -578,9 +589,7 @@ async def _review(generated: GeneratedFlashcard) -> _FlashcardVerdict:
         )
 
     # Content safety on the combined text.
-    combined = "\n\n".join(
-        s for s in (generated.front, generated.back, generated.explanation) if s
-    )
+    combined = "\n\n".join(s for s in (generated.front, generated.back, generated.explanation) if s)
     safety = await content_safety.analyze_extracted_text(combined)
     if safety.flagged:
         return _FlashcardVerdict(
@@ -611,15 +620,9 @@ def _structural_check(generated: GeneratedFlashcard) -> str | None:
     front = generated.front
     back = generated.back
     if not (_MIN_FRONT_CHARS <= len(front) <= _MAX_FRONT_CHARS):
-        return (
-            f"front length {len(front)} outside "
-            f"[{_MIN_FRONT_CHARS},{_MAX_FRONT_CHARS}]"
-        )
+        return f"front length {len(front)} outside [{_MIN_FRONT_CHARS},{_MAX_FRONT_CHARS}]"
     if not (_MIN_BACK_CHARS <= len(back) <= _MAX_BACK_CHARS):
-        return (
-            f"back length {len(back)} outside "
-            f"[{_MIN_BACK_CHARS},{_MAX_BACK_CHARS}]"
-        )
+        return f"back length {len(back)} outside [{_MIN_BACK_CHARS},{_MAX_BACK_CHARS}]"
     if front.strip().casefold() == back.strip().casefold():
         return "front equals back (no recall value)"
     return None

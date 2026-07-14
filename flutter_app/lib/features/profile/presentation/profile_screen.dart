@@ -4,12 +4,13 @@ import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/routing/routes.dart';
+import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 
 // ─── Colours matching the reference exactly ───────────────────────────────
 const _kSkyTop    = Color(0xFFB8EBF7); // pale sky blue
 const _kSkyBottom = Color(0xFF7DD5EE); // deeper sky at horizon
-const _kCream     = Color(0xFFF7EDD8); // warm parchment body
+const _kCream     = Color(0xFFFFFFFF); // clean white body
 const _kAmberL    = Color(0xFFFFBF3C); // amber card left
 const _kAmberR    = Color(0xFFFFD86B); // amber card right (lighter)
 const _kMenuBg    = Color(0xFFFFFFFF);
@@ -26,6 +27,10 @@ class ProfileScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(appThemeModeProvider) == AppThemeMode.mature) {
+      return const _CollegeProfileScreen();
+    }
+
     final authState = ref.watch(authNotifierProvider).valueOrNull;
 
     final (displayName, email) = authState?.maybeWhen(
@@ -210,6 +215,182 @@ class ProfileScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A quiet, professional account page for the Teen & College experience.
+/// The kids experience intentionally keeps the illustrated profile above.
+class _CollegeProfileScreen extends ConsumerWidget {
+  const _CollegeProfileScreen();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authNotifierProvider).valueOrNull;
+    final (displayName, email) = authState?.maybeWhen(
+          authenticated: (user) => (user.displayName, user.email),
+          orElse: () => ('User', 'user@example.com'),
+        ) ??
+        ('User', 'user@example.com');
+    final isStudent = currentFlavor == AppFlavor.student;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final background = isDark ? const Color(0xFF0F172A) : Colors.white;
+    final surface = isDark ? const Color(0xFF172033) : Colors.white;
+    final border = isDark ? const Color(0xFF26344D) : const Color(0xFFE2E8F0);
+    final primaryText = isDark ? Colors.white : const Color(0xFF0F172A);
+    final secondaryText = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+
+    return Scaffold(
+      backgroundColor: background,
+      appBar: AppBar(
+        backgroundColor: background,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(Icons.arrow_back_rounded),
+          tooltip: 'Back',
+        ),
+        title: const Text('Profile', style: TextStyle(fontWeight: FontWeight.w700)),
+        centerTitle: true,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: border),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFEFF6FF),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.account_circle_rounded, size: 46, color: Color(0xFF2563EB)),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(displayName, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: primaryText)),
+                      const SizedBox(height: 4),
+                      Text(email, style: TextStyle(fontSize: 13, color: secondaryText), overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 28),
+          Text('Preferences', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: secondaryText)),
+          const SizedBox(height: 8),
+          _CollegeSettingsCard(
+            surface: surface,
+            border: border,
+            children: [
+              _CollegeSettingsTile(
+                icon: Icons.palette_outlined,
+                title: 'Experience style',
+                subtitle: 'Change your study environment',
+                onTap: () => context.push(AppRoutes.themeSelection),
+              ),
+              if (!isStudent)
+                _CollegeSettingsTile(
+                  icon: Icons.screen_lock_portrait_outlined,
+                  title: 'Screen time controls',
+                  subtitle: 'Manage student study access',
+                  onTap: () => context.push('/student/screen-time-settings'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          _CollegeSettingsCard(
+            surface: surface,
+            border: border,
+            children: [
+              _CollegeSettingsTile(
+                icon: Icons.logout_rounded,
+                title: 'Sign out',
+                subtitle: 'Sign out of this account',
+                isDestructive: true,
+                onTap: () => _confirmSignOut(context, ref),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmSignOut(BuildContext context, WidgetRef ref) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sign out'),
+        content: const Text('Are you sure you want to sign out?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              context.pop();
+              ref.read(authNotifierProvider.notifier).signOut();
+            },
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CollegeSettingsCard extends StatelessWidget {
+  const _CollegeSettingsCard({required this.surface, required this.border, required this.children});
+  final Color surface;
+  final Color border;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        decoration: BoxDecoration(color: surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: border)),
+        child: Column(children: children),
+      );
+}
+
+class _CollegeSettingsTile extends StatelessWidget {
+  const _CollegeSettingsTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.isDestructive = false,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool isDestructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final color = isDestructive ? const Color(0xFFDC2626) : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155));
+    return ListTile(
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Icon(icon, color: color),
+      title: Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: color)),
+      subtitle: Text(subtitle),
+      trailing: Icon(Icons.chevron_right_rounded, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
     );
   }
 }

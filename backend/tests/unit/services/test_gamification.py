@@ -8,6 +8,7 @@ when you tune the XP awards or the streak cap, these break loudly.
 
 from __future__ import annotations
 
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,15 +18,12 @@ from app.models.gamification import Badge, GamificationState
 from app.models.question import DifficultyLevel
 from app.services import gamification as gamification_service
 from app.services.gamification import (
-    ATTEMPT_XP,
-    CORRECT_BONUS_XP,
     DAILY_ACTIVITY_RETENTION_DAYS,
-    FLASHCARD_XP,
-    STREAK_BONUS_CAP,
     WRONG_ANSWER_PENALTY_XP,
     _apply_streak,
     _apply_weekly_reset,
     _bump_daily_activity,
+    _bump_daily_xp,
     _iso_week_start,
     compute_question_xp,
     level_for_xp,
@@ -34,23 +32,22 @@ from app.services.gamification import (
     xp_for_next_level,
     xp_into_level,
 )
-from datetime import date
 
 # ── Pure XP rule ────────────────────────────────────────────────────────────
 
 
 def test_compute_xp_wrong_answer_applies_penalty():
-    """Under new rules, wrong answer evaluates to 1 XP."""
+    """Every wrong study or revision answer deducts exactly 1 XP."""
     xp = compute_question_xp(
         is_correct=False,
         difficulty=DifficultyLevel.advanced,
         streak_days=5,
     )
-    assert xp == 1
+    assert xp == -1
 
 
 def test_compute_xp_wrong_answer_penalty_is_negative():
-    pass
+    assert WRONG_ANSWER_PENALTY_XP == -1
 
 
 def test_compute_xp_correct_advanced_at_zero_streak():
@@ -245,6 +242,23 @@ def test_bump_daily_activity_prunes_oldest_past_retention():
     assert "2026-04-01" not in state.daily_activity
 
 
+def test_bump_daily_xp_accumulates_net_xp_for_the_date():
+    state = _state()
+    _bump_daily_xp(state, today=date(2026, 5, 23), xp_delta=9)
+    _bump_daily_xp(state, today=date(2026, 5, 23), xp_delta=-1)
+    assert state.daily_xp == {"2026-05-23": 8}
+
+
+def test_bump_daily_xp_prunes_oldest_past_retention():
+    state = _state()
+    for i in range(DAILY_ACTIVITY_RETENTION_DAYS + 5):
+        state.daily_xp[f"2026-04-{i + 1:02d}"] = i
+    _bump_daily_xp(state, today=date(2026, 5, 23), xp_delta=7)
+    assert len(state.daily_xp) == DAILY_ACTIVITY_RETENTION_DAYS
+    assert state.daily_xp["2026-05-23"] == 7
+    assert "2026-04-01" not in state.daily_xp
+
+
 # ── End-to-end (async with fake collection) ─────────────────────────────────
 
 
@@ -296,6 +310,27 @@ def _seed(
 
 
 @pytest.mark.asyncio
+async def test_record_question_attempt_persists_daily_xp_history():
+    col, store = _fake_collection(initial=None)
+    with patch.object(gamification_service, "get_collection", return_value=col):
+        await record_question_attempt(
+            tenant_id="ten_a",
+            workspace_id="wsp_a",
+            student_id="stu_a",
+            topic="Photosynthesis",
+            difficulty=DifficultyLevel.beginner,
+            is_correct=True,
+            now="2026-05-23T10:00:00+00:00",
+        )
+
+    persisted = store["current"]
+    assert persisted is not None
+    assert persisted["daily_xp"] == {
+        "2026-05-23": persisted["xp_this_week"],
+    }
+
+
+@pytest.mark.asyncio
 async def test_record_question_attempt_initializes_state_on_first_event():
     col, store = _fake_collection(initial=None)
     with patch.object(gamification_service, "get_collection", return_value=col):
@@ -309,8 +344,9 @@ async def test_record_question_attempt_initializes_state_on_first_event():
             now="2026-05-23T10:00:00+00:00",
         )
 
-    # 1 XP for question + 2 XP daily login bonus = 3 XP.
-    assert delta.xp_earned == 3
+    # +1 action XP and the configurable +5 First Steps achievement.
+    # Daily login is deliberately claimed through its own idempotent endpoint.
+    assert delta.xp_earned == 6
     assert delta.streak_days == 1
     assert delta.streak_extended is True
     assert delta.leveled_up is False  # level 1 → still 1 below 100 XP
@@ -318,8 +354,8 @@ async def test_record_question_attempt_initializes_state_on_first_event():
     # State persisted.
     persisted = store["current"]
     assert persisted is not None
-    assert persisted["xp_total"] == 3
-    assert persisted["xp_by_topic"]["Photosynthesis"] == 3
+    assert persisted["xp_total"] == 6
+    assert persisted["xp_by_topic"]["Photosynthesis"] == 1
     assert persisted["questions_answered"] == 1
     assert persisted["questions_correct"] == 1
     assert persisted["daily_activity"]["2026-05-23"] == 1
@@ -368,7 +404,8 @@ async def test_record_question_attempt_level_up_flag_fires_on_threshold_cross():
         )
     assert delta.leveled_up is True
     assert delta.new_level == 2
-    assert store["current"]["xp_total"] == 100
+    # +1 answer, then First Steps, Rising Star, and Level Up rewards (+5 each).
+    assert store["current"]["xp_total"] == 115
 
 
 @pytest.mark.asyncio
@@ -428,8 +465,8 @@ async def test_record_flashcard_rating_is_flat_xp_and_separate_counter():
             rating=FlashcardRating.medium,
             now="2026-05-23T10:00:00+00:00",
         )
-    # 0 XP for rating + 2 XP daily login bonus = 2 XP.
-    assert delta.xp_earned == 2
+    # Legacy medium remains neutral; the first-card achievement awards +5 XP.
+    assert delta.xp_earned == 5
     # Doesn't touch the question counters.
     persisted = store["current"]
     assert persisted["questions_answered"] == 0
@@ -497,7 +534,7 @@ async def test_record_question_attempt_persists_via_upsert():
 
 @pytest.mark.asyncio
 async def test_wrong_answer_deducts_xp_from_total():
-    """A wrong answer awards +1 XP under new rules."""
+    """A wrong answer deducts 1 XP; a fresh First Steps badge adds 5 XP."""
     initial = _seed(xp_total=50, level=1, streak_days=1, last_active_date="2026-05-23")
     col, store = _fake_collection(initial=initial)
     with patch.object(gamification_service, "get_collection", return_value=col):
@@ -510,8 +547,8 @@ async def test_wrong_answer_deducts_xp_from_total():
             is_correct=False,
             now="2026-05-23T18:00:00+00:00",
         )
-    assert delta.xp_earned == 1
-    assert store["current"]["xp_total"] == 51
+    assert delta.xp_earned == 4
+    assert store["current"]["xp_total"] == 54
 
 
 @pytest.mark.asyncio
@@ -519,7 +556,7 @@ async def test_record_session_completion_awards_correct_xp():
     col, store = _fake_collection(initial=None)
     from app.services.gamification import record_session_completion
 
-    # 1. Study session completion with daily login (streak_extended = True)
+    # 1. Study completion (+8) and its first-session achievement (+8).
     with patch.object(gamification_service, "get_collection", return_value=col):
         delta = await record_session_completion(
             tenant_id="ten_a",
@@ -528,9 +565,8 @@ async def test_record_session_completion_awards_correct_xp():
             session_type="study",
             now="2026-05-23T10:00:00+00:00",
         )
-    # +8 XP study session + 2 XP daily login bonus = 10 XP
-    assert delta.xp_earned == 10
-    assert store["current"]["xp_total"] == 10
+    assert delta.xp_earned == 16
+    assert store["current"]["xp_total"] == 16
 
     # 2. Revision session completion on same day (streak_extended = False)
     with patch.object(gamification_service, "get_collection", return_value=col):
@@ -541,6 +577,6 @@ async def test_record_session_completion_awards_correct_xp():
             session_type="revision",
             now="2026-05-23T12:00:00+00:00",
         )
-    # +5 XP revision session, no login bonus
+    # +5 XP revision session; daily login remains a separate event.
     assert delta.xp_earned == 5
-    assert store["current"]["xp_total"] == 15
+    assert store["current"]["xp_total"] == 21

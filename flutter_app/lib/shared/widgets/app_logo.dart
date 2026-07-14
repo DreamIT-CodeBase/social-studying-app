@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:social_study_app/core/theme/app_colors.dart';
 
 class AppLogo extends StatelessWidget {
   const AppLogo({
@@ -27,24 +26,7 @@ class AppLogo extends StatelessWidget {
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [AppColors.primary, Color(0xFF6366F1)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Center(
-                child: Icon(
-                  Icons.auto_stories_rounded,
-                  size: size * 0.5,
-                  color: Colors.white,
-                ),
-              ),
-            );
-          },
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
         ),
       ),
     );

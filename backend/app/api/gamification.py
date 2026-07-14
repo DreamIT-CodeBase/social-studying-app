@@ -54,6 +54,7 @@ class EarnedBadgeView(BaseModel):
     description: str
     icon: str
     earned_at: str
+    xp_reward: int = 0
 
 
 class AvailableBadgeView(BaseModel):
@@ -68,6 +69,16 @@ class AvailableBadgeView(BaseModel):
     name: str
     description: str
     icon: str
+    xp_reward: int = 0
+
+
+class DailyLoginFeedback(BaseModel):
+    awarded: bool
+    xp_earned: int
+    xp_total: int
+    new_level: int
+    leveled_up: bool
+    badges_unlocked: list[EarnedBadgeView]
 
 
 class GamificationProfile(BaseModel):
@@ -99,6 +110,7 @@ class GamificationProfile(BaseModel):
 
     badges: list[EarnedBadgeView]
     daily_activity: dict[str, int]
+    daily_xp: dict[str, int]
 
 
 class StreakSummary(BaseModel):
@@ -159,6 +171,42 @@ class LeaderboardResponse(BaseModel):
 
 
 # ── Profile endpoint ────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/users/me/gamification/daily-login",
+    response_model=DailyLoginFeedback,
+)
+async def claim_daily_login(
+    workspace_id: str,
+    current_user: User = Depends(get_current_user),
+) -> DailyLoginFeedback:
+    """Claim the once-per-calendar-day +2 XP login reward."""
+    _assert_workspace_member(current_user, workspace_id)
+    result = await gamification_service.record_daily_login(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=current_user.id,
+    )
+    delta = result.delta
+    return DailyLoginFeedback(
+        awarded=result.awarded,
+        xp_earned=delta.xp_earned,
+        xp_total=delta.state.xp_total if delta.state is not None else 0,
+        new_level=delta.new_level,
+        leveled_up=delta.leveled_up,
+        badges_unlocked=[
+            EarnedBadgeView(
+                badge_id=badge.badge_id,
+                name=badge.name,
+                description=badge.description,
+                icon=badge.icon,
+                earned_at=badge.earned_at,
+                xp_reward=badge.xp_reward,
+            )
+            for badge in delta.badges_unlocked
+        ],
+    )
 
 
 @router.get(
@@ -253,6 +301,7 @@ async def get_badges(
             description=b.description,
             icon=b.icon,
             earned_at=b.earned_at,
+            xp_reward=b.xp_reward,
         )
         for b in state.badges
     ]
@@ -262,6 +311,7 @@ async def get_badges(
             name=definition.name,
             description=definition.description,
             icon=definition.icon,
+            xp_reward=definition.xp_reward,
         )
         for definition in badges_module.BADGES
         if definition.id not in earned_ids
@@ -373,10 +423,12 @@ def _state_to_profile(state: GamificationState) -> GamificationProfile:
                 description=b.description,
                 icon=b.icon,
                 earned_at=b.earned_at,
+                xp_reward=b.xp_reward,
             )
             for b in state.badges
         ],
         daily_activity=state.daily_activity,
+        daily_xp=state.daily_xp,
     )
 
 
@@ -409,9 +461,7 @@ def _assert_can_view(
         return
     # Student fall-through.
     if user.id != target_user_id:
-        raise ForbiddenError(
-            "Students can only view their own gamification profile"
-        )
+        raise ForbiddenError("Students can only view their own gamification profile")
 
 
 async def _read_workspace(tenant_id: str, workspace_id: str) -> Workspace:
@@ -422,9 +472,7 @@ async def _read_workspace(tenant_id: str, workspace_id: str) -> Workspace:
     return Workspace.model_validate(raw)
 
 
-async def _fetch_display_names(
-    *, tenant_id: str, student_ids: list[str]
-) -> dict[str, str]:
+async def _fetch_display_names(*, tenant_id: str, student_ids: list[str]) -> dict[str, str]:
     """Batch-fetch ``display_name`` for the given users.
 
     One ``find({"_id": {"$in": ids}})`` query instead of N point reads.
@@ -496,6 +544,7 @@ async def complete_session(
                 description=b.description,
                 icon=b.icon,
                 earned_at=b.earned_at,
+                xp_reward=b.xp_reward,
             )
             for b in delta.badges_unlocked
         ],

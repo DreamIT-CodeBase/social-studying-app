@@ -142,6 +142,7 @@ async def next_question(
     _assert_workspace_access(current_user, workspace_id)
 
     import os
+
     is_testing = "PYTEST_CURRENT_TEST" in os.environ
     if not revision and not is_testing:
         q_doc = await question_pipeline.get_next_question(
@@ -158,10 +159,9 @@ async def next_question(
         # --- Revision Session Logic ---
         # 1. Fetch past interactions in this workspace
         interactions_col = get_collection(current_user.tenant_id, INTERACTIONS)
-        cursor = interactions_col.find({
-            "workspace_id": workspace_id,
-            "student_id": current_user.id
-        })
+        cursor = interactions_col.find(
+            {"workspace_id": workspace_id, "student_id": current_user.id}
+        )
         interactions = await cursor.to_list(length=1000)
 
         # 2. Extract wrong answers (recent wrong answers favoured/sorted first)
@@ -183,8 +183,12 @@ async def next_question(
                     current_session.append(itx)
                 else:
                     try:
-                        prev_time = datetime.fromisoformat(current_session[-1].get("answered_at", "").replace("Z", "+00:00"))
-                        curr_time = datetime.fromisoformat(itx.get("answered_at", "").replace("Z", "+00:00"))
+                        prev_time = datetime.fromisoformat(
+                            current_session[-1].get("answered_at", "").replace("Z", "+00:00")
+                        )
+                        curr_time = datetime.fromisoformat(
+                            itx.get("answered_at", "").replace("Z", "+00:00")
+                        )
                         if (curr_time - prev_time).total_seconds() > 30 * 60:
                             sessions.append(current_session)
                             current_session = [itx]
@@ -194,7 +198,7 @@ async def next_question(
                         current_session.append(itx)
             if current_session:
                 sessions.append(current_session)
-            
+
             # Extract from the recent 5 sessions (newest session first)
             recent_5_sessions = list(reversed(sessions))[:5]
             for session in recent_5_sessions:
@@ -208,21 +212,21 @@ async def next_question(
         # 4. Filter out questions answered in the last 1 hour to prevent repetition
         cutoff = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
         recent_answered_qids = {
-            i.get("question_id")
-            for i in interactions
-            if i.get("answered_at", "") >= cutoff
+            i.get("question_id") for i in interactions if i.get("answered_at", "") >= cutoff
         }
         eligible_qids = [qid for qid in candidates if qid not in recent_answered_qids]
 
         # 5. Fetch and serve eligible question
         if eligible_qids:
             col = get_collection(current_user.tenant_id, QUESTION_QUEUE)
-            q_cursor = col.find({
-                "_id": {"$in": eligible_qids},
-                "workspace_id": workspace_id,
-                "status": QuestionStatus.approved.value,
-                "deleted_at": None
-            })
+            q_cursor = col.find(
+                {
+                    "_id": {"$in": eligible_qids},
+                    "workspace_id": workspace_id,
+                    "status": QuestionStatus.approved.value,
+                    "deleted_at": None,
+                }
+            )
             fetched_qs = await q_cursor.to_list(length=100)
             q_map = {q["_id"]: q for q in fetched_qs}
             for qid in eligible_qids:
@@ -234,9 +238,13 @@ async def next_question(
         # 6. Fallback: Generate a new revision question on a recent topic
         target_topic = None
         if wrong_interactions:
-            target_topic = sorted(wrong_interactions, key=lambda x: x.get("answered_at", ""), reverse=True)[0].get("topic")
+            target_topic = sorted(
+                wrong_interactions, key=lambda x: x.get("answered_at", ""), reverse=True
+            )[0].get("topic")
         elif interactions:
-            target_topic = sorted(interactions, key=lambda x: x.get("answered_at", ""), reverse=True)[0].get("topic")
+            target_topic = sorted(
+                interactions, key=lambda x: x.get("answered_at", ""), reverse=True
+            )[0].get("topic")
 
         if target_topic:
             workspace = await _read_workspace(current_user.tenant_id, workspace_id)
@@ -265,7 +273,7 @@ async def next_question(
                         break
                 if not candidate and selection.candidates:
                     candidate = selection.candidates[0]
-                
+
                 if candidate:
                     outcome = await _try_candidate(
                         current_user=current_user,
@@ -276,7 +284,10 @@ async def next_question(
                         all_seen_bodies=all_seen_bodies,
                     )
                     if isinstance(outcome, _Persisted):
-                        logger.info("next_question (revision fallback generation) generated new question=%s", outcome.for_student.id)
+                        logger.info(
+                            "next_question (revision fallback generation) generated new question=%s",
+                            outcome.for_student.id,
+                        )
                         return outcome.for_student
             except Exception as e:
                 logger.warning("next_question (revision fallback generation) failed: %s", e)
@@ -356,8 +367,7 @@ async def next_question(
             return outcome.for_student
 
         attempt_log.append(
-            f"attempt={attempt_index} topic={candidate.topic_name!r} → "
-            f"{outcome.reason}"
+            f"attempt={attempt_index} topic={candidate.topic_name!r} → {outcome.reason}"
         )
 
     logger.warning(
@@ -453,7 +463,7 @@ async def _try_candidate(
         logger.warning(
             "Generated question body duplicate of seen question for student=%s body=%r",
             current_user.id,
-            generated.body
+            generated.body,
         )
         return _Skip("generated question body matches an already-seen question")
 
@@ -472,9 +482,7 @@ async def _try_candidate(
 
     if review.verdict == ReviewVerdict.flagged:
         # Persisted for admin review; don't serve.
-        return _Skip(
-            f"safety flagged ({', '.join(review.safety.flagged_categories)})"
-        )
+        return _Skip(f"safety flagged ({', '.join(review.safety.flagged_categories)})")
 
     # Rejected — never persisted (see _persist_question). Skip.
     return _Skip(f"review rejected: {review.reason}")
@@ -508,9 +516,7 @@ async def _persist_question(
         if review.verdict == ReviewVerdict.approved
         else QuestionStatus.pending_review
     )
-    document_id = (
-        retrieved.chunks[0].document_id if retrieved.chunks else "unknown"
-    )
+    document_id = retrieved.chunks[0].document_id if retrieved.chunks else "unknown"
     question_id = f"qst_{uuid4().hex}"
 
     question = Question(
@@ -847,6 +853,7 @@ async def submit_answer(
                 name=b.name,
                 description=b.description,
                 icon=b.icon,
+                xp_reward=b.xp_reward,
             )
             for b in gamification_delta.badges_unlocked
         ],
@@ -903,8 +910,7 @@ async def skip_question(
     )
     if question.status != QuestionStatus.approved:
         raise ConflictError(
-            f"Question {question_id} is not in a skippable state "
-            f"(status={question.status.value})."
+            f"Question {question_id} is not in a skippable state (status={question.status.value})."
         )
 
     new_count = question.defer_count + 1
@@ -915,9 +921,7 @@ async def skip_question(
     if new_count >= UNANSWERED_REPROMPT_MAX_SKIPS:
         next_eligible = None
     else:
-        next_eligible = (
-            datetime.now(UTC) + UNANSWERED_REPROMPT_COOLDOWN
-        ).isoformat()
+        next_eligible = (datetime.now(UTC) + UNANSWERED_REPROMPT_COOLDOWN).isoformat()
 
     col = get_collection(current_user.tenant_id, QUESTION_QUEUE)
     await col.update_one(
@@ -932,8 +936,7 @@ async def skip_question(
         },
     )
     logger.info(
-        "Question skipped question=%s student=%s defer_count=%d "
-        "next_eligible=%s",
+        "Question skipped question=%s student=%s defer_count=%d next_eligible=%s",
         question_id,
         current_user.id,
         new_count,
@@ -980,6 +983,7 @@ async def _record_interaction(
     is_correct: bool,
     xp_earned: int,
     timestamp: str,
+    session_id: str | None = None,
 ) -> None:
     """Append to the append-only ``interactions`` collection.
 
@@ -994,6 +998,7 @@ async def _record_interaction(
         tenant_id=tenant_id,
         workspace_id=workspace_id,
         student_id=student_id,
+        session_id=session_id,
         question_id=question.id,
         topic=question.topic,
         is_correct=is_correct,
@@ -1092,11 +1097,13 @@ async def _claim_prefetched_question(
         return None
     raw["prefetched_for"] = None
     question = Question.model_validate(raw)
-    
+
     # Guard: if the student has already answered this question or one with the exact same body, discard it
     normalized_prefetched_body = question.body.strip().lower().rstrip("?.!")
     seen_bodies_normalized = {b.strip().lower().rstrip("?.!") for b in (already_seen_bodies or [])}
-    if (already_seen_ids and question.id in already_seen_ids) or normalized_prefetched_body in seen_bodies_normalized:
+    if (
+        already_seen_ids and question.id in already_seen_ids
+    ) or normalized_prefetched_body in seen_bodies_normalized:
         logger.info(
             "Discarding stale prefetched question=%s (already seen or duplicate body) student=%s",
             question.id,
@@ -1226,7 +1233,7 @@ async def _prefetch_impl(
         logger.warning(
             "Prefetch generated question body duplicate of seen question for student=%s body=%r",
             student_id,
-            generated.body
+            generated.body,
         )
         return
 
@@ -1237,9 +1244,7 @@ async def _prefetch_impl(
         # submission anyway.
         return
 
-    document_id = (
-        retrieved.chunks[0].document_id if retrieved.chunks else "unknown"
-    )
+    document_id = retrieved.chunks[0].document_id if retrieved.chunks else "unknown"
     question = Question(
         **{"_id": f"qst_{uuid4().hex}"},
         tenant_id=tenant_id,

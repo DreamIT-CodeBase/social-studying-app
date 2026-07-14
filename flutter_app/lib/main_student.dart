@@ -60,7 +60,7 @@ class _StudentAppState extends ConsumerState<_StudentApp> {
     });
 
     return MaterialApp.router(
-      title: 'Social Study',
+      title: 'Social Studying',
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,

@@ -101,7 +101,7 @@ void main() {
     await tester.pumpWidget(_wrap(qRepo: qRepo, fRepo: fRepo));
     await tester.pumpAndSettle();
 
-    expect(find.text('Revision'), findsOneWidget);
+    expect(find.text('Quick Revision'), findsOneWidget);
     expect(find.text('Item 1 of 2'), findsOneWidget);
     expect(find.text('Which organelle is the site of photosynthesis?'),
         findsOneWidget);
@@ -320,8 +320,8 @@ void main() {
     await tester.pumpWidget(_wrap(qRepo: qRepo, fRepo: fRepo));
     await tester.pumpAndSettle();
 
-    expect(find.text('No content yet'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Try Again'), findsNothing);
+    expect(find.text("You're all caught up!"), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Start Study Session'), findsOneWidget);
   });
 
   testWidgets('generator-busy state offers a retry that re-fetches',

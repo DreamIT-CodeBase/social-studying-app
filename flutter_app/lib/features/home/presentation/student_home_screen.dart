@@ -13,6 +13,7 @@ import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/flashcards/presentation/flashcard_screen.dart';
 import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
+import 'package:social_study_app/features/home/domain/weekly_xp_summary.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 import 'package:social_study_app/features/progress/presentation/progress_screen.dart';
 import 'package:social_study_app/features/questions/presentation/question_screen.dart';
@@ -27,12 +28,9 @@ import 'package:social_study_app/shared/services/session_persistence_service.dar
 import 'package:social_study_app/features/screen_time/services/telemetry_service.dart';
 
 final studentHomeTabProvider = StateProvider<int>((ref) {
-  return SessionPersistenceService.instance.getTabSync() ?? 0;
+  final saved = SessionPersistenceService.instance.getTabSync() ?? 0;
+  return saved == 3 ? 3 : 0;
 });
-
-
-
-
 
 class StudentHomeScreen extends ConsumerStatefulWidget {
   const StudentHomeScreen({super.key});
@@ -64,14 +62,17 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
 
   Future<void> _restoreSession() async {
     try {
-      final savedWorkspaceId = await SessionPersistenceService.instance.getWorkspace();
+      final savedWorkspaceId =
+          await SessionPersistenceService.instance.getWorkspace();
       final savedTab = await SessionPersistenceService.instance.getTab();
-      
+
       if (savedWorkspaceId != null) {
-        ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(savedWorkspaceId);
+        ref
+            .read(activeWorkspaceIdProvider.notifier)
+            .setWorkspaceId(savedWorkspaceId);
       }
       if (savedTab != null) {
-        ref.read(studentHomeTabProvider.notifier).state = savedTab;
+        ref.read(studentHomeTabProvider.notifier).state = savedTab == 3 ? 3 : 0;
       }
     } catch (_) {
       // Swallowed silently
@@ -103,6 +104,26 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
       }
     });
 
+    ref.listen<int?>(dailyLoginRewardProvider, (previous, next) {
+      if (next == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Row(
+              children: [
+                const Icon(Icons.celebration_rounded, color: Colors.amber),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Daily Login  •  +$next XP\nWelcome Back!')),
+              ],
+            ),
+          ),
+        );
+        ref.read(dailyLoginRewardProvider.notifier).state = null;
+      });
+    });
+
     final authValue = ref.watch(authNotifierProvider).valueOrNull;
     final displayName = authValue?.maybeWhen(
           authenticated: (user) => user.displayName,
@@ -121,11 +142,13 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
     );
 
     final selectedIndex = ref.watch(studentHomeTabProvider);
-    final showCustomAppBar = selectedIndex == 0 || selectedIndex == 1 || selectedIndex == 3;
+    final showCustomAppBar =
+        selectedIndex == 0 || selectedIndex == 1 || selectedIndex == 3;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      extendBody: true, // Let body extend underneath floating bottom nav capsule
+      extendBody:
+          true, // Let body extend underneath floating bottom nav capsule
       appBar: showCustomAppBar
           ? null
           : AppBar(
@@ -144,7 +167,9 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
                       backgroundColor: AppColors.primaryContainer,
                       radius: 18,
                       child: Text(
-                        displayName.isNotEmpty ? displayName[0].toUpperCase() : 'S',
+                        displayName.isNotEmpty
+                            ? displayName[0].toUpperCase()
+                            : 'S',
                         style: const TextStyle(
                           color: AppColors.onPrimaryContainer,
                           fontWeight: FontWeight.w700,
@@ -162,11 +187,15 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
             displayName: displayName,
             workspaceId: workspaceId,
             userId: userId,
-            onStartStudy: () => ref.read(studentHomeTabProvider.notifier).state = 1,
+            onStartStudy: workspaceId == null
+                ? () => ref.read(studentHomeTabProvider.notifier).state = 0
+                : () => context.push(
+                      '/student/session/$workspaceId?mode=study',
+                    ),
             onStartRevision: workspaceId == null
                 ? null
                 : () => context.push(
-                      '${AppRoutes.studentRevision}/$workspaceId',
+                      '/student/session/$workspaceId?mode=revision',
                     ),
             onOpenBadges: (workspaceId == null || userId == null)
                 ? null
@@ -210,7 +239,9 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
               color: isDark ? AppColors.surfaceVariantDark : Colors.white,
               border: Border(
                 top: BorderSide(
-                  color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                  color: isDark
+                      ? const Color(0xFF334155)
+                      : const Color(0xFFF1F5F9),
                   width: 1,
                 ),
               ),
@@ -221,7 +252,17 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
                 final tab = _tabs[index];
                 final isSelected = selectedIndex == index;
                 return GestureDetector(
-                  onTap: () => ref.read(studentHomeTabProvider.notifier).state = index,
+                  onTap: () {
+                    if (workspaceId != null && index == 1) {
+                      context.push('/student/session/$workspaceId?mode=study');
+                      return;
+                    }
+                    if (workspaceId != null && index == 2) {
+                      context.push('/student/session/$workspaceId?mode=flashcard');
+                      return;
+                    }
+                    ref.read(studentHomeTabProvider.notifier).state = index;
+                  },
                   behavior: HitTestBehavior.opaque,
                   child: SizedBox(
                     width: 72,
@@ -231,8 +272,12 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
                         Icon(
                           tab.icon,
                           color: isSelected
-                              ? (isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB))
-                              : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                              ? (isDark
+                                  ? const Color(0xFF60A5FA)
+                                  : const Color(0xFF2563EB))
+                              : (isDark
+                                  ? const Color(0xFF94A3B8)
+                                  : const Color(0xFF64748B)),
                           size: 24,
                         ),
                         const SizedBox(height: 3),
@@ -240,10 +285,15 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
                           tab.label,
                           style: TextStyle(
                             fontSize: 11,
-                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                            fontWeight:
+                                isSelected ? FontWeight.w700 : FontWeight.w500,
                             color: isSelected
-                                ? (isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB))
-                                : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                                ? (isDark
+                                    ? const Color(0xFF60A5FA)
+                                    : const Color(0xFF2563EB))
+                                : (isDark
+                                    ? const Color(0xFF94A3B8)
+                                    : const Color(0xFF64748B)),
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -354,13 +404,19 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
                 Navigator.of(context).pop();
                 try {
                   _showLoadingIndicator(context);
-                  await ref.read(authNotifierProvider.notifier).redeemInviteCode(code);
+                  await ref
+                      .read(authNotifierProvider.notifier)
+                      .redeemInviteCode(code);
                   // Select the new workspace
                   final authValue = ref.read(authNotifierProvider).valueOrNull;
-                  final user = authValue?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+                  final user = authValue?.maybeWhen(
+                      authenticated: (u) => u, orElse: () => null);
                   if (user != null && user.workspaceMemberships.isNotEmpty) {
-                    final joinedWorkspaceId = user.workspaceMemberships.last.workspaceId;
-                    ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(joinedWorkspaceId);
+                    final joinedWorkspaceId =
+                        user.workspaceMemberships.last.workspaceId;
+                    ref
+                        .read(activeWorkspaceIdProvider.notifier)
+                        .setWorkspaceId(joinedWorkspaceId);
                   }
                   if (context.mounted) {
                     Navigator.of(context).pop(); // Dismiss loading
@@ -446,12 +502,11 @@ class _HomeTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final activeWorkspace = ref.watch(activeStudentWorkspaceProvider);
     final themeMode = ref.watch(appThemeModeProvider);
     final progressAsync = workspaceId != null
         ? ref.watch(studentProgressNotifierProvider(workspaceId!))
         : const AsyncValue.loading();
-    
+
     final canManageStudy = ref.watch(isActiveWorkspaceAdminProvider);
 
     final authValue = ref.watch(authNotifierProvider).valueOrNull;
@@ -471,10 +526,24 @@ class _HomeTab extends ConsumerWidget {
         : null;
 
     final streakDays = streakAsync?.valueOrNull?.streakDays ?? 0;
-    final totalXp = profileAsync?.valueOrNull?.xpTotal ?? progressAsync.valueOrNull?.totalXp ?? 0;
-    final level = progressAsync.valueOrNull?.level ?? profileAsync?.valueOrNull?.level ?? 1;
-    final xpIntoLevel = progressAsync.valueOrNull?.xpIntoLevel ?? profileAsync?.valueOrNull?.xpIntoLevel ?? 0;
-    final xpForNextLevel = progressAsync.valueOrNull?.xpForNextLevel ?? profileAsync?.valueOrNull?.xpForNextLevel ?? 100;
+    final totalXp = profileAsync?.valueOrNull?.xpTotal ??
+        progressAsync.valueOrNull?.totalXp ??
+        0;
+    final dailyXp = profileAsync?.valueOrNull?.dailyXp ?? const <String, int>{};
+    final level = progressAsync.valueOrNull?.level ??
+        profileAsync?.valueOrNull?.level ??
+        1;
+    final xpIntoLevel = progressAsync.valueOrNull?.xpIntoLevel ??
+        profileAsync?.valueOrNull?.xpIntoLevel ??
+        0;
+    final xpForNextLevel = progressAsync.valueOrNull?.xpForNextLevel ??
+        profileAsync?.valueOrNull?.xpForNextLevel ??
+        100;
+    final weakTopics = <TopicMastery>[
+      for (final topic
+          in progressAsync.valueOrNull?.topics ?? const <TopicMastery>[])
+        if (topic.attempts > 0 && topic.mastery < 0.7) topic,
+    ]..sort((a, b) => a.mastery.compareTo(b.mastery));
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -483,14 +552,14 @@ class _HomeTab extends ConsumerWidget {
     final greetingText = hour < 12
         ? 'Good morning'
         : hour < 17
-            ? 'Good afternoon'
+            ? 'Good Afternoon'
             : 'Good evening';
 
     final screenWidth = MediaQuery.of(context).size.width;
 
     // The immersive full illustrated hero section
     final heroSection = SizedBox(
-      height: 260, // Increased hero section height
+      height: 248,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -499,16 +568,19 @@ class _HomeTab extends ConsumerWidget {
             top: 0,
             left: 0,
             right: 0,
-            height: 320, // Increased to zoom out (show more of) the cover image
+            height: 300,
             child: Container(
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFE0F2FE),
+                color:
+                    isDark ? const Color(0xFF0F172A) : const Color(0xFFE0F2FE),
                 image: themeMode == AppThemeMode.mature
                     ? null
                     : DecorationImage(
-                        image: const AssetImage('assets/mascot/headerherosection.png'),
+                        image: const AssetImage(
+                            'assets/mascot/headerherosection.png'),
                         fit: BoxFit.cover,
-                        alignment: const Alignment(0.42, -0.1), // Zoomed-out alignment shows more of the image
+                        alignment: const Alignment(0.42,
+                            -0.1), // Zoomed-out alignment shows more of the image
                         colorFilter: ColorFilter.mode(
                           Colors.black.withOpacity(isDark ? 0.6 : 0.25),
                           BlendMode.srcOver,
@@ -518,7 +590,10 @@ class _HomeTab extends ConsumerWidget {
                     ? LinearGradient(
                         colors: isDark
                             ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
-                            : [const Color(0xFFEFF6FF), const Color(0xFFDBEAFE)],
+                            : [
+                                const Color(0xFFEFF6FF),
+                                const Color(0xFFDBEAFE)
+                              ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       )
@@ -526,7 +601,7 @@ class _HomeTab extends ConsumerWidget {
               ),
             ),
           ),
-          
+
           // Header items (Greeting & Switches)
           SafeArea(
             bottom: false,
@@ -545,7 +620,9 @@ class _HomeTab extends ConsumerWidget {
                         Text(
                           '$greetingText,',
                           style: TextStyle(
-                            color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF475569),
+                            color: isDark
+                                ? const Color(0xFFE2E8F0)
+                                : const Color(0xFF475569),
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                           ),
@@ -557,7 +634,9 @@ class _HomeTab extends ConsumerWidget {
                         Text(
                           "Let's continue your\nlearning journey!",
                           style: TextStyle(
-                            color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF475569),
+                            color: isDark
+                                ? const Color(0xFFE2E8F0)
+                                : const Color(0xFF475569),
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                             height: 1.4,
@@ -566,7 +645,7 @@ class _HomeTab extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  
+
                   // Top Right: Switch Profile / User Profile Profile Button (in place of notification button)
                   Row(
                     mainAxisSize: MainAxisSize.min,
@@ -575,8 +654,9 @@ class _HomeTab extends ConsumerWidget {
                         _HeroWorkspaceSwitcher(
                           memberships: memberships,
                           selectedId: workspaceId,
-                          onSelect: (id) =>
-                              ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(id),
+                          onSelect: (id) => ref
+                              .read(activeWorkspaceIdProvider.notifier)
+                              .setWorkspaceId(id),
                           onCreateWorkspace: () => showDialog<void>(
                             context: context,
                             barrierDismissible: false,
@@ -592,12 +672,18 @@ class _HomeTab extends ConsumerWidget {
                       GestureDetector(
                         onTap: () => context.push(AppRoutes.profile),
                         child: CircleAvatar(
-                          backgroundColor: isDark ? Colors.white10 : Colors.white.withValues(alpha: 0.9),
+                          backgroundColor: isDark
+                              ? Colors.white10
+                              : Colors.white.withValues(alpha: 0.9),
                           radius: 18,
                           child: Text(
-                            displayName.isNotEmpty ? displayName[0].toUpperCase() : 'S',
+                            displayName.isNotEmpty
+                                ? displayName[0].toUpperCase()
+                                : 'S',
                             style: TextStyle(
-                              color: isDark ? Colors.white : const Color(0xFF2563EB),
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF2563EB),
                               fontWeight: FontWeight.w700,
                               fontSize: 14,
                             ),
@@ -610,11 +696,11 @@ class _HomeTab extends ConsumerWidget {
               ),
             ),
           ),
-          
+
           // Floating Player Progress Card - positioned over the bottom-left of the image to not cover the mascot
           Positioned(
             left: 16,
-            right: screenWidth > 600 ? null : screenWidth * 0.30, // Increased width (from 0.38 right margin back to 0.30)
+            right: screenWidth > 600 ? null : screenWidth * 0.30,
             width: screenWidth > 600 ? 320 : null,
             bottom: 5, // Lowered down to reduce gap to study card
             child: _PlayerProgressCard(
@@ -623,6 +709,7 @@ class _HomeTab extends ConsumerWidget {
               xpForNextLevel: xpForNextLevel,
               streakDays: streakDays,
               totalXp: totalXp,
+              onTap: themeMode == AppThemeMode.mature ? onOpenBadges : null,
             ),
           ),
         ],
@@ -645,6 +732,27 @@ class _HomeTab extends ConsumerWidget {
                 _StartStudySessionCard(onStartStudy: onStartStudy),
                 const SizedBox(height: 10),
 
+                // Start Quick Revision Card
+                if (onStartRevision != null) ...[
+                  if (themeMode == AppThemeMode.mature)
+                    _SmallPillButton(
+                      icon: Icons.bolt_rounded,
+                      label: 'Quick Revision',
+                      onTap: onStartRevision!,
+                      isDark: isDark,
+                      themeMode: themeMode,
+                    )
+                  else
+                    _StartQuickRevisionCard(
+                      onStartRevision: onStartRevision!,
+                      weakTopicCount: weakTopics.length,
+                      weakestTopicName: weakTopics.isEmpty
+                          ? null
+                          : weakTopics.first.topicName,
+                    ),
+                  const SizedBox(height: 10),
+                ],
+
                 // Small secondary action pills: Manage Study
                 if (canManageStudy && onManageStudy != null) ...[
                   Row(
@@ -665,26 +773,20 @@ class _HomeTab extends ConsumerWidget {
 
                 // Weekly Progress Graph Card
                 _WeeklyProgressCard(
-                  userWeeklyXp: totalXp > 0 ? totalXp : 2026,
-                  buddyWeeklyXp: totalXp > 0 ? (totalXp * 2).clamp(totalXp + 500, 9999) : 4024,
+                  dailyXp: dailyXp,
                 ),
-                
+
                 const SizedBox(height: 20),
 
-                if (workspaceId != null) ...[
-                  _TopicMasteryDashboardCard(workspaceId: workspaceId!),
-                  const SizedBox(height: 20),
-                ],
-                
                 // Quick Actions Row
                 _QuickActionsSection(
                   onOpenBadges: onOpenBadges,
                   onOpenLeaderboard: onOpenLeaderboard,
                   onStartStudy: onStartStudy,
                 ),
-                
+
                 const SizedBox(height: 28),
-                
+
                 // Recent Activity Header
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -715,7 +817,7 @@ class _HomeTab extends ConsumerWidget {
                   ],
                 ),
                 const SizedBox(height: 12),
-                
+
                 // Activity list loading/data states
                 workspaceId == null
                     ? const EmptyStateView(
@@ -729,21 +831,28 @@ class _HomeTab extends ConsumerWidget {
                             return const EmptyStateView(
                               icon: Icons.history_rounded,
                               title: 'No activity yet',
-                              subtitle: 'Start a study session to see your progress here.',
+                              subtitle:
+                                  'Start a study session to see your progress here.',
                             );
                           }
-                          final entries = progress.recentActivity.take(10).toList();
+                          final entries =
+                              progress.recentActivity.take(10).toList();
                           return Container(
                             decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                              color: isDark
+                                  ? const Color(0xFF1E293B)
+                                  : Colors.white,
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE8EDF2),
+                                color: isDark
+                                    ? const Color(0xFF2D3748)
+                                    : const Color(0xFFE8EDF2),
                                 width: 1,
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.03),
+                                  color: Colors.black
+                                      .withValues(alpha: isDark ? 0.12 : 0.03),
                                   blurRadius: 6,
                                   offset: const Offset(0, 2),
                                 ),
@@ -786,14 +895,15 @@ class _HomeTab extends ConsumerWidget {
       );
     }
 
-
     // Standard workspace or no workspace
     return RefreshIndicator(
       onRefresh: () async {
         ref.read(authNotifierProvider.notifier).refresh();
         await ref.read(authNotifierProvider.future);
         if (workspaceId != null) {
-          ref.read(studentProgressNotifierProvider(workspaceId!).notifier).refresh();
+          ref
+              .read(studentProgressNotifierProvider(workspaceId!).notifier)
+              .refresh();
           await ref.read(studentProgressNotifierProvider(workspaceId!).future);
         }
       },
@@ -972,7 +1082,8 @@ class _HeroWorkspaceSwitcher extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final selected = memberships.where((m) => m.workspaceId == selectedId).firstOrNull;
+    final selected =
+        memberships.where((m) => m.workspaceId == selectedId).firstOrNull;
     final workspaces = ref.watch(studentWorkspacesProvider).valueOrNull ?? [];
     Workspace? workspace;
     for (final w in workspaces) {
@@ -985,7 +1096,8 @@ class _HeroWorkspaceSwitcher extends ConsumerWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF047857).withOpacity(0.8), // Translucent green matching hill
+        color: const Color(0xFF047857)
+            .withOpacity(0.8), // Translucent green matching hill
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white24, width: 1),
       ),
@@ -999,7 +1111,8 @@ class _HeroWorkspaceSwitcher extends ConsumerWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.people_rounded, size: 10, color: Colors.white), // Smaller group icon
+                const Icon(Icons.people_rounded,
+                    size: 10, color: Colors.white), // Smaller group icon
                 const SizedBox(width: 4),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 80),
@@ -1015,7 +1128,8 @@ class _HeroWorkspaceSwitcher extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(width: 2),
-                const Icon(Icons.keyboard_arrow_down_rounded, size: 10, color: Colors.white), // Smaller arrow icon
+                const Icon(Icons.keyboard_arrow_down_rounded,
+                    size: 10, color: Colors.white), // Smaller arrow icon
               ],
             ),
           ),
@@ -1109,6 +1223,7 @@ class _PlayerProgressCard extends StatelessWidget {
     required this.xpForNextLevel,
     required this.streakDays,
     required this.totalXp,
+    this.onTap,
   });
 
   final int level;
@@ -1116,6 +1231,7 @@ class _PlayerProgressCard extends StatelessWidget {
   final int xpForNextLevel;
   final int streakDays;
   final int totalXp;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1124,116 +1240,131 @@ class _PlayerProgressCard extends StatelessWidget {
         ? (xpIntoLevel / xpForNextLevel).clamp(0.0, 1.0)
         : 0.0;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
+    return Semantics(
+      button: onTap != null,
+      label: onTap != null ? 'Open badges' : null,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.08),
+                blurRadius: 20,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Level Shield
-          LevelShield(level: level),
-          const SizedBox(width: 8),
+          child: Row(
+            children: [
+              // Level Shield
+              LevelShield(level: level),
+              const SizedBox(width: 8),
 
-          // XP Progress Section
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Level',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF94A3B8),
-                    height: 1,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                // XP Bar
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: SizedBox(
-                    height: 5, // Reduced height of progress bar
-                    child: LinearProgressIndicator(
-                      value: fraction,
-                      backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                      valueColor: AlwaysStoppedAnimation<Color>(isDark ? const Color(0xFF4ADE80) : const Color(0xFF22C55E)),
+              // XP Progress Section
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Level',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF94A3B8),
+                        height: 1,
+                      ),
                     ),
+                    const SizedBox(height: 5),
+                    // XP Bar
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: SizedBox(
+                        height: 5, // Reduced height of progress bar
+                        child: LinearProgressIndicator(
+                          value: fraction,
+                          backgroundColor: isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFFE2E8F0),
+                          valueColor: AlwaysStoppedAnimation<Color>(isDark
+                              ? const Color(0xFF4ADE80)
+                              : const Color(0xFF22C55E)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$xpIntoLevel / $xpForNextLevel XP',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: isDark
+                            ? const Color(0xFF4ADE80)
+                            : const Color(0xFF16A34A),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Divider
+              Container(
+                width: 1,
+                height: 40,
+                color:
+                    isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                margin: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+
+              // Streak
+              _StatColumn(
+                iconWidget: Image.asset(
+                  'assets/icons/streak.png',
+                  width: 24,
+                  height: 24,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.local_fire_department_rounded,
+                    color: Color(0xFFF97316),
+                    size: 24,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '$xpIntoLevel / $xpForNextLevel XP',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A),
+                value: '$streakDays',
+                label: 'Day Streak',
+              ),
+
+              // Divider
+              Container(
+                width: 1,
+                height: 40,
+                color: const Color(0xFFF1F5F9),
+                margin: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+
+              // Total XP
+              _StatColumn(
+                iconWidget: Image.asset(
+                  'assets/icons/coin.png',
+                  width: 24,
+                  height: 24,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.monetization_on_rounded,
+                    color: Color(0xFFF59E0B),
+                    size: 24,
                   ),
                 ),
-              ],
-            ),
-          ),
-
-          // Divider
-          Container(
-            width: 1,
-            height: 40,
-            color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
-            margin: const EdgeInsets.symmetric(horizontal: 8),
-          ),
-
-          // Streak
-          _StatColumn(
-            iconWidget: Image.asset(
-              'assets/icons/streak.png',
-              width: 24,
-              height: 24,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => const Icon(
-                Icons.local_fire_department_rounded,
-                color: Color(0xFFF97316),
-                size: 24,
+                value: '$totalXp',
+                label: 'Total XP',
               ),
-            ),
-            value: '$streakDays',
-            label: 'Day Streak',
+            ],
           ),
-
-          // Divider
-          Container(
-            width: 1,
-            height: 40,
-            color: const Color(0xFFF1F5F9),
-            margin: const EdgeInsets.symmetric(horizontal: 8),
-          ),
-
-          // Total XP
-          _StatColumn(
-            iconWidget: Image.asset(
-              'assets/icons/coin.png',
-              width: 24,
-              height: 24,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => const Icon(
-                Icons.monetization_on_rounded,
-                color: Color(0xFFF59E0B),
-                size: 24,
-              ),
-            ),
-            value: '$totalXp',
-            label: 'Total XP',
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1363,10 +1494,12 @@ class _StartStudySessionCard extends ConsumerStatefulWidget {
   final VoidCallback onStartStudy;
 
   @override
-  ConsumerState<_StartStudySessionCard> createState() => _StartStudySessionCardState();
+  ConsumerState<_StartStudySessionCard> createState() =>
+      _StartStudySessionCardState();
 }
 
-class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard> with SingleTickerProviderStateMixin {
+class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
+    with SingleTickerProviderStateMixin {
   AnimationController? _controller;
 
   @override
@@ -1415,7 +1548,9 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard> 
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: (isMature ? const Color(0xFF311062) : const Color(0xFF2563EB)).withOpacity(0.35),
+            color:
+                (isMature ? const Color(0xFF311062) : const Color(0xFF2563EB))
+                    .withOpacity(0.35),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -1432,12 +1567,14 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard> 
                 Positioned(
                   right: 100,
                   top: 12,
-                  child: Icon(Icons.star_rounded, color: Colors.white.withOpacity(0.2), size: 14),
+                  child: Icon(Icons.star_rounded,
+                      color: Colors.white.withOpacity(0.2), size: 14),
                 ),
                 Positioned(
                   right: 60,
                   top: 32,
-                  child: Icon(Icons.star_rounded, color: Colors.white.withOpacity(0.15), size: 9),
+                  child: Icon(Icons.star_rounded,
+                      color: Colors.white.withOpacity(0.15), size: 9),
                 ),
                 Positioned(
                   right: 8,
@@ -1464,7 +1601,8 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard> 
                   top: 8,
                   right: 12,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF3E8FF),
                       borderRadius: BorderRadius.circular(20),
@@ -1498,7 +1636,8 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard> 
                   bottom: 0,
                   child: Center(
                     child: AnimatedBuilder(
-                      animation: _controller ?? const AlwaysStoppedAnimation(0.0),
+                      animation:
+                          _controller ?? const AlwaysStoppedAnimation(0.0),
                       builder: (context, _) {
                         return CustomPaint(
                           size: const Size(60, 60),
@@ -1511,7 +1650,8 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard> 
                   ),
                 ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -1521,7 +1661,8 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard> 
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.25),
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white.withOpacity(0.6), width: 2),
+                        border: Border.all(
+                            color: Colors.white.withOpacity(0.6), width: 2),
                       ),
                       child: const Icon(
                         Icons.play_arrow_rounded,
@@ -1532,26 +1673,17 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard> 
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Text(
-                            'Start Study Session',
+                          Text(
+                            isMature ? 'Start Your Study Session' : 'Study',
+                            textAlign: TextAlign.center,
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
                               height: 1.15,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            "Let's continue your learning journey!",
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.85),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
-                              height: 1.25,
                             ),
                           ),
                         ],
@@ -1593,33 +1725,42 @@ class _AtomPainter extends CustomPainter {
     canvas.save();
     canvas.translate(cx, cy);
     canvas.rotate(-30 * 3.14159 / 180);
-    canvas.drawOval(Rect.fromCenter(center: Offset.zero, width: r * 2, height: r * 0.5), orbitPaint);
+    canvas.drawOval(
+        Rect.fromCenter(center: Offset.zero, width: r * 2, height: r * 0.5),
+        orbitPaint);
     final double e1Angle = animationValue * 2 * 3.14159;
     final double e1x = r * math.cos(e1Angle);
     final double e1y = r * 0.25 * math.sin(e1Angle);
-    canvas.drawCircle(Offset(e1x, e1y), 3.5, Paint()..color = const Color(0xFF60A5FA));
+    canvas.drawCircle(
+        Offset(e1x, e1y), 3.5, Paint()..color = const Color(0xFF60A5FA));
     canvas.restore();
 
     // Orbit 2
     canvas.save();
     canvas.translate(cx, cy);
     canvas.rotate(30 * 3.14159 / 180);
-    canvas.drawOval(Rect.fromCenter(center: Offset.zero, width: r * 2, height: r * 0.5), orbitPaint);
+    canvas.drawOval(
+        Rect.fromCenter(center: Offset.zero, width: r * 2, height: r * 0.5),
+        orbitPaint);
     final double e2Angle = (animationValue + 0.33) * 2 * 3.14159;
     final double e2x = r * math.cos(e2Angle);
     final double e2y = r * 0.25 * math.sin(e2Angle);
-    canvas.drawCircle(Offset(e2x, e2y), 3.5, Paint()..color = const Color(0xFFF472B6));
+    canvas.drawCircle(
+        Offset(e2x, e2y), 3.5, Paint()..color = const Color(0xFFF472B6));
     canvas.restore();
 
     // Orbit 3
     canvas.save();
     canvas.translate(cx, cy);
     canvas.rotate(90 * 3.14159 / 180);
-    canvas.drawOval(Rect.fromCenter(center: Offset.zero, width: r * 2, height: r * 0.5), orbitPaint);
+    canvas.drawOval(
+        Rect.fromCenter(center: Offset.zero, width: r * 2, height: r * 0.5),
+        orbitPaint);
     final double e3Angle = (animationValue + 0.66) * 2 * 3.14159;
     final double e3x = r * math.cos(e3Angle);
     final double e3y = r * 0.25 * math.sin(e3Angle);
-    canvas.drawCircle(Offset(e3x, e3y), 3.5, Paint()..color = const Color(0xFF34D399));
+    canvas.drawCircle(
+        Offset(e3x, e3y), 3.5, Paint()..color = const Color(0xFF34D399));
     canvas.restore();
 
     // Nucleus
@@ -1634,16 +1775,275 @@ class _AtomPainter extends CustomPainter {
       oldDelegate.animationValue != animationValue;
 }
 
+class _StartQuickRevisionCard extends ConsumerStatefulWidget {
+  const _StartQuickRevisionCard({
+    required this.onStartRevision,
+    required this.weakTopicCount,
+    this.weakestTopicName,
+  });
+
+  final VoidCallback onStartRevision;
+  final int weakTopicCount;
+  final String? weakestTopicName;
+
+  @override
+  ConsumerState<_StartQuickRevisionCard> createState() =>
+      _StartQuickRevisionCardState();
+}
+
+class _StartQuickRevisionCardState
+    extends ConsumerState<_StartQuickRevisionCard>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    bool isTest = false;
+    try {
+      isTest = Platform.environment.containsKey('FLUTTER_TEST');
+    } catch (_) {}
+    if (!isTest) {
+      _controller = AnimationController(
+        vsync: this,
+        duration: const Duration(seconds: 4),
+      )..repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final themeMode = ref.watch(appThemeModeProvider);
+    final isMature = themeMode == AppThemeMode.mature;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    const gradient = LinearGradient(
+      colors: [Color(0xFFF59E0B), Color(0xFFEA580C)],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    );
+
+    return Container(
+      height: 76,
+      decoration: BoxDecoration(
+        gradient: gradient,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFF59E0B).withOpacity(0.35),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onStartRevision,
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            children: [
+              if (!isMature) ...[
+                Positioned(
+                  right: 100,
+                  top: 12,
+                  child: Icon(Icons.bolt_rounded,
+                      color: Colors.white.withOpacity(0.2), size: 14),
+                ),
+                Positioned(
+                  right: 60,
+                  top: 32,
+                  child: Icon(Icons.bolt_rounded,
+                      color: Colors.white.withOpacity(0.15), size: 10),
+                ),
+                Positioned(
+                  right: 14,
+                  bottom: 8,
+                  child: Transform.rotate(
+                    angle: -0.15,
+                    child: Opacity(
+                      opacity: 0.75,
+                      child: const Icon(
+                        Icons.psychology_alt_rounded,
+                        color: Colors.white,
+                        size: 40,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 12,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.bolt_rounded,
+                          color: Color(0xFFD97706),
+                          size: 12,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          'Revision',
+                          style: TextStyle(
+                            color: Color(0xFFD97706),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              if (isMature)
+                Positioned(
+                  right: 12,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: AnimatedBuilder(
+                      animation:
+                          _controller ?? const AlwaysStoppedAnimation(0.0),
+                      builder: (context, _) {
+                        return CustomPaint(
+                          size: const Size(60, 60),
+                          painter: _PulsePainter(
+                            animationValue: _controller?.value ?? 0.0,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.25),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: Colors.white.withOpacity(0.6), width: 2),
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(
+                            'Quick Revision',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              height: 1.15,
+                            ),
+                          ),
+                          if (widget.weakTopicCount > 0) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              '${widget.weakTopicCount} ${widget.weakTopicCount == 1 ? 'topic' : 'topics'}'
+                              '${widget.weakestTopicName == null ? '' : ' • ${widget.weakestTopicName}'}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.85),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                                height: 1.25,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (isMature) const SizedBox(width: 60),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PulsePainter extends CustomPainter {
+  _PulsePainter({required this.animationValue});
+
+  final double animationValue;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double cx = size.width / 2;
+    final double cy = size.height / 2;
+    final double maxRadius = size.width * 0.45;
+
+    // Pulse 1
+    final Paint pulsePaint1 = Paint()
+      ..color = Colors.white.withOpacity(0.18 * (1.0 - animationValue))
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    canvas.drawCircle(Offset(cx, cy), maxRadius * animationValue, pulsePaint1);
+
+    // Pulse 2
+    final double val2 = (animationValue + 0.5) % 1.0;
+    final Paint pulsePaint2 = Paint()
+      ..color = Colors.white.withOpacity(0.18 * (1.0 - val2))
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    canvas.drawCircle(Offset(cx, cy), maxRadius * val2, pulsePaint2);
+
+    // Center icon/orb
+    canvas.drawCircle(
+        Offset(cx, cy), 5.0, Paint()..color = const Color(0xFFF59E0B));
+  }
+
+  @override
+  bool shouldRepaint(covariant _PulsePainter oldDelegate) =>
+      oldDelegate.animationValue != animationValue;
+}
+
 class _TopicMasteryDashboardCard extends ConsumerStatefulWidget {
   const _TopicMasteryDashboardCard({required this.workspaceId});
 
   final String workspaceId;
 
   @override
-  ConsumerState<_TopicMasteryDashboardCard> createState() => _TopicMasteryDashboardCardState();
+  ConsumerState<_TopicMasteryDashboardCard> createState() =>
+      _TopicMasteryDashboardCardState();
 }
 
-class _TopicMasteryDashboardCardState extends ConsumerState<_TopicMasteryDashboardCard> with SingleTickerProviderStateMixin {
+class _TopicMasteryDashboardCardState
+    extends ConsumerState<_TopicMasteryDashboardCard>
+    with SingleTickerProviderStateMixin {
   AnimationController? _entranceController;
 
   @override
@@ -1671,25 +2071,31 @@ class _TopicMasteryDashboardCardState extends ConsumerState<_TopicMasteryDashboa
 
   @override
   Widget build(BuildContext context) {
-    final progressAsync = ref.watch(studentProgressNotifierProvider(widget.workspaceId));
+    final progressAsync =
+        ref.watch(studentProgressNotifierProvider(widget.workspaceId));
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return progressAsync.maybeWhen(
       data: (progress) {
         if (progress.topics.isEmpty) return const SizedBox.shrink();
 
-        final overallPercent = (progress.overallMastery.clamp(0.0, 1.0) * 100).round();
+        final overallPercent =
+            (progress.overallMastery.clamp(0.0, 1.0) * 100).round();
         final topTopics = progress.topics.take(3).toList();
 
-        final animVal = _entranceController?.view ?? const AlwaysStoppedAnimation(1.0);
+        final animVal =
+            _entranceController?.view ?? const AlwaysStoppedAnimation(1.0);
 
         return AnimatedBuilder(
           animation: animVal,
           builder: (context, child) {
-            final double cardScale = 0.95 + (0.05 * CurvedAnimation(
-              parent: _entranceController ?? const AlwaysStoppedAnimation(1.0),
-              curve: Curves.easeOutCubic,
-            ).value);
+            final double cardScale = 0.95 +
+                (0.05 *
+                    CurvedAnimation(
+                      parent: _entranceController ??
+                          const AlwaysStoppedAnimation(1.0),
+                      curve: Curves.easeOutCubic,
+                    ).value);
 
             return Transform.scale(
               scale: cardScale,
@@ -1698,7 +2104,9 @@ class _TopicMasteryDashboardCardState extends ConsumerState<_TopicMasteryDashboa
                   color: isDark ? const Color(0xFF1E293B) : Colors.white,
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(
-                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                    color: isDark
+                        ? const Color(0xFF334155)
+                        : const Color(0xFFE2E8F0),
                     width: 1.5,
                   ),
                   boxShadow: [
@@ -1722,20 +2130,25 @@ class _TopicMasteryDashboardCardState extends ConsumerState<_TopicMasteryDashboa
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w900,
-                              color: isDark ? const Color(0xFFA78BFA) : const Color(0xFF4F46E5),
+                              color: isDark
+                                  ? const Color(0xFFA78BFA)
+                                  : const Color(0xFF4F46E5),
                               letterSpacing: 1.2,
                             ),
                           ),
                           GestureDetector(
                             onTap: () {
-                              ref.read(studentHomeTabProvider.notifier).state = 3;
+                              ref.read(studentHomeTabProvider.notifier).state =
+                                  3;
                             },
                             child: Text(
                               'View all',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                                color: isDark
+                                    ? const Color(0xFF60A5FA)
+                                    : const Color(0xFF2563EB),
                               ),
                             ),
                           ),
@@ -1769,7 +2182,9 @@ class _TopicMasteryDashboardCardState extends ConsumerState<_TopicMasteryDashboa
                                         style: TextStyle(
                                           fontSize: 22,
                                           fontWeight: FontWeight.w900,
-                                          color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                          color: isDark
+                                              ? Colors.white
+                                              : const Color(0xFF1E293B),
                                           letterSpacing: -0.5,
                                         ),
                                       ),
@@ -1778,7 +2193,9 @@ class _TopicMasteryDashboardCardState extends ConsumerState<_TopicMasteryDashboa
                                         'Overall',
                                         style: TextStyle(
                                           fontSize: 11,
-                                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                          color: isDark
+                                              ? const Color(0xFF94A3B8)
+                                              : const Color(0xFF64748B),
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
@@ -1791,15 +2208,21 @@ class _TopicMasteryDashboardCardState extends ConsumerState<_TopicMasteryDashboa
                           const SizedBox(width: 24),
                           Expanded(
                             child: Column(
-                              children: List.generate(topTopics.length, (index) {
+                              children:
+                                  List.generate(topTopics.length, (index) {
                                 final topic = topTopics[index];
-                                final targetPercent = (topic.mastery.clamp(0.0, 1.0) * 100).round();
-                                final currentPercent = (targetPercent * animVal.value).round();
+                                final targetPercent =
+                                    (topic.mastery.clamp(0.0, 1.0) * 100)
+                                        .round();
+                                final currentPercent =
+                                    (targetPercent * animVal.value).round();
                                 final color = _getTopicColor(index);
                                 return Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 6.0),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 6.0),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Row(
                                         children: [
@@ -1820,7 +2243,9 @@ class _TopicMasteryDashboardCardState extends ConsumerState<_TopicMasteryDashboa
                                               style: TextStyle(
                                                 fontSize: 13,
                                                 fontWeight: FontWeight.w700,
-                                                color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                                color: isDark
+                                                    ? Colors.white
+                                                    : const Color(0xFF1E293B),
                                               ),
                                             ),
                                           ),
@@ -1830,7 +2255,9 @@ class _TopicMasteryDashboardCardState extends ConsumerState<_TopicMasteryDashboa
                                             style: TextStyle(
                                               fontSize: 13,
                                               fontWeight: FontWeight.w700,
-                                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                              color: isDark
+                                                  ? const Color(0xFF94A3B8)
+                                                  : const Color(0xFF64748B),
                                             ),
                                           ),
                                         ],
@@ -1839,10 +2266,15 @@ class _TopicMasteryDashboardCardState extends ConsumerState<_TopicMasteryDashboa
                                       ClipRRect(
                                         borderRadius: BorderRadius.circular(4),
                                         child: LinearProgressIndicator(
-                                          value: topic.mastery.clamp(0.0, 1.0) * animVal.value,
+                                          value: topic.mastery.clamp(0.0, 1.0) *
+                                              animVal.value,
                                           minHeight: 5,
-                                          backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
-                                          valueColor: AlwaysStoppedAnimation<Color>(color),
+                                          backgroundColor: isDark
+                                              ? const Color(0xFF334155)
+                                              : const Color(0xFFF1F5F9),
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                  color),
                                         ),
                                       ),
                                     ],
@@ -1893,10 +2325,13 @@ class _DonutChartPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final double radius = size.width / 2;
-    final Rect rect = Rect.fromCircle(center: Offset(radius, radius), radius: radius - 14);
+    final Rect rect =
+        Rect.fromCircle(center: Offset(radius, radius), radius: radius - 14);
 
     final Paint bgPaint = Paint()
-      ..color = isDark ? const Color(0xFF334155).withOpacity(0.3) : const Color(0xFFF1F5F9)
+      ..color = isDark
+          ? const Color(0xFF334155).withOpacity(0.3)
+          : const Color(0xFFF1F5F9)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 24.0;
 
@@ -1908,7 +2343,7 @@ class _DonutChartPainter extends CustomPainter {
     for (final t in topics) {
       sum += t.mastery.clamp(0.0, 1.0);
     }
-    
+
     final bool allZero = sum == 0.0;
     double currentAngle = -3.14159 / 2; // Start from top
 
@@ -1924,7 +2359,8 @@ class _DonutChartPainter extends CustomPainter {
         ..strokeWidth = 24.0; // Proportional thick band width
 
       if (sweepAngle > 0.05) {
-        canvas.drawArc(rect, currentAngle + 0.015, sweepAngle - 0.03, false, segmentPaint);
+        canvas.drawArc(
+            rect, currentAngle + 0.015, sweepAngle - 0.03, false, segmentPaint);
       }
       currentAngle += sweepAngle;
     }
@@ -1946,28 +2382,30 @@ class _DonutChartPainter extends CustomPainter {
       oldDelegate.entranceProgress != entranceProgress;
 }
 
-class _WeeklyProgressCard extends ConsumerWidget {
+class _WeeklyProgressCard extends StatelessWidget {
   const _WeeklyProgressCard({
-    required this.userWeeklyXp,
-    required this.buddyWeeklyXp,
+    required this.dailyXp,
   });
 
-  final int userWeeklyXp;
-  final int buddyWeeklyXp;
+  final Map<String, int> dailyXp;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final summary = WeeklyXpSummary.fromHistory(
+      dailyXp: dailyXp,
+      now: DateTime.now(),
+    );
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.15 : 0.03),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
+            color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
           ),
         ],
         border: Border.all(
@@ -1978,107 +2416,19 @@ class _WeeklyProgressCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Weekly Progress',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : const Color(0xFF0F172A),
-                ),
-              ),
-              GestureDetector(
-                onTap: () {
-                  // Navigate to Progress tab
-                  ref.read(studentHomeTabProvider.notifier).state = 3;
-                },
-                child: const Text(
-                  'View all',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF2563EB),
-                  ),
-                ),
-              ),
-            ],
+          Text(
+            'Weekly Progress',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : const Color(0xFF0F172A),
+            ),
           ),
-          const SizedBox(height: 16),
-          // Legend row
-          Row(
-            children: [
-              // You legend
-              Container(
-                width: 10,
-                height: 10,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF2563EB),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 5),
-              Text(
-                'You',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                ),
-              ),
-              const SizedBox(width: 5),
-              Text(
-                '$userWeeklyXp XP',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF22C55E), // GREEN as in reference
-                ),
-              ),
-              const Spacer(),
-              // Growth chip
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDCFCE7),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(
-                      Icons.trending_up_rounded,
-                      color: Color(0xFF166534),
-                      size: 13,
-                    ),
-                    SizedBox(width: 3),
-                    Text(
-                      '+15%',
-                      style: TextStyle(
-                        color: Color(0xFF166534),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    SizedBox(width: 2),
-                    Text(
-                      'vs last week',
-                      style: TextStyle(
-                        color: Color(0xFF166534),
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 8),
           SizedBox(
-            height: 180,
+            height: 200,
             width: double.infinity,
-            child: _WeeklySplineChart(userWeeklyXp: userWeeklyXp),
+            child: _WeeklySplineChart(summary: summary),
           ),
         ],
       ),
@@ -2087,9 +2437,9 @@ class _WeeklyProgressCard extends ConsumerWidget {
 }
 
 class _WeeklySplineChart extends StatefulWidget {
-  const _WeeklySplineChart({required this.userWeeklyXp});
+  const _WeeklySplineChart({required this.summary});
 
-  final int userWeeklyXp;
+  final WeeklyXpSummary summary;
 
   @override
   State<_WeeklySplineChart> createState() => _WeeklySplineChartState();
@@ -2125,6 +2475,14 @@ class _WeeklySplineChartState extends State<_WeeklySplineChart>
   }
 
   @override
+  void didUpdateWidget(covariant _WeeklySplineChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.summary.dataSignature != widget.summary.dataSignature) {
+      _drawCtrl.forward(from: 0);
+    }
+  }
+
+  @override
   void dispose() {
     _drawCtrl.dispose();
     _pulseCtrl.dispose();
@@ -2139,7 +2497,7 @@ class _WeeklySplineChartState extends State<_WeeklySplineChart>
       builder: (context, _) {
         return CustomPaint(
           painter: _SplineChartPainter(
-            userWeeklyXp: widget.userWeeklyXp,
+            summary: widget.summary,
             isDark: isDark,
             drawProgress: _drawAnim.value,
             pulseRadius: 5.0 + _pulseCtrl.value * 3.5,
@@ -2152,27 +2510,32 @@ class _WeeklySplineChartState extends State<_WeeklySplineChart>
 
 class _SplineChartPainter extends CustomPainter {
   _SplineChartPainter({
-    required this.userWeeklyXp,
+    required this.summary,
     required this.isDark,
     this.drawProgress = 1.0,
     this.pulseRadius = 6.0,
   });
 
-  final int userWeeklyXp;
+  final WeeklyXpSummary summary;
   final bool isDark;
   final double drawProgress;
   final double pulseRadius;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final leftPadding = 30.0;
-    final bottomPadding = 20.0;
-    final chartWidth = size.width - leftPadding;
-    final chartHeight = size.height - bottomPadding;
-
-    final double maxVal = (userWeeklyXp * 1.3).clamp(100.0, 10000.0);
-    final yValues = [maxVal, maxVal * 2 / 3, maxVal * 1 / 3, 0.0];
-    final days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    const leftPadding = 30.0;
+    const rightPadding = 8.0;
+    const topPadding = 18.0;
+    const bottomPadding = 24.0;
+    final chartWidth = size.width - leftPadding - rightPadding;
+    final chartHeight = size.height - topPadding - bottomPadding;
+    final elapsedPoints = summary.currentWeek
+        .take(summary.elapsedDayCount)
+        .toList(growable: false);
+    const maxVal = 60.0;
+    const minVal = -20.0;
+    const valueRange = maxVal - minVal;
+    const yTicks = <int>[60, 40, 20, 0, -20];
 
     final gridPaint = Paint()
       ..color = isDark ? const Color(0xFF334155) : Colors.grey.shade100
@@ -2183,129 +2546,150 @@ class _SplineChartPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     );
 
-    for (int i = 0; i < yValues.length; i++) {
-      final yLabel = yValues[i].toInt().toString();
-      final fraction = i / (yValues.length - 1);
-      final y = fraction * chartHeight;
-
+    for (final tick in yTicks) {
+      final fraction = (maxVal - tick) / valueRange;
+      final y = topPadding + fraction * chartHeight;
       textPainter.text = TextSpan(
-        text: yLabel,
+        text: tick.toString(),
         style: TextStyle(
-          color: isDark ? const Color(0xFF64748B) : Colors.grey.shade400,
-          fontSize: 10,
+          color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+          fontSize: 9,
           fontWeight: FontWeight.w500,
         ),
       );
+      textPainter.textAlign = TextAlign.left;
       textPainter.layout();
       textPainter.paint(
         canvas,
-        Offset(0, y - textPainter.height / 2),
+        Offset(
+          leftPadding - textPainter.width - 12,
+          y - textPainter.height / 2,
+        ),
       );
-
-      _drawDashedLine(canvas, leftPadding, size.width, y, gridPaint);
+      _drawDashedLine(
+        canvas,
+        leftPadding,
+        size.width - rightPadding,
+        y,
+        gridPaint,
+      );
     }
 
     final xCoords = <double>[];
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < summary.currentWeek.length; i++) {
       final fraction = i / 6;
-      final x = leftPadding + fraction * (chartWidth - 10);
+      final x = leftPadding + fraction * chartWidth;
       xCoords.add(x);
+      final point = summary.currentWeek[i];
+      final isToday = i == summary.elapsedDayCount - 1;
 
       textPainter.text = TextSpan(
-        text: days[i],
+        text: point.weekdayLabel,
         style: TextStyle(
-          color: isDark ? const Color(0xFF94A3B8) : Colors.grey.shade500,
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
+          color: isToday
+              ? const Color(0xFF2563EB)
+              : point.isFuture
+                  ? (isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1))
+                  : (isDark ? const Color(0xFF94A3B8) : Colors.grey.shade500),
+          fontSize: 9.5,
+          fontWeight: isToday ? FontWeight.w700 : FontWeight.w600,
         ),
       );
+      textPainter.textAlign = TextAlign.center;
       textPainter.layout();
       textPainter.paint(
         canvas,
-        Offset(x - textPainter.width / 2, size.height - 14),
+        Offset(x - textPainter.width / 2, size.height - 16),
       );
     }
 
-    final youXP = [
-      0.45 * userWeeklyXp,
-      0.7 * userWeeklyXp,
-      1.0 * userWeeklyXp,
-      0.65 * userWeeklyXp,
-      0.8 * userWeeklyXp,
-      0.5 * userWeeklyXp,
-      0.6 * userWeeklyXp,
-    ];
-
     double getY(double xp) {
-      final fraction = xp / maxVal;
-      return chartHeight - (fraction * chartHeight);
+      final visibleXp = xp.clamp(minVal, maxVal);
+      final fraction = (maxVal - visibleXp) / valueRange;
+      return topPadding + (fraction * chartHeight);
     }
 
     final youPoints = <Offset>[];
-    for (int i = 0; i < 7; i++) {
-      youPoints.add(Offset(xCoords[i], getY(youXP[i])));
+    for (int i = 0; i < elapsedPoints.length; i++) {
+      youPoints.add(Offset(xCoords[i], getY(elapsedPoints[i].xp.toDouble())));
     }
 
     // Draw-on effect: clip to only show the portion drawn so far
     canvas.save();
     canvas.clipRect(
       Rect.fromLTWH(
-        0, 0,
-        leftPadding + chartWidth * drawProgress,
+        0,
+        0,
+        leftPadding + chartWidth * drawProgress + 2,
         size.height,
       ),
     );
-    _drawSpline(canvas, youPoints, const Color(0xFF2563EB), chartHeight);
+    _drawSpline(
+      canvas,
+      youPoints,
+      const Color(0xFF16A34A),
+      getY(0),
+    );
     canvas.restore();
 
     // Animated peak dot — appears when draw-on passes it
-    const wedIndex = 2;
-    final youWedOffset = youPoints[wedIndex];
-    final dotFraction = wedIndex / 6.0;
+    for (var index = 0; index < youPoints.length; index++) {
+      final pointFraction = index / 6.0;
+      if (drawProgress < pointFraction) continue;
 
-    if (drawProgress >= dotFraction) {
-      // Outer glow ring
-      canvas.drawCircle(
-        youWedOffset,
-        pulseRadius + 3,
-        Paint()
-          ..color = const Color(0xFF2563EB).withOpacity(0.15)
-          ..style = PaintingStyle.fill,
-      );
-      // Solid dot
-      canvas.drawCircle(
-        youWedOffset,
-        pulseRadius,
-        Paint()
-          ..color = const Color(0xFF2563EB)
-          ..style = PaintingStyle.fill,
-      );
-      // Inner white dot
-      canvas.drawCircle(
-        youWedOffset,
-        pulseRadius * 0.42,
-        Paint()
-          ..color = isDark ? const Color(0xFF1E293B) : Colors.white
-          ..style = PaintingStyle.fill,
-      );
+      final xp = elapsedPoints[index].xp;
+      final color = xp < 0
+          ? const Color(0xFFDC2626)
+          : xp > 0
+              ? const Color(0xFF16A34A)
+              : const Color(0xFF94A3B8);
+      final offset = youPoints[index];
+      final isLatest = index == youPoints.length - 1;
+      final opacity = ((drawProgress - pointFraction) / 0.12).clamp(0.0, 1.0);
 
-      // Tooltip fades in just after dot appears
-      final tooltipOpacity =
-          ((drawProgress - dotFraction) / 0.15).clamp(0.0, 1.0);
-      if (tooltipOpacity > 0) {
-        _drawTooltip(
-          canvas,
-          offset: youWedOffset - const Offset(0, 10),
-          text: '${userWeeklyXp.toInt()} XP',
-          color: const Color(0xFF2563EB),
-          isAbove: true,
-          opacity: tooltipOpacity,
+      if (isLatest) {
+        canvas.drawCircle(
+          offset,
+          pulseRadius + 2,
+          Paint()
+            ..color = color.withValues(alpha: 0.12 * opacity)
+            ..style = PaintingStyle.fill,
         );
       }
+      canvas.drawCircle(
+        offset,
+        5,
+        Paint()
+          ..color = color.withValues(alpha: opacity)
+          ..style = PaintingStyle.fill,
+      );
+      canvas.drawCircle(
+        offset,
+        2,
+        Paint()
+          ..color = (isDark ? const Color(0xFF1E293B) : Colors.white)
+              .withValues(alpha: opacity)
+          ..style = PaintingStyle.fill,
+      );
+      _drawTooltip(
+        canvas,
+        offset: offset - const Offset(0, 7),
+        text: _formatXp(xp),
+        color: color,
+        isAbove: true,
+        opacity: opacity,
+      );
     }
   }
 
-  void _drawDashedLine(Canvas canvas, double x1, double x2, double y, Paint paint) {
+  String _formatXp(int xp) {
+    if (xp > 0) return '+$xp';
+    if (xp < 0) return '\u2212${xp.abs()}';
+    return '0';
+  }
+
+  void _drawDashedLine(
+      Canvas canvas, double x1, double x2, double y, Paint paint) {
     double curX = x1;
     const dashWidth = 4.0;
     const dashSpace = 4.0;
@@ -2315,7 +2699,20 @@ class _SplineChartPainter extends CustomPainter {
     }
   }
 
-  void _drawSpline(Canvas canvas, List<Offset> points, Color color, double baselineY) {
+  void _drawSpline(
+      Canvas canvas, List<Offset> points, Color color, double baselineY) {
+    if (points.isEmpty) return;
+    if (points.length == 1) {
+      canvas.drawCircle(
+        points.single,
+        2,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.fill,
+      );
+      return;
+    }
+
     final path = Path();
     path.moveTo(points[0].dx, points[0].dy);
 
@@ -2344,12 +2741,24 @@ class _SplineChartPainter extends CustomPainter {
       ..lineTo(points.first.dx, baselineY)
       ..close();
 
+    final lineTop = points.map((point) => point.dy).reduce(math.min);
+    final lineBottom = points.map((point) => point.dy).reduce(math.max);
+    final shaderTop = math.min(lineTop, baselineY);
+    final shaderBottom = math.max(lineBottom, baselineY);
+
     final fillPaint = Paint()
       ..shader = LinearGradient(
         colors: [color.withOpacity(0.15), color.withOpacity(0.00)],
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-      ).createShader(Rect.fromLTRB(points.first.dx, points.map((p) => p.dy).reduce((a, b) => a < b ? a : b), points.last.dx, baselineY))
+      ).createShader(
+        Rect.fromLTRB(
+          points.first.dx,
+          shaderTop,
+          points.last.dx,
+          math.max(shaderTop + 1, shaderBottom),
+        ),
+      )
       ..style = PaintingStyle.fill;
 
     canvas.drawPath(fillPath, fillPaint);
@@ -2369,74 +2778,30 @@ class _SplineChartPainter extends CustomPainter {
     final textPainter = TextPainter(
       text: TextSpan(
         text: text,
-        style: const TextStyle(
-          color: Colors.white,
+        style: TextStyle(
+          color: color.withValues(alpha: opacity),
           fontSize: 10,
           fontWeight: FontWeight.w700,
         ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
-
-    const paddingH = 8.0;
-    const paddingV = 5.0;
-    final w = textPainter.width + paddingH * 2;
-    final h = textPainter.height + paddingV * 2;
-    const arrowSize = 4.0;
-
-    final rect = isAbove
-        ? Rect.fromLTWH(offset.dx - w / 2, offset.dy - h - arrowSize, w, h)
-        : Rect.fromLTWH(offset.dx - w / 2, offset.dy + arrowSize, w, h);
-
-    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(6));
-
-    final tooltipPaint = Paint()
-      ..color = color.withOpacity(opacity)
-      ..style = PaintingStyle.fill;
-
-    final arrowPath = Path();
-    if (isAbove) {
-      arrowPath.moveTo(offset.dx, offset.dy);
-      arrowPath.lineTo(offset.dx - arrowSize, offset.dy - arrowSize);
-      arrowPath.lineTo(offset.dx + arrowSize, offset.dy - arrowSize);
-    } else {
-      arrowPath.moveTo(offset.dx, offset.dy);
-      arrowPath.lineTo(offset.dx - arrowSize, offset.dy + arrowSize);
-      arrowPath.lineTo(offset.dx + arrowSize, offset.dy + arrowSize);
-    }
-    arrowPath.close();
-
-    if (opacity < 1.0) {
-      canvas.saveLayer(
-        rect.inflate(10),
-        Paint()..color = Colors.white.withOpacity(opacity),
-      );
-    }
-
-    final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.08 * opacity)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
-    final shadowPath = Path()..addRRect(rrect)..addPath(arrowPath, Offset.zero);
-    canvas.drawPath(shadowPath, shadowPaint);
-
-    canvas.drawRRect(rrect, tooltipPaint);
-    canvas.drawPath(arrowPath, tooltipPaint);
-
     textPainter.paint(
       canvas,
-      Offset(rect.left + paddingH, rect.top + paddingV),
+      Offset(
+        offset.dx - textPainter.width / 2,
+        isAbove ? offset.dy - textPainter.height : offset.dy,
+      ),
     );
-
-    if (opacity < 1.0) canvas.restore();
   }
 
   @override
   bool shouldRepaint(covariant _SplineChartPainter old) =>
       old.drawProgress != drawProgress ||
       old.pulseRadius != pulseRadius ||
-      old.userWeeklyXp != userWeeklyXp;
+      old.summary.dataSignature != summary.dataSignature ||
+      old.isDark != isDark;
 }
-
 
 class _QuickActionsSection extends StatelessWidget {
   const _QuickActionsSection({
@@ -2459,10 +2824,14 @@ class _QuickActionsSection extends StatelessWidget {
           child: _QuickActionTile(
             title: 'Badges',
             iconData: Icons.emoji_events_rounded,
-            iconColor: isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A),
-            iconBgColor: isDark ? const Color(0xFF052E16) : const Color(0xFFDCFCE7),
-            cardBgColor: isDark ? const Color(0xFF0F1F14) : const Color(0xFFF0FDF4),
-            borderColor: isDark ? const Color(0xFF166534) : const Color(0xFFBBF7D0),
+            iconColor:
+                isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A),
+            iconBgColor:
+                isDark ? const Color(0xFF052E16) : const Color(0xFFDCFCE7),
+            cardBgColor:
+                isDark ? const Color(0xFF0F1F14) : const Color(0xFFF0FDF4),
+            borderColor:
+                isDark ? const Color(0xFF166534) : const Color(0xFFBBF7D0),
             onTap: onOpenBadges,
           ),
         ),
@@ -2472,10 +2841,14 @@ class _QuickActionsSection extends StatelessWidget {
           child: _QuickActionTile(
             title: 'Leaderboard',
             iconData: Icons.bar_chart_rounded,
-            iconColor: isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED),
-            iconBgColor: isDark ? const Color(0xFF2E1065) : const Color(0xFFEDE9FE),
-            cardBgColor: isDark ? const Color(0xFF160D2E) : const Color(0xFFF5F3FF),
-            borderColor: isDark ? const Color(0xFF4C1D95) : const Color(0xFFDDD6FE),
+            iconColor:
+                isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED),
+            iconBgColor:
+                isDark ? const Color(0xFF2E1065) : const Color(0xFFEDE9FE),
+            cardBgColor:
+                isDark ? const Color(0xFF160D2E) : const Color(0xFFF5F3FF),
+            borderColor:
+                isDark ? const Color(0xFF4C1D95) : const Color(0xFFDDD6FE),
             onTap: onOpenLeaderboard,
           ),
         ),
@@ -2561,9 +2934,8 @@ class _QuickActionTile extends StatelessWidget {
               // Chevron
               Icon(
                 Icons.chevron_right_rounded,
-                color: isDark
-                    ? const Color(0xFF475569)
-                    : const Color(0xFFCBD5E1),
+                color:
+                    isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1),
                 size: 16,
               ),
             ],
@@ -2572,7 +2944,9 @@ class _QuickActionTile extends StatelessWidget {
       ),
     );
   }
-}class _ActivityEntryItem extends StatelessWidget {
+}
+
+class _ActivityEntryItem extends StatelessWidget {
   const _ActivityEntryItem({required this.entry});
 
   final ActivityEntry entry;
@@ -2617,7 +2991,14 @@ class _QuickActionTile extends StatelessWidget {
     ),
   ];
 
-  static const _subjectsByHash = ['Biology', 'Biology', 'Chemistry', 'Physics', 'Chemistry', 'Physics'];
+  static const _subjectsByHash = [
+    'Biology',
+    'Biology',
+    'Chemistry',
+    'Physics',
+    'Chemistry',
+    'Physics'
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -2629,22 +3010,40 @@ class _QuickActionTile extends StatelessWidget {
     final style = _iconStyles[styleIdx];
     final subjectTag = _subjectsByHash[styleIdx];
 
-    final statusText  = isCorrect ? 'Correct'   : 'Incorrect';
+    final statusText = isCorrect ? 'Correct' : 'Incorrect';
     final statusColor = isCorrect
         ? (isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A))
         : (isDark ? const Color(0xFFFB923C) : const Color(0xFFEF4444));
-    final xpText  = isCorrect ? '+${entry.xpEarned} XP' : '-${entry.xpEarned.abs()} XP';
+    final xpText =
+        isCorrect ? '+${entry.xpEarned} XP' : '-${entry.xpEarned.abs()} XP';
     final xpColor = isCorrect
         ? (isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A))
         : (isDark ? const Color(0xFFF87171) : const Color(0xFFEF4444));
 
-    final date = DateTime.tryParse(entry.occurredAt)?.toLocal() ?? DateTime.now();
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    final date =
+        DateTime.tryParse(entry.occurredAt)?.toLocal() ?? DateTime.now();
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
     final dateString = '${date.day} ${months[date.month - 1]} ${date.year}';
 
-    final iconBgColor     = isDark ? style.bgColor.withValues(alpha: 0.15)     : style.bgColor;
-    final iconBorderColor = isDark ? style.borderColor.withValues(alpha: 0.3)  : style.borderColor;
-    final iconColor       = isDark ? style.iconColor.withValues(alpha: 0.9)    : style.iconColor;
+    final iconBgColor =
+        isDark ? style.bgColor.withValues(alpha: 0.15) : style.bgColor;
+    final iconBorderColor =
+        isDark ? style.borderColor.withValues(alpha: 0.3) : style.borderColor;
+    final iconColor =
+        isDark ? style.iconColor.withValues(alpha: 0.9) : style.iconColor;
 
     return Material(
       color: Colors.transparent,
@@ -2698,7 +3097,8 @@ class _QuickActionTile extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 3),
                           decoration: BoxDecoration(
                             color: isDark
                                 ? const Color(0xFF2D3748)
@@ -2752,9 +3152,8 @@ class _QuickActionTile extends StatelessWidget {
               const SizedBox(width: 4),
               Icon(
                 Icons.chevron_right_rounded,
-                color: isDark
-                    ? const Color(0xFF475569)
-                    : const Color(0xFFCBD5E1),
+                color:
+                    isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1),
                 size: 20,
               ),
             ],
@@ -2835,8 +3234,10 @@ class _SmallPillButton extends StatelessWidget {
 
     // ── Kids: original plain white pill ──
     final bgColor = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final borderColor = isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0);
-    final contentColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+    final borderColor =
+        isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0);
+    final contentColor =
+        isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
 
     return Material(
       color: bgColor,
@@ -2924,10 +3325,14 @@ class _ProgressTab extends StatelessWidget {
       );
     }
     // Sprint 4.11 — level/XP card, mastery bars, activity timeline.
-    return ProgressScreen(workspaceId: workspaceId!);
+    return ProgressScreen(
+      workspaceId: workspaceId!,
+      topicMasterySummary: _TopicMasteryDashboardCard(
+        workspaceId: workspaceId!,
+      ),
+    );
   }
 }
-
 
 class _RedeemInviteCard extends ConsumerStatefulWidget {
   const _RedeemInviteCard();
@@ -2978,10 +3383,13 @@ class _RedeemInviteCardState extends ConsumerState<_RedeemInviteCard>
       await ref.read(authNotifierProvider.notifier).redeemInviteCode(code);
       // Select the new workspace
       final authValue = ref.read(authNotifierProvider).valueOrNull;
-      final user = authValue?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+      final user =
+          authValue?.maybeWhen(authenticated: (u) => u, orElse: () => null);
       if (user != null && user.workspaceMemberships.isNotEmpty) {
         final joinedWorkspaceId = user.workspaceMemberships.last.workspaceId;
-        ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(joinedWorkspaceId);
+        ref
+            .read(activeWorkspaceIdProvider.notifier)
+            .setWorkspaceId(joinedWorkspaceId);
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3067,11 +3475,13 @@ class _RedeemInviteCardState extends ConsumerState<_RedeemInviteCard>
             const SizedBox(height: Spacing.lg),
             TextField(
               controller: _controller,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.w600),
               decoration: InputDecoration(
                 hintText: 'e.g. WS-123456',
                 hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
-                prefixIcon: const Icon(Icons.vpn_key_outlined, color: Colors.white60),
+                prefixIcon:
+                    const Icon(Icons.vpn_key_outlined, color: Colors.white60),
                 filled: true,
                 fillColor: const Color(0xFF0F172A).withOpacity(0.8),
                 errorText: _errorMessage,
@@ -3086,7 +3496,8 @@ class _RedeemInviteCardState extends ConsumerState<_RedeemInviteCard>
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
-                  borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                  borderSide:
+                      const BorderSide(color: AppColors.primary, width: 2),
                 ),
                 errorBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
@@ -3094,7 +3505,8 @@ class _RedeemInviteCardState extends ConsumerState<_RedeemInviteCard>
                 ),
                 focusedErrorBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
-                  borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+                  borderSide:
+                      const BorderSide(color: Colors.redAccent, width: 2),
                 ),
               ),
               textCapitalization: TextCapitalization.characters,
@@ -3222,7 +3634,7 @@ class _DashedBorderPainter extends CustomPainter {
 
     final dashPath = Path();
     double distance = 0.0;
-    
+
     for (final metric in path.computeMetrics()) {
       while (distance < metric.length) {
         final len = dashWidth;
@@ -3240,7 +3652,7 @@ class _DashedBorderPainter extends CustomPainter {
         distance += len + dashGap;
       }
     }
-    
+
     canvas.drawPath(dashPath, paint);
   }
 
@@ -3268,29 +3680,29 @@ class _SchoolBuildingWatermarkPainter extends CustomPainter {
       ..strokeJoin = StrokeJoin.round;
 
     final path = Path();
-    
+
     // Main building body: from y = 45% to y = 90%
     final double left = size.width * 0.15;
     final double right = size.width * 0.85;
     final double bottom = size.height * 0.9;
     final double bodyTop = size.height * 0.55;
-    
+
     // Base line
     path.moveTo(size.width * 0.05, bottom);
     path.lineTo(size.width * 0.95, bottom);
-    
+
     // Main body rectangle
     path.moveTo(left, bottom);
     path.lineTo(left, bodyTop);
     path.lineTo(right, bodyTop);
     path.lineTo(right, bottom);
-    
+
     // Triangle roof on top of main body
     final double roofPeakY = size.height * 0.35;
     path.moveTo(left - 5, bodyTop);
     path.lineTo(size.width * 0.5, roofPeakY);
     path.lineTo(right + 5, bodyTop);
-    
+
     // Bell tower/cupola on top of the roof peak
     final double towerLeft = size.width * 0.42;
     final double towerRight = size.width * 0.58;
@@ -3299,18 +3711,18 @@ class _SchoolBuildingWatermarkPainter extends CustomPainter {
     path.lineTo(towerLeft, towerTop);
     path.lineTo(towerRight, towerTop);
     path.lineTo(towerRight, size.height * 0.3);
-    
+
     // Tower roof
     path.moveTo(towerLeft - 2, towerTop);
     path.lineTo(size.width * 0.5, size.height * 0.12);
     path.lineTo(towerRight + 2, towerTop);
-    
+
     // Flag pole and flag
     path.moveTo(size.width * 0.5, size.height * 0.12);
     path.lineTo(size.width * 0.5, size.height * 0.05);
     path.lineTo(size.width * 0.62, size.height * 0.08);
     path.lineTo(size.width * 0.5, size.height * 0.11);
-    
+
     // Door in the middle
     final double doorLeft = size.width * 0.44;
     final double doorRight = size.width * 0.56;
@@ -3324,7 +3736,7 @@ class _SchoolBuildingWatermarkPainter extends CustomPainter {
       clockwise: true,
     );
     path.lineTo(doorRight, bottom);
-    
+
     // Arched Window Left
     final double w1Left = size.width * 0.25;
     final double w1Right = size.width * 0.35;
@@ -3339,7 +3751,7 @@ class _SchoolBuildingWatermarkPainter extends CustomPainter {
     );
     path.lineTo(w1Right, wBottom);
     path.close();
-    
+
     // Arched Window Right
     final double w2Left = size.width * 0.65;
     final double w2Right = size.width * 0.75;
@@ -3374,12 +3786,12 @@ class _DeskLampWatermarkPainter extends CustomPainter {
       ..strokeJoin = StrokeJoin.round;
 
     final path = Path();
-    
+
     // Desk surface base line at y = 90%
     final double bottom = size.height * 0.9;
     path.moveTo(size.width * 0.05, bottom);
     path.lineTo(size.width * 0.95, bottom);
-    
+
     // --- Desk Lamp (on the right side) ---
     final double baseCenterX = size.width * 0.75;
     final double baseWidth = size.width * 0.16;
@@ -3390,22 +3802,22 @@ class _DeskLampWatermarkPainter extends CustomPainter {
       radius: Radius.circular(baseWidth / 2),
       clockwise: true,
     );
-    
+
     // Angled neck segment 1: base to joint
     final double jointX = size.width * 0.65;
     final double jointY = size.height * 0.55;
     path.moveTo(baseCenterX, bottom - 5);
     path.lineTo(jointX, jointY);
-    
+
     // Neck joint circle
     canvas.drawCircle(Offset(jointX, jointY), 3, paint);
-    
+
     // Angled neck segment 2: joint to head
     final double headX = size.width * 0.50;
     final double headY = size.height * 0.35;
     path.moveTo(jointX, jointY);
     path.lineTo(headX, headY);
-    
+
     // Lamp head (lampshade pointing down-left)
     final double capCenterX = headX;
     final double capCenterY = headY;
@@ -3413,20 +3825,20 @@ class _DeskLampWatermarkPainter extends CustomPainter {
     final double rimY1 = size.height * 0.45;
     final double rimX2 = size.width * 0.48;
     final double rimY2 = size.height * 0.55;
-    
+
     path.moveTo(capCenterX, capCenterY);
     path.lineTo(rimX1, rimY1);
     path.lineTo(rimX2, rimY2);
     path.lineTo(capCenterX, capCenterY);
-    
+
     // Light rays
     path.moveTo(rimX1 - 5, rimY1 + 5);
     path.lineTo(rimX1 - 15, rimY1 + 15);
-    path.moveTo((rimX1 + rimX2)/2 - 5, (rimY1 + rimY2)/2 + 5);
-    path.lineTo((rimX1 + rimX2)/2 - 15, (rimY1 + rimY2)/2 + 20);
+    path.moveTo((rimX1 + rimX2) / 2 - 5, (rimY1 + rimY2) / 2 + 5);
+    path.lineTo((rimX1 + rimX2) / 2 - 15, (rimY1 + rimY2) / 2 + 20);
     path.moveTo(rimX2 - 2, rimY2 + 5);
     path.lineTo(rimX2 - 5, rimY2 + 20);
-    
+
     // --- Coffee Mug (in the middle-left) ---
     final double mugLeft = size.width * 0.12;
     final double mugRight = size.width * 0.28;
@@ -3440,29 +3852,34 @@ class _DeskLampWatermarkPainter extends CustomPainter {
     // Mug handle on the left
     path.moveTo(mugLeft, mugTop + 5);
     path.cubicTo(
-      mugLeft - 8, mugTop + 5,
-      mugLeft - 8, mugBottom - 5,
-      mugLeft, mugBottom - 5,
+      mugLeft - 8,
+      mugTop + 5,
+      mugLeft - 8,
+      mugBottom - 5,
+      mugLeft,
+      mugBottom - 5,
     );
     // Steam lines
     path.moveTo(size.width * 0.17, mugTop - 4);
-    path.cubicTo(size.width * 0.18, mugTop - 8, size.width * 0.16, mugTop - 12, size.width * 0.17, mugTop - 16);
+    path.cubicTo(size.width * 0.18, mugTop - 8, size.width * 0.16, mugTop - 12,
+        size.width * 0.17, mugTop - 16);
     path.moveTo(size.width * 0.23, mugTop - 4);
-    path.cubicTo(size.width * 0.24, mugTop - 8, size.width * 0.22, mugTop - 12, size.width * 0.23, mugTop - 16);
+    path.cubicTo(size.width * 0.24, mugTop - 8, size.width * 0.22, mugTop - 12,
+        size.width * 0.23, mugTop - 16);
 
     // --- Book Stack ---
     final double b1Left = size.width * 0.38;
     final double b1Right = size.width * 0.62;
     final double b1Bottom = bottom;
     final double b1Top = size.height * 0.82;
-    
+
     path.moveTo(b1Left, b1Bottom);
     path.lineTo(b1Left, b1Top);
     path.lineTo(b1Right, b1Top);
     path.lineTo(b1Right, b1Bottom);
     path.moveTo(b1Right - 4, b1Top + 2);
     path.lineTo(b1Right - 4, b1Bottom - 2);
-    
+
     final double b2Left = size.width * 0.42;
     final double b2Right = size.width * 0.66;
     final double b2Bottom = b1Top;
@@ -3495,18 +3912,18 @@ class _ComputerDeskWatermarkPainter extends CustomPainter {
       ..strokeJoin = StrokeJoin.round;
 
     final path = Path();
-    
+
     // Desk surface base line at y = 82%
     final double deskY = size.height * 0.82;
     path.moveTo(size.width * 0.05, deskY);
     path.lineTo(size.width * 0.95, deskY);
-    
+
     // Desk legs
     path.moveTo(size.width * 0.15, deskY);
     path.lineTo(size.width * 0.15, size.height * 0.95);
     path.moveTo(size.width * 0.85, deskY);
     path.lineTo(size.width * 0.85, size.height * 0.95);
-    
+
     // --- Computer Monitor (centered) ---
     final double monitorWidth = size.width * 0.40;
     final double monitorHeight = size.height * 0.35;
@@ -3514,13 +3931,13 @@ class _ComputerDeskWatermarkPainter extends CustomPainter {
     final double monitorRight = monitorLeft + monitorWidth;
     final double monitorTop = size.height * 0.35;
     final double monitorBottom = monitorTop + monitorHeight;
-    
+
     path.moveTo(monitorLeft, monitorTop);
     path.lineTo(monitorRight, monitorTop);
     path.lineTo(monitorRight, monitorBottom);
     path.lineTo(monitorLeft, monitorBottom);
     path.close();
-    
+
     // Monitor stand
     final double standLeft = size.width * 0.46;
     final double standRight = size.width * 0.54;
@@ -3528,11 +3945,11 @@ class _ComputerDeskWatermarkPainter extends CustomPainter {
     path.lineTo(standLeft, deskY - 3);
     path.moveTo(standRight, monitorBottom);
     path.lineTo(standRight, deskY - 3);
-    
+
     // Monitor base
     path.moveTo(size.width * 0.42, deskY - 3);
     path.lineTo(size.width * 0.58, deskY - 3);
-    
+
     // Faint inner lines representing code/layout on screen
     path.moveTo(monitorLeft + 8, monitorTop + 8);
     path.lineTo(monitorLeft + 25, monitorTop + 8);
@@ -3540,7 +3957,7 @@ class _ComputerDeskWatermarkPainter extends CustomPainter {
     path.lineTo(monitorLeft + 40, monitorTop + 16);
     path.moveTo(monitorLeft + 8, monitorTop + 24);
     path.lineTo(monitorLeft + 30, monitorTop + 24);
-    
+
     // --- Keyboard ---
     final double kbLeft = size.width * 0.38;
     final double kbRight = size.width * 0.58;
@@ -3551,21 +3968,21 @@ class _ComputerDeskWatermarkPainter extends CustomPainter {
     path.lineTo(kbRight, kbBottom);
     path.lineTo(kbLeft, kbBottom);
     path.close();
-    
+
     // --- Study Chair ---
     final double chairLeft = size.width * 0.08;
     final double chairRight = size.width * 0.22;
     final double chairSeatY = deskY - 10;
     final double chairBackTopY = size.height * 0.45;
-    
+
     path.moveTo(chairLeft, chairSeatY);
     path.lineTo(chairRight, chairSeatY);
-    
+
     path.moveTo(chairLeft + 3, chairSeatY);
     path.lineTo(chairLeft + 3, chairBackTopY);
     path.lineTo(chairLeft + 15, chairBackTopY);
     path.lineTo(chairLeft + 15, chairSeatY);
-    
+
     final double chairLegsY = size.height * 0.95;
     path.moveTo((chairLeft + chairRight) / 2, chairSeatY);
     path.lineTo((chairLeft + chairRight) / 2, chairLegsY - 4);
@@ -3694,7 +4111,8 @@ class StudentWorkspaceSwitcherSheet extends ConsumerWidget {
           borderRadius: BorderRadius.circular(14),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.sm),
+            padding: const EdgeInsets.symmetric(
+                horizontal: Spacing.md, vertical: Spacing.sm),
             child: Row(
               children: [
                 Container(
@@ -3716,7 +4134,8 @@ class StudentWorkspaceSwitcherSheet extends ConsumerWidget {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white : const Color(0xFF1F2937),
+                          color:
+                              isDark ? Colors.white : const Color(0xFF1F2937),
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -3724,7 +4143,9 @@ class StudentWorkspaceSwitcherSheet extends ConsumerWidget {
                         subtitle,
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF6B7280),
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF6B7280),
                         ),
                       ),
                     ],
@@ -3732,7 +4153,9 @@ class StudentWorkspaceSwitcherSheet extends ConsumerWidget {
                 ),
                 Icon(
                   Icons.chevron_right_rounded,
-                  color: isDark ? const Color(0xFF475569) : const Color(0xFF9CA3AF),
+                  color: isDark
+                      ? const Color(0xFF475569)
+                      : const Color(0xFF9CA3AF),
                 ),
               ],
             ),
@@ -3748,9 +4171,10 @@ class StudentWorkspaceSwitcherSheet extends ConsumerWidget {
     final bgColor = isDark ? const Color(0xFF0F172A) : Colors.white;
     final auth = ref.watch(authNotifierProvider).valueOrNull;
     final isStudent = auth?.maybeWhen(
-      authenticated: (user) => user.role == UserRole.student,
-      orElse: () => false,
-    ) ?? false;
+          authenticated: (user) => user.role == UserRole.student,
+          orElse: () => false,
+        ) ??
+        false;
 
     return Container(
       decoration: BoxDecoration(
@@ -3759,329 +4183,390 @@ class StudentWorkspaceSwitcherSheet extends ConsumerWidget {
       ),
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(Spacing.lg, Spacing.xs, Spacing.lg, Spacing.md),
+          padding: const EdgeInsets.fromLTRB(
+              Spacing.lg, Spacing.xs, Spacing.lg, Spacing.md),
           child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 8),
-            // Centered Sparkle Title Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  Icons.auto_awesome_rounded,
-                  color: Color(0xFF8B5CF6),
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Switch Workspace',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: isDark ? Colors.white : const Color(0xFF1E1B4B),
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 8),
+              // Centered Sparkle Title Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.auto_awesome_rounded,
+                    color: Color(0xFF8B5CF6),
+                    size: 20,
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Choose a workspace to continue learning',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Switch Workspace',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: isDark ? Colors.white : const Color(0xFF1E1B4B),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: Spacing.lg),
-
-            // Workspaces list
-            if (memberships.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: Spacing.xl),
-                child: Text(
-                  'No workspaces available.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
-                  ),
+              const SizedBox(height: 4),
+              Text(
+                'Choose a workspace to continue learning',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
                 ),
-              )
-            else
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: memberships.length,
-                  itemBuilder: (context, index) {
-                    final m = memberships[index];
-                    final isSelected = m.workspaceId == selectedId;
-                    final isPersonal = m.role == UserRole.workspaceAdmin || m.role == UserRole.tenantAdmin;
-                    
-                    // Resolve actual workspace to check if collaborative and get name
-                    final workspaces = ref.watch(studentWorkspacesProvider).valueOrNull ?? [];
-                    Workspace? workspace;
-                    for (final w in workspaces) {
-                      if (w.id == m.workspaceId) {
-                        workspace = w;
-                        break;
+              ),
+              const SizedBox(height: Spacing.lg),
+
+              // Workspaces list
+              if (memberships.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: Spacing.xl),
+                  child: Text(
+                    'No workspaces available.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: isDark
+                          ? const Color(0xFF64748B)
+                          : const Color(0xFF94A3B8),
+                    ),
+                  ),
+                )
+              else
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: memberships.length,
+                    itemBuilder: (context, index) {
+                      final m = memberships[index];
+                      final isSelected = m.workspaceId == selectedId;
+                      final isPersonal = m.role == UserRole.workspaceAdmin ||
+                          m.role == UserRole.tenantAdmin;
+
+                      // Resolve actual workspace to check if collaborative and get name
+                      final workspaces =
+                          ref.watch(studentWorkspacesProvider).valueOrNull ??
+                              [];
+                      Workspace? workspace;
+                      for (final w in workspaces) {
+                        if (w.id == m.workspaceId) {
+                          workspace = w;
+                          break;
+                        }
                       }
-                    }
-                    final isCollaborative = workspace?.type == 'collaborative';
-                    final resolvedName = workspace?.name ?? m.workspaceName ?? 'Study Workspace';
+                      final isCollaborative =
+                          workspace?.type == 'collaborative';
+                      final resolvedName = workspace?.name ??
+                          m.workspaceName ??
+                          'Study Workspace';
 
-                    // Calculate classroomIndex state-lessly for the current workspace
-                    int classroomIndex = 0;
-                    for (int i = 0; i < index; i++) {
-                      final mRole = memberships[i].role;
-                      final mIsPersonal = mRole == UserRole.workspaceAdmin || mRole == UserRole.tenantAdmin;
-                      if (!mIsPersonal) {
-                        classroomIndex++;
+                      // Calculate classroomIndex state-lessly for the current workspace
+                      int classroomIndex = 0;
+                      for (int i = 0; i < index; i++) {
+                        final mRole = memberships[i].role;
+                        final mIsPersonal = mRole == UserRole.workspaceAdmin ||
+                            mRole == UserRole.tenantAdmin;
+                        if (!mIsPersonal) {
+                          classroomIndex++;
+                        }
                       }
-                    }
 
-                    // Style config mapping
-                    final Color tagBg;
-                    final Color tagText;
-                    final String tagLabel;
-                    final LinearGradient grad;
-                    final IconData leadIcon;
-                    final CustomPainter watermarkPainter;
-                    final String subtitleText;
+                      // Style config mapping
+                      final Color tagBg;
+                      final Color tagText;
+                      final String tagLabel;
+                      final LinearGradient grad;
+                      final IconData leadIcon;
+                      final CustomPainter watermarkPainter;
+                      final String subtitleText;
 
-                    if (isPersonal) {
-                       tagLabel = 'Personal';
-                       tagBg = isDark ? const Color(0xFF064E3B) : const Color(0xFFECFDF5);
-                       tagText = isDark ? const Color(0xFF34D399) : const Color(0xFF047857);
-                       grad = const LinearGradient(
-                         colors: [Color(0xFF10B981), Color(0xFF059669)],
-                         begin: Alignment.topLeft,
-                         end: Alignment.bottomRight,
-                       );
-                       leadIcon = Icons.person_rounded;
-                       watermarkPainter = _DeskLampWatermarkPainter(
-                         color: (isDark ? Colors.white : const Color(0xFF10B981))
-                             .withOpacity(isDark ? 0.025 : 0.045),
-                       );
-                       subtitleText = isSelected ? 'Your current personal workspace' : 'Your private study space';
-                    } else if (isCollaborative) {
-                      tagLabel = 'Group Study';
-                      tagBg = isDark ? const Color(0xFF78350F) : const Color(0xFFFFF7ED);
-                      tagText = isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706);
-                      grad = const LinearGradient(
-                        colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      );
-                      leadIcon = Icons.groups_rounded;
-                      watermarkPainter = _ComputerDeskWatermarkPainter(
-                        color: (isDark ? Colors.white : const Color(0xFFD97706))
-                            .withOpacity(isDark ? 0.025 : 0.045),
-                      );
-                      subtitleText = isSelected ? 'Your current group study' : 'Joined as a student';
-                    } else {
-                       tagLabel = 'Classroom';
-                       if (classroomIndex % 2 == 0) {
-                         tagBg = isDark ? const Color(0xFF1E1B4B) : const Color(0xFFEEF2FF);
-                         tagText = isDark ? const Color(0xFF818CF8) : const Color(0xFF4F46E5);
-                         grad = const LinearGradient(
-                           colors: [Color(0xFF4F46E5), Color(0xFF6366F1)],
-                           begin: Alignment.topLeft,
-                           end: Alignment.bottomRight,
-                         );
-                         leadIcon = Icons.groups_rounded;
-                         watermarkPainter = _SchoolBuildingWatermarkPainter(
-                           color: (isDark ? Colors.white : const Color(0xFF6366F1))
-                               .withOpacity(isDark ? 0.025 : 0.045),
-                         );
-                       } else {
-                         tagBg = isDark ? const Color(0xFF78350F) : const Color(0xFFFFF7ED);
-                         tagText = isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706);
-                         grad = const LinearGradient(
-                           colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
-                           begin: Alignment.topLeft,
-                           end: Alignment.bottomRight,
-                         );
-                         leadIcon = Icons.groups_rounded;
-                         watermarkPainter = _ComputerDeskWatermarkPainter(
-                           color: (isDark ? Colors.white : const Color(0xFFD97706))
-                               .withOpacity(isDark ? 0.025 : 0.045),
-                         );
-                       }
-                       subtitleText = isSelected ? 'Your current classroom workspace' : 'Joined as a student';
-                    }
+                      if (isPersonal) {
+                        tagLabel = 'Personal';
+                        tagBg = isDark
+                            ? const Color(0xFF064E3B)
+                            : const Color(0xFFECFDF5);
+                        tagText = isDark
+                            ? const Color(0xFF34D399)
+                            : const Color(0xFF047857);
+                        grad = const LinearGradient(
+                          colors: [Color(0xFF10B981), Color(0xFF059669)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        );
+                        leadIcon = Icons.person_rounded;
+                        watermarkPainter = _DeskLampWatermarkPainter(
+                          color:
+                              (isDark ? Colors.white : const Color(0xFF10B981))
+                                  .withOpacity(isDark ? 0.025 : 0.045),
+                        );
+                        subtitleText = isSelected
+                            ? 'Your current personal workspace'
+                            : 'Your private study space';
+                      } else if (isCollaborative) {
+                        tagLabel = 'Group Study';
+                        tagBg = isDark
+                            ? const Color(0xFF78350F)
+                            : const Color(0xFFFFF7ED);
+                        tagText = isDark
+                            ? const Color(0xFFFBBF24)
+                            : const Color(0xFFD97706);
+                        grad = const LinearGradient(
+                          colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        );
+                        leadIcon = Icons.groups_rounded;
+                        watermarkPainter = _ComputerDeskWatermarkPainter(
+                          color:
+                              (isDark ? Colors.white : const Color(0xFFD97706))
+                                  .withOpacity(isDark ? 0.025 : 0.045),
+                        );
+                        subtitleText = isSelected
+                            ? 'Your current group study'
+                            : 'Joined as a student';
+                      } else {
+                        tagLabel = 'Classroom';
+                        if (classroomIndex % 2 == 0) {
+                          tagBg = isDark
+                              ? const Color(0xFF1E1B4B)
+                              : const Color(0xFFEEF2FF);
+                          tagText = isDark
+                              ? const Color(0xFF818CF8)
+                              : const Color(0xFF4F46E5);
+                          grad = const LinearGradient(
+                            colors: [Color(0xFF4F46E5), Color(0xFF6366F1)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          );
+                          leadIcon = Icons.groups_rounded;
+                          watermarkPainter = _SchoolBuildingWatermarkPainter(
+                            color: (isDark
+                                    ? Colors.white
+                                    : const Color(0xFF6366F1))
+                                .withOpacity(isDark ? 0.025 : 0.045),
+                          );
+                        } else {
+                          tagBg = isDark
+                              ? const Color(0xFF78350F)
+                              : const Color(0xFFFFF7ED);
+                          tagText = isDark
+                              ? const Color(0xFFFBBF24)
+                              : const Color(0xFFD97706);
+                          grad = const LinearGradient(
+                            colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          );
+                          leadIcon = Icons.groups_rounded;
+                          watermarkPainter = _ComputerDeskWatermarkPainter(
+                            color: (isDark
+                                    ? Colors.white
+                                    : const Color(0xFFD97706))
+                                .withOpacity(isDark ? 0.025 : 0.045),
+                          );
+                        }
+                        subtitleText = isSelected
+                            ? 'Your current classroom workspace'
+                            : 'Joined as a student';
+                      }
 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12.0),
-                      child: Container(
-                        height: 94,
-                        clipBehavior: Clip.antiAlias,
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isSelected
-                                ? const Color(0xFF8B5CF6)
-                                : (isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
-                            width: isSelected ? 1.8 : 1.0,
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12.0),
+                        child: Container(
+                          height: 94,
+                          clipBehavior: Clip.antiAlias,
+                          decoration: BoxDecoration(
+                            color:
+                                isDark ? const Color(0xFF1E293B) : Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isSelected
+                                  ? const Color(0xFF8B5CF6)
+                                  : (isDark
+                                      ? const Color(0xFF334155)
+                                      : const Color(0xFFF1F5F9)),
+                              width: isSelected ? 1.8 : 1.0,
+                            ),
+                            boxShadow: isSelected
+                                ? [
+                                    BoxShadow(
+                                      color: const Color(0xFF8B5CF6)
+                                          .withOpacity(0.08),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ]
+                                : null,
                           ),
-                          boxShadow: isSelected
-                              ? [
-                                  BoxShadow(
-                                    color: const Color(0xFF8B5CF6).withOpacity(0.08),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ]
-                              : null,
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () => onSelect(m.workspaceId),
-                            child: Stack(
-                              children: [
-                                // Faint watermark drawing in background
-                                Positioned(
-                                  right: -10,
-                                  bottom: -10,
-                                  child: SizedBox(
-                                    width: 90,
-                                    height: 90,
-                                    child: CustomPaint(
-                                      painter: watermarkPainter,
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => onSelect(m.workspaceId),
+                              child: Stack(
+                                children: [
+                                  // Faint watermark drawing in background
+                                  Positioned(
+                                    right: -10,
+                                    bottom: -10,
+                                    child: SizedBox(
+                                      width: 90,
+                                      height: 90,
+                                      child: CustomPaint(
+                                        painter: watermarkPainter,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                // Content row
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-                                  child: Row(
-                                    children: [
-                                      // Leading Gradient Icon
-                                      Container(
-                                        width: 48,
-                                        height: 48,
-                                        decoration: BoxDecoration(
-                                          gradient: grad,
-                                          borderRadius: BorderRadius.circular(12),
+                                  // Content row
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16.0, vertical: 12.0),
+                                    child: Row(
+                                      children: [
+                                        // Leading Gradient Icon
+                                        Container(
+                                          width: 48,
+                                          height: 48,
+                                          decoration: BoxDecoration(
+                                            gradient: grad,
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                          child: Icon(
+                                            leadIcon,
+                                            color: Colors.white,
+                                            size: 22,
+                                          ),
                                         ),
-                                        child: Icon(
-                                          leadIcon,
-                                          color: Colors.white,
-                                          size: 22,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 14),
-                                      // Workspace Details
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Text(
-                                              resolvedName,
-                                              style: TextStyle(
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.bold,
-                                                color: isDark ? Colors.white : const Color(0xFF1E1B4B),
+                                        const SizedBox(width: 14),
+                                        // Workspace Details
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Text(
+                                                resolvedName,
+                                                style: TextStyle(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: isDark
+                                                      ? Colors.white
+                                                      : const Color(0xFF1E1B4B),
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
                                               ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            const SizedBox(height: 3),
-                                            Row(
-                                              children: [
-                                                // Tag chip
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color: tagBg,
-                                                    borderRadius: BorderRadius.circular(6),
-                                                  ),
-                                                  child: Text(
-                                                    tagLabel,
-                                                    style: TextStyle(
-                                                      fontSize: 10,
-                                                      fontWeight: FontWeight.w800,
-                                                      color: tagText,
+                                              const SizedBox(height: 3),
+                                              Row(
+                                                children: [
+                                                  // Tag chip
+                                                  Container(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: tagBg,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              6),
+                                                    ),
+                                                    child: Text(
+                                                      tagLabel,
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                        color: tagText,
+                                                      ),
                                                     ),
                                                   ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 3),
-                                            Text(
-                                              subtitleText,
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                                ],
                                               ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      // Right checkmark or empty radio
-                                      if (isSelected)
-                                        Container(
-                                          width: 24,
-                                          height: 24,
-                                          decoration: const BoxDecoration(
-                                            color: Color(0xFF8B5CF6),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.check,
-                                            color: Colors.white,
-                                            size: 14,
-                                          ),
-                                        )
-                                      else
-                                        Container(
-                                          width: 24,
-                                          height: 24,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1),
-                                              width: 1.5,
-                                            ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                subtitleText,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: isDark
+                                                      ? const Color(0xFF94A3B8)
+                                                      : const Color(0xFF64748B),
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
                                           ),
                                         ),
-                                    ],
+                                        const SizedBox(width: 8),
+                                        // Right checkmark or empty radio
+                                        if (isSelected)
+                                          Container(
+                                            width: 24,
+                                            height: 24,
+                                            decoration: const BoxDecoration(
+                                              color: Color(0xFF8B5CF6),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(
+                                              Icons.check,
+                                              color: Colors.white,
+                                              size: 14,
+                                            ),
+                                          )
+                                        else
+                                          Container(
+                                            width: 24,
+                                            height: 24,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              border: Border.all(
+                                                color: isDark
+                                                    ? const Color(0xFF475569)
+                                                    : const Color(0xFFCBD5E1),
+                                                width: 1.5,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
-            // Security footer removed per product decision
-          ],
+              // Security footer removed per product decision
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
-}
-
 
 class _CreateWorkspaceDialog extends ConsumerStatefulWidget {
   const _CreateWorkspaceDialog();
 
   @override
-  ConsumerState<_CreateWorkspaceDialog> createState() => _CreateWorkspaceDialogState();
+  ConsumerState<_CreateWorkspaceDialog> createState() =>
+      _CreateWorkspaceDialogState();
 }
 
-class _CreateWorkspaceDialogState extends ConsumerState<_CreateWorkspaceDialog> {
+class _CreateWorkspaceDialogState
+    extends ConsumerState<_CreateWorkspaceDialog> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   bool _isLoading = false;
@@ -4103,13 +4588,15 @@ class _CreateWorkspaceDialogState extends ConsumerState<_CreateWorkspaceDialog> 
     try {
       final repo = ref.read(workspacesRepositoryProvider);
       final newWorkspace = await repo.create(name: _nameController.text.trim());
-      
+
       // Refresh user memberships
       await ref.read(authNotifierProvider.notifier).refresh();
-      
+
       // Switch active workspace to new workspace ID
-      ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(newWorkspace.id);
-      
+      ref
+          .read(activeWorkspaceIdProvider.notifier)
+          .setWorkspaceId(newWorkspace.id);
+
       if (mounted) {
         Navigator.of(context).pop(); // Dismiss dialog
         ScaffoldMessenger.of(context).showSnackBar(
@@ -4229,10 +4716,12 @@ class _StudentJoinWorkspaceDialog extends ConsumerStatefulWidget {
   final String initialCode;
 
   @override
-  ConsumerState<_StudentJoinWorkspaceDialog> createState() => _StudentJoinWorkspaceDialogState();
+  ConsumerState<_StudentJoinWorkspaceDialog> createState() =>
+      _StudentJoinWorkspaceDialogState();
 }
 
-class _StudentJoinWorkspaceDialogState extends ConsumerState<_StudentJoinWorkspaceDialog> {
+class _StudentJoinWorkspaceDialogState
+    extends ConsumerState<_StudentJoinWorkspaceDialog> {
   final _formKey = GlobalKey<FormState>();
   late final _codeController = TextEditingController(text: widget.initialCode);
   bool _isLoading = false;
@@ -4256,10 +4745,13 @@ class _StudentJoinWorkspaceDialogState extends ConsumerState<_StudentJoinWorkspa
       await ref.read(authNotifierProvider.notifier).redeemInviteCode(code);
       // Select the new workspace
       final authValue = ref.read(authNotifierProvider).valueOrNull;
-      final user = authValue?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+      final user =
+          authValue?.maybeWhen(authenticated: (u) => u, orElse: () => null);
       if (user != null && user.workspaceMemberships.isNotEmpty) {
         final joinedWorkspaceId = user.workspaceMemberships.last.workspaceId;
-        ref.read(activeWorkspaceIdProvider.notifier).setWorkspaceId(joinedWorkspaceId);
+        ref
+            .read(activeWorkspaceIdProvider.notifier)
+            .setWorkspaceId(joinedWorkspaceId);
       }
 
       if (mounted) {
@@ -4326,7 +4818,8 @@ class _StudentJoinWorkspaceDialogState extends ConsumerState<_StudentJoinWorkspa
             TextFormField(
               controller: _codeController,
               autofocus: true,
-              style: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1.1),
+              style: const TextStyle(
+                  fontWeight: FontWeight.w700, letterSpacing: 1.1),
               textCapitalization: TextCapitalization.characters,
               decoration: InputDecoration(
                 labelText: 'Invite Code',
@@ -4413,7 +4906,9 @@ class _SubTabChip extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
       ),
-      side: selected ? BorderSide.none : BorderSide(color: context.colorScheme.outlineVariant),
+      side: selected
+          ? BorderSide.none
+          : BorderSide(color: context.colorScheme.outlineVariant),
     );
   }
 }
@@ -4421,7 +4916,8 @@ class _SubTabChip extends StatelessWidget {
 class _StudentHomeScreenSkeleton extends StatefulWidget {
   const _StudentHomeScreenSkeleton();
   @override
-  State<_StudentHomeScreenSkeleton> createState() => _StudentHomeScreenSkeletonState();
+  State<_StudentHomeScreenSkeleton> createState() =>
+      _StudentHomeScreenSkeletonState();
 }
 
 class _StudentHomeScreenSkeletonState extends State<_StudentHomeScreenSkeleton>
@@ -4446,9 +4942,10 @@ class _StudentHomeScreenSkeletonState extends State<_StudentHomeScreenSkeleton>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final baseColor = isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
+    final baseColor =
+        isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+      backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
       body: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
@@ -4549,4 +5046,3 @@ class _StudentHomeScreenSkeletonState extends State<_StudentHomeScreenSkeleton>
     );
   }
 }
-

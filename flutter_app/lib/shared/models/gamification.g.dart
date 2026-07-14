@@ -127,6 +127,10 @@ _$GamificationProfileImpl _$$GamificationProfileImplFromJson(
             (k, e) => MapEntry(k, (e as num).toInt()),
           ) ??
           const <String, int>{},
+      dailyXp: (json['daily_xp'] as Map<String, dynamic>?)?.map(
+            (k, e) => MapEntry(k, (e as num).toInt()),
+          ) ??
+          const <String, int>{},
     );
 
 Map<String, dynamic> _$$GamificationProfileImplToJson(
@@ -148,6 +152,7 @@ Map<String, dynamic> _$$GamificationProfileImplToJson(
       'flashcards_reviewed': instance.flashcardsReviewed,
       'badges': instance.badges,
       'daily_activity': instance.dailyActivity,
+      'daily_xp': instance.dailyXp,
     };
 
 _$LeaderboardEntryImpl _$$LeaderboardEntryImplFromJson(

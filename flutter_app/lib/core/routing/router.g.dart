@@ -6,7 +6,7 @@ part of 'router.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$routerHash() => r'8179665adc229a0dd13402685643ff9ec76c64b6';
+String _$routerHash() => r'402a906b1da783a6ee7e6f8c7d995e765f3bbdd9';
 
 /// See also [router].
 @ProviderFor(router)
@@ -38,7 +38,7 @@ final pendingInviteCodeProvider =
 );
 
 typedef _$PendingInviteCode = AutoDisposeNotifier<String?>;
-String _$routerNotifierHash() => r'c0e6ee7839b4ca954c8fe01a135faff59a8c9b46';
+String _$routerNotifierHash() => r'52d410720725275d4e0129a70c8b9bb67aedbaef';
 
 /// See also [RouterNotifier].
 @ProviderFor(RouterNotifier)

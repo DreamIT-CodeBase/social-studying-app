@@ -1,5 +1,7 @@
 abstract final class AppRoutes {
   static const String login = '/login';
+  static const String terms = '/terms';
+  static const String privacy = '/privacy';
   static const String adminDashboard = '/admin/dashboard';
   static const String adminDocuments = '/admin/documents';
   static const String adminTaxonomy = '/admin/taxonomy';
@@ -8,6 +10,7 @@ abstract final class AppRoutes {
   static const String adminWorkspaceSettings = '/admin/settings';
   static const String studentHome = '/student/home';
   static const String studentRevision = '/student/revision';
+  static const String studentAdaptiveSession = '/student/session/:workspaceId';
   static const String profile = '/profile';
   static const String studentScreenTimeSettings = '/student/screen-time-settings';
   static const String studentDocuments = '/student/documents/:workspaceId';

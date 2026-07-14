@@ -17,6 +17,7 @@ import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
+import 'package:social_study_app/features/home/presentation/student_home_screen.dart' show studentHomeTabProvider;
 
 /// Revision mode (Sprint 4.10).
 ///
@@ -31,9 +32,14 @@ import 'package:social_study_app/features/progress/presentation/progress_notifie
 /// inside revision are deliberately leaner than the standalone screens'
 /// — revision keeps the student moving through items.
 class RevisionScreen extends ConsumerStatefulWidget {
-  const RevisionScreen({super.key, required this.workspaceId});
+  const RevisionScreen({
+    super.key,
+    required this.workspaceId,
+    this.autoStart = false,
+  });
 
   final String workspaceId;
+  final bool autoStart;
 
   /// Test hook — when set, [RevisionSessionNotifier.start] is invoked
   /// with this count instead of the production default of 10. Lets
@@ -52,9 +58,18 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
   @override
   void initState() {
     super.initState();
-    if (RevisionScreen.debugItemCount != null) {
+    if (widget.autoStart || RevisionScreen.debugItemCount != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _notifier.start(itemCount: RevisionScreen.debugItemCount);
+        if (mounted) {
+          if (RevisionScreen.debugItemCount != null) {
+            _notifier.start(itemCount: RevisionScreen.debugItemCount);
+          } else {
+            final progressVal = ref
+                .read(studentProgressNotifierProvider(widget.workspaceId))
+                .valueOrNull;
+            _notifier.start(mastery: progressVal?.overallMastery);
+          }
+        }
       });
     }
   }
@@ -79,9 +94,27 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Revision',
-          style: TextStyle(fontWeight: FontWeight.w700),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Quick Revision',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Review your weak areas and strengthen your memory.',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
         leading: IconButton(
           tooltip: 'Close',
@@ -111,14 +144,14 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
                     ),
                     const SizedBox(height: Spacing.xl),
                     Text(
-                      'Daily Revision',
+                      'Quick Revision',
                       style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: Spacing.sm),
                     Text(
-                      'Practice a custom mix of questions and flashcards. The session length is automatically customized based on your mastery.',
+                      'Review your weak areas and strengthen your memory.',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -195,15 +228,21 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
         ),
         unavailable: (message, isNoTopics) => EmptyStateView(
           icon: isNoTopics
-              ? Icons.menu_book_rounded
+              ? Icons.check_circle_outline_rounded
               : Icons.hourglass_empty_rounded,
-          title: isNoTopics ? 'No content yet' : 'Generator is busy',
+          title: isNoTopics ? "You're all caught up!" : 'Generator is busy',
           subtitle: isNoTopics
-              ? 'Your teacher needs to upload study material before '
-                  'revision can run.'
+              ? "Complete a few study sessions first, then we'll automatically create personalized revision sessions based on your learning progress."
               : message,
           action: isNoTopics
-              ? null
+              ? FilledButton.icon(
+                  onPressed: () {
+                    ref.read(studentHomeTabProvider.notifier).state = 1;
+                    context.pop();
+                  },
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: const Text('Start Study Session'),
+                )
               : FilledButton.icon(
                   onPressed: _restart,
                   icon: const Icon(Icons.refresh_rounded),

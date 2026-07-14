@@ -3,27 +3,32 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
+import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 import 'package:social_study_app/shared/models/progress.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 import 'package:social_study_app/features/screen_time/providers/screen_time_providers.dart';
-import 'package:social_study_app/features/home/presentation/student_home_screen.dart';
-import 'package:social_study_app/features/progress/services/recall_service.dart';
-
-
+import 'package:social_study_app/core/theme/theme_manager.dart';
 
 class ProgressScreen extends ConsumerStatefulWidget {
-  const ProgressScreen({super.key, required this.workspaceId});
+  const ProgressScreen({
+    super.key,
+    required this.workspaceId,
+    this.topicMasterySummary,
+  });
 
   final String workspaceId;
+  final Widget? topicMasterySummary;
 
   @override
   ConsumerState<ProgressScreen> createState() => _ProgressScreenState();
 }
 
-class _ProgressScreenState extends ConsumerState<ProgressScreen> with WidgetsBindingObserver {
+class _ProgressScreenState extends ConsumerState<ProgressScreen>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
@@ -50,24 +55,36 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> with WidgetsBin
 
   @override
   Widget build(BuildContext context) {
-    final progressAsync = ref.watch(studentProgressNotifierProvider(widget.workspaceId));
+    final progressAsync =
+        ref.watch(studentProgressNotifierProvider(widget.workspaceId));
 
     return RefreshIndicator(
       onRefresh: () async {
-        ref.read(studentProgressNotifierProvider(widget.workspaceId).notifier).refresh();
+        ref
+            .read(studentProgressNotifierProvider(widget.workspaceId).notifier)
+            .refresh();
         await ref.read(screenTimeNotifierProvider.notifier).refreshWallet();
-        await ref.read(studentProgressNotifierProvider(widget.workspaceId).future);
+        await ref
+            .read(studentProgressNotifierProvider(widget.workspaceId).future);
       },
       child: progressAsync.when(
-        data: (progress) => _ProgressBody(progress: progress, workspaceId: widget.workspaceId),
-        loading: () => const LoadingIndicator(message: 'Loading your progress…'),
+        data: (progress) => _ProgressBody(
+          progress: progress,
+          workspaceId: widget.workspaceId,
+          topicMasterySummary: widget.topicMasterySummary,
+        ),
+        loading: () =>
+            const LoadingIndicator(message: 'Loading your progress…'),
         error: (error, _) => ListView(
           children: [
             SizedBox(
               height: context.screenHeight * 0.7,
               child: ErrorView(
                 message: error.toString(),
-                onRetry: () => ref.read(studentProgressNotifierProvider(widget.workspaceId).notifier).refresh(),
+                onRetry: () => ref
+                    .read(studentProgressNotifierProvider(widget.workspaceId)
+                        .notifier)
+                    .refresh(),
               ),
             ),
           ],
@@ -77,85 +94,83 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> with WidgetsBin
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Progress Body — stateful to track pagination
+// ─────────────────────────────────────────────────────────────────────────────
 class _ProgressBody extends ConsumerStatefulWidget {
-  const _ProgressBody({required this.progress, required this.workspaceId});
+  const _ProgressBody({
+    required this.progress,
+    required this.workspaceId,
+    this.topicMasterySummary,
+  });
   final StudentProgress progress;
   final String workspaceId;
+  final Widget? topicMasterySummary;
 
   @override
   ConsumerState<_ProgressBody> createState() => _ProgressBodyState();
 }
 
 class _ProgressBodyState extends ConsumerState<_ProgressBody> {
-  int _recallScore = 64;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadRecallScore();
-  }
-
-  Future<void> _loadRecallScore() async {
-    try {
-      final score = await RecallService.instance.getAverageRecallScore();
-      if (mounted) {
-        setState(() {
-          _recallScore = score;
-        });
-      }
-    } catch (_) {}
-  }
+  /// Number of topics currently shown — starts at 10, increases by 20 each tap.
+  int _displayedTopicCount = 10;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMature = ref.watch(appThemeModeProvider) == AppThemeMode.mature;
 
-    // Theme-dependent colors
-    final Color bgColor = isDark ? const Color(0xFF0D0D1F) : const Color(0xFFFAF4E8);
+    // ── Theme-dependent colors ──────────────────────────────────────────────
+    final Color bgColor = isDark ? const Color(0xFF0D0D1F) : Colors.white;
     final Color cardBgColor = isDark ? const Color(0xFF13132A) : Colors.white;
-    final Color cardBorderColor = isDark ? const Color(0xFF2A2A50) : const Color(0xFFEFE6D4);
-    final Color primaryTextColor = isDark ? Colors.white : const Color(0xFF1A1A2E);
-    final Color secondaryTextColor = isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C);
+    final Color cardBorderColor =
+        isDark ? const Color(0xFF2A2A50) : const Color(0xFFE5E7EB);
+    final Color primaryTextColor =
+        isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final Color secondaryTextColor =
+        isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C);
 
+    // ── Gamification data: streak + sessions ────────────────────────────────
+    final authValue = ref.watch(authNotifierProvider).valueOrNull;
+    final userId = authValue?.maybeWhen(
+      authenticated: (user) => user.id,
+      orElse: () => null,
+    );
 
+    int streakDays = 0;
+    int sessionsCompleted = 0;
 
-
-    // Topics mastered count (mastery >= 0.8)
-    final topicsMastered = widget.progress.topics.where((t) => t.mastery >= 0.8).length;
-
-    // Generate AI Insights list
-    final insights = <String>[];
-    insights.add("You answered $_recallScore% of questions correctly.");
-    if (widget.progress.topics.isNotEmpty) {
-      final sortedTopics = widget.progress.topics.toList()
-        ..sort((a, b) => b.attempts.compareTo(a.attempts));
-      final topTopic = sortedTopics.first;
-      if (topTopic.attempts > 0) {
-        insights.add("You spent more time studying ${topTopic.topicName}.");
-      }
-    } else {
-      insights.add("You spent more time studying Human Skin.");
+    if (userId != null) {
+      final gamKey = (workspaceId: widget.workspaceId, userId: userId);
+      final profileAsync = ref.watch(gamificationProfileProvider(gamKey));
+      streakDays = profileAsync.valueOrNull?.streakDays ?? 0;
+      sessionsCompleted = profileAsync.valueOrNull?.questionsAnswered ?? 0;
     }
-    if (widget.progress.topics.isNotEmpty) {
-      final sortedMastery = widget.progress.topics.toList()
-        ..sort((a, b) => a.mastery.compareTo(b.mastery));
-      insights.add("You should revise ${sortedMastery.first.topicName} next.");
-    } else {
-      insights.add("You should revise Urinary Bladder next.");
-    }
-    final performancePct = 10 + (widget.progress.totalXp % 15);
-    insights.add("You performed $performancePct% better today than yesterday.");
+
+    final overallMasteryPercent =
+        (widget.progress.overallMastery.clamp(0.0, 1.0) * 100).round();
+
+    // ── Pagination ──────────────────────────────────────────────────────────
+    final allTopics = widget.progress.topics;
+    final displayedTopics = allTopics.take(_displayedTopicCount).toList();
+    final hasMoreTopics = allTopics.length > _displayedTopicCount;
 
     return Container(
       color: bgColor,
       child: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 12,
+          bottom: 110,
+        ),
         children: [
-          // Notch/Status Bar Safe Spacing
+          // ── Status bar safe spacing ──────────────────────────────────────
           SizedBox(height: MediaQuery.of(context).padding.top + 6),
-          // ── Header Bar ──────────────────────────────────────────────
+
+          // ── Header ──────────────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.only(bottom: 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -173,153 +188,92 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
                   child: Container(
                     width: 38,
                     height: 38,
-                    decoration: const BoxDecoration(
+                    decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: Color(0xFF60A5FA),
-                      image: DecorationImage(
-                        image: AssetImage('assets/mascot/mascot_waving.png'),
-                        fit: BoxFit.cover,
-                      ),
+                      color: isMature
+                          ? (isDark
+                              ? const Color(0xFF1E3A5F)
+                              : const Color(0xFFEFF6FF))
+                          : const Color(0xFF60A5FA),
+                      image: isMature
+                          ? null
+                          : const DecorationImage(
+                              image: AssetImage(
+                                  'assets/mascot/mascot_waving.png'),
+                              fit: BoxFit.cover,
+                            ),
                     ),
+                    child: isMature
+                        ? Icon(Icons.account_circle_rounded,
+                            color: isDark
+                                ? const Color(0xFF93C5FD)
+                                : const Color(0xFF2563EB),
+                            size: 26)
+                        : null,
                   ),
                 ),
               ],
             ),
           ),
 
-          // ── Main Level / XP Progress Card ───────────────────────────
+          // ── 1. Level Card ────────────────────────────────────────────────
           _LevelCard(progress: widget.progress, isDark: isDark),
-          const SizedBox(height: 14),
+          const SizedBox(height: 24),
 
-
-          // ── Stats Grid Row (Streak, XP, Topics, Accuracy) ────────────
-          Row(
-            children: [
-              Expanded(
-                child: _PillGridCard(
-                  icon: Icons.local_fire_department_rounded,
-                  iconColor: const Color(0xFFEF4444),
-                  value: '3',
-                  label: 'Day Streak',
-                  isDark: isDark,
-                  cardBg: cardBgColor,
-                  border: cardBorderColor,
-                  textStyle: primaryTextColor,
-                  subStyle: secondaryTextColor,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _PillGridCard(
-                  icon: Icons.star_rounded,
-                  iconColor: const Color(0xFFFFD700),
-                  value: '${widget.progress.totalXp}',
-                  label: 'XP Total',
-                  isDark: isDark,
-                  cardBg: cardBgColor,
-                  border: cardBorderColor,
-                  textStyle: primaryTextColor,
-                  subStyle: secondaryTextColor,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _PillGridCard(
-                  icon: Icons.flash_on_rounded,
-                  iconColor: const Color(0xFF8B5CF6),
-                  value: '$topicsMastered',
-                  label: 'Topics Mastered',
-                  isDark: isDark,
-                  cardBg: cardBgColor,
-                  border: cardBorderColor,
-                  textStyle: primaryTextColor,
-                  subStyle: secondaryTextColor,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _PillGridCard(
-                  icon: Icons.track_changes_rounded,
-                  iconColor: const Color(0xFF10B981),
-                  value: '$_recallScore%',
-                  label: 'Accuracy',
-                  isDark: isDark,
-                  cardBg: cardBgColor,
-                  border: cardBorderColor,
-                  textStyle: primaryTextColor,
-                  subStyle: secondaryTextColor,
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          // ── Screen Time Balance Card ───────────────────────────────
-          _ScreenTimeDashboardCard(
-            isDark: isDark,
-            cardBg: cardBgColor,
-            border: cardBorderColor,
-            textColor: primaryTextColor,
-            subColor: secondaryTextColor,
-            onStudyMore: () => ref.read(studentHomeTabProvider.notifier).state = 1,
-          ),
-          const SizedBox(height: 14),
-
-          // ── Overall Mastery Card ───────────────────────────────────
-          _OverallMasteryCard(
-            mastery: widget.progress.overallMastery,
+          // ── 2. Learning Overview Card ────────────────────────────────────
+          _LearningOverviewCard(
+            totalXp: widget.progress.totalXp,
+            overallMasteryPercent: overallMasteryPercent,
+            streakDays: streakDays,
+            sessionsCompleted: sessionsCompleted,
             isDark: isDark,
             cardBg: cardBgColor,
             border: cardBorderColor,
             textColor: primaryTextColor,
             subColor: secondaryTextColor,
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 24),
 
-          // ── AI Learning Insights Box ───────────────────────────────
-          _AIInsightsCard(
-            insights: insights,
+          // ── 3. Topic Mastery Graph ───────────────────────────────────────
+          if (widget.topicMasterySummary != null)
+            widget.topicMasterySummary!
+          else
+            _OverallMasteryCard(
+              mastery: widget.progress.overallMastery,
+              isDark: isDark,
+              cardBg: cardBgColor,
+              border: cardBorderColor,
+              textColor: primaryTextColor,
+              subColor: secondaryTextColor,
+            ),
+          const SizedBox(height: 24),
+
+          // ── 4. Social Balance ────────────────────────────────────────────
+          _SocialBalanceCard(
             isDark: isDark,
+            cardBg: cardBgColor,
             border: cardBorderColor,
             textColor: primaryTextColor,
             subColor: secondaryTextColor,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 32),
 
-          // ── Topic Mastery Section ──────────────────────────────────
+          // ── 5. Topic Mastery List ────────────────────────────────────────
           if (!widget.progress.hasActivity)
             const _ZeroStatePlaceholder()
           else ...[
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Topic Mastery',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      color: primaryTextColor,
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () {},
-                    child: Text(
-                      'View All',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
-                        color: isDark ? const Color(0xFFA78BFA) : const Color(0xFF8B5CF6),
-                      ),
-                    ),
-                  ),
-                ],
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                'Topic Mastery',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: primaryTextColor,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
-            for (final topic in widget.progress.topics) ...[
+            for (final topic in displayedTopics) ...[
               _TopicMasteryCard(
                 topic: topic,
                 isDark: isDark,
@@ -330,7 +284,16 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
               ),
               const SizedBox(height: 10),
             ],
-            const SizedBox(height: 24),
+            if (hasMoreTopics) ...[
+              const SizedBox(height: 8),
+              _ShowMoreButton(
+                onTap: () {
+                  setState(() => _displayedTopicCount += 20);
+                },
+                isDark: isDark,
+              ),
+            ],
+            const SizedBox(height: 32),
           ],
         ],
       ),
@@ -339,7 +302,7 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Level + XP Card with Hexagon logo
+// 1. Level Card — animated XP bar, Total XP pill, XP needed for next level
 // ─────────────────────────────────────────────────────────────────────────────
 class _LevelCard extends StatelessWidget {
   const _LevelCard({required this.progress, required this.isDark});
@@ -350,9 +313,11 @@ class _LevelCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final span = progress.xpForNextLevel <= 0 ? 1 : progress.xpForNextLevel;
     final fraction = (progress.xpIntoLevel / span).clamp(0.0, 1.0);
+    final xpNeeded =
+        (progress.xpForNextLevel - progress.xpIntoLevel).clamp(0, progress.xpForNextLevel);
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: [Color(0xFF3B2D8F), Color(0xFF1E1B4B)],
@@ -360,30 +325,28 @@ class _LevelCard extends StatelessWidget {
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFF7C5CFC).withValues(alpha: 0.6), width: 1.5),
+        border: Border.all(
+            color: const Color(0xFF7C5CFC).withValues(alpha: 0.6), width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF7C5CFC).withValues(alpha: 0.16),
-            blurRadius: 20,
-            spreadRadius: 1,
+            color: const Color(0xFF7C5CFC).withValues(alpha: 0.18),
+            blurRadius: 24,
+            spreadRadius: 2,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Custom Painted Winged Hexagon Shield Star Badge
-          CustomPaint(
-            size: const Size(70, 70),
-            painter: _WingedBadgePainter(),
-          ),
-          const SizedBox(width: 16),
-          // XP Bar & Level
+          _LevelMedal(level: progress.level),
+          const SizedBox(width: 18),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Level title + Total XP pill
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -395,47 +358,70 @@ class _LevelCard extends StatelessWidget {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          '${progress.totalXp} XP',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                          ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.2),
                         ),
-                        Text(
-                          'Total XP',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
+                      ),
+                      child: Text(
+                        '${progress.totalXp} XP',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.95),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
                         ),
-                      ],
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: LinearProgressIndicator(
-                    value: fraction,
-                    minHeight: 8,
-                    backgroundColor: Colors.white.withValues(alpha: 0.15),
-                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF7C5CFC)),
-                  ),
+                const SizedBox(height: 12),
+
+                // Animated progress bar
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0.0, end: fraction),
+                  duration: const Duration(milliseconds: 900),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, value, _) {
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: LinearProgressIndicator(
+                        value: value,
+                        minHeight: 10,
+                        backgroundColor: Colors.white.withValues(alpha: 0.15),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                            Color(0xFF7C5CFC)),
+                      ),
+                    );
+                  },
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '${progress.xpIntoLevel} / ${progress.xpForNextLevel} XP to reach Level ${progress.level + 1}',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.65),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
+                const SizedBox(height: 10),
+
+                // XP fraction + XP until next level
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${progress.xpIntoLevel} / ${progress.xpForNextLevel} XP',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.65),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      '$xpNeeded XP until Level ${progress.level + 1}',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.65),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -446,292 +432,177 @@ class _LevelCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Pill Grid Card
-// ─────────────────────────────────────────────────────────────────────────────
-class _PillGridCard extends StatelessWidget {
-  const _PillGridCard({
-    required this.icon,
-    required this.iconColor,
-    required this.value,
-    required this.label,
-    required this.isDark,
-    required this.cardBg,
-    required this.border,
-    required this.textStyle,
-    required this.subStyle,
-  });
-
-  final IconData icon;
-  final Color iconColor;
-  final String value;
-  final String label;
-  final bool isDark;
-  final Color cardBg;
-  final Color border;
-  final Color textStyle;
-  final Color subStyle;
+class _LevelMedal extends StatelessWidget {
+  const _LevelMedal({required this.level});
+  final int level;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      width: 68,
+      height: 68,
+      padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: border, width: 1.2),
+        shape: BoxShape.circle,
+        border: Border.all(color: const Color(0xFFA78BFA), width: 1.5),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF5140A5), Color(0xFF26215E)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: iconColor, size: 22),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: textStyle,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
+      child: Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: const Color(0xFF201A4F),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.workspace_premium_rounded,
+                color: Color(0xFFFCD34D), size: 20),
+            Text(
+              '$level',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  height: 0.95),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: subStyle,
-              fontSize: 9.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Screen Time Balance Card (radial progress + details)
+// 2. Learning Overview Card — XP / Mastery / Streak / Sessions 4-chip grid
 // ─────────────────────────────────────────────────────────────────────────────
-class _ScreenTimeDashboardCard extends ConsumerWidget {
-  const _ScreenTimeDashboardCard({
+class _LearningOverviewCard extends StatelessWidget {
+  const _LearningOverviewCard({
+    required this.totalXp,
+    required this.overallMasteryPercent,
+    required this.streakDays,
+    required this.sessionsCompleted,
     required this.isDark,
     required this.cardBg,
     required this.border,
     required this.textColor,
     required this.subColor,
-    required this.onStudyMore,
   });
 
+  final int totalXp;
+  final int overallMasteryPercent;
+  final int streakDays;
+  final int sessionsCompleted;
   final bool isDark;
   final Color cardBg;
   final Color border;
   final Color textColor;
   final Color subColor;
-  final VoidCallback onStudyMore;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final walletAsync = ref.watch(screenTimeNotifierProvider);
-
-    return walletAsync.when(
-      data: (wallet) {
-        final total = wallet.totalEarnedMinutes;
-        final available = wallet.availableMinutes;
-        final usedToday = wallet.consumedToday;
-        final double progress = total > 0 ? (available / total).clamp(0.0, 1.0) : 0.0;
-
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: cardBg,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: border, width: 1.5),
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: border, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Card title
+          Row(
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Title
-                  Row(
-                    children: [
-                      Icon(Icons.phone_android_rounded, color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB), size: 18),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Screen Time Balance',
-                        style: TextStyle(
-                          color: textColor,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                  // Radial progress circle on right
-                  _ScreenTimeRadialProgress(
-                    available: available,
-                    total: total,
-                    isDark: isDark,
-                  ),
-                ],
+              Icon(
+                Icons.auto_awesome_rounded,
+                size: 15,
+                color: isDark
+                    ? const Color(0xFFA78BFA)
+                    : const Color(0xFF7C5CFC),
               ),
-              const SizedBox(height: 8),
-              // Big available display
+              const SizedBox(width: 8),
               Text(
-                '$available min',
+                'Learning Overview',
                 style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
                   color: textColor,
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              Text(
-                'available today',
-                style: TextStyle(
-                  color: subColor,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Horizontal progress
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  minHeight: 6,
-                  backgroundColor: isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF1F5F9),
-                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF22C55E)),
-                ),
-              ),
-              const SizedBox(height: 14),
-              // Grid metrics
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _MetricText(label: 'Earned', value: '$total min', isDark: isDark, labelColor: subColor, valueColor: textColor),
-                  _MetricText(label: 'Used Today', value: '$usedToday min', isDark: isDark, labelColor: subColor, valueColor: textColor),
-                  _MetricText(label: 'Remaining', value: '$available min', isDark: isDark, labelColor: subColor, valueColor: textColor),
-                ],
-              ),
-              const SizedBox(height: 14),
-              const Divider(color: Color(0xFF2A2A50), height: 1),
-              const SizedBox(height: 10),
-              // Study button
-              GestureDetector(
-                onTap: onStudyMore,
-                child: Row(
-                  children: [
-                    const Icon(Icons.school_rounded, color: Color(0xFF22C55E), size: 16),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'Study More',
-                      style: TextStyle(
-                        color: Color(0xFF22C55E),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 13,
-                      ),
-                    ),
-                    const Spacer(),
-                    Icon(Icons.chevron_right_rounded, color: subColor, size: 16),
-                  ],
                 ),
               ),
             ],
           ),
-        );
-      },
-      loading: () => const SizedBox(height: 100, child: Center(child: CircularProgressIndicator())),
-      error: (_, __) => const SizedBox.shrink(),
-    );
-  }
-}
+          const SizedBox(height: 16),
 
-class _MetricText extends StatelessWidget {
-  const _MetricText({
-    required this.label,
-    required this.value,
-    required this.isDark,
-    required this.labelColor,
-    required this.valueColor,
-  });
-  final String label;
-  final String value;
-  final bool isDark;
-  final Color labelColor;
-  final Color valueColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(color: labelColor, fontSize: 10, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: TextStyle(color: valueColor, fontSize: 13, fontWeight: FontWeight.w800),
-        ),
-      ],
-    );
-  }
-}
-
-class _ScreenTimeRadialProgress extends StatelessWidget {
-  const _ScreenTimeRadialProgress({
-    required this.available,
-    required this.total,
-    required this.isDark,
-  });
-
-  final int available;
-  final int total;
-  final bool isDark;
-
-  @override
-  Widget build(BuildContext context) {
-    final double fraction = total > 0 ? (available / total).clamp(0.0, 1.0) : 0.0;
-
-    return SizedBox(
-      width: 70,
-      height: 70,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          CustomPaint(
-            size: const Size(70, 70),
-            painter: _GradientCircularProgressPainter(
-              progress: fraction,
-              isDark: isDark,
-            ),
-          ),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+          // Row 1: XP + Mastery
+          Row(
             children: [
-              Text(
-                '$available',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: isDark ? Colors.white : const Color(0xFF1A1A2E),
-                  height: 1.1,
+              Expanded(
+                child: _OverviewChip(
+                  emoji: '⭐',
+                  value: '$totalXp',
+                  label: 'Total XP',
+                  bgColor: isDark
+                      ? const Color(0xFF251D0A)
+                      : const Color(0xFFFFFBEB),
+                  valueColor: const Color(0xFFF59E0B),
+                  isDark: isDark,
                 ),
               ),
-              Text(
-                'min',
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _OverviewChip(
+                  emoji: '🎯',
+                  value: '$overallMasteryPercent%',
+                  label: 'Mastery',
+                  bgColor: isDark
+                      ? const Color(0xFF14102E)
+                      : const Color(0xFFEEF2FF),
+                  valueColor: const Color(0xFF6366F1),
+                  isDark: isDark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Row 2: Streak + Sessions
+          Row(
+            children: [
+              Expanded(
+                child: _OverviewChip(
+                  emoji: '🔥',
+                  value: '$streakDays',
+                  label: 'Day Streak',
+                  bgColor: isDark
+                      ? const Color(0xFF250E0E)
+                      : const Color(0xFFFFF7ED),
+                  valueColor: const Color(0xFFEF4444),
+                  isDark: isDark,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _OverviewChip(
+                  emoji: '📚',
+                  value: '$sessionsCompleted',
+                  label: 'Sessions',
+                  bgColor: isDark
+                      ? const Color(0xFF0A1525)
+                      : const Color(0xFFEFF6FF),
+                  valueColor: const Color(0xFF3B82F6),
+                  isDark: isDark,
                 ),
               ),
             ],
@@ -742,9 +613,65 @@ class _ScreenTimeRadialProgress extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Overall Mastery Card
-// ─────────────────────────────────────────────────────────────────────────
+class _OverviewChip extends StatelessWidget {
+  const _OverviewChip({
+    required this.emoji,
+    required this.value,
+    required this.label,
+    required this.bgColor,
+    required this.valueColor,
+    required this.isDark,
+  });
+
+  final String emoji;
+  final String value;
+  final String label;
+  final Color bgColor;
+  final Color valueColor;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 20)),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              color: valueColor,
+              height: 1.0,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isDark
+                  ? const Color(0xFF8888AA)
+                  : const Color(0xFF64748B),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. Overall Mastery Card (fallback when no topicMasterySummary injected)
+// ─────────────────────────────────────────────────────────────────────────────
 class _OverallMasteryCard extends StatelessWidget {
   const _OverallMasteryCard({
     required this.mastery,
@@ -765,32 +692,35 @@ class _OverallMasteryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final percent = (mastery.clamp(0.0, 1.0) * 100).round();
-    final activeColor = isDark ? const Color(0xFF6366F1) : const Color(0xFF4F46E5);
-
+    final activeColor =
+        isDark ? const Color(0xFF6366F1) : const Color(0xFF4F46E5);
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: cardBg,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(color: border, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Row(
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 48,
+            height: 48,
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF4EDE0),
-              borderRadius: BorderRadius.circular(12),
+              color: isDark ? const Color(0xFF1A1A3A) : const Color(0xFFEEF2FF),
+              borderRadius: BorderRadius.circular(14),
             ),
-            child: Icon(
-              Icons.trending_up_rounded,
-              color: activeColor,
-              size: 22,
-            ),
+            child: Icon(Icons.trending_up_rounded, color: activeColor, size: 24),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -800,7 +730,7 @@ class _OverallMasteryCard extends StatelessWidget {
                   style: TextStyle(
                     color: textColor,
                     fontWeight: FontWeight.w800,
-                    fontSize: 14,
+                    fontSize: 15,
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -815,16 +745,15 @@ class _OverallMasteryCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 12),
-          // Circular Progress showing average mastery with smooth SweepGradient
+          const SizedBox(width: 14),
           SizedBox(
-            width: 58,
-            height: 58,
+            width: 62,
+            height: 62,
             child: Stack(
               alignment: Alignment.center,
               children: [
                 CustomPaint(
-                  size: const Size(58, 58),
+                  size: const Size(62, 62),
                   painter: _SimpleGradientCircularProgressPainter(
                     progress: mastery,
                     isDark: isDark,
@@ -848,92 +777,188 @@ class _OverallMasteryCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AI Insights Box with robot illustration
+// 4. Social Balance Card — phone icon, Remaining/Used chips, horizontal bar
 // ─────────────────────────────────────────────────────────────────────────────
-class _AIInsightsCard extends StatelessWidget {
-  const _AIInsightsCard({
-    required this.insights,
+class _SocialBalanceCard extends ConsumerWidget {
+  const _SocialBalanceCard({
     required this.isDark,
+    required this.cardBg,
     required this.border,
     required this.textColor,
     required this.subColor,
   });
 
-  final List<String> insights;
   final bool isDark;
+  final Color cardBg;
   final Color border;
   final Color textColor;
   final Color subColor;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF131135) : const Color(0xFFEEF2FF),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: isDark ? const Color(0xFF4C3D8F) : const Color(0xFFC7D2FE), width: 1.5),
-      ),
-      child: Stack(
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Text('🤖', style: TextStyle(fontSize: 16)),
-                        const SizedBox(width: 6),
-                        Text(
-                          'AI Learning Insights',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14.5,
-                            color: isDark ? Colors.white : const Color(0xFF1E1B4B),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    ...insights.map((insight) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('✨', style: TextStyle(fontSize: 12, color: Color(0xFFA78BFA))),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  insight,
-                                  style: TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w600,
-                                    height: 1.45,
-                                    color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF3730A3),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        )),
-                  ],
-                ),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final walletAsync = ref.watch(screenTimeNotifierProvider);
+
+    return walletAsync.when(
+      data: (wallet) {
+        final total = wallet.totalEarnedMinutes;
+        final usedToday = wallet.consumedToday;
+        final remaining = wallet.availableMinutes;
+
+        // Usage fraction for bar and color
+        final double usageFraction =
+            total > 0 ? (usedToday / total).clamp(0.0, 1.0) : 0.0;
+
+        // Green → Amber → Red as usage increases
+        final Color barColor = usageFraction < 0.5
+            ? const Color(0xFF22C55E)
+            : usageFraction < 0.8
+                ? const Color(0xFFF59E0B)
+                : const Color(0xFFEF4444);
+
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: border, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
               ),
-              const SizedBox(width: 60), // Room for robot buddy
             ],
           ),
-          // Mascot robot buddy
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Image.asset(
-              'assets/mascot/study_buddy.png',
-              width: 72,
-              height: 72,
-              errorBuilder: (_, __, ___) => const Text('🤖', style: TextStyle(fontSize: 44)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Title ────────────────────────────────────────────────────
+              Row(
+                children: [
+                  Icon(
+                    Icons.phone_android_rounded,
+                    color: isDark
+                        ? const Color(0xFF60A5FA)
+                        : const Color(0xFF2563EB),
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Social Balance',
+                    style: TextStyle(
+                      color: textColor,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // ── Remaining / Used stat chips ──────────────────────────────
+              Row(
+                children: [
+                  Expanded(
+                    child: _SocialStatChip(
+                      label: 'Remaining',
+                      value: '$remaining min',
+                      valueColor: isDark
+                          ? const Color(0xFF4ADE80)
+                          : const Color(0xFF16A34A),
+                      isDark: isDark,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _SocialStatChip(
+                      label: 'Used',
+                      value: '$usedToday min',
+                      valueColor: barColor,
+                      isDark: isDark,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // ── Horizontal progress bar ──────────────────────────────────
+              TweenAnimationBuilder<double>(
+                tween: Tween<double>(begin: 0, end: usageFraction),
+                duration: const Duration(milliseconds: 800),
+                curve: Curves.easeOutCubic,
+                builder: (context, value, _) => ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: value,
+                    minHeight: 10,
+                    backgroundColor: isDark
+                        ? const Color(0xFF1A1A3A)
+                        : const Color(0xFFF1F5F9),
+                    valueColor: AlwaysStoppedAnimation<Color>(barColor),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$usedToday / $total min used',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: subColor,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+      loading: () => const SizedBox(
+          height: 90, child: Center(child: CircularProgressIndicator())),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+}
+
+class _SocialStatChip extends StatelessWidget {
+  const _SocialStatChip({
+    required this.label,
+    required this.value,
+    required this.valueColor,
+    required this.isDark,
+  });
+
+  final String label;
+  final String value;
+  final Color valueColor;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isDark
+                  ? const Color(0xFF8888AA)
+                  : const Color(0xFF64748B),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: valueColor,
             ),
           ),
         ],
@@ -943,7 +968,7 @@ class _AIInsightsCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Topic Mastery Card
+// 5. Topic Mastery Card — enhanced with mastery badge + clear detail
 // ─────────────────────────────────────────────────────────────────────────────
 class _TopicMasteryCard extends StatelessWidget {
   const _TopicMasteryCard({
@@ -962,24 +987,39 @@ class _TopicMasteryCard extends StatelessWidget {
   final Color textColor;
   final Color subColor;
 
+  static Color _masteryColor(double mastery) {
+    if (mastery < 0.3) return const Color(0xFFEF4444);   // red
+    if (mastery < 0.6) return const Color(0xFFF59E0B);   // amber
+    return const Color(0xFF22C55E);                        // green
+  }
+
   @override
   Widget build(BuildContext context) {
     final mastery = topic.mastery.clamp(0.0, 1.0);
     final percent = (mastery * 100).round();
     final color = _masteryColor(mastery);
+    final successPct =
+        topic.attempts > 0 ? (topic.successRate.clamp(0.0, 1.0) * 100).round() : 0;
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: cardBg,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: border, width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.1 : 0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Topic name + mastery badge
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
                 child: Text(
@@ -991,51 +1031,166 @@ class _TopicMasteryCard extends StatelessWidget {
                   ),
                 ),
               ),
-              Text(
-                '$percent%',
-                style: TextStyle(
-                  color: color,
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w900,
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '$percent%',
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 10),
+
+          // Progress bar
           ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(5),
             child: LinearProgressIndicator(
               value: mastery,
-              minHeight: 6,
-              backgroundColor: isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF1F5F9),
+              minHeight: 7,
+              backgroundColor:
+                  isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF1F5F9),
               valueColor: AlwaysStoppedAnimation<Color>(color),
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            _topicDetail(topic),
-            style: TextStyle(
-              color: subColor,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
+          const SizedBox(height: 10),
+
+          // Attempts + Correct %
+          Row(
+            children: [
+              _TopicStatPill(
+                icon: Icons.repeat_rounded,
+                label:
+                    '${topic.attempts} ${topic.attempts == 1 ? 'attempt' : 'attempts'}',
+                isDark: isDark,
+                subColor: subColor,
+              ),
+              if (topic.attempts > 0) ...[
+                const SizedBox(width: 8),
+                _TopicStatPill(
+                  icon: Icons.check_circle_outline_rounded,
+                  label: '$successPct% correct',
+                  isDark: isDark,
+                  subColor: subColor,
+                  iconColor: successPct >= 60
+                      ? const Color(0xFF22C55E)
+                      : const Color(0xFFF59E0B),
+                ),
+              ],
+            ],
           ),
         ],
       ),
     );
   }
+}
 
-  static Color _masteryColor(double mastery) {
-    if (mastery < 0.3) return const Color(0xFFEF4444); // red
-    if (mastery < 0.6) return const Color(0xFFF59E0B); // orange
-    return const Color(0xFF22C55E); // green
+class _TopicStatPill extends StatelessWidget {
+  const _TopicStatPill({
+    required this.icon,
+    required this.label,
+    required this.isDark,
+    required this.subColor,
+    this.iconColor,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool isDark;
+  final Color subColor;
+  final Color? iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = iconColor ?? subColor;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: color),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: subColor,
+          ),
+        ),
+      ],
+    );
   }
+}
 
-  static String _topicDetail(TopicMastery topic) {
-    final attempts = '${topic.attempts} ${topic.attempts == 1 ? 'attempt' : 'attempts'}';
-    if (topic.attempts == 0) return attempts;
-    final successPct = (topic.successRate.clamp(0.0, 1.0) * 100).round();
-    return '$attempts • $successPct% correct';
+class _ShowMoreButton extends StatelessWidget {
+  const _ShowMoreButton({required this.onTap, required this.isDark});
+  final VoidCallback onTap;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color buttonBgColor = isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF5F3FF);
+    final Color borderColor = isDark ? const Color(0xFF3A2A6A) : const Color(0xFFDDD6FE);
+    final Color textColor = isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C5CFC);
+
+    return Center(
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(
+            color: borderColor,
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: textColor.withValues(alpha: isDark ? 0.15 : 0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
+          color: buttonBgColor,
+          borderRadius: BorderRadius.circular(28),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(28),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.expand_more_rounded,
+                    size: 20,
+                    color: textColor,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Show 20 More',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: textColor,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -1052,155 +1207,16 @@ class _ZeroStatePlaceholder extends StatelessWidget {
       child: EmptyStateView(
         icon: Icons.insights_rounded,
         title: 'No progress yet',
-        subtitle: 'Answer a question or rate a flashcard to build your topic mastery profile.',
+        subtitle:
+            'Answer a question or rate a flashcard to build your topic mastery profile.',
       ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Custom Painters for premium gamified badges and progress arcs
+// Custom Painter — gradient circular arc for Overall Mastery fallback card
 // ─────────────────────────────────────────────────────────────────────────────
-
-class _WingedBadgePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width * 0.28;
-
-    // Paint for wings (horizontal lines/chevrons on left and right)
-    final wingsPaint = Paint()
-      ..color = const Color(0xFF60A5FA).withValues(alpha: 0.8)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.5
-      ..strokeCap = StrokeCap.round;
-
-    // Draw left wing
-    final leftWing = Path()
-      ..moveTo(center.dx - radius - 5, center.dy - 11)
-      ..lineTo(center.dx - radius - 17, center.dy - 6)
-      ..lineTo(center.dx - radius - 5, center.dy - 1)
-      ..moveTo(center.dx - radius - 7, center.dy - 4)
-      ..lineTo(center.dx - radius - 21, center.dy + 1)
-      ..lineTo(center.dx - radius - 7, center.dy + 6);
-    canvas.drawPath(leftWing, wingsPaint);
-
-    // Draw right wing
-    final rightWing = Path()
-      ..moveTo(center.dx + radius + 5, center.dy - 11)
-      ..lineTo(center.dx + radius + 17, center.dy - 6)
-      ..lineTo(center.dx + radius + 5, center.dy - 1)
-      ..moveTo(center.dx + radius + 7, center.dy - 4)
-      ..lineTo(center.dx + radius + 21, center.dy + 1)
-      ..lineTo(center.dx + radius + 7, center.dy + 6);
-    canvas.drawPath(rightWing, wingsPaint);
-
-    // Draw hexagon shield
-    final shieldPaint = Paint()
-      ..shader = const LinearGradient(
-        colors: [Color(0xFF7C5CFC), Color(0xFF4C1D95)],
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-      ).createShader(Rect.fromCircle(center: center, radius: radius))
-      ..style = PaintingStyle.fill;
-
-    final shieldBorderPaint = Paint()
-      ..color = const Color(0xFFA78BFA)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0;
-
-    final shieldPath = Path();
-    for (int i = 0; i < 6; i++) {
-      final angle = i * math.pi / 3 - math.pi / 2;
-      final x = center.dx + radius * math.cos(angle);
-      final y = center.dy + radius * math.sin(angle);
-      if (i == 0) {
-        shieldPath.moveTo(x, y);
-      } else {
-        shieldPath.lineTo(x, y);
-      }
-    }
-    shieldPath.close();
-
-    canvas.drawPath(shieldPath, shieldPaint);
-    canvas.drawPath(shieldPath, shieldBorderPaint);
-
-    // Draw gold star in center
-    final starPaint = Paint()
-      ..color = const Color(0xFFFFD700)
-      ..style = PaintingStyle.fill;
-
-    final starPath = Path();
-    final double innerRadius = radius * 0.36;
-    final double outerRadius = radius * 0.72;
-    for (int i = 0; i < 10; i++) {
-      final double r = i.isEven ? outerRadius : innerRadius;
-      final double angle = i * math.pi / 5 - math.pi / 2;
-      final x = center.dx + r * math.cos(angle);
-      final y = center.dy + r * math.sin(angle);
-      if (i == 0) {
-        starPath.moveTo(x, y);
-      } else {
-        starPath.lineTo(x, y);
-      }
-    }
-    starPath.close();
-    canvas.drawPath(starPath, starPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _GradientCircularProgressPainter extends CustomPainter {
-  _GradientCircularProgressPainter({
-    required this.progress,
-    required this.isDark,
-  });
-
-  final double progress;
-  final bool isDark;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = (size.width - 6.5) / 2;
-    final rect = Rect.fromCircle(center: center, radius: radius);
-
-    // Track Paint
-    final trackPaint = Paint()
-      ..color = isDark ? const Color(0xFF1E1B4B) : const Color(0xFFE2E8F0)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 6.0;
-
-    canvas.drawCircle(center, radius, trackPaint);
-
-    // Progress Paint with beautiful SweepGradient (Teal to Purple/Violet glow)
-    final progressPaint = Paint()
-      ..shader = const SweepGradient(
-        colors: [Color(0xFF8B5CF6), Color(0xFF10B981), Color(0xFF22C55E), Color(0xFF8B5CF6)],
-        stops: [0.0, 0.4, 0.7, 1.0],
-        transform: GradientRotation(-math.pi / 2),
-      ).createShader(rect)
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    // Apply scaling strokeWidth
-    progressPaint.strokeWidth = 6.0;
-
-    canvas.drawArc(
-      rect,
-      -math.pi / 2,
-      progress * 2 * math.pi,
-      false,
-      progressPaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
-}
-
 class _SimpleGradientCircularProgressPainter extends CustomPainter {
   _SimpleGradientCircularProgressPainter({
     required this.progress,
@@ -1246,4 +1262,3 @@ class _SimpleGradientCircularProgressPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
-

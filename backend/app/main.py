@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.api import (
+    adaptive_sessions,
     analytics,
     device_management,
     documents,
@@ -179,6 +180,10 @@ _OPENAPI_TAGS = [
         "description": "Flashcard generation + self-rating.",
     },
     {
+        "name": "adaptive-sessions",
+        "description": "Prepare-once adaptive study, revision, and flashcard sessions.",
+    },
+    {
         "name": "gamification",
         "description": (
             "XP / level / streak / badges / leaderboard. The engine "
@@ -320,6 +325,7 @@ app.include_router(taxonomy.router, prefix="/api/v1")
 app.include_router(moderation.router, prefix="/api/v1")
 app.include_router(questions.router, prefix="/api/v1")
 app.include_router(flashcards.router, prefix="/api/v1")
+app.include_router(adaptive_sessions.router, prefix="/api/v1")
 app.include_router(gamification.router, prefix="/api/v1")
 app.include_router(analytics.workspace_router, prefix="/api/v1")
 app.include_router(analytics.tenant_router, prefix="/api/v1")

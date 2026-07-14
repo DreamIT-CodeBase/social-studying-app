@@ -8,6 +8,7 @@ import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/admin/workspaces/data/demo_workspaces_repository.dart';
 import 'package:social_study_app/features/admin/workspaces/presentation/workspaces_notifier.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/shared/widgets/app_logo.dart';
 
 /// Sprint 6.9 — first-launch admin onboarding wizard.
 ///
@@ -221,21 +222,7 @@ class _Hero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        width: 96,
-        height: 96,
-        decoration: BoxDecoration(
-          color: AppColors.primaryContainer,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: const Icon(
-          Icons.auto_stories_rounded,
-          color: AppColors.primary,
-          size: 56,
-        ),
-      ),
-    );
+    return const Center(child: AppLogo(size: 96));
   }
 }
 

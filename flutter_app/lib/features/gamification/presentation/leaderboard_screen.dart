@@ -42,7 +42,7 @@ class LeaderboardScreen extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? _bgDark : const Color(0xFFF8FAFC),
+      backgroundColor: isDark ? _bgDark : Colors.white,
       body: RefreshIndicator(
         color: _accent,
         onRefresh: () async {

@@ -127,8 +127,9 @@ class GamificationProfile with _$GamificationProfile {
     @JsonKey(name: 'xp_this_week') @Default(0) int xpThisWeek,
 
     /// Per-topic XP — key is topic display name.
-    @JsonKey(name: 'xp_by_topic') @Default(<String, int>{}) Map<String, int>
-        xpByTopic,
+    @JsonKey(name: 'xp_by_topic')
+    @Default(<String, int>{})
+    Map<String, int> xpByTopic,
     @Default(1) int level,
     @JsonKey(name: 'xp_into_level') @Default(0) int xpIntoLevel,
     @JsonKey(name: 'xp_for_next_level') @Default(100) int xpForNextLevel,
@@ -141,8 +142,14 @@ class GamificationProfile with _$GamificationProfile {
     @Default(<EarnedBadge>[]) List<EarnedBadge> badges,
 
     /// Last 30 days of activity counts — `{"2026-05-23": 12, ...}`.
-    @JsonKey(name: 'daily_activity') @Default(<String, int>{}) Map<String, int>
-        dailyActivity,
+    @JsonKey(name: 'daily_activity')
+    @Default(<String, int>{})
+    Map<String, int> dailyActivity,
+
+    /// Last 30 days of net XP by UTC calendar date.
+    @JsonKey(name: 'daily_xp')
+    @Default(<String, int>{})
+    Map<String, int> dailyXp,
   }) = _GamificationProfile;
 
   factory GamificationProfile.fromJson(Map<String, dynamic> json) =>
