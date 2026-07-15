@@ -21,7 +21,8 @@ from app.models.base import CosmosDocument
 # not yet configured a custom list.
 _DEFAULT_BLOCKED_PACKAGES: list[str] = [
     "com.instagram.android",
-    "com.zhiliaoapp.musically",     # TikTok
+    "com.instagram.barcelona",  # Threads
+    "com.zhiliaoapp.musically",  # TikTok
     "com.google.android.youtube",
     "com.facebook.katana",
     "com.twitter.android",
@@ -53,9 +54,7 @@ class ScreenTimeSettings(CosmosDocument):
     regardless of wallet balance.  Lets admins temporarily disable
     blocking (e.g. exam day) without clearing the wallet."""
 
-    blocked_packages: list[str] = Field(
-        default_factory=lambda: list(_DEFAULT_BLOCKED_PACKAGES)
-    )
+    blocked_packages: list[str] = Field(default_factory=lambda: list(_DEFAULT_BLOCKED_PACKAGES))
     """Android package names to block.  Workspace admin controls this
     list; students see it read-only."""
 

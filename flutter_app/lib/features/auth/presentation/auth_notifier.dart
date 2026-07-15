@@ -12,12 +12,13 @@ final dailyLoginRewardProvider = StateProvider<int?>((ref) => null);
 
 @Riverpod(keepAlive: true)
 class AuthNotifier extends _$AuthNotifier {
+  int _authGeneration = 0;
+
   @override
   Future<AuthState> build() async {
     final storedUser = await ref.read(authRepositoryProvider).getStoredUser();
     if (storedUser != null) {
       _refreshBackground();
-      _claimDailyLogin(storedUser);
       return AuthState.authenticated(user: storedUser);
     }
     return const AuthState.unauthenticated();
@@ -33,6 +34,7 @@ class AuthNotifier extends _$AuthNotifier {
   }
 
   Future<void> signInWithMicrosoft() async {
+    _authGeneration += 1;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final user = await ref.read(authRepositoryProvider).signInWithMicrosoft();
@@ -42,6 +44,7 @@ class AuthNotifier extends _$AuthNotifier {
   }
 
   Future<void> signInWithGoogle() async {
+    _authGeneration += 1;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final user = await ref.read(authRepositoryProvider).signInWithGoogle();
@@ -53,17 +56,20 @@ class AuthNotifier extends _$AuthNotifier {
   Future<void> redeemInviteCode(String code) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      final user = await ref.read(authRepositoryProvider).redeemInviteCode(code);
+      final user =
+          await ref.read(authRepositoryProvider).redeemInviteCode(code);
       return AuthState.authenticated(user: user);
     });
   }
 
   Future<void> signOut() async {
+    _authGeneration += 1;
     await ref.read(authRepositoryProvider).signOut();
     state = const AsyncData(AuthState.unauthenticated());
   }
 
   Future<void> deleteAccount() async {
+    _authGeneration += 1;
     final currentUser = state.valueOrNull?.maybeWhen(
       authenticated: (user) => user,
       orElse: () => null,
@@ -79,17 +85,24 @@ class AuthNotifier extends _$AuthNotifier {
 
   /// Re-fetch the stored User and update auth state.
   Future<void> refresh() async {
+    final generation = _authGeneration;
     try {
       final dio = ref.read(dioClientProvider).dio;
       final response = await dio.get('/api/v1/users/me');
+      if (generation != _authGeneration) return;
+
       final updatedUser = User.fromJson(response.data as Map<String, dynamic>);
-      
       await ref.read(authRepositoryProvider).updateStoredUser(updatedUser);
-      await _claimDailyLogin(updatedUser);
+      if (generation != _authGeneration) return;
+
       state = AsyncData(AuthState.authenticated(user: updatedUser));
+      await _claimDailyLogin(updatedUser);
     } catch (_) {
-      // Fallback to local storage if network fails
+      if (generation != _authGeneration) return;
+
+      // A temporary network/provider failure preserves the installed account.
       final user = await ref.read(authRepositoryProvider).getStoredUser();
+      if (generation != _authGeneration) return;
       if (user == null) {
         state = const AsyncData(AuthState.unauthenticated());
       } else {
@@ -101,9 +114,10 @@ class AuthNotifier extends _$AuthNotifier {
   Future<void> _claimDailyLogin(User user) async {
     for (final membership in user.workspaceMemberships) {
       try {
-        final response = await ref.read(dioClientProvider).dio.post<Map<String, dynamic>>(
-              '/api/v1/workspaces/${membership.workspaceId}/users/me/gamification/daily-login',
-            );
+        final response =
+            await ref.read(dioClientProvider).dio.post<Map<String, dynamic>>(
+                  '/api/v1/workspaces/${membership.workspaceId}/users/me/gamification/daily-login',
+                );
         final data = response.data;
         if (data?['awarded'] == true) {
           ref.read(dailyLoginRewardProvider.notifier).state =

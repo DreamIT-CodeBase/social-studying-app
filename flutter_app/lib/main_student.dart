@@ -1,11 +1,16 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/routing/router.dart';
+import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/core/theme/app_theme.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/notifications/presentation/notification_service.dart';
+import 'package:social_study_app/features/screen_time/data/screen_time_repository.dart';
+import 'package:social_study_app/features/screen_time/providers/screen_time_providers.dart';
+import 'package:social_study_app/features/screen_time/services/screen_time_service.dart';
 import 'package:social_study_app/shared/services/session_persistence_service.dart';
 
 void main() async {
@@ -22,12 +27,42 @@ class _StudentApp extends ConsumerStatefulWidget {
   ConsumerState<_StudentApp> createState() => _StudentAppState();
 }
 
-class _StudentAppState extends ConsumerState<_StudentApp> {
+class _StudentAppState extends ConsumerState<_StudentApp>
+    with WidgetsBindingObserver {
   /// Tracks the most recent auth state we acted on, so the
   /// authenticated → authenticated rebuild doesn't re-run init every
   /// frame. Null = no action taken yet.
   String? _lastAuthedUserId;
   bool _signedOutHandled = true;
+  Future<void>? _permissionCheckInFlight;
+  String? _permissionCheckUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final authState = ref.read(authNotifierProvider).valueOrNull;
+    final user = authState?.maybeWhen(
+      authenticated: (authenticatedUser) => authenticatedUser,
+      orElse: () => null,
+    );
+    if (user == null) return;
+    unawaited(
+      ref.read(screenTimeNotifierProvider.notifier).refreshWallet(),
+    );
+    unawaited(_verifyPermissionSetup(user.id, ref.read(routerProvider)));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +80,8 @@ class _StudentAppState extends ConsumerState<_StudentApp> {
             _lastAuthedUserId = user.id;
             _signedOutHandled = false;
             _initNotifications(router);
+            unawaited(ref.read(screenTimeNotifierProvider.future));
+            unawaited(_verifyPermissionSetup(user.id, router));
           },
           unauthenticated: () {
             if (_signedOutHandled) return;
@@ -81,10 +118,60 @@ class _StudentAppState extends ConsumerState<_StudentApp> {
       ),
     );
   }
+
+  Future<void> _verifyPermissionSetup(String userId, GoRouter router) async {
+    final activeCheck = _permissionCheckInFlight;
+    final activeUserId = _permissionCheckUserId;
+    if (activeCheck != null) {
+      await activeCheck;
+      if (activeUserId == userId) return;
+    }
+
+    final check = _performPermissionSetupCheck(userId, router);
+    _permissionCheckInFlight = check;
+    _permissionCheckUserId = userId;
+    try {
+      await check;
+    } finally {
+      if (identical(_permissionCheckInFlight, check)) {
+        _permissionCheckInFlight = null;
+        _permissionCheckUserId = null;
+      }
+    }
+  }
+
+  Future<void> _performPermissionSetupCheck(
+    String userId,
+    GoRouter router,
+  ) async {
+    final service = ScreenTimeService();
+    final status = await service.getPermissionStatus();
+    await SessionPersistenceService.instance.setPermissionSetupComplete(
+      userId,
+      complete: status.requiredPermissionsGranted,
+    );
+
+    if (!status.requiredPermissionsGranted) {
+      router.go(AppRoutes.studentOnboarding);
+    }
+
+    try {
+      await ref.read(screenTimeRepositoryProvider).reportPermissionStatus(
+            overlayPermission: status.overlay,
+            usageAccessPermission: status.usageAccess,
+            notificationAccess: status.notifications,
+            accessibilityService: status.accessibility,
+            batteryOptimizationExempt: status.batteryExempt,
+            deviceAdministrator: false,
+          );
+    } catch (_) {
+      // Device enforcement is local-first; cloud health sync retries on resume.
+    }
+  }
 }
 
 /// Tiny ``unawaited`` wrapper so we can fire async side effects from
 /// the build/listen path without lint noise.
-void unawaited(Future<void> future) {
+void unawaited<T>(Future<T> future) {
   future.then((_) {}, onError: (_) {});
 }

@@ -5,27 +5,34 @@ import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/screen_time/providers/screen_time_providers.dart';
+import 'package:social_study_app/features/screen_time/models/student_device_status.dart';
 import 'package:social_study_app/core/config/app_flavor.dart';
+import 'package:social_study_app/features/home/providers/workspace_providers.dart';
 
 class ScreenTimeSettingsScreen extends ConsumerStatefulWidget {
   const ScreenTimeSettingsScreen({super.key});
 
   @override
-  ConsumerState<ScreenTimeSettingsScreen> createState() => _ScreenTimeSettingsScreenState();
+  ConsumerState<ScreenTimeSettingsScreen> createState() =>
+      _ScreenTimeSettingsScreenState();
 }
 
-class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScreen>
+class _ScreenTimeSettingsScreenState
+    extends ConsumerState<ScreenTimeSettingsScreen>
     with WidgetsBindingObserver {
   bool _isAccessibilityEnabled = false;
   bool _isLoadingAccessibility = true;
 
   final Map<String, (String name, IconData icon)> _availableApps = {
     'com.instagram.android': ('Instagram', Icons.camera_alt_outlined),
+    'com.instagram.barcelona': ('Threads', Icons.alternate_email_rounded),
     'com.zhiliaoapp.musically': ('TikTok', Icons.music_note_outlined),
     'com.google.android.youtube': ('YouTube', Icons.play_circle_outline),
     'com.facebook.katana': ('Facebook', Icons.facebook_outlined),
     'com.twitter.android': ('X (Twitter)', Icons.alternate_email_outlined),
     'com.snapchat.android': ('Snapchat', Icons.chat_bubble_outline),
+    'com.reddit.frontpage': ('Reddit', Icons.forum_outlined),
+    'com.pinterest': ('Pinterest', Icons.push_pin_outlined),
   };
 
   @override
@@ -59,7 +66,9 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
       return;
     }
     setState(() => _isLoadingAccessibility = true);
-    final enabled = await ref.read(screenTimeNotifierProvider.notifier).isAccessibilityServiceEnabled();
+    final enabled = await ref
+        .read(screenTimeNotifierProvider.notifier)
+        .isAccessibilityServiceEnabled();
     if (mounted) {
       setState(() {
         _isAccessibilityEnabled = enabled;
@@ -76,6 +85,11 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
     final blockedPackagesAsync = ref.watch(blockedPackagesProvider);
 
     final isEditable = currentFlavor == AppFlavor.admin;
+    final workspaceId = ref.watch(activeWorkspaceIdProvider);
+    final AsyncValue<List<StudentDeviceStatus>>? deviceStatusesAsync =
+        isEditable && workspaceId != null
+            ? ref.watch(studentDeviceStatusesProvider(workspaceId))
+            : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -95,29 +109,36 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
             children: [
               _buildParentMessage(),
               const SizedBox(height: Spacing.lg),
-              
-              if (Platform.isAndroid) ...[
+
+              if (isEditable &&
+                  workspaceId != null &&
+                  deviceStatusesAsync != null) ...[
+                _buildSectionTitle('Student Device Health'),
+                const SizedBox(height: Spacing.sm),
+                _buildDeviceHealthCard(
+                  workspaceId,
+                  deviceStatusesAsync,
+                ),
+                const SizedBox(height: Spacing.lg),
+              ],
+              if (Platform.isAndroid && currentFlavor == AppFlavor.student) ...[
                 _buildAccessibilityStatusCard(),
                 const SizedBox(height: Spacing.lg),
               ],
-
               _buildSectionTitle('App Blocking Controls'),
               const SizedBox(height: Spacing.sm),
               _buildBlockingControlCard(enableBlocking, isEditable),
               const SizedBox(height: Spacing.lg),
-
               if (enableBlocking) ...[
                 _buildSectionTitle('Apps to Control'),
                 const SizedBox(height: Spacing.sm),
                 _buildAppSelectorCard(blockedPackages, isEditable),
                 const SizedBox(height: Spacing.lg),
               ],
-
               _buildSectionTitle('Rules & Conversion'),
               const SizedBox(height: Spacing.sm),
               _buildConversionCard(ratio, isEditable),
               const SizedBox(height: Spacing.lg),
-
               if (isEditable) ...[
                 _buildResetCard(),
               ],
@@ -125,7 +146,8 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, stack) => Center(child: Text('Error loading settings: $err')),
+        error: (err, stack) =>
+            Center(child: Text('Error loading settings: $err')),
       ),
     );
   }
@@ -142,7 +164,8 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
         padding: EdgeInsets.all(Spacing.lg),
         child: Row(
           children: [
-            Icon(Icons.family_restroom_rounded, color: AppColors.primary, size: 28),
+            Icon(Icons.family_restroom_rounded,
+                color: AppColors.primary, size: 28),
             SizedBox(width: Spacing.md),
             Expanded(
               child: Column(
@@ -187,10 +210,140 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
     );
   }
 
+  Widget _buildDeviceHealthCard(
+    String workspaceId,
+    AsyncValue<List<StudentDeviceStatus>> statusesAsync,
+  ) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: statusesAsync.when(
+        loading: () => const Padding(
+          padding: EdgeInsets.all(Spacing.lg),
+          child: Row(
+            children: [
+              SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: Spacing.md),
+              Text('Checking student devices…'),
+            ],
+          ),
+        ),
+        error: (error, _) => Padding(
+          padding: const EdgeInsets.all(Spacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Device health unavailable',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: Spacing.xs),
+              Text('$error'),
+              const SizedBox(height: Spacing.sm),
+              OutlinedButton.icon(
+                onPressed: () =>
+                    ref.invalidate(studentDeviceStatusesProvider(workspaceId)),
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+        data: (statuses) {
+          if (statuses.isEmpty) {
+            return const Padding(
+              padding: EdgeInsets.all(Spacing.lg),
+              child: Text(
+                'No students are enrolled in this workspace yet.',
+              ),
+            );
+          }
+
+          final readyCount = statuses.where((status) => status.blockingReady).length;
+          return Column(
+            children: [
+              ListTile(
+                leading: Icon(
+                  readyCount == statuses.length
+                      ? Icons.verified_user_rounded
+                      : Icons.warning_amber_rounded,
+                  color: readyCount == statuses.length
+                      ? Colors.green
+                      : Colors.orange,
+                ),
+                title: Text(
+                  '$readyCount of ${statuses.length} devices ready',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: const Text(
+                  'Blocking requires Accessibility and Usage Access.',
+                ),
+                trailing: IconButton(
+                  tooltip: 'Refresh device health',
+                  onPressed: () =>
+                      ref.invalidate(studentDeviceStatusesProvider(workspaceId)),
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ),
+              const Divider(height: 1),
+              ...statuses.map(
+                (status) => ListTile(
+                  leading: Icon(
+                    status.blockingReady
+                        ? Icons.check_circle_rounded
+                        : Icons.error_rounded,
+                    color: status.blockingReady ? Colors.green : Colors.red,
+                  ),
+                  title: Text(status.displayName),
+                  subtitle: Text(
+                    status.blockingReady
+                        ? 'Blocking active • ${_formatLastReported(status.lastReportedAt)}'
+                        : 'Permission action required • ${_formatLastReported(status.lastReportedAt)}',
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  String _formatLastReported(DateTime? timestamp) {
+    if (timestamp == null) return 'never reported';
+    final local = timestamp.toLocal();
+    final minute = local.minute.toString().padLeft(2, '0');
+    return 'last checked ${local.month}/${local.day} ${local.hour}:$minute';
+  }
+
+  Future<bool> _runPolicyUpdate(Future<void> Function() update) async {
+    try {
+      await update();
+      return true;
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not update the student policy. Check your connection and try again.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false;
+    }
+  }
+
   Widget _buildAccessibilityStatusCard() {
     final statusColor = _isAccessibilityEnabled ? Colors.green : Colors.orange;
     final statusText = _isAccessibilityEnabled ? 'Active' : 'Disabled';
-    final statusIcon = _isAccessibilityEnabled ? Icons.check_circle : Icons.warning_amber_rounded;
+    final statusIcon = _isAccessibilityEnabled
+        ? Icons.check_circle
+        : Icons.warning_amber_rounded;
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -207,7 +360,8 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
                     children: [
                       const Text(
                         'Android App Blocking Service',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16),
                       ),
                       const SizedBox(height: 4),
                       Row(
@@ -244,14 +398,20 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
             FilledButton.icon(
               style: FilledButton.styleFrom(
                 minimumSize: const Size(double.infinity, 44),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                backgroundColor: _isAccessibilityEnabled ? Colors.grey : AppColors.primary,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                backgroundColor:
+                    _isAccessibilityEnabled ? Colors.grey : AppColors.primary,
               ),
               onPressed: () {
-                ref.read(screenTimeNotifierProvider.notifier).openAccessibilitySettings();
+                ref
+                    .read(screenTimeNotifierProvider.notifier)
+                    .openAccessibilitySettings();
               },
               icon: const Icon(Icons.settings_power_rounded),
-              label: Text(_isAccessibilityEnabled ? 'Configure Settings' : 'Enable Service'),
+              label: Text(_isAccessibilityEnabled
+                  ? 'Configure Settings'
+                  : 'Enable Service'),
             ),
           ],
         ),
@@ -276,8 +436,12 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
         activeColor: AppColors.primary,
         onChanged: isAdmin
             ? (value) async {
-                await ref.read(screenTimeNotifierProvider.notifier).updateEnableBlocking(value);
-                ref.invalidate(enableBlockingProvider);
+                final updated = await _runPolicyUpdate(
+                  () => ref
+                      .read(screenTimeNotifierProvider.notifier)
+                      .updateEnableBlocking(value),
+                );
+                if (updated) ref.invalidate(enableBlockingProvider);
               }
             : null,
       ),
@@ -294,8 +458,10 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
           final isBlocked = blockedPackages.contains(pkg);
 
           return CheckboxListTile(
-            title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-            secondary: Icon(icon, color: isBlocked ? AppColors.primary : Colors.grey),
+            title:
+                Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+            secondary:
+                Icon(icon, color: isBlocked ? AppColors.primary : Colors.grey),
             value: isBlocked,
             activeColor: AppColors.primary,
             onChanged: isAdmin
@@ -306,8 +472,12 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
                     } else {
                       newList.remove(pkg);
                     }
-                    await ref.read(screenTimeNotifierProvider.notifier).updateBlockedPackages(newList);
-                    ref.invalidate(blockedPackagesProvider);
+                    final updated = await _runPolicyUpdate(
+                      () => ref
+                          .read(screenTimeNotifierProvider.notifier)
+                          .updateBlockedPackages(newList),
+                    );
+                    if (updated) ref.invalidate(blockedPackagesProvider);
                   }
                 : null,
           );
@@ -331,7 +501,8 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
             const SizedBox(height: Spacing.sm),
             Text(
               'Currently set to: $ratio XP = 1 Minute of screen time.\n(For example, 100 XP gives 10 minutes).',
-              style: const TextStyle(fontSize: 13, color: AppColors.onSurfaceVariant),
+              style: const TextStyle(
+                  fontSize: 13, color: AppColors.onSurfaceVariant),
             ),
             const SizedBox(height: Spacing.md),
             DropdownButtonFormField<int>(
@@ -340,19 +511,28 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
                 labelText: 'Conversion Rate',
                 filled: true,
                 fillColor: context.colorScheme.surfaceContainer,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
               items: const [
-                DropdownMenuItem(value: 5, child: Text('5 XP = 1 Minute (Generous)')),
-                DropdownMenuItem(value: 10, child: Text('10 XP = 1 Minute (Standard)')),
-                DropdownMenuItem(value: 20, child: Text('20 XP = 1 Minute (Moderate)')),
-                DropdownMenuItem(value: 50, child: Text('50 XP = 1 Minute (Strict)')),
+                DropdownMenuItem(
+                    value: 5, child: Text('5 XP = 1 Minute (Generous)')),
+                DropdownMenuItem(
+                    value: 10, child: Text('10 XP = 1 Minute (Standard)')),
+                DropdownMenuItem(
+                    value: 20, child: Text('20 XP = 1 Minute (Moderate)')),
+                DropdownMenuItem(
+                    value: 50, child: Text('50 XP = 1 Minute (Strict)')),
               ],
               onChanged: isAdmin
                   ? (value) async {
                       if (value != null) {
-                        await ref.read(screenTimeNotifierProvider.notifier).updateXpToMinuteRatio(value);
-                        ref.invalidate(xpToMinuteRatioProvider);
+                        final updated = await _runPolicyUpdate(
+                          () => ref
+                              .read(screenTimeNotifierProvider.notifier)
+                              .updateXpToMinuteRatio(value),
+                        );
+                        if (updated) ref.invalidate(xpToMinuteRatioProvider);
                       }
                     }
                   : null,
@@ -371,10 +551,13 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
           'Reset Today\'s Screen Time Stats',
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
         ),
-        subtitle: const Text('Resets today\'s usage timer to 0 without affecting your earned balance.'),
+        subtitle: const Text(
+            'Resets today\'s usage timer to 0 without affecting your earned balance.'),
         trailing: const Icon(Icons.refresh_rounded, color: Colors.orange),
         onTap: () async {
-          await ref.read(screenTimeNotifierProvider.notifier).resetConsumedToday();
+          await ref
+              .read(screenTimeNotifierProvider.notifier)
+              .resetConsumedToday();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(

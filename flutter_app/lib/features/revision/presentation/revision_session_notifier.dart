@@ -53,8 +53,11 @@ class RevisionSessionNotifier extends _$RevisionSessionNotifier {
   int _questionsAnswered = 0;
   int _questionsCorrect = 0;
   int _flashcardsReviewed = 0;
+  int _xpEarned = 0;
   DateTime? _cardStartTime;
   DateTime? _questionStartTime;
+
+  int get xpEarned => _xpEarned;
 
   @override
   RevisionSession build(String workspaceId) {
@@ -70,7 +73,7 @@ class RevisionSessionNotifier extends _$RevisionSessionNotifier {
   /// double-fetch.
   Future<void> start({int? itemCount, double? mastery}) async {
     if (state is! RevisionSessionIdle) return;
-    
+
     int n;
     if (itemCount != null) {
       n = itemCount;
@@ -79,24 +82,24 @@ class RevisionSessionNotifier extends _$RevisionSessionNotifier {
       final val = mastery ?? 0.0;
       final random = math.Random();
       if (val < 0.3) {
-        n = 5 + random.nextInt(3);      // 5-7 items
+        n = 5 + random.nextInt(3); // 5-7 items
       } else if (val < 0.7) {
-        n = 12 + random.nextInt(4);     // 12-15 items
+        n = 12 + random.nextInt(4); // 12-15 items
       } else {
-        n = 20 + random.nextInt(6);     // 20-25 items
+        n = 20 + random.nextInt(6); // 20-25 items
       }
     }
     n = n.clamp(1, 50);
 
     _plan = List<RevisionItemKind>.generate(
       n,
-      (i) =>
-          i.isEven ? RevisionItemKind.question : RevisionItemKind.flashcard,
+      (i) => i.isEven ? RevisionItemKind.question : RevisionItemKind.flashcard,
     );
     _position = 0;
     _questionsAnswered = 0;
     _questionsCorrect = 0;
     _flashcardsReviewed = 0;
+    _xpEarned = 0;
     await _fetchCurrent();
   }
 
@@ -127,22 +130,25 @@ class RevisionSessionNotifier extends _$RevisionSessionNotifier {
     );
 
     try {
-      final feedback =
-          await ref.read(questionsRepositoryProvider).submitAnswer(
-                workspaceId: _workspaceId,
-                questionId: current.question.id,
-                submission: AnswerSubmission(answer: draft),
-                revision: true,
-              );
+      final feedback = await ref.read(questionsRepositoryProvider).submitAnswer(
+            workspaceId: _workspaceId,
+            questionId: current.question.id,
+            submission: AnswerSubmission(answer: draft),
+            revision: true,
+          );
       _questionsAnswered++;
       if (_questionStartTime != null) {
-        final durationMs = DateTime.now().difference(_questionStartTime!).inMilliseconds;
-        RecallService.instance.recordQuestionAnswered(
-          topic: current.question.topic,
-          durationMs: durationMs,
-        ).catchError((_) {});
+        final durationMs =
+            DateTime.now().difference(_questionStartTime!).inMilliseconds;
+        RecallService.instance
+            .recordQuestionAnswered(
+              topic: current.question.topic,
+              durationMs: durationMs,
+            )
+            .catchError((_) {});
       }
       if (feedback.isCorrect) _questionsCorrect++;
+      _xpEarned += feedback.xpEarned;
       state = RevisionSession.questionGraded(
         question: current.question,
         submittedAnswer: draft,
@@ -190,12 +196,15 @@ class RevisionSessionNotifier extends _$RevisionSessionNotifier {
           );
       _flashcardsReviewed++;
       if (_cardStartTime != null) {
-        final durationMs = DateTime.now().difference(_cardStartTime!).inMilliseconds;
-        RecallService.instance.recordCardReview(
-          topic: current.card.topic,
-          rating: rating,
-          durationMs: durationMs,
-        ).catchError((_) {});
+        final durationMs =
+            DateTime.now().difference(_cardStartTime!).inMilliseconds;
+        RecallService.instance
+            .recordCardReview(
+              topic: current.card.topic,
+              rating: rating,
+              durationMs: durationMs,
+            )
+            .catchError((_) {});
       }
       state = RevisionSession.flashcardRated(
         card: current.card,
@@ -214,12 +223,14 @@ class RevisionSessionNotifier extends _$RevisionSessionNotifier {
 
   void _invalidateProfile() {
     final authState = ref.read(authNotifierProvider).valueOrNull;
-    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user != null) {
       final key = (workspaceId: _workspaceId, userId: user.id);
       ref.invalidate(gamificationProfileProvider(key));
       ref.invalidate(streakSummaryProvider(key));
       ref.invalidate(studentProgressNotifierProvider(_workspaceId));
+      ref.invalidate(leaderboardProvider(_workspaceId));
     }
   }
 
@@ -234,15 +245,19 @@ class RevisionSessionNotifier extends _$RevisionSessionNotifier {
     _position++;
     if (_position >= _plan.length) {
       final authState = ref.read(authNotifierProvider).valueOrNull;
-      final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+      final user =
+          authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
       if (user != null) {
-        ref.read(gamificationRepositoryProvider).completeSession(
+        ref
+            .read(gamificationRepositoryProvider)
+            .completeSession(
               workspaceId: _workspaceId,
               userId: user.id,
               sessionType: 'revision',
-            ).then((_) {
-              _invalidateProfile();
-            }).catchError((_) {});
+            )
+            .then((_) {
+          _invalidateProfile();
+        }).catchError((_) {});
       }
 
       state = RevisionSession.complete(

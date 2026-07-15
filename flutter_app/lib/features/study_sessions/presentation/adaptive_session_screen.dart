@@ -6,12 +6,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/services/sound_service.dart';
+import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
+import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 import 'package:social_study_app/features/gamification/presentation/widgets/celebration_overlay.dart'
     show CorrectAnswerCelebration;
 import 'package:social_study_app/features/study_sessions/data/adaptive_session_repository.dart';
 import 'package:social_study_app/features/study_sessions/domain/adaptive_session_models.dart';
 import 'package:social_study_app/features/study_sessions/presentation/adaptive_session_legacy_ui.dart';
 import 'package:social_study_app/shared/services/dio_client.dart';
+import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 
 class AdaptiveSessionScreen extends ConsumerStatefulWidget {
   const AdaptiveSessionScreen({
@@ -30,8 +34,7 @@ class AdaptiveSessionScreen extends ConsumerStatefulWidget {
 
 enum _SessionPhase { preparing, ready, active, completing, complete, error }
 
-class _AdaptiveSessionScreenState
-    extends ConsumerState<AdaptiveSessionScreen> {
+class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
   final TextEditingController _answerController = TextEditingController();
   final List<SessionQuestionAttempt> _questionAttempts = [];
   final List<SessionFlashcardAttempt> _flashcardAttempts = [];
@@ -48,6 +51,7 @@ class _AdaptiveSessionScreenState
   int? _lastXpDelta;
   String _draftAnswer = '';
   bool _answerRevealed = false;
+  bool _answerSubmitting = false;
   bool? _preparedAnswerMatched;
   bool _flashcardFlipped = false;
   bool _flashcardRating = false;
@@ -88,6 +92,7 @@ class _AdaptiveSessionScreenState
       _summary = null;
       _index = 0;
       _sessionXp = 0;
+      _answerSubmitting = false;
       _questionAttempts.clear();
       _flashcardAttempts.clear();
     });
@@ -140,6 +145,19 @@ class _AdaptiveSessionScreenState
     return math.max(0, DateTime.now().difference(started).inSeconds);
   }
 
+  void _invalidateProfile() {
+    final authState = ref.read(authNotifierProvider).valueOrNull;
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    if (user != null) {
+      final key = (workspaceId: widget.workspaceId, userId: user.id);
+      ref.invalidate(gamificationProfileProvider(key));
+      ref.invalidate(streakSummaryProvider(key));
+      ref.invalidate(studentProgressNotifierProvider(widget.workspaceId));
+      ref.invalidate(leaderboardProvider(widget.workspaceId));
+    }
+  }
+
   Future<void> _finish(String reason) async {
     final plan = _plan;
     if (plan == null || _phase == _SessionPhase.completing) return;
@@ -160,6 +178,7 @@ class _AdaptiveSessionScreenState
         flashcardAttempts: List.unmodifiable(_flashcardAttempts),
       );
       if (!mounted) return;
+      _invalidateProfile();
       setState(() {
         _summary = summary;
         _phase = _SessionPhase.complete;
@@ -202,13 +221,40 @@ class _AdaptiveSessionScreenState
     if (shouldStop == true && mounted) await _finish('exited');
   }
 
-  void _submitAnswer() {
+  Future<void> _submitAnswer() async {
     final plan = _plan!;
     final question = plan.questions[_index];
     final answer = _draftAnswer.trim();
-    if (answer.isEmpty || _answerRevealed) return;
+    if (answer.isEmpty || _answerRevealed || _answerSubmitting) return;
 
-    final matched = _matchesPreparedAnswer(question, answer);
+    setState(() => _answerSubmitting = true);
+    late final bool matched;
+    try {
+      if (question.questionType == 'mcq' ||
+          question.questionType == 'true_false') {
+        matched = _matchesPreparedAnswer(question, answer);
+      } else {
+        final evaluation = await _repository.evaluateAnswer(
+          workspaceId: widget.workspaceId,
+          sessionId: plan.sessionId,
+          questionId: question.id,
+          answer: answer,
+        );
+        matched = evaluation.isCorrect;
+      }
+    } on AdaptiveSessionException catch (error) {
+      if (!mounted) return;
+      setState(() => _answerSubmitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+      return;
+    }
+    if (!mounted ||
+        _phase != _SessionPhase.active ||
+        _plan?.questions[_index].id != question.id) {
+      return;
+    }
     final delta = matched ? 1 : -1;
     final seconds = math.max(
       0,
@@ -232,6 +278,7 @@ class _AdaptiveSessionScreenState
     setState(() {
       _preparedAnswerMatched = matched;
       _answerRevealed = true;
+      _answerSubmitting = false;
       _sessionXp += delta;
       _lastXpDelta = delta;
       if (matched) _celebrationTrigger += 1;
@@ -249,7 +296,8 @@ class _AdaptiveSessionScreenState
         .replaceAll(RegExp(r'[.!?,;:]$'), '');
 
     if (question.questionType == 'mcq') {
-      return submitted.trim().toUpperCase() == question.answer.trim().toUpperCase();
+      return submitted.trim().toUpperCase() ==
+          question.answer.trim().toUpperCase();
     }
     if (question.questionType == 'true_false') {
       String booleanValue(String value) {
@@ -273,7 +321,8 @@ class _AdaptiveSessionScreenState
       return normalized(submitted).contains(normalized(question.answer));
     }
     final candidates = [question.answer, ...question.gradingHints];
-    return candidates.any((candidate) => normalized(candidate) == normalized(submitted));
+    return candidates
+        .any((candidate) => normalized(candidate) == normalized(submitted));
   }
 
   void _nextQuestion() {
@@ -287,6 +336,7 @@ class _AdaptiveSessionScreenState
       _draftAnswer = '';
       _answerController.clear();
       _answerRevealed = false;
+      _answerSubmitting = false;
       _preparedAnswerMatched = null;
       _itemStartedAt = DateTime.now();
     });
@@ -305,7 +355,9 @@ class _AdaptiveSessionScreenState
     final card = plan.flashcards[_index];
     final milliseconds = math.max(
       0,
-      DateTime.now().difference(_itemStartedAt ?? DateTime.now()).inMilliseconds,
+      DateTime.now()
+          .difference(_itemStartedAt ?? DateTime.now())
+          .inMilliseconds,
     );
     _flashcardAttempts.add(
       SessionFlashcardAttempt(
@@ -420,8 +472,7 @@ class _AdaptiveSessionScreenState
                   _flashcardDragOffset =
                       (_flashcardDragOffset + delta).clamp(-220.0, 220.0);
                 }),
-                onDragCancel: () =>
-                    setState(() => _flashcardDragOffset = 0),
+                onDragCancel: () => setState(() => _flashcardDragOffset = 0),
                 onRate: _rateFlashcard,
               )
             : LegacyAdaptiveQuestionView(
@@ -433,6 +484,7 @@ class _AdaptiveSessionScreenState
                 lastXpDelta: _lastXpDelta,
                 draftAnswer: _draftAnswer,
                 answerRevealed: _answerRevealed,
+                answerSubmitting: _answerSubmitting,
                 answerMatched: _preparedAnswerMatched,
                 isLast: _index == plan.itemCount - 1,
                 onClose: _requestExit,
@@ -625,7 +677,8 @@ class _AdaptiveSessionScreenState
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
-              Center(child: _LabelChip(label: card.topic, color: scheme.primary)),
+              Center(
+                  child: _LabelChip(label: card.topic, color: scheme.primary)),
               const SizedBox(height: 22),
               GestureDetector(
                 onTap: () => setState(() => _flashcardFlipped = true),
@@ -670,17 +723,19 @@ class _AdaptiveSessionScreenState
                       Text(
                         _flashcardFlipped ? card.back : card.front,
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              height: 1.35,
-                            ),
+                        style:
+                            Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.35,
+                                ),
                       ),
                       if (_flashcardFlipped && card.explanation.isNotEmpty) ...[
                         const SizedBox(height: 20),
                         Text(
                           card.explanation,
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: scheme.onSurfaceVariant, height: 1.4),
+                          style: TextStyle(
+                              color: scheme.onSurfaceVariant, height: 1.4),
                         ),
                       ],
                     ],
@@ -742,45 +797,22 @@ class _PreparingView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Stack(
         children: [
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(
-                    width: 58,
-                    height: 58,
-                    child: CircularProgressIndicator(strokeWidth: 5),
-                  ),
-                  const SizedBox(height: 26),
-                  Text(
-                    'Preparing your adaptive session…',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Loading every ${mode == AdaptiveSessionMode.flashcard ? 'card' : 'question'}, answer, and explanation before you begin.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      height: 1.45,
-                    ),
-                  ),
-                ],
-              ),
+          Positioned.fill(
+            child: LoadingIndicator(
+              message: 'Preparing your adaptive session…',
+              subMessage:
+                  'Loading every ${mode == AdaptiveSessionMode.flashcard ? 'card' : 'question'}, answer, and explanation before you begin.',
             ),
           ),
           Positioned(
-            left: 8,
-            top: 4,
-            child: IconButton(
-              tooltip: 'Close',
-              onPressed: onClose,
-              icon: const Icon(Icons.close_rounded),
+            left: 12,
+            top: 12,
+            child: SafeArea(
+              child: IconButton(
+                tooltip: 'Close',
+                onPressed: onClose,
+                icon: const Icon(Icons.close_rounded),
+              ),
             ),
           ),
         ],
@@ -804,217 +836,263 @@ class _ReadyView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isFlashcard = plan.mode == AdaptiveSessionMode.flashcard;
-    return Stack(
-      children: [
-        ListView(
-          padding: const EdgeInsets.fromLTRB(24, 72, 24, 28),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primary = Theme.of(context).colorScheme.primary;
+    final bg = isDark ? const Color(0xFF0F172A) : Colors.white;
+    final cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final subtitleColor = isDark ? Colors.white60 : const Color(0xFF64748B);
+    final primaryContainer =
+        isDark ? primary.withOpacity(0.15) : const Color(0xFFEEF2FF);
+
+    return Scaffold(
+      backgroundColor: bg,
+      body: SafeArea(
+        child: Stack(
           children: [
-            Icon(
-              isFlashcard ? Icons.style_rounded : Icons.auto_stories_rounded,
-              size: 66,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(height: 20),
-            Text(
-              plan.mode.title,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Everything is ready. Your timer starts only when you press Start.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                height: 1.45,
-              ),
-            ),
-            const SizedBox(height: 28),
-            Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
-                side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: [
-                    _PlanRow(
-                      icon: Icons.psychology_alt_rounded,
-                      label: 'Proficiency',
-                      value: _capitalized(plan.level),
-                    ),
-                    _PlanRow(
-                      icon: Icons.timer_outlined,
-                      label: 'Session time',
-                      value: '${plan.durationMinutes} minutes',
-                    ),
-                    _PlanRow(
-                      icon: isFlashcard
-                          ? Icons.style_outlined
-                          : Icons.quiz_outlined,
-                      label: isFlashcard ? 'Flashcards' : 'Questions',
-                      value: '${plan.itemCount}',
-                    ),
-                    _PlanRow(
-                      icon: Icons.bolt_rounded,
-                      label: 'XP',
-                      value:
-                          '${_signed(plan.estimatedXpMin)} to ${_signed(plan.estimatedXpMax)}',
-                      isLast: true,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: onStart,
-              icon: const Icon(Icons.play_arrow_rounded),
-              label: Text(plan.mode.startLabel),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(double.infinity, 56),
-                textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-              ),
-            ),
-          ],
-        ),
-        Positioned(
-          left: 8,
-          top: 4,
-          child: IconButton(onPressed: onClose, icon: const Icon(Icons.close_rounded)),
-        ),
-      ],
-    );
-  }
-}
-
-class _PlanRow extends StatelessWidget {
-  const _PlanRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.isLast = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final bool isLast;
-
-  @override
-  Widget build(BuildContext context) => Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Row(
-              children: [
-                Icon(icon, color: Theme.of(context).colorScheme.primary),
-                const SizedBox(width: 14),
-                Expanded(child: Text(label)),
-                Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
-              ],
-            ),
-          ),
-          if (!isLast) const Divider(height: 1),
-        ],
-      );
-}
-
-class _ActiveHeader extends StatelessWidget {
-  const _ActiveHeader({
-    required this.current,
-    required this.total,
-    required this.remainingSeconds,
-    required this.sessionXp,
-    required this.showXp,
-    required this.lastXpDelta,
-    required this.onClose,
-  });
-
-  final int current;
-  final int total;
-  final int remainingSeconds;
-  final int sessionXp;
-  final bool showXp;
-  final int? lastXpDelta;
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    final minutes = remainingSeconds ~/ 60;
-    final seconds = remainingSeconds % 60;
-    final urgent = remainingSeconds <= 60;
-    return Material(
-      color: Theme.of(context).colorScheme.surface,
-      elevation: 1,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(6, 6, 12, 12),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                IconButton(
-                  tooltip: 'Stop session',
-                  onPressed: onClose,
-                  icon: const Icon(Icons.close_rounded),
-                ),
-                Expanded(
-                  child: Text(
-                    '$current of $total',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                _HeaderPill(
-                  icon: Icons.timer_outlined,
-                  text: '$minutes:${seconds.toString().padLeft(2, '0')}',
-                  color: urgent
-                      ? Theme.of(context).colorScheme.error
-                      : Theme.of(context).colorScheme.primary,
-                ),
-                if (showXp) ...[
-                  const SizedBox(width: 8),
+            SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // ── Hero icon with decorative sparkles ──────────────────
+                  const SizedBox(height: 24),
                   Stack(
-                    clipBehavior: Clip.none,
+                    alignment: Alignment.center,
                     children: [
-                      _HeaderPill(
-                        icon: Icons.bolt_rounded,
-                        text: '${_signed(sessionXp)} XP',
-                        color: sessionXp < 0
-                            ? Theme.of(context).colorScheme.error
-                            : const Color(0xFF148A48),
+                      Positioned(
+                        top: 4,
+                        right: 20,
+                        child: Icon(Icons.auto_awesome,
+                            size: 16, color: const Color(0xFFFBBF24)),
                       ),
                       Positioned(
-                        right: 4,
-                        top: -18,
-                        child: AnimatedOpacity(
-                          opacity: lastXpDelta == null ? 0 : 1,
-                          duration: const Duration(milliseconds: 180),
-                          child: Text(
-                            '${_signed(lastXpDelta ?? 0)} XP',
-                            style: TextStyle(
-                              color: (lastXpDelta ?? 0) < 0
-                                  ? Theme.of(context).colorScheme.error
-                                  : const Color(0xFF148A48),
-                              fontWeight: FontWeight.w900,
-                            ),
+                        top: 20,
+                        left: 16,
+                        child: Icon(Icons.auto_awesome,
+                            size: 10, color: primary.withOpacity(0.5)),
+                      ),
+                      Positioned(
+                        bottom: 8,
+                        right: 14,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFBBF24),
+                            shape: BoxShape.circle,
                           ),
+                        ),
+                      ),
+                      Container(
+                        width: 120,
+                        height: 120,
+                        decoration: BoxDecoration(
+                          color: primaryContainer,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          isFlashcard
+                              ? Icons.style_rounded
+                              : Icons.auto_stories_rounded,
+                          size: 60,
+                          color: primary,
                         ),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 24),
+
+                  // ── Title & subtitle ─────────────────────────────────────
+                  Text(
+                    plan.mode.title,
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Everything is ready. Your timer starts\nonly when you press Start.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: subtitleColor,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+
+                  // ── Plan info card ───────────────────────────────────────
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: cardBg,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF2D3748)
+                            : const Color(0xFFE2E8F0),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(isDark ? 0.2 : 0.06),
+                          blurRadius: 20,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        _PlanRow(
+                          icon: Icons.psychology_alt_rounded,
+                          iconColor: primary,
+                          iconBg: primaryContainer,
+                          label: 'Proficiency',
+                          trailing: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: primaryContainer,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              _capitalized(plan.level),
+                              style: TextStyle(
+                                color: primary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          isDark: isDark,
+                        ),
+                        _PlanRow(
+                          icon: Icons.timer_outlined,
+                          iconColor: const Color(0xFF6366F1),
+                          iconBg: const Color(0xFF6366F1).withOpacity(0.12),
+                          label: 'Session time',
+                          trailing: Text(
+                            '${plan.durationMinutes} minutes',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: primary,
+                              fontSize: 15,
+                            ),
+                          ),
+                          isDark: isDark,
+                        ),
+                        _PlanRow(
+                          icon: isFlashcard
+                              ? Icons.style_outlined
+                              : Icons.quiz_outlined,
+                          iconColor: const Color(0xFF06B6D4),
+                          iconBg: const Color(0xFF06B6D4).withOpacity(0.12),
+                          label: isFlashcard ? 'Flashcards' : 'Questions',
+                          trailing: Text(
+                            '${plan.itemCount}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF0F172A),
+                              fontSize: 15,
+                            ),
+                          ),
+                          isDark: isDark,
+                        ),
+                        _PlanRow(
+                          icon: Icons.bolt_rounded,
+                          iconColor: const Color(0xFFF59E0B),
+                          iconBg: const Color(0xFFF59E0B).withOpacity(0.12),
+                          label: 'XP Reward',
+                          trailing: Text(
+                            '${_signed(plan.estimatedXpMin)} to ${_signed(plan.estimatedXpMax)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: primary,
+                              fontSize: 15,
+                            ),
+                          ),
+                          isLast: true,
+                          isDark: isDark,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // ── Motivational banner ──────────────────────────────────
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: primaryContainer,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.shield_outlined, color: primary, size: 22),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Stay focused and do your best!',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  color: isDark
+                                      ? Colors.white
+                                      : const Color(0xFF0F172A),
+                                ),
+                              ),
+                              Text(
+                                "You've got this.",
+                                style: TextStyle(
+                                    fontSize: 12, color: subtitleColor),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+
+                  // ── Start button ─────────────────────────────────────────
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: FilledButton.icon(
+                      onPressed: onStart,
+                      icon: const Icon(Icons.play_arrow_rounded, size: 22),
+                      label: Text(
+                        plan.mode.startLabel,
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
+                      style: FilledButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
-              ],
+              ),
             ),
-            const SizedBox(height: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: total == 0 ? 0 : (current - 1) / total,
-                minHeight: 6,
+            // Close button overlay
+            Positioned(
+              left: 8,
+              top: 4,
+              child: IconButton(
+                onPressed: onClose,
+                icon: const Icon(Icons.close_rounded),
+                tooltip: 'Close',
               ),
             ),
           ],
@@ -1024,28 +1102,61 @@ class _ActiveHeader extends StatelessWidget {
   }
 }
 
-class _HeaderPill extends StatelessWidget {
-  const _HeaderPill({required this.icon, required this.text, required this.color});
+class _PlanRow extends StatelessWidget {
+  const _PlanRow({
+    required this.icon,
+    required this.iconColor,
+    required this.iconBg,
+    required this.label,
+    required this.trailing,
+    required this.isDark,
+    this.isLast = false,
+  });
 
   final IconData icon;
-  final String text;
-  final Color color;
+  final Color iconColor;
+  final Color iconBg;
+  final String label;
+  final Widget trailing;
+  final bool isDark;
+  final bool isLast;
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 17, color: color),
-            const SizedBox(width: 5),
-            Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w800)),
-          ],
-        ),
+  Widget build(BuildContext context) => Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: iconBg,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: iconColor, size: 20),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
+                ),
+                trailing,
+              ],
+            ),
+          ),
+          if (!isLast)
+            Divider(
+              height: 1,
+              indent: 16,
+              endIndent: 16,
+              color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0),
+            ),
+        ],
       );
 }
 
@@ -1089,9 +1200,8 @@ class _AnswerFeedbackCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = matched
-        ? const Color(0xFF148A48)
-        : Theme.of(context).colorScheme.error;
+    final accent =
+        matched ? const Color(0xFF148A48) : Theme.of(context).colorScheme.error;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -1104,7 +1214,8 @@ class _AnswerFeedbackCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(matched ? Icons.check_circle_rounded : Icons.cancel_rounded, color: accent),
+              Icon(matched ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                  color: accent),
               const SizedBox(width: 9),
               Expanded(
                 child: Text(
@@ -1120,9 +1231,11 @@ class _AnswerFeedbackCard extends StatelessWidget {
             const SizedBox(height: 3),
             Text(submittedAnswer),
             const SizedBox(height: 12),
-            Text('Correct answer', style: Theme.of(context).textTheme.labelMedium),
+            Text('Correct answer',
+                style: Theme.of(context).textTheme.labelMedium),
             const SizedBox(height: 3),
-            Text(correctAnswer, style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text(correctAnswer,
+                style: const TextStyle(fontWeight: FontWeight.w700)),
           ],
           if (explanation.isNotEmpty) ...[
             const SizedBox(height: 14),
@@ -1149,7 +1262,9 @@ class _BottomAction extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
-          border: Border(top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
+          border: Border(
+              top: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant)),
         ),
         child: child,
       );
@@ -1159,24 +1274,12 @@ class _SavingView extends StatelessWidget {
   const _SavingView();
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 20),
-            Text(
-              'Saving your session…',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'The backend is calculating your final result.',
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-          ],
+  Widget build(BuildContext context) => const Scaffold(
+        body: Center(
+          child: LoadingIndicator(
+            message: 'Saving your session…',
+            subMessage: 'The backend is calculating your final result.',
+          ),
         ),
       );
 }
@@ -1195,161 +1298,562 @@ class _FinishView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isFlashcard = summary.mode == AdaptiveSessionMode.flashcard;
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        const SizedBox(height: 28),
-        Icon(
-          summary.status == 'completed'
-              ? Icons.celebration_rounded
-              : Icons.bookmark_added_rounded,
-          size: 70,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-        const SizedBox(height: 18),
-        Text(
-          summary.status == 'completed' ? 'Session Complete!' : 'Progress Saved',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.w800,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primary = Theme.of(context).colorScheme.primary;
+    final titleColor = isDark ? Colors.white : const Color(0xFF0F172A);
+    final cardColor = isDark ? const Color(0xFF1E293B) : Colors.white;
+    final subtitleColor = isDark ? Colors.white60 : const Color(0xFF64748B);
+    final bg = isDark ? const Color(0xFF0F172A) : Colors.white;
+
+    final accuracyPct = summary.accuracyPercentage ?? 0;
+    final accuracyInt = accuracyPct.round();
+    final masteryGain =
+        ((summary.masteryAfter - summary.masteryBefore) * 100).round();
+
+    // Performance message
+    final String performanceTitle;
+    final String performanceBody;
+    final Color performanceBg;
+    final Color performanceIconColor;
+    if (summary.status == 'completed' && accuracyPct >= 80) {
+      performanceTitle = 'Excellent work!';
+      performanceBody = summary.performanceMessage;
+      performanceBg = const Color(0xFF22C55E).withOpacity(0.1);
+      performanceIconColor = const Color(0xFF22C55E);
+    } else if (accuracyPct >= 50) {
+      performanceTitle = 'Good attempt!';
+      performanceBody = summary.performanceMessage;
+      performanceBg = const Color(0xFFF59E0B).withOpacity(0.1);
+      performanceIconColor = const Color(0xFFF59E0B);
+    } else {
+      performanceTitle = 'Keep practicing!';
+      performanceBody = summary.performanceMessage;
+      performanceBg = primary.withOpacity(0.08);
+      performanceIconColor = primary;
+    }
+
+    return Scaffold(
+      backgroundColor: bg,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const SizedBox(height: 16),
+
+              // ── Celebration icon with confetti sparkles ────────────────
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  Positioned(
+                    top: 4,
+                    left: 36,
+                    child: Icon(Icons.auto_awesome,
+                        size: 14, color: const Color(0xFFFBBF24)),
+                  ),
+                  Positioned(
+                    top: 12,
+                    right: 24,
+                    child: Icon(Icons.auto_awesome,
+                        size: 10, color: const Color(0xFF22C55E)),
+                  ),
+                  Positioned(
+                    bottom: 4,
+                    right: 18,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                          color: Color(0xFFF472B6), shape: BoxShape.circle),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 10,
+                    left: 30,
+                    child: Icon(Icons.auto_awesome,
+                        size: 8, color: const Color(0xFF818CF8)),
+                  ),
+                  Container(
+                    width: 96,
+                    height: 96,
+                    decoration: BoxDecoration(
+                      color: primary.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: primary.withOpacity(0.2),
+                          blurRadius: 24,
+                          spreadRadius: 4,
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      summary.status == 'completed'
+                          ? Icons.check_rounded
+                          : Icons.bookmark_added_rounded,
+                      size: 48,
+                      color: primary,
+                    ),
+                  ),
+                ],
               ),
-        ),
-        const SizedBox(height: 24),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            _SummaryTile(
-              label: isFlashcard ? 'Cards reviewed' : 'Answered',
-              value: '${summary.completedCount}',
-            ),
-            if (!isFlashcard) ...[
-              _SummaryTile(label: 'Correct', value: '${summary.correctCount}'),
-              _SummaryTile(label: 'Wrong', value: '${summary.wrongCount}'),
-              _SummaryTile(
-                label: 'Accuracy',
-                value: '${summary.accuracyPercentage?.toStringAsFixed(1) ?? '0.0'}%',
+              const SizedBox(height: 20),
+
+              // ── Title ──────────────────────────────────────────────────
+              Text(
+                summary.status == 'completed'
+                    ? 'Session Complete!'
+                    : 'Progress Saved',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: titleColor,
+                  letterSpacing: -0.5,
+                ),
               ),
-            ] else ...[
-              _SummaryTile(label: 'Remembered', value: '${summary.rememberedCount}'),
-              _SummaryTile(label: 'Needs review', value: '${summary.needsReviewCount}'),
-            ],
-            _SummaryTile(label: 'XP gained', value: '${_signed(summary.xpGained)} XP'),
-          ],
-        ),
-        const SizedBox(height: 18),
-        Card(
-          elevation: 0,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                _BreakdownRow(label: 'Learning actions', value: summary.actionXp),
-                _BreakdownRow(label: 'Session completion', value: summary.completionBonus),
-                _BreakdownRow(label: 'Achievements', value: summary.achievementXp),
-              ],
-            ),
-          ),
-        ),
-        if (summary.achievementsUnlocked.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          ...summary.achievementsUnlocked.map(
-            (achievement) => ListTile(
-              leading: const Icon(Icons.emoji_events_rounded),
-              title: Text(achievement.name),
-              subtitle: Text(achievement.description),
-              trailing: Text('+${achievement.xpReward} XP'),
-            ),
-          ),
-        ],
-        const SizedBox(height: 18),
-        Card(
-          elevation: 0,
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Mastery', style: TextStyle(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 9),
-                Text(
-                  '${(summary.masteryBefore * 100).round()}%  →  ${(summary.masteryAfter * 100).round()}%',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.w800,
+              const SizedBox(height: 6),
+              Text(
+                summary.status == 'completed'
+                    ? "Great job! You're making progress."
+                    : 'Your progress has been saved.',
+                style: TextStyle(fontSize: 14, color: subtitleColor),
+              ),
+              const SizedBox(height: 24),
+
+              // ── Circular accuracy gauge (questions mode only) ──────────
+              if (!isFlashcard) ...[
+                SizedBox(
+                  width: 110,
+                  height: 110,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CircularProgressIndicator(
+                        value: accuracyPct / 100,
+                        strokeWidth: 10,
+                        backgroundColor: isDark
+                            ? const Color(0xFF2D3748)
+                            : const Color(0xFFE2E8F0),
+                        valueColor: AlwaysStoppedAnimation<Color>(primary),
+                        strokeCap: StrokeCap.round,
                       ),
+                      Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '$accuracyInt%',
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                                color: primary,
+                              ),
+                            ),
+                            Text(
+                              'Accuracy',
+                              style:
+                                  TextStyle(fontSize: 11, color: subtitleColor),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'Adaptive level: ${_capitalize(summary.level)}  •  App level ${summary.gamificationLevel}',
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                ),
+                const SizedBox(height: 24),
               ],
-            ),
+
+              // ── Stats grid ────────────────────────────────────────────
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isDark
+                        ? const Color(0xFF2D3748)
+                        : const Color(0xFFE2E8F0),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    if (!isFlashcard) ...[
+                      _FinishStatChip(
+                        label: 'Answered',
+                        value: '${summary.completedCount}',
+                        icon: Icons.help_outline_rounded,
+                        iconColor: primary,
+                      ),
+                      _FinishDivider(isDark: isDark),
+                      _FinishStatChip(
+                        label: 'Correct',
+                        value: '${summary.correctCount}',
+                        icon: Icons.check_circle_outline_rounded,
+                        iconColor: const Color(0xFF22C55E),
+                      ),
+                      _FinishDivider(isDark: isDark),
+                      _FinishStatChip(
+                        label: 'Wrong',
+                        value: '${summary.wrongCount}',
+                        icon: Icons.cancel_outlined,
+                        iconColor: const Color(0xFFEF4444),
+                      ),
+                      _FinishDivider(isDark: isDark),
+                      _FinishStatChip(
+                        label: 'Accuracy',
+                        value: '$accuracyInt%',
+                        icon: Icons.track_changes_rounded,
+                        iconColor: const Color(0xFF8B5CF6),
+                      ),
+                    ] else ...[
+                      _FinishStatChip(
+                        label: 'Reviewed',
+                        value: '${summary.completedCount}',
+                        icon: Icons.style_outlined,
+                        iconColor: primary,
+                      ),
+                      _FinishDivider(isDark: isDark),
+                      _FinishStatChip(
+                        label: 'Remembered',
+                        value: '${summary.rememberedCount}',
+                        icon: Icons.check_circle_outline_rounded,
+                        iconColor: const Color(0xFF22C55E),
+                      ),
+                      _FinishDivider(isDark: isDark),
+                      _FinishStatChip(
+                        label: 'Review',
+                        value: '${summary.needsReviewCount}',
+                        icon: Icons.refresh_rounded,
+                        iconColor: const Color(0xFFF59E0B),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // ── XP & Mastery reward card ──────────────────────────────
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isDark
+                        ? const Color(0xFF2D3748)
+                        : const Color(0xFFE2E8F0),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        Column(
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color:
+                                    const Color(0xFFF59E0B).withOpacity(0.12),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.bolt_rounded,
+                                  color: Color(0xFFF59E0B), size: 24),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${_signed(summary.xpGained)} XP',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              'XP Earned',
+                              style:
+                                  TextStyle(fontSize: 12, color: subtitleColor),
+                            ),
+                          ],
+                        ),
+                        Container(
+                            width: 1,
+                            height: 60,
+                            color: isDark
+                                ? const Color(0xFF2D3748)
+                                : const Color(0xFFE2E8F0)),
+                        Column(
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color:
+                                    const Color(0xFF8B5CF6).withOpacity(0.12),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.trending_up_rounded,
+                                  color: Color(0xFF8B5CF6), size: 24),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${masteryGain >= 0 ? '+' : ''}$masteryGain%',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              'Mastery Gained',
+                              style:
+                                  TextStyle(fontSize: 12, color: subtitleColor),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Divider(
+                        color: isDark
+                            ? const Color(0xFF2D3748)
+                            : const Color(0xFFE2E8F0)),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.school_rounded, color: primary, size: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Level ${summary.gamificationLevel}  •  ${_capitalize(summary.level)}',
+                            style: TextStyle(
+                              color: primary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // ── Achievements ──────────────────────────────────────────
+              if (summary.achievementsUnlocked.isNotEmpty) ...[
+                ...summary.achievementsUnlocked.map(
+                  (achievement) => Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                          color: const Color(0xFFF59E0B).withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.emoji_events_rounded,
+                            color: Color(0xFFF59E0B), size: 28),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(achievement.name,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13)),
+                              Text(achievement.description,
+                                  style: TextStyle(
+                                      fontSize: 12, color: subtitleColor)),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF59E0B).withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '+${achievement.xpReward} XP',
+                            style: const TextStyle(
+                                color: Color(0xFFF59E0B),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+              ],
+
+              // ── Performance message ───────────────────────────────────
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: performanceBg,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      accuracyPct >= 80
+                          ? '🌟'
+                          : accuracyPct >= 50
+                              ? '⭐'
+                              : '💪',
+                      style: const TextStyle(fontSize: 28),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            performanceTitle,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                              color: performanceIconColor,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            performanceBody,
+                            style:
+                                TextStyle(fontSize: 12, color: subtitleColor),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // ── Primary CTA ───────────────────────────────────────────
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: FilledButton.icon(
+                  onPressed: onDone,
+                  icon: const Icon(Icons.rocket_launch_rounded),
+                  label: const Text(
+                    'Continue Learning',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  style: FilledButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // ── Secondary CTA ─────────────────────────────────────────
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: OutlinedButton.icon(
+                  onPressed: onAnother,
+                  icon: Icon(Icons.add_rounded, color: primary),
+                  label: Text(
+                    'New Session',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: primary,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primaryContainer,
-            borderRadius: BorderRadius.circular(18),
+      ),
+    );
+  }
+}
+
+class _FinishStatChip extends StatelessWidget {
+  const _FinishStatChip({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.iconColor,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: iconColor, size: 24),
+        const SizedBox(height: 6),
+        Text(value,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
-          child: Text(summary.performanceMessage, style: const TextStyle(height: 1.4)),
         ),
-        const SizedBox(height: 24),
-        FilledButton(
-          onPressed: onDone,
-          style: FilledButton.styleFrom(minimumSize: const Size(double.infinity, 54)),
-          child: const Text('Done'),
-        ),
-        const SizedBox(height: 8),
-        TextButton(onPressed: onAnother, child: const Text('Prepare another session')),
       ],
     );
   }
 }
 
-class _BreakdownRow extends StatelessWidget {
-  const _BreakdownRow({required this.label, required this.value});
-
-  final String label;
-  final int value;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(
-          children: [
-            Expanded(child: Text(label)),
-            Text('${_signed(value)} XP', style: const TextStyle(fontWeight: FontWeight.w700)),
-          ],
-        ),
-      );
-}
-
-class _SummaryTile extends StatelessWidget {
-  const _SummaryTile({required this.label, required this.value});
-
-  final String label;
-  final String value;
+class _FinishDivider extends StatelessWidget {
+  const _FinishDivider({required this.isDark});
+  final bool isDark;
 
   @override
   Widget build(BuildContext context) => Container(
-        width: (MediaQuery.sizeOf(context).width - 58) / 2,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-            const SizedBox(height: 5),
-            Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-          ],
-        ),
+        width: 1,
+        height: 40,
+        color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0),
       );
 }
 
@@ -1373,15 +1877,23 @@ class _ErrorView extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.cloud_off_rounded, size: 60, color: Theme.of(context).colorScheme.error),
+              Icon(Icons.cloud_off_rounded,
+                  size: 60, color: Theme.of(context).colorScheme.error),
               const SizedBox(height: 18),
               Text(
-                saving ? 'Your result is not saved yet' : 'Session could not be prepared',
+                saving
+                    ? 'Your result is not saved yet'
+                    : 'Session could not be prepared',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 10),
-              Text(message, textAlign: TextAlign.center, style: const TextStyle(height: 1.45)),
+              Text(message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(height: 1.45)),
               const SizedBox(height: 22),
               FilledButton.icon(
                 onPressed: onRetry,

@@ -104,6 +104,26 @@ class UploadController extends _$UploadController {
     }
   }
 
+  /// Initiates website URL scraping and registers it as a document.
+  Future<Document?> scrapeAndUpload({
+    required String workspaceId,
+    required String url,
+  }) async {
+    state = const AsyncLoading();
+    try {
+      final doc = await ref.read(documentsRepositoryProvider).scrape(
+            workspaceId: workspaceId,
+            url: url,
+          );
+      ref.read(workspacesListProvider.notifier).refresh();
+      state = AsyncData<Document?>(doc);
+      return doc;
+    } catch (e, st) {
+      state = AsyncError<Document?>(e, st);
+      return null;
+    }
+  }
+
   /// Hook for tests: replace the file_picker call with a synthetic
   /// selection. Production path goes through `_filePickerAdapter`.
   @visibleForTesting

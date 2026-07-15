@@ -110,17 +110,28 @@ class DocumentsListScreen extends ConsumerWidget {
     );
     if (source == null) return;
 
-    final doc = switch (source) {
-      _UploadSource.camera => await ref
+    final Document? doc;
+    if (source == _UploadSource.website) {
+      if (!context.mounted) return;
+      final url = await _showUrlInputDialog(context);
+      if (url == null || url.isEmpty) return;
+      doc = await ref
           .read(uploadControllerProvider.notifier)
-          .pickFromCamera(workspaceId: workspaceId),
-      _UploadSource.gallery => await ref
-          .read(uploadControllerProvider.notifier)
-          .pickImageFromGallery(workspaceId: workspaceId),
-      _UploadSource.file => await ref
-          .read(uploadControllerProvider.notifier)
-          .pickAndUpload(workspaceId: workspaceId),
-    };
+          .scrapeAndUpload(workspaceId: workspaceId, url: url);
+    } else {
+      doc = await switch (source) {
+        _UploadSource.camera => ref
+            .read(uploadControllerProvider.notifier)
+            .pickFromCamera(workspaceId: workspaceId),
+        _UploadSource.gallery => ref
+            .read(uploadControllerProvider.notifier)
+            .pickImageFromGallery(workspaceId: workspaceId),
+        _UploadSource.file => ref
+            .read(uploadControllerProvider.notifier)
+            .pickAndUpload(workspaceId: workspaceId),
+        _UploadSource.website => throw StateError('Unreachable'),
+      };
+    }
 
     if (doc != null) {
       // List view should reflect the new doc; provider invalidate
@@ -130,6 +141,40 @@ class DocumentsListScreen extends ConsumerWidget {
         context.push(_pollingRouteFor(workspaceId, doc.id));
       }
     }
+  }
+
+  Future<String?> _showUrlInputDialog(BuildContext context) async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Website Link'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'https://example.com/article',
+            labelText: 'Website URL',
+          ),
+          keyboardType: TextInputType.url,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final val = controller.text.trim();
+              if (val.isNotEmpty) {
+                Navigator.of(context).pop(val);
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showUploadError(BuildContext context, Object error) {
@@ -298,7 +343,7 @@ class _DocTypeIcon extends StatelessWidget {
 }
 
 
-enum _UploadSource { camera, gallery, file }
+enum _UploadSource { camera, gallery, file, website }
 
 class _UploadSourceSheet extends StatelessWidget {
   const _UploadSourceSheet();
@@ -332,6 +377,11 @@ class _UploadSourceSheet extends StatelessWidget {
             leading: const Icon(Icons.folder_rounded),
             title: const Text('Choose File'),
             onTap: () => Navigator.of(context).pop(_UploadSource.file),
+          ),
+          ListTile(
+            leading: const Icon(Icons.language_rounded),
+            title: const Text('Add Website Link'),
+            onTap: () => Navigator.of(context).pop(_UploadSource.website),
           ),
         ],
       ),

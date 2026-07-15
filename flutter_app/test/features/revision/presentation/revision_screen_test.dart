@@ -106,6 +106,11 @@ void main() {
     expect(find.text('Which organelle is the site of photosynthesis?'),
         findsOneWidget);
     expect(find.text('Chloroplast'), findsOneWidget);
+    expect(find.text('15:00'), findsOneWidget);
+    expect(
+      tester.getCenter(find.text('15:00')).dx,
+      greaterThan(tester.getCenter(find.text('0 XP')).dx),
+    );
   });
 
   testWidgets('the loading state shows the item count', (tester) async {
@@ -147,7 +152,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Correct!', skipOffstage: false), findsOneWidget);
-    expect(find.textContaining('chlorophyll', skipOffstage: false), findsOneWidget);
+    expect(find.textContaining('chlorophyll', skipOffstage: false),
+        findsOneWidget);
     expect(find.text('+15 XP', skipOffstage: false), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Continue'), findsOneWidget);
   });
@@ -181,7 +187,8 @@ void main() {
     expect(find.text('Item 2 of 2'), findsOneWidget);
   });
 
-  testWidgets('tapping the flashcard reveals the back and rating buttons',
+  testWidgets(
+      'tapping the flashcard reveals the back and first-card swipe hint',
       (tester) async {
     when(() => qRepo.next(
           workspaceId: any(named: 'workspaceId'),
@@ -209,9 +216,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('The mitochondrion.'), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, 'Easy'), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, 'Medium'), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, 'Hard'), findsOneWidget);
+    expect(find.textContaining('Swipe left'), findsOneWidget);
+    expect(find.textContaining('Swipe right'), findsOneWidget);
   });
 
   testWidgets(
@@ -249,9 +255,7 @@ void main() {
     // Item 2: flashcard
     await tester.tap(find.text('Powerhouse of the cell?'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Easy'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+    await tester.drag(find.text('The mitochondrion.'), const Offset(-300, 0));
     await tester.pumpAndSettle();
 
     expect(find.text('Session complete!'), findsOneWidget);
@@ -295,9 +299,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Powerhouse of the cell?'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Easy'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+    await tester.drag(find.text('The mitochondrion.'), const Offset(-300, 0));
     await tester.pumpAndSettle();
 
     expect(find.text('Session complete!'), findsOneWidget);
@@ -321,7 +323,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text("You're all caught up!"), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Start Study Session'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Start Study Session'),
+        findsOneWidget);
   });
 
   testWidgets('generator-busy state offers a retry that re-fetches',

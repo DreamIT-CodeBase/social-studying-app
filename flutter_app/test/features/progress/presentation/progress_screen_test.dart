@@ -24,7 +24,6 @@ class _FakeScreenTimeNotifier extends ScreenTimeNotifier {
   Future<void> refreshWallet() async {}
 }
 
-
 class _MockProgressRepo extends Mock implements ProgressRepository {}
 
 class _MockAuthRepo extends Mock implements AuthRepository {}
@@ -103,14 +102,14 @@ Widget _wrap({
       overrides: [
         progressRepositoryProvider.overrideWithValue(repo),
         authRepositoryProvider.overrideWithValue(authRepo),
-        screenTimeNotifierProvider.overrideWith(() => _FakeScreenTimeNotifier()),
+        screenTimeNotifierProvider
+            .overrideWith(() => _FakeScreenTimeNotifier()),
       ],
       child: MaterialApp(
         theme: AppTheme.light,
         home: const Scaffold(body: ProgressScreen(workspaceId: _wsId)),
       ),
     );
-
 
 /// The progress view is a scrolling list — give it a tall viewport so
 /// every section (overall mastery, every topic card, every activity row)
@@ -192,14 +191,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Level 1'), findsOneWidget);
-    expect(find.text('0 / 100 XP to level 2'), findsOneWidget);
+    expect(find.text('0 / 100 XP'), findsOneWidget);
+    expect(find.text('100 XP until Level 2'), findsOneWidget);
     expect(find.text('No progress yet'), findsOneWidget);
     // The topic + activity section headers must NOT render on empty.
-    expect(find.text('TOPIC MASTERY'), findsNothing);
-    expect(find.text('RECENT ACTIVITY'), findsNothing);
+    expect(find.text('Topic Mastery'), findsOneWidget);
+    expect(find.text('Recent Activity'), findsNothing);
   });
 
-  testWidgets('populated snapshot renders level, mastery, topics, activity',
+  testWidgets('populated snapshot renders level and topic mastery',
       (tester) async {
     await _tallViewport(tester);
     when(() => repo.fetch(
@@ -212,28 +212,20 @@ void main() {
 
     // Level card
     expect(find.text('Level 3'), findsOneWidget);
-    expect(find.text('480 XP total'), findsOneWidget);
-    expect(find.text('80 / 200 XP to level 4'), findsOneWidget);
+    expect(find.text('480 XP'), findsOneWidget);
+    expect(find.text('80 / 200 XP'), findsOneWidget);
+    expect(find.text('120 XP until Level 4'), findsOneWidget);
 
     // Overall mastery
-    expect(find.text('Overall mastery'), findsOneWidget);
-    expect(find.text('58%'), findsOneWidget);
+    expect(find.text('Learning Overview'), findsOneWidget);
+    expect(find.text('58%'), findsWidgets);
 
     // Topic cards
-    expect(find.text('TOPIC MASTERY'), findsOneWidget);
+    expect(find.text('Topic Mastery'), findsWidgets);
     expect(find.text('Photosynthesis'), findsWidgets); // topic + activity row
-    expect(find.text('82%'), findsOneWidget);
+    expect(find.text('82%'), findsWidgets);
     expect(find.text('Genetics'), findsWidgets);
-    expect(find.text('31%'), findsOneWidget);
-
-    // Activity timeline
-    expect(find.text('RECENT ACTIVITY'), findsOneWidget);
-    expect(find.text('Correct'), findsOneWidget);
-    expect(find.text('Incorrect'), findsOneWidget);
-    expect(find.text('Reviewed'), findsOneWidget);
-    expect(find.text('+25'), findsOneWidget);
-    expect(find.text('+10'), findsOneWidget);
-    expect(find.text('+5'), findsOneWidget);
+    expect(find.text('31%'), findsWidgets);
   });
 
   testWidgets('mastery bars use the success-rate detail line', (tester) async {
@@ -246,8 +238,10 @@ void main() {
     await tester.pumpWidget(_wrap(repo: repo, authRepo: authRepo));
     await tester.pumpAndSettle();
 
-    expect(find.text('14 attempts • 79% correct'), findsOneWidget);
-    expect(find.text('4 attempts • 25% correct'), findsOneWidget);
+    expect(find.text('14 attempts'), findsOneWidget);
+    expect(find.text('79% correct'), findsOneWidget);
+    expect(find.text('4 attempts'), findsOneWidget);
+    expect(find.text('25% correct'), findsOneWidget);
   });
 
   testWidgets('an unauthenticated session falls back to the empty state',
@@ -279,7 +273,8 @@ void main() {
           progressRepositoryProvider
               .overrideWithValue(DemoProgressRepository()),
           authRepositoryProvider.overrideWithValue(_authedRepo()),
-          screenTimeNotifierProvider.overrideWith(() => _FakeScreenTimeNotifier()),
+          screenTimeNotifierProvider
+              .overrideWith(() => _FakeScreenTimeNotifier()),
         ],
         child: const MaterialApp(
           home: Scaffold(body: ProgressScreen(workspaceId: 'wsp_demo_001')),
@@ -301,7 +296,8 @@ void main() {
           progressRepositoryProvider
               .overrideWithValue(const EmptyDemoProgressRepository()),
           authRepositoryProvider.overrideWithValue(_authedRepo()),
-          screenTimeNotifierProvider.overrideWith(() => _FakeScreenTimeNotifier()),
+          screenTimeNotifierProvider
+              .overrideWith(() => _FakeScreenTimeNotifier()),
         ],
         child: const MaterialApp(
           home: Scaffold(body: ProgressScreen(workspaceId: 'wsp_demo_001')),

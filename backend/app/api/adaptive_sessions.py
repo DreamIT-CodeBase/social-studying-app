@@ -27,11 +27,13 @@ from app.core.exceptions import (
     ServiceUnavailableError,
 )
 from app.models.adaptive_session import (
+    AdaptiveAnswerEvaluation,
     AdaptiveLevel,
     AdaptiveSessionMode,
     AdaptiveSessionPlan,
     AdaptiveSessionSummary,
     CompleteAdaptiveSessionRequest,
+    EvaluateAdaptiveAnswerRequest,
     PrepareAdaptiveSessionRequest,
     PreparedFlashcard,
     PreparedOption,
@@ -523,6 +525,55 @@ def _question_from_snapshot(
         explanation=snapshot.explanation,
         grading_hints=snapshot.grading_hints,
         status=QuestionStatus.approved,
+    )
+
+
+@router.post(
+    "/{session_id}/evaluate",
+    response_model=AdaptiveAnswerEvaluation,
+)
+async def evaluate_adaptive_answer(
+    workspace_id: str,
+    session_id: str,
+    request: EvaluateAdaptiveAnswerRequest,
+    current_user: User = Depends(get_current_user),
+) -> AdaptiveAnswerEvaluation:
+    """Semantically grade one prepared answer without recording progress.
+
+    The completion endpoint remains authoritative and re-evaluates submitted
+    attempts before applying XP and mastery changes.
+    """
+    _assert_workspace_access(current_user, workspace_id)
+    raw = await get_collection(current_user.tenant_id, ADAPTIVE_SESSIONS).find_one(
+        {
+            "_id": session_id,
+            "workspace_id": workspace_id,
+            "student_id": current_user.id,
+            "status": "prepared",
+        }
+    )
+    if raw is None:
+        raise NotFoundError("Adaptive session", session_id)
+
+    plan = AdaptiveSessionPlan.model_validate(raw["plan"])
+    snapshot = next(
+        (question for question in plan.questions if question.id == request.question_id),
+        None,
+    )
+    if snapshot is None:
+        raise ConflictError("The submitted question does not belong to this session.")
+
+    question = _question_from_snapshot(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        snapshot=snapshot,
+    )
+    result = await answer_evaluation.evaluate(question, request.answer)
+    return AdaptiveAnswerEvaluation(
+        is_correct=result.is_correct,
+        canonical_answer=result.canonical_answer,
+        rubric_score=result.rubric_score,
+        matched_hints=result.matched_hints,
     )
 
 

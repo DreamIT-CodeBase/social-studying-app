@@ -82,6 +82,18 @@ class SessionQuestionAttempt(BaseModel):
     time_spent_seconds: int = Field(default=0, ge=0, le=3600)
 
 
+class EvaluateAdaptiveAnswerRequest(BaseModel):
+    question_id: str
+    answer: str = Field(min_length=1, max_length=4000)
+
+
+class AdaptiveAnswerEvaluation(BaseModel):
+    is_correct: bool
+    canonical_answer: str
+    rubric_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    matched_hints: list[str] = Field(default_factory=list)
+
+
 class SessionFlashcardAttempt(BaseModel):
     flashcard_id: str
     rating: FlashcardRating

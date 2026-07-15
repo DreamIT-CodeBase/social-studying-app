@@ -43,17 +43,19 @@ void main() {
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump();
 
-      expect(find.text('Social Study'), findsOneWidget);
+      expect(find.text('Welcome to Social Studying'), findsOneWidget);
       expect(
-        find.textContaining('AI-powered adaptive learning'),
+        find.text('Sign in to continue learning.'),
         findsOneWidget,
       );
     });
 
-    testWidgets('shows loading indicator while Microsoft sign-in is in progress',
+    testWidgets(
+        'shows loading indicator while Microsoft sign-in is in progress',
         (tester) async {
       final completer = Completer<User>();
-      when(() => mockRepo.signInWithMicrosoft()).thenAnswer((_) => completer.future);
+      when(() => mockRepo.signInWithMicrosoft())
+          .thenAnswer((_) => completer.future);
 
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump();
@@ -71,7 +73,8 @@ void main() {
     testWidgets('shows loading indicator while Google sign-in is in progress',
         (tester) async {
       final completer = Completer<User>();
-      when(() => mockRepo.signInWithGoogle()).thenAnswer((_) => completer.future);
+      when(() => mockRepo.signInWithGoogle())
+          .thenAnswer((_) => completer.future);
 
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump();
@@ -86,8 +89,10 @@ void main() {
       await tester.pumpAndSettle();
     });
 
-    testWidgets('shows error view when Microsoft sign-in fails', (tester) async {
-      when(() => mockRepo.signInWithMicrosoft()).thenThrow(Exception('Auth failed'));
+    testWidgets('shows error view when Microsoft sign-in fails',
+        (tester) async {
+      when(() => mockRepo.signInWithMicrosoft())
+          .thenThrow(Exception('Auth failed'));
 
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump();
@@ -100,7 +105,8 @@ void main() {
     });
 
     testWidgets('shows error view when Google sign-in fails', (tester) async {
-      when(() => mockRepo.signInWithGoogle()).thenThrow(Exception('Auth failed'));
+      when(() => mockRepo.signInWithGoogle())
+          .thenThrow(Exception('Auth failed'));
 
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump();

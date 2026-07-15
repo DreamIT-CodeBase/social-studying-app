@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:social_study_app/features/screen_time/models/screen_time_wallet.dart';
 import 'package:social_study_app/features/screen_time/services/screen_time_service.dart';
+import 'package:social_study_app/shared/services/session_persistence_service.dart';
 
 void main() {
   group('ScreenTimeWallet Model', () {
@@ -85,6 +86,9 @@ void main() {
       expect(enableBlocking, true);
       expect(blockedApps, contains('com.instagram.android'));
       expect(blockedApps, contains('com.google.android.youtube'));
+      expect(blockedApps, contains('com.instagram.barcelona'));
+      expect(blockedApps, contains('com.reddit.frontpage'));
+      expect(blockedApps, contains('com.pinterest'));
     });
 
     test('updates configurations correctly', () async {
@@ -138,15 +142,67 @@ void main() {
       expect(loadedDefault.availableMinutes, 0);
     });
 
-    test('setCurrentUserId saves active user ID', () async {
+    test('account changes hold enforcement until the new wallet is ready',
+        () async {
       final service = ScreenTimeService();
       await service.setCurrentUserId('user_123');
+      await service.setEnforcementReady(true);
 
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('current_user_id'), 'user_123');
+      expect(await service.isEnforcementReady(), isTrue);
 
+      await service.setCurrentUserId('user_456');
+      expect(prefs.getString('current_user_id'), 'user_456');
+      expect(await service.isEnforcementReady(), isFalse);
+
+      await service.setEnforcementReady(true);
       await service.setCurrentUserId(null);
       expect(prefs.containsKey('current_user_id'), isFalse);
+      expect(await service.isEnforcementReady(), isFalse);
+    });
+
+    test('permission completion is stored separately for each student',
+        () async {
+      await SessionPersistenceService.init();
+      final persistence = SessionPersistenceService.instance;
+
+      expect(persistence.isPermissionSetupCompleteSync('student_a'), isFalse);
+      await persistence.setPermissionSetupComplete(
+        'student_a',
+        complete: true,
+      );
+
+      expect(persistence.isPermissionSetupCompleteSync('student_a'), isTrue);
+      expect(persistence.isPermissionSetupCompleteSync('student_b'), isFalse);
+    });
+  });
+
+  group('DevicePermissionStatus', () {
+    test('requires accessibility and usage access for blocking', () {
+      const status = DevicePermissionStatus(
+        usageAccess: true,
+        overlay: false,
+        notifications: false,
+        accessibility: true,
+        batteryExempt: false,
+      );
+
+      expect(status.requiredPermissionsGranted, isTrue);
+      expect(status.allRecommendedPermissionsGranted, isFalse);
+    });
+
+    test('all recommended permissions include the overlay fallback', () {
+      const status = DevicePermissionStatus(
+        usageAccess: true,
+        overlay: true,
+        notifications: true,
+        accessibility: true,
+        batteryExempt: true,
+      );
+
+      expect(status.requiredPermissionsGranted, isTrue);
+      expect(status.allRecommendedPermissionsGranted, isTrue);
     });
   });
 }

@@ -1,8 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/core/config/environment.dart';
+import 'package:social_study_app/shared/services/auth_session_service.dart';
 
 part 'dio_client.g.dart';
 
@@ -33,7 +33,7 @@ class DioClient {
   Dio get dio => _dio;
 
   void _setupInterceptors() {
-    _dio.interceptors.add(_AuthInterceptor());
+    _dio.interceptors.add(_AuthInterceptor(_dio));
     _dio.interceptors.add(_ErrorInterceptor());
 
     if (kDebugMode) {
@@ -52,16 +52,18 @@ class DioClient {
   }
 }
 
-class _AuthInterceptor extends Interceptor {
-  static const _storage = FlutterSecureStorage();
-  static const _tokenKey = 'auth_token';
+class _AuthInterceptor extends QueuedInterceptor {
+  _AuthInterceptor(this._dio);
+
+  static const _retriedKey = 'auth_refresh_retried';
+  final Dio _dio;
 
   @override
   Future<void> onRequest(
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
-    final token = await _storage.read(key: _tokenKey);
+    final token = await AuthSessionService.instance.getValidToken();
 
     debugPrint('REQUEST: ${options.method} ${options.uri}');
 
@@ -73,6 +75,40 @@ class _AuthInterceptor extends Interceptor {
     }
 
     handler.next(options);
+  }
+
+  @override
+  Future<void> onError(
+    DioException err,
+    ErrorInterceptorHandler handler,
+  ) async {
+    final options = err.requestOptions;
+    if (err.response?.statusCode != 401 ||
+        options.extra[_retriedKey] == true ||
+        options.headers['Authorization'] == null) {
+      handler.next(err);
+      return;
+    }
+
+    final previousHeader = options.headers['Authorization'];
+    final refreshedToken = await AuthSessionService.instance.getValidToken(
+      forceRefresh: true,
+    );
+    final refreshedHeader =
+        refreshedToken == null ? null : 'Bearer $refreshedToken';
+
+    if (refreshedHeader == null || refreshedHeader == previousHeader) {
+      handler.next(err);
+      return;
+    }
+
+    try {
+      options.extra[_retriedKey] = true;
+      options.headers['Authorization'] = refreshedHeader;
+      handler.resolve(await _dio.fetch<dynamic>(options));
+    } on DioException catch (retryError) {
+      handler.next(retryError);
+    }
   }
 }
 
@@ -88,7 +124,8 @@ class _ErrorInterceptor extends Interceptor {
     debugPrint('Message: ${err.message}');
 
     final message = switch (err.response?.statusCode) {
-      401 => 'Session expired. Please sign in again.',
+      401 =>
+        'Your secure session could not be refreshed. Please reconnect and try again.',
       403 => 'You do not have permission to perform this action.',
       404 => 'The requested resource was not found.',
       422 => 'Invalid request data.',

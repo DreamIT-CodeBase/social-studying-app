@@ -59,13 +59,10 @@ void main() {
         .thenAnswer((_) => completer.future);
 
     await tester.pumpWidget(_wrap(repo));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Start Review Session'));
     await tester.pump();
     await tester.pump();
 
-    expect(find.text('Finding a card…'), findsOneWidget);
+    expect(find.text('Loading next card…'), findsOneWidget);
 
     completer.complete(_card());
     await tester.pumpAndSettle();
@@ -78,9 +75,6 @@ void main() {
     await tester.pumpWidget(_wrap(repo));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Start Review Session'));
-    await tester.pumpAndSettle();
-
     expect(
       find.text('What pigment captures light energy during photosynthesis?'),
       findsOneWidget,
@@ -89,15 +83,11 @@ void main() {
     expect(find.text('Chlorophyll.'), findsNothing);
   });
 
-  testWidgets('tapping the card flips it and reveals the back',
-      (tester) async {
+  testWidgets('tapping the card flips it and reveals the back', (tester) async {
     when(() => repo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
 
     await tester.pumpWidget(_wrap(repo));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Start Review Session'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text(
@@ -106,8 +96,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Chlorophyll.'), findsOneWidget);
-    expect(find.text('Swipe Left\nRemembered'), findsOneWidget);
-    expect(find.text('Swipe Right\nForgot'), findsOneWidget);
+    expect(find.text('Swipe Left'), findsOneWidget);
+    expect(find.text('Remembered'), findsOneWidget);
+    expect(find.text('Swipe Right'), findsOneWidget);
+    expect(find.text('Forgot'), findsOneWidget);
   });
 
   testWidgets('rating a card records the rating and offers the next card',
@@ -123,16 +115,14 @@ void main() {
     await tester.pumpWidget(_wrap(repo));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Start Review Session'));
-    await tester.pumpAndSettle();
-
     await tester.tap(find.text(
       'What pigment captures light energy during photosynthesis?',
     ));
     await tester.pumpAndSettle();
 
     // Drag the card to the left to swipe Easy
-    final gesture = await tester.startGesture(tester.getCenter(find.byType(GestureDetector).first));
+    final gesture = await tester
+        .startGesture(tester.getCenter(find.byType(GestureDetector).first));
     await gesture.moveBy(const Offset(-300, 0));
     await gesture.up();
     await tester.pumpAndSettle();
@@ -164,9 +154,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Start Review Session'));
-    await tester.pumpAndSettle();
-
     expect(
       find.text('What pigment captures light energy during photosynthesis?'),
       findsOneWidget,
@@ -176,9 +163,10 @@ void main() {
       'What pigment captures light energy during photosynthesis?',
     ));
     await tester.pumpAndSettle();
-    
+
     // Swipe the card left to advance
-    final gesture = await tester.startGesture(tester.getCenter(find.byType(GestureDetector).first));
+    final gesture = await tester
+        .startGesture(tester.getCenter(find.byType(GestureDetector).first));
     await gesture.moveBy(const Offset(-300, 0));
     await gesture.up();
     await tester.pumpAndSettle();

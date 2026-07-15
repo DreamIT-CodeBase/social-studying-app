@@ -25,11 +25,13 @@ from pydantic import BaseModel, Field
 from app.core.auth import get_current_user
 from app.core.database import (
     GAMIFICATION,
+    PERMISSION_STATUS,
     SCREEN_TIME_SETTINGS,
     SCREEN_TIME_WALLETS,
+    USERS,
     get_collection,
 )
-from app.core.exceptions import ForbiddenError, NotFoundError
+from app.core.exceptions import ForbiddenError
 from app.models.base import utc_now
 from app.models.screen_time import ScreenTimeSettings, ScreenTimeWallet
 from app.models.user import User, UserRole
@@ -45,6 +47,7 @@ router = APIRouter(
 
 _DEFAULT_BLOCKED_PACKAGES: list[str] = [
     "com.instagram.android",
+    "com.instagram.barcelona",
     "com.zhiliaoapp.musically",
     "com.google.android.youtube",
     "com.facebook.katana",
@@ -94,6 +97,24 @@ class ConsumeMinutesRequest(BaseModel):
     """Body for POST /wallet/consume."""
 
     minutes: int = Field(..., ge=1, description="Number of minutes consumed.")
+
+
+class StudentDeviceStatusView(BaseModel):
+    """Current blocking-permission health for one workspace student."""
+
+    student_id: str
+    display_name: str
+    usage_access_permission: bool = False
+    overlay_permission: bool = False
+    notification_access: bool = False
+    accessibility_service: bool = False
+    battery_optimization_exempt: bool = False
+    last_reported_at: str | None = None
+
+    @property
+    def blocking_ready(self) -> bool:
+        """Whether both permissions required by the student blocker are active."""
+        return self.usage_access_permission and self.accessibility_service
 
 
 # ── GET /settings ────────────────────────────────────────────────────────────
@@ -161,6 +182,62 @@ async def update_settings(
         current_user.id,
     )
     return _settings_to_view(settings)
+
+
+@router.get("/device-statuses", response_model=list[StudentDeviceStatusView])
+async def get_device_statuses(
+    workspace_id: str,
+    current_user: User = Depends(get_current_user),
+) -> list[StudentDeviceStatusView]:
+    """Return blocking-permission health for students in this workspace."""
+    _assert_admin(current_user, workspace_id)
+
+    users = get_collection(current_user.tenant_id, USERS)
+    student_cursor = users.find(
+        {
+            "role": UserRole.student,
+            "workspace_memberships": {"$elemMatch": {"workspace_id": workspace_id}},
+            "deleted_at": None,
+        }
+    )
+    students = [User.model_validate(raw) async for raw in student_cursor]
+    if not students:
+        return []
+
+    statuses = get_collection(current_user.tenant_id, PERMISSION_STATUS)
+    status_cursor = statuses.find(
+        {
+            "student_id": {"$in": [student.id for student in students]},
+            "deleted_at": None,
+        }
+    )
+    statuses_by_student = {
+        raw["student_id"]: raw async for raw in status_cursor if raw.get("student_id")
+    }
+
+    return [
+        StudentDeviceStatusView(
+            student_id=student.id,
+            display_name=student.display_name,
+            usage_access_permission=statuses_by_student.get(student.id, {}).get(
+                "usage_access_permission", False
+            ),
+            overlay_permission=statuses_by_student.get(student.id, {}).get(
+                "overlay_permission", False
+            ),
+            notification_access=statuses_by_student.get(student.id, {}).get(
+                "notification_access", False
+            ),
+            accessibility_service=statuses_by_student.get(student.id, {}).get(
+                "accessibility_service", False
+            ),
+            battery_optimization_exempt=statuses_by_student.get(student.id, {}).get(
+                "battery_optimization_exempt", False
+            ),
+            last_reported_at=statuses_by_student.get(student.id, {}).get("last_reported_at"),
+        )
+        for student in sorted(students, key=lambda item: item.display_name.lower())
+    ]
 
 
 # ── GET /wallet ──────────────────────────────────────────────────────────────
@@ -244,9 +321,7 @@ async def sync_xp(
 
     # Fetch XP from gamification state
     gam_col = get_collection(current_user.tenant_id, GAMIFICATION)
-    gam_doc = await gam_col.find_one(
-        {"workspace_id": workspace_id, "student_id": current_user.id}
-    )
+    gam_doc = await gam_col.find_one({"workspace_id": workspace_id, "student_id": current_user.id})
     current_xp: int = gam_doc.get("xp_total", 0) if gam_doc else 0
 
     # Fetch workspace settings for the ratio
@@ -295,9 +370,7 @@ async def sync_xp(
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-async def _load_or_default_settings(
-    *, tenant_id: str, workspace_id: str
-) -> ScreenTimeSettings:
+async def _load_or_default_settings(*, tenant_id: str, workspace_id: str) -> ScreenTimeSettings:
     col = get_collection(tenant_id, SCREEN_TIME_SETTINGS)
     raw = await col.find_one({"_id": f"sts_{workspace_id}"})
     if raw:

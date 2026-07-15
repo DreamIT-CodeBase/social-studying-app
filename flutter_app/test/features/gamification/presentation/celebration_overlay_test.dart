@@ -12,14 +12,16 @@ Future<void> _pumpTrigger(
   required Future<void> Function(BuildContext context) onPressed,
 }) async {
   await tester.pumpWidget(
-    MaterialApp(
-      theme: AppTheme.light,
-      home: Scaffold(
-        body: Builder(
-          builder: (context) => Center(
-            child: TextButton(
-              onPressed: () => onPressed(context),
-              child: const Text('FIRE'),
+    ProviderScope(
+      child: MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => Center(
+              child: TextButton(
+                onPressed: () => onPressed(context),
+                child: const Text('FIRE'),
+              ),
             ),
           ),
         ),
@@ -49,8 +51,7 @@ void main() {
       expect(find.text('Level Up!'), findsNothing);
     });
 
-    testWidgets('auto-dismisses when the animation completes',
-        (tester) async {
+    testWidgets('auto-dismisses when the animation completes', (tester) async {
       var resolved = false;
       await _pumpTrigger(
         tester,

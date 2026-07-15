@@ -1,7 +1,10 @@
 package com.socialstudyapp.social_study_app
 
+import android.Manifest
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.provider.Settings
 import android.app.AppOpsManager
 import android.app.NotificationManager
@@ -15,6 +18,7 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.socialstudyapp.app/screen_time"
+    private var pendingNotificationResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -24,18 +28,27 @@ class MainActivity : FlutterActivity() {
                     result.success(isAccessibilityServiceEnabled())
                 }
                 "openAccessibilitySettings" -> {
-                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    startActivity(intent)
+                    val serviceComponent =
+                        ComponentName(this, ScreenTimeAccessibilityService::class.java)
+                    val detailIntent = Intent(ACTION_ACCESSIBILITY_DETAILS_SETTINGS).apply {
+                        putExtra(Intent.EXTRA_COMPONENT_NAME, serviceComponent.flattenToString())
+                    }
+                    if (!openSettings(detailIntent)) {
+                        openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    }
                     result.success(null)
                 }
                 "isUsageAccessGranted" -> {
                     result.success(isUsageAccessGranted())
                 }
                 "openUsageAccessSettings" -> {
-                    val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    startActivity(intent)
+                    val appSpecificIntent = Intent(
+                        Settings.ACTION_USAGE_ACCESS_SETTINGS,
+                        Uri.parse("package:$packageName"),
+                    )
+                    if (!openSettings(appSpecificIntent)) {
+                        openSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                    }
                     result.success(null)
                 }
                 "isOverlayGranted" -> {
@@ -43,25 +56,49 @@ class MainActivity : FlutterActivity() {
                 }
                 "openOverlaySettings" -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
-                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        startActivity(intent)
+                        openSettings(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:$packageName"),
+                            ),
+                        )
                     } else {
-                        val intent = Intent(Settings.ACTION_SETTINGS)
-                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        startActivity(intent)
+                        openSettings(Intent(Settings.ACTION_SETTINGS))
                     }
                     result.success(null)
                 }
                 "isNotificationGranted" -> {
                     result.success(isNotificationGranted())
                 }
-                "openNotificationSettings" -> {
-                    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                        putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                "requestNotificationPermission" -> {
+                    if (
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                            PackageManager.PERMISSION_GRANTED
+                    ) {
+                        if (pendingNotificationResult != null) {
+                            result.error(
+                                "permission_request_active",
+                                "A notification permission request is already active.",
+                                null,
+                            )
+                            return@setMethodCallHandler
+                        }
+                        pendingNotificationResult = result
+                        requestPermissions(
+                            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                            NOTIFICATION_PERMISSION_REQUEST,
+                        )
+                    } else {
+                        result.success(isNotificationGranted())
                     }
-                    startActivity(intent)
+                }
+                "openNotificationSettings" -> {
+                    openSettings(
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                        },
+                    )
                     result.success(null)
                 }
                 "isBatteryOptimizationExempt" -> {
@@ -69,9 +106,12 @@ class MainActivity : FlutterActivity() {
                 }
                 "openBatteryOptimizationSettings" -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
-                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        startActivity(intent)
+                        openSettings(
+                            Intent(
+                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                Uri.parse("package:$packageName"),
+                            ),
+                        )
                     }
                     result.success(null)
                 }
@@ -83,13 +123,42 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val expectedComponentName = "${packageName}/${ScreenTimeAccessibilityService::class.java.canonicalName}"
+        val expectedComponent = ComponentName(this, ScreenTimeAccessibilityService::class.java)
         val enabledServices = Settings.Secure.getString(
             contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ) ?: return false
-        
-        return enabledServices.split(":").any { it.equals(expectedComponentName, ignoreCase = true) }
+
+        return enabledServices.split(":").any { flattened ->
+            ComponentName.unflattenFromString(flattened) == expectedComponent
+        }
+    }
+
+    private fun openSettings(intent: Intent): Boolean {
+        return try {
+            if (intent.resolveActivity(packageManager) == null) {
+                false
+            } else {
+                startActivity(intent)
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != NOTIFICATION_PERMISSION_REQUEST) return
+
+        val granted = grantResults.isNotEmpty() &&
+            grantResults[0] == PackageManager.PERMISSION_GRANTED
+        pendingNotificationResult?.success(granted)
+        pendingNotificationResult = null
     }
 
     private fun isUsageAccessGranted(): Boolean {
@@ -134,5 +203,11 @@ class MainActivity : FlutterActivity() {
         } else {
             true
         }
+    }
+
+    companion object {
+        private const val NOTIFICATION_PERMISSION_REQUEST = 7001
+        private const val ACTION_ACCESSIBILITY_DETAILS_SETTINGS =
+            "android.settings.ACCESSIBILITY_DETAILS_SETTINGS"
     }
 }

@@ -94,6 +94,33 @@ class DemoDocumentsRepository implements DocumentsRepository {
   }
 
   @override
+  Future<Document> scrape({
+    required String workspaceId,
+    required String url,
+  }) async {
+    await _simulateNetwork();
+    if (url.isEmpty) {
+      throw Exception('URL cannot be empty');
+    }
+    final id = 'doc_${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}';
+    final uri = Uri.tryParse(url);
+    final host = uri?.host ?? 'website';
+    final filename = 'scraped_$host.txt';
+
+    final initial = Document(
+      id: id,
+      workspaceId: workspaceId,
+      filename: filename,
+      docType: DocumentType.text,
+      status: DocumentStatus.pending,
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    _byWorkspace.putIfAbsent(workspaceId, () => {})[id] = initial;
+    _scheduleNext(workspaceId: workspaceId, documentId: id);
+    return initial;
+  }
+
+  @override
   Future<void> delete({
     required String workspaceId,
     required String documentId,

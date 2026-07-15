@@ -28,6 +28,7 @@ import 'package:social_study_app/features/taxonomy/presentation/taxonomy_viewer_
 import 'package:social_study_app/features/screen_time/screens/screen_time_settings_screen.dart';
 import 'package:social_study_app/features/study_sessions/domain/adaptive_session_models.dart';
 import 'package:social_study_app/features/study_sessions/presentation/adaptive_session_screen.dart';
+import 'package:social_study_app/shared/services/session_persistence_service.dart';
 
 part 'router.g.dart';
 
@@ -65,11 +66,30 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
     return authAsync.when(
       data: (authState) {
         final isOnLogin = state.matchedLocation == AppRoutes.login;
-        final isOnOnboarding =
+        final isOnAdminOnboarding =
             state.matchedLocation == AppRoutes.adminOnboarding;
+        final isOnStudentPermissionSetup =
+            state.matchedLocation == AppRoutes.studentOnboarding;
+        // Legal pages are publicly accessible — no auth required.
+        final isOnLegal = state.matchedLocation == AppRoutes.terms ||
+            state.matchedLocation == AppRoutes.privacy;
         return authState.when(
-          unauthenticated: () => isOnLogin ? null : AppRoutes.login,
+          unauthenticated: () =>
+              (isOnLogin || isOnLegal) ? null : AppRoutes.login,
           authenticated: (user) {
+            if (currentFlavor == AppFlavor.student) {
+              final permissionSetupComplete = SessionPersistenceService.instance
+                  .isPermissionSetupCompleteSync(user.id);
+              if (!permissionSetupComplete) {
+                return isOnStudentPermissionSetup
+                    ? null
+                    : AppRoutes.studentOnboarding;
+              }
+              if (isOnStudentPermissionSetup) {
+                return AppRoutes.studentHome;
+              }
+            }
+
             // Sprint 6.9 — admin with zero workspaces lands on the
             // onboarding wizard, not the dashboard. The wizard
             // creates the first workspace, and the redirect stops
@@ -84,12 +104,12 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
                 currentFlavor == AppFlavor.admin && adminWorkspaces.isEmpty;
 
             if (needsOnboarding) {
-              return isOnOnboarding ? null : AppRoutes.adminOnboarding;
+              return isOnAdminOnboarding ? null : AppRoutes.adminOnboarding;
             }
             // If the admin has workspaces but somehow lands on
             // /onboarding (e.g. browser back button after first
             // creation), bounce them to the dashboard.
-            if (isOnOnboarding) {
+            if (isOnAdminOnboarding) {
               return AppRoutes.adminDashboard;
             }
             if (!isOnLogin) return null;
@@ -242,8 +262,7 @@ GoRouter router(RouterRef ref) {
           // Display name rides as a ``?name=`` query param so the
           // AppBar can render it without a users lookup. The roster
           // already has the name in hand and just URL-encodes it.
-          studentName:
-              state.uri.queryParameters['name'] ?? 'Student progress',
+          studentName: state.uri.queryParameters['name'] ?? 'Student progress',
         ),
       ),
       GoRoute(

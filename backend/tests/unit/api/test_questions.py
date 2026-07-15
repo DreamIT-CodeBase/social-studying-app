@@ -144,7 +144,7 @@ def _context(
                 question_id=f"qst_{i}",
                 topic="Algebra",
                 is_correct=True,
-                answered_at=f"2026-05-0{i+1}T00:00:00+00:00",
+                answered_at=f"2026-05-0{i + 1}T00:00:00+00:00",
             )
             for i in range(interaction_count)
         ],
@@ -210,11 +210,7 @@ def _review(
     safety: SafetyVerdict | None = None,
 ) -> QuestionReview:
     if safety is None:
-        safety = (
-            _flagged_safety()
-            if verdict == ReviewVerdict.flagged
-            else _clean_safety()
-        )
+        safety = _flagged_safety() if verdict == ReviewVerdict.flagged else _clean_safety()
     return QuestionReview(
         verdict=verdict,
         safety=safety,
@@ -264,9 +260,7 @@ def _patches(
         side_effect=lambda d: moderation.append(d) or MagicMock(inserted_id=d["_id"])
     )
     workspaces_col = MagicMock()
-    workspaces_col.find_one = AsyncMock(
-        return_value=workspace.model_dump(by_alias=True)
-    )
+    workspaces_col.find_one = AsyncMock(return_value=workspace.model_dump(by_alias=True))
 
     def _factory(_tenant_id, collection):
         from app.core.database import MODERATION_LOG, QUESTION_QUEUE, WORKSPACES
@@ -281,9 +275,7 @@ def _patches(
 
     mocks: list = []
 
-    mocks.append(
-        patch("app.api.questions.get_collection", side_effect=_factory)
-    )
+    mocks.append(patch("app.api.questions.get_collection", side_effect=_factory))
     if select_side_effect is not None:
         mocks.append(
             patch(
@@ -403,9 +395,7 @@ def test_persisted_question_records_all_audit_fields(client, student):
 # ── Flagged path ────────────────────────────────────────────────────────────
 
 
-def test_flagged_first_candidate_persists_pending_review_and_tries_next(
-    client, student
-):
+def test_flagged_first_candidate_persists_pending_review_and_tries_next(client, student):
     """Flagged review → persist with pending_review + write moderation_log
     + skip to the next topic candidate. The student gets the second
     candidate's clean question.
@@ -505,9 +495,7 @@ def test_insufficient_source_skips_to_next_candidate(client, student):
 
 
 def test_all_candidates_fail_returns_503_with_retry_after(client, student):
-    cands = [
-        _topic_score(id_=f"tpc_{i}", name=f"Topic{i}") for i in range(3)
-    ]
+    cands = [_topic_score(id_=f"tpc_{i}", name=f"Topic{i}") for i in range(3)]
     # All three rejected.
     reviews = [_review(ReviewVerdict.rejected) for _ in range(3)]
     mocks, persisted, *_ = _patches(
@@ -525,9 +513,7 @@ def test_all_candidates_fail_returns_503_with_retry_after(client, student):
     assert persisted == []  # rejected = never persisted
 
 
-def test_empty_retrieval_skips_candidate_without_calling_generator(
-    client, student
-):
+def test_empty_retrieval_skips_candidate_without_calling_generator(client, student):
     """If retrieve_content returns no chunks for a topic, we shouldn't
     even try to generate from it — the prompt would refuse anyway and
     we'd waste a GPT-4o call.
@@ -553,9 +539,7 @@ def test_empty_retrieval_skips_candidate_without_calling_generator(
     review_mock = AsyncMock(return_value=_review(ReviewVerdict.approved))
 
     workspaces_col = MagicMock()
-    workspaces_col.find_one = AsyncMock(
-        return_value=_workspace().model_dump(by_alias=True)
-    )
+    workspaces_col.find_one = AsyncMock(return_value=_workspace().model_dump(by_alias=True))
     persisted: list[dict] = []
     docs_col = MagicMock()
     docs_col.insert_one = AsyncMock(
@@ -597,9 +581,7 @@ def test_empty_retrieval_skips_candidate_without_calling_generator(
 
 def test_no_topics_available_returns_409(client, student):
     workspaces_col = MagicMock()
-    workspaces_col.find_one = AsyncMock(
-        return_value=_workspace().model_dump(by_alias=True)
-    )
+    workspaces_col.find_one = AsyncMock(return_value=_workspace().model_dump(by_alias=True))
     # Sprint 3.13: /next claims a prefetched row before falling through
     # to the workspace + LPE reads, so the question_queue mock must
     # return None for find_one_and_update.
@@ -620,6 +602,14 @@ def test_no_topics_available_returns_409(client, student):
         patch(
             "app.api.questions.select_next_topic",
             AsyncMock(side_effect=NoTopicsAvailable("empty workspace")),
+        ),
+        patch(
+            "app.api.questions._fetch_student_context",
+            AsyncMock(return_value=_context()),
+        ),
+        patch(
+            "app.api.questions._fetch_seen_question_bodies",
+            AsyncMock(return_value=set()),
         ),
     ):
         response = client.post("/api/v1/workspaces/wsp_a/questions/next")
@@ -666,10 +656,7 @@ def test_type_rotation_based_on_recent_interactions(client, student):
     )
     with _enter(mocks):
         client.post("/api/v1/workspaces/wsp_a/questions/next")
-    assert (
-        generate_mock.await_args.kwargs["question_type"]
-        == QuestionType.short_answer
-    )
+    assert generate_mock.await_args.kwargs["question_type"] == QuestionType.short_answer
 
 
 def test_single_enabled_type_always_used(client, student):
@@ -683,10 +670,7 @@ def test_single_enabled_type_always_used(client, student):
     )
     with _enter(mocks):
         client.post("/api/v1/workspaces/wsp_a/questions/next")
-    assert (
-        generate_mock.await_args.kwargs["question_type"]
-        == QuestionType.short_answer
-    )
+    assert generate_mock.await_args.kwargs["question_type"] == QuestionType.short_answer
 
 
 def test_invalid_question_type_in_settings_is_ignored(client, student):
@@ -843,9 +827,7 @@ def _prefetched_doc(*, id_: str = "qst_pre", student_id: str = "stu_a") -> dict:
     ).model_dump(by_alias=True)
 
 
-def test_next_serves_prefetched_question_without_running_pipeline(
-    client, student
-):
+def test_next_serves_prefetched_question_without_running_pipeline(client, student):
     """When a prefetched row exists for this student, /next returns it
     immediately — no LPE call, no generation, no review.
     """
@@ -862,9 +844,7 @@ def test_next_serves_prefetched_question_without_running_pipeline(
     for m in mocks:
         # Swap the existing select patch with our spy.
         if "select_next_topic" in str(m):
-            mocks_with_select.append(
-                patch("app.api.questions.select_next_topic", select_mock)
-            )
+            mocks_with_select.append(patch("app.api.questions.select_next_topic", select_mock))
         else:
             mocks_with_select.append(m)
 
@@ -1017,9 +997,7 @@ async def test_prefetch_next_question_persists_with_prefetched_for_set():
     from app.api.questions import prefetch_next_question
 
     workspaces_col = MagicMock()
-    workspaces_col.find_one = AsyncMock(
-        return_value=_workspace().model_dump(by_alias=True)
-    )
+    workspaces_col.find_one = AsyncMock(return_value=_workspace().model_dump(by_alias=True))
     persisted: list[dict] = []
     questions_col = MagicMock()
     questions_col.insert_one = AsyncMock(
@@ -1079,9 +1057,7 @@ async def test_prefetch_skips_persistence_on_empty_retrieval():
     from app.api.questions import prefetch_next_question
 
     workspaces_col = MagicMock()
-    workspaces_col.find_one = AsyncMock(
-        return_value=_workspace().model_dump(by_alias=True)
-    )
+    workspaces_col.find_one = AsyncMock(return_value=_workspace().model_dump(by_alias=True))
     persisted: list[dict] = []
     questions_col = MagicMock()
     questions_col.insert_one = AsyncMock(
@@ -1136,9 +1112,7 @@ async def test_prefetch_skips_persistence_on_flagged_review():
     from app.api.questions import prefetch_next_question
 
     workspaces_col = MagicMock()
-    workspaces_col.find_one = AsyncMock(
-        return_value=_workspace().model_dump(by_alias=True)
-    )
+    workspaces_col.find_one = AsyncMock(return_value=_workspace().model_dump(by_alias=True))
     persisted: list[dict] = []
     questions_col = MagicMock()
     questions_col.insert_one = AsyncMock(
@@ -1174,11 +1148,7 @@ async def test_prefetch_skips_persistence_on_flagged_review():
         ),
         patch(
             "app.api.questions.question_safety.review_question",
-            AsyncMock(
-                return_value=_review(
-                    ReviewVerdict.flagged, safety=_flagged_safety()
-                )
-            ),
+            AsyncMock(return_value=_review(ReviewVerdict.flagged, safety=_flagged_safety())),
         ),
     ):
         await prefetch_next_question(

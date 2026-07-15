@@ -8,8 +8,16 @@ import 'package:social_study_app/shared/models/gamification.dart';
 import 'package:social_study_app/features/screen_time/models/screen_time_wallet.dart';
 import 'package:social_study_app/features/screen_time/services/screen_time_service.dart';
 import 'package:social_study_app/features/screen_time/data/screen_time_repository.dart';
+import 'package:social_study_app/features/screen_time/models/student_device_status.dart';
 
 part 'screen_time_providers.g.dart';
+
+final studentDeviceStatusesProvider = FutureProvider.autoDispose
+    .family<List<StudentDeviceStatus>, String>((ref, workspaceId) {
+  return ref
+      .watch(screenTimeRepositoryProvider)
+      .fetchDeviceStatuses(workspaceId: workspaceId);
+});
 
 @Riverpod(keepAlive: true)
 class ScreenTimeNotifier extends _$ScreenTimeNotifier {
@@ -25,7 +33,8 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
   @override
   Future<ScreenTimeWallet> build() async {
     final authState = ref.watch(authNotifierProvider).valueOrNull;
-    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user == null || user.workspaceMemberships.isEmpty) {
       await _service.setCurrentUserId(null);
       return ScreenTimeWallet.initial();
@@ -51,10 +60,13 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
       },
     );
 
-    return _syncWalletAndSettings(user.id, workspaceId);
+    final wallet = await _syncWalletAndSettings(user.id, workspaceId);
+    await _service.setEnforcementReady(true);
+    return wallet;
   }
 
-  Future<ScreenTimeWallet> _syncWalletAndSettings(String userId, String workspaceId) async {
+  Future<ScreenTimeWallet> _syncWalletAndSettings(
+      String userId, String workspaceId) async {
     final repo = ref.read(screenTimeRepositoryProvider);
 
     // 1. Sync Settings from Backend to local SharedPreferences
@@ -72,14 +84,16 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
     // Calculate local consumption delta
     final prefs = await SharedPreferences.getInstance();
-    final syncedConsumed = prefs.getInt('synced_consumed_minutes_$userId') ?? localWallet.consumedMinutes;
+    final syncedConsumed = prefs.getInt('synced_consumed_minutes_$userId') ??
+        localWallet.consumedMinutes;
     final deltaMinutes = localWallet.consumedMinutes - syncedConsumed;
 
     ScreenTimeWallet serverWallet;
     try {
       if (deltaMinutes > 0) {
         // Sync local background consumption to server
-        serverWallet = await repo.consumeMinutes(workspaceId: workspaceId, minutes: deltaMinutes);
+        serverWallet = await repo.consumeMinutes(
+            workspaceId: workspaceId, minutes: deltaMinutes);
       } else {
         // Just fetch latest wallet from server
         serverWallet = await repo.fetchWallet(workspaceId: workspaceId);
@@ -87,7 +101,8 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
       // Update local wallet with server response
       await _service.saveWallet(serverWallet, userId);
-      await prefs.setInt('synced_consumed_minutes_$userId', serverWallet.consumedMinutes);
+      await prefs.setInt(
+          'synced_consumed_minutes_$userId', serverWallet.consumedMinutes);
       return serverWallet;
     } catch (e) {
       // Offline / fallback: use local wallet
@@ -97,7 +112,8 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
   Future<void> refreshWallet() async {
     final authState = ref.read(authNotifierProvider).valueOrNull;
-    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user == null) return;
 
     final workspaceId = ref.read(activeWorkspaceIdProvider);
@@ -105,13 +121,16 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      return await _syncWalletAndSettings(user.id, workspaceId);
+      final wallet = await _syncWalletAndSettings(user.id, workspaceId);
+      await _service.setEnforcementReady(true);
+      return wallet;
     });
   }
 
   Future<void> syncXp() async {
     final authState = ref.read(authNotifierProvider).valueOrNull;
-    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user == null) return;
 
     final workspaceId = ref.read(activeWorkspaceIdProvider);
@@ -119,16 +138,21 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
     final currentWallet = state.valueOrNull;
 
     try {
-      final serverWallet = await ref.read(screenTimeRepositoryProvider).syncXp(workspaceId: workspaceId);
+      final serverWallet = await ref
+          .read(screenTimeRepositoryProvider)
+          .syncXp(workspaceId: workspaceId);
 
       if (currentWallet != null) {
-        final deltaMinutes = serverWallet.availableMinutes - currentWallet.availableMinutes;
+        final deltaMinutes =
+            serverWallet.availableMinutes - currentWallet.availableMinutes;
         if (deltaMinutes > 0) {
           _pendingNotifMinutes += deltaMinutes;
           final now = DateTime.now();
           final lastNotif = _lastNotificationTime;
           // Only fire if accumulated minutes is at least 30, and cooldown has passed
-          if (_pendingNotifMinutes >= 30 && (lastNotif == null || now.difference(lastNotif) >= _notifCooldown)) {
+          if (_pendingNotifMinutes >= 30 &&
+              (lastNotif == null ||
+                  now.difference(lastNotif) >= _notifCooldown)) {
             await _service.showNotification(_pendingNotifMinutes);
             _lastNotificationTime = now;
             _pendingNotifMinutes = 0;
@@ -139,7 +163,8 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
       await _service.saveWallet(serverWallet, user.id);
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('synced_consumed_minutes_${user.id}', serverWallet.consumedMinutes);
+      await prefs.setInt(
+          'synced_consumed_minutes_${user.id}', serverWallet.consumedMinutes);
 
       state = AsyncData(serverWallet);
     } catch (e) {
@@ -149,81 +174,89 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
   Future<void> updateXpToMinuteRatio(int ratio) async {
     final authState = ref.read(authNotifierProvider).valueOrNull;
-    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user == null) return;
 
     final workspaceId = ref.read(activeWorkspaceIdProvider);
     if (workspaceId == null) return;
 
     try {
-      final updatedSettings = await ref.read(screenTimeRepositoryProvider).updateSettings(
-        workspaceId: workspaceId,
-        xpToMinuteRatio: ratio,
-      );
+      final updatedSettings =
+          await ref.read(screenTimeRepositoryProvider).updateSettings(
+                workspaceId: workspaceId,
+                xpToMinuteRatio: ratio,
+              );
       await _service.saveXpToMinuteRatio(updatedSettings.xpToMinuteRatio);
 
       // Auto-trigger sync-xp on the backend to adjust based on the new ratio
       await syncXp();
-    } catch (e) {
-      // Fallback to local update if offline
-      await _service.saveXpToMinuteRatio(ratio);
+    } catch (_) {
+      rethrow;
     }
   }
 
   Future<void> updateEnableBlocking(bool enable) async {
     final authState = ref.read(authNotifierProvider).valueOrNull;
-    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user == null) return;
 
     final workspaceId = ref.read(activeWorkspaceIdProvider);
     if (workspaceId == null) return;
 
     try {
-      final updatedSettings = await ref.read(screenTimeRepositoryProvider).updateSettings(
-        workspaceId: workspaceId,
-        enableBlocking: enable,
-      );
+      final updatedSettings =
+          await ref.read(screenTimeRepositoryProvider).updateSettings(
+                workspaceId: workspaceId,
+                enableBlocking: enable,
+              );
       await _service.saveEnableBlocking(updatedSettings.enableBlocking);
-    } catch (e) {
-      await _service.saveEnableBlocking(enable);
+    } catch (_) {
+      rethrow;
     }
   }
 
   Future<void> updateBlockedPackages(List<String> packages) async {
     final authState = ref.read(authNotifierProvider).valueOrNull;
-    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user == null) return;
 
     final workspaceId = ref.read(activeWorkspaceIdProvider);
     if (workspaceId == null) return;
 
     try {
-      final updatedSettings = await ref.read(screenTimeRepositoryProvider).updateSettings(
-        workspaceId: workspaceId,
-        blockedPackages: packages,
-      );
+      final updatedSettings =
+          await ref.read(screenTimeRepositoryProvider).updateSettings(
+                workspaceId: workspaceId,
+                blockedPackages: packages,
+              );
       await _service.saveBlockedPackages(updatedSettings.blockedPackages);
-    } catch (e) {
-      await _service.saveBlockedPackages(packages);
+    } catch (_) {
+      rethrow;
     }
   }
 
   Future<void> consumeMinutes(int minutes) async {
     final authState = ref.read(authNotifierProvider).valueOrNull;
-    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user == null) return;
 
     final workspaceId = ref.read(activeWorkspaceIdProvider);
     if (workspaceId == null) return;
 
     try {
-      final serverWallet = await ref.read(screenTimeRepositoryProvider).consumeMinutes(
-        workspaceId: workspaceId,
-        minutes: minutes,
-      );
+      final serverWallet =
+          await ref.read(screenTimeRepositoryProvider).consumeMinutes(
+                workspaceId: workspaceId,
+                minutes: minutes,
+              );
       await _service.saveWallet(serverWallet, user.id);
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('synced_consumed_minutes_${user.id}', serverWallet.consumedMinutes);
+      await prefs.setInt(
+          'synced_consumed_minutes_${user.id}', serverWallet.consumedMinutes);
 
       state = AsyncData(serverWallet);
     } catch (e) {
@@ -231,7 +264,8 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
       final currentWallet = state.valueOrNull;
       if (currentWallet != null) {
         final updated = currentWallet.copyWith(
-          availableMinutes: (currentWallet.availableMinutes - minutes).clamp(0, double.maxFinite.toInt()),
+          availableMinutes: (currentWallet.availableMinutes - minutes)
+              .clamp(0, double.maxFinite.toInt()),
           consumedMinutes: currentWallet.consumedMinutes + minutes,
           consumedToday: currentWallet.consumedToday + minutes,
           lastSyncTime: DateTime.now(),
@@ -247,7 +281,8 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
     if (currentWallet == null) return;
 
     final authState = ref.read(authNotifierProvider).valueOrNull;
-    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
 
     final updated = currentWallet.copyWith(
       consumedToday: 0,
@@ -271,12 +306,15 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 @riverpod
 Future<int> xpToMinuteRatio(XpToMinuteRatioRef ref) async {
   final authState = ref.watch(authNotifierProvider).valueOrNull;
-  final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+  final user =
+      authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
   if (user != null) {
     final workspaceId = ref.watch(activeWorkspaceIdProvider);
     if (workspaceId != null) {
       try {
-        final settings = await ref.watch(screenTimeRepositoryProvider).fetchSettings(workspaceId: workspaceId);
+        final settings = await ref
+            .watch(screenTimeRepositoryProvider)
+            .fetchSettings(workspaceId: workspaceId);
         return settings.xpToMinuteRatio;
       } catch (_) {
         // fallback
@@ -289,12 +327,15 @@ Future<int> xpToMinuteRatio(XpToMinuteRatioRef ref) async {
 @riverpod
 Future<bool> enableBlocking(EnableBlockingRef ref) async {
   final authState = ref.watch(authNotifierProvider).valueOrNull;
-  final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+  final user =
+      authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
   if (user != null) {
     final workspaceId = ref.watch(activeWorkspaceIdProvider);
     if (workspaceId != null) {
       try {
-        final settings = await ref.watch(screenTimeRepositoryProvider).fetchSettings(workspaceId: workspaceId);
+        final settings = await ref
+            .watch(screenTimeRepositoryProvider)
+            .fetchSettings(workspaceId: workspaceId);
         return settings.enableBlocking;
       } catch (_) {
         // fallback
@@ -307,12 +348,15 @@ Future<bool> enableBlocking(EnableBlockingRef ref) async {
 @riverpod
 Future<List<String>> blockedPackages(BlockedPackagesRef ref) async {
   final authState = ref.watch(authNotifierProvider).valueOrNull;
-  final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+  final user =
+      authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
   if (user != null) {
     final workspaceId = ref.watch(activeWorkspaceIdProvider);
     if (workspaceId != null) {
       try {
-        final settings = await ref.watch(screenTimeRepositoryProvider).fetchSettings(workspaceId: workspaceId);
+        final settings = await ref
+            .watch(screenTimeRepositoryProvider)
+            .fetchSettings(workspaceId: workspaceId);
         return settings.blockedPackages;
       } catch (_) {
         // fallback

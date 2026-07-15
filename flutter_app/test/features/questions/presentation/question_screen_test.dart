@@ -122,10 +122,17 @@ void main() {
     expect(find.text('Chloroplast'), findsOneWidget);
     expect(find.text('Nucleus'), findsOneWidget);
     expect(find.text('Photosynthesis'), findsOneWidget);
+    expect(find.text('15:00'), findsOneWidget);
+    expect(
+      tester.getCenter(find.text('15:00')).dx,
+      greaterThan(tester.getCenter(find.text('0 XP')).dx),
+    );
+
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('14:59'), findsOneWidget);
   });
 
-  testWidgets('submit is disabled until an option is selected',
-      (tester) async {
+  testWidgets('submit is disabled until an option is selected', (tester) async {
     when(() => repo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _mcq());
 
@@ -175,10 +182,9 @@ void main() {
         )).captured;
     expect((captured.single as AnswerSubmission).answer, 'B');
 
-
-
     expect(find.text('Correct!', skipOffstage: false), findsOneWidget);
-    expect(find.textContaining('chlorophyll', skipOffstage: false), findsOneWidget);
+    expect(find.textContaining('chlorophyll', skipOffstage: false),
+        findsOneWidget);
   });
 
   testWidgets('an incorrect answer shows the canonical answer', (tester) async {
@@ -284,7 +290,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Enter your answer — LaTeX notation is supported'),
+      find.text('Enter your answer'),
       findsOneWidget,
     );
   });

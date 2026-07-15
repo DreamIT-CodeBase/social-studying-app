@@ -47,6 +47,26 @@ class AdaptiveSessionRepository {
     }
   }
 
+  Future<AdaptiveAnswerEvaluation> evaluateAnswer({
+    required String workspaceId,
+    required String sessionId,
+    required String questionId,
+    required String answer,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/api/v1/workspaces/$workspaceId/adaptive-sessions/$sessionId/evaluate',
+        data: {
+          'question_id': questionId,
+          'answer': answer,
+        },
+      );
+      return AdaptiveAnswerEvaluation.fromJson(response.data!);
+    } on DioException catch (error) {
+      throw AdaptiveSessionException(_message(error));
+    }
+  }
+
   String _message(DioException error) {
     final body = error.response?.data;
     if (body is Map<String, dynamic> && body['detail'] is String) {

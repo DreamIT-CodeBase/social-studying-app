@@ -1,10 +1,10 @@
 import 'dart:convert';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/core/config/environment.dart';
 import 'package:social_study_app/shared/models/user.dart';
+import 'package:social_study_app/shared/services/auth_session_service.dart';
 import 'package:social_study_app/shared/services/dio_client.dart';
 
 part 'auth_repository.g.dart';
@@ -26,9 +26,7 @@ class RealAuthRepository implements AuthRepository {
   RealAuthRepository(this._ref);
 
   final AuthRepositoryRef _ref;
-  static const _storage = FlutterSecureStorage();
-  static const _tokenKey = 'auth_token';
-  static const _userKey = 'auth_user';
+  static const _userKey = AuthSessionService.userKey;
   final _appAuth = const FlutterAppAuth();
   final _googleSignIn = GoogleSignIn(
     serverClientId: Environment.googleWebClientId,
@@ -38,7 +36,8 @@ class RealAuthRepository implements AuthRepository {
   @override
   Future<User> signInWithMicrosoft() async {
     try {
-      final discoveryUrl = 'https://${Environment.b2cTenantSubdomain}.ciamlogin.com/'
+      const discoveryUrl =
+          'https://${Environment.b2cTenantSubdomain}.ciamlogin.com/'
           '${Environment.b2cTenantId}/v2.0/.well-known/openid-configuration';
 
       final result = await _appAuth.authorizeAndExchangeCode(
@@ -56,18 +55,19 @@ class RealAuthRepository implements AuthRepository {
         ),
       );
 
-      if (result == null || result.idToken == null) {
+      if (result.idToken == null) {
         throw Exception('Authentication returned empty result');
       }
 
-      await _storage.write(key: _tokenKey, value: result.idToken);
+      await AuthSessionService.instance.persistMicrosoftSession(result);
 
       // Fetch the real user profile from the backend
       final dio = _ref.read(dioClientProvider).dio;
       final response = await dio.get('/api/v1/users/me');
       final backendUser = User.fromJson(response.data as Map<String, dynamic>);
-      
-      await _storage.write(key: _userKey, value: jsonEncode(backendUser.toJson()));
+
+      await AuthSessionService.instance
+          .writeUser(jsonEncode(backendUser.toJson()));
 
       return backendUser;
     } catch (e) {
@@ -83,21 +83,23 @@ class RealAuthRepository implements AuthRepository {
         throw Exception('Google sign in cancelled by user');
       }
 
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
       final String? idToken = googleAuth.idToken;
 
       if (idToken == null) {
         throw Exception('Google sign in failed: no ID token returned');
       }
 
-      await _storage.write(key: _tokenKey, value: idToken);
+      await AuthSessionService.instance.persistGoogleSession(idToken);
 
       // Fetch the real user profile from the backend
       final dio = _ref.read(dioClientProvider).dio;
       final response = await dio.get('/api/v1/users/me');
       final backendUser = User.fromJson(response.data as Map<String, dynamic>);
-      
-      await _storage.write(key: _userKey, value: jsonEncode(backendUser.toJson()));
+
+      await AuthSessionService.instance
+          .writeUser(jsonEncode(backendUser.toJson()));
 
       return backendUser;
     } catch (e) {
@@ -107,17 +109,14 @@ class RealAuthRepository implements AuthRepository {
 
   @override
   Future<void> signOut() async {
-    await _storage.delete(key: _tokenKey);
-    await _storage.delete(key: _userKey);
-    try {
-      await _googleSignIn.signOut();
-    } catch (_) {}
+    await AuthSessionService.instance.clear();
   }
 
   @override
   Future<User?> getStoredUser() async {
-    final token = await _storage.read(key: _tokenKey);
-    final userJson = await _storage.read(key: _userKey);
+    final values = await AuthSessionService.instance.loadStoredValues();
+    final token = values[AuthSessionService.tokenKey];
+    final userJson = values[_userKey];
     if (token == null || userJson == null) {
       return null;
     }
@@ -130,7 +129,7 @@ class RealAuthRepository implements AuthRepository {
 
   @override
   Future<void> updateStoredUser(User user) async {
-    await _storage.write(key: _userKey, value: jsonEncode(user.toJson()));
+    await AuthSessionService.instance.writeUser(jsonEncode(user.toJson()));
   }
 
   @override
@@ -158,16 +157,5 @@ class RealAuthRepository implements AuthRepository {
     } catch (e) {
       throw Exception('Delete account failed: $e');
     }
-  }
-
-  Map<String, dynamic> _parseJwt(String token) {
-    final parts = token.split('.');
-    if (parts.length != 3) {
-      throw const FormatException('Invalid token');
-    }
-    final payload = parts[1];
-    var normalized = base64Url.normalize(payload);
-    final resp = utf8.decode(base64Url.decode(normalized));
-    return jsonDecode(resp) as Map<String, dynamic>;
   }
 }

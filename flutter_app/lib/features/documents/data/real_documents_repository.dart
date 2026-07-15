@@ -84,6 +84,22 @@ class RealDocumentsRepository implements DocumentsRepository {
   }
 
   @override
+  Future<Document> scrape({
+    required String workspaceId,
+    required String url,
+  }) async {
+    try {
+      final response = await dio.post<Map<String, dynamic>>(
+        '$_apiPrefix/workspaces/$workspaceId/documents/scrape',
+        data: {'url': url},
+      );
+      return Document.fromJson(response.data!);
+    } on DioException catch (e) {
+      throw _translate(e);
+    }
+  }
+
+  @override
   Future<void> delete({
     required String workspaceId,
     required String documentId,

@@ -1,6 +1,7 @@
 enum AdaptiveSessionMode { study, revision, flashcard }
 
-AdaptiveSessionMode adaptiveSessionModeFromWire(String? value) => switch (value) {
+AdaptiveSessionMode adaptiveSessionModeFromWire(String? value) =>
+    switch (value) {
       'revision' => AdaptiveSessionMode.revision,
       'flashcard' => AdaptiveSessionMode.flashcard,
       _ => AdaptiveSessionMode.study,
@@ -173,6 +174,30 @@ class SessionQuestionAttempt {
       };
 }
 
+class AdaptiveAnswerEvaluation {
+  const AdaptiveAnswerEvaluation({
+    required this.isCorrect,
+    required this.canonicalAnswer,
+    required this.rubricScore,
+    required this.matchedHints,
+  });
+
+  factory AdaptiveAnswerEvaluation.fromJson(Map<String, dynamic> json) =>
+      AdaptiveAnswerEvaluation(
+        isCorrect: json['is_correct'] as bool? ?? false,
+        canonicalAnswer: json['canonical_answer'] as String? ?? '',
+        rubricScore: (json['rubric_score'] as num?)?.toDouble(),
+        matchedHints: (json['matched_hints'] as List<dynamic>? ?? const [])
+            .whereType<String>()
+            .toList(growable: false),
+      );
+
+  final bool isCorrect;
+  final String canonicalAnswer;
+  final double? rubricScore;
+  final List<String> matchedHints;
+}
+
 class SessionFlashcardAttempt {
   const SessionFlashcardAttempt({
     required this.flashcardId,
@@ -227,8 +252,7 @@ class AdaptiveSessionSummary {
         wrongCount: (json['wrong_count'] as num?)?.toInt() ?? 0,
         rememberedCount: (json['remembered_count'] as num?)?.toInt() ?? 0,
         needsReviewCount: (json['needs_review_count'] as num?)?.toInt() ?? 0,
-        accuracyPercentage:
-            (json['accuracy_percentage'] as num?)?.toDouble(),
+        accuracyPercentage: (json['accuracy_percentage'] as num?)?.toDouble(),
         xpGained: (json['xp_gained'] as num?)?.toInt() ?? 0,
         actionXp: (json['action_xp'] as num?)?.toInt() ?? 0,
         completionBonus: (json['completion_bonus'] as num?)?.toInt() ?? 0,
@@ -241,8 +265,7 @@ class AdaptiveSessionSummary {
         masteryBefore: (json['mastery_before'] as num?)?.toDouble() ?? 0,
         masteryAfter: (json['mastery_after'] as num?)?.toDouble() ?? 0,
         level: json['level'] as String? ?? 'beginner',
-        gamificationLevel:
-            (json['gamification_level'] as num?)?.toInt() ?? 1,
+        gamificationLevel: (json['gamification_level'] as num?)?.toInt() ?? 1,
         elapsedSeconds: (json['elapsed_seconds'] as num?)?.toInt() ?? 0,
         performanceMessage: json['performance_message'] as String? ?? '',
       );

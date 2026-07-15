@@ -582,7 +582,9 @@ class _HomeTab extends ConsumerWidget {
                         alignment: const Alignment(0.42,
                             -0.1), // Zoomed-out alignment shows more of the image
                         colorFilter: ColorFilter.mode(
-                          Colors.black.withOpacity(isDark ? 0.6 : 0.25),
+                          isDark
+                              ? Colors.black.withValues(alpha: 0.5)
+                              : Colors.white.withValues(alpha: 0.3),
                           BlendMode.srcOver,
                         ),
                       ),
@@ -734,22 +736,18 @@ class _HomeTab extends ConsumerWidget {
 
                 // Start Quick Revision Card
                 if (onStartRevision != null) ...[
-                  if (themeMode == AppThemeMode.mature)
-                    _SmallPillButton(
-                      icon: Icons.bolt_rounded,
-                      label: 'Quick Revision',
-                      onTap: onStartRevision!,
-                      isDark: isDark,
-                      themeMode: themeMode,
-                    )
-                  else
-                    _StartQuickRevisionCard(
-                      onStartRevision: onStartRevision!,
-                      weakTopicCount: weakTopics.length,
-                      weakestTopicName: weakTopics.isEmpty
-                          ? null
-                          : weakTopics.first.topicName,
+                  _SmallPillButton(
+                    icon: Icons.bolt_rounded,
+                    label: 'Quick Revision',
+                    onTap: onStartRevision!,
+                    isDark: isDark,
+                    themeMode: themeMode,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFF59E0B), Color(0xFFEA580C)],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
                     ),
+                  ),
                   const SizedBox(height: 10),
                 ],
 
@@ -1677,9 +1675,9 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            isMature ? 'Start Your Study Session' : 'Study',
+                            isMature ? 'Start Your Study Session' : 'Start your study session',
                             textAlign: TextAlign.center,
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
@@ -1689,7 +1687,10 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
                         ],
                       ),
                     ),
-                    if (isMature) const SizedBox(width: 60),
+                    if (isMature)
+                      const SizedBox(width: 72)
+                    else
+                      const SizedBox(width: 50),
                   ],
                 ),
               ),
@@ -1823,8 +1824,10 @@ class _StartQuickRevisionCardState
     final isMature = themeMode == AppThemeMode.mature;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    const gradient = LinearGradient(
-      colors: [Color(0xFFF59E0B), Color(0xFFEA580C)],
+    final gradient = LinearGradient(
+      colors: isMature
+          ? const [Color(0xFF3B82F6), Color(0xFF1D4ED8)]
+          : const [Color(0xFFF59E0B), Color(0xFFEA580C)],
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
     );
@@ -1836,7 +1839,10 @@ class _StartQuickRevisionCardState
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFF59E0B).withOpacity(0.35),
+            color: (isMature
+                    ? const Color(0xFF2563EB)
+                    : const Color(0xFFF59E0B))
+                .withOpacity(0.35),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -2125,31 +2131,52 @@ class _TopicMasteryDashboardCardState
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'TOPIC MASTERY',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w900,
-                              color: isDark
-                                  ? const Color(0xFFA78BFA)
-                                  : const Color(0xFF4F46E5),
-                              letterSpacing: 1.2,
-                            ),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.donut_large_rounded,
+                                size: 18,
+                                color: isDark
+                                    ? const Color(0xFFA78BFA)
+                                    : const Color(0xFF7C5CFC),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Topic Mastery',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                ),
+                              ),
+                            ],
                           ),
                           GestureDetector(
                             onTap: () {
-                              ref.read(studentHomeTabProvider.notifier).state =
-                                  3;
+                              ref.read(studentHomeTabProvider.notifier).state = 3;
                             },
-                            child: Text(
-                              'View all',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: isDark
-                                    ? const Color(0xFF60A5FA)
-                                    : const Color(0xFF2563EB),
-                              ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'View all',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark
+                                        ? const Color(0xFF60A5FA)
+                                        : const Color(0xFF2563EB),
+                                  ),
+                                ),
+                                const SizedBox(width: 2),
+                                Icon(
+                                  Icons.arrow_forward_rounded,
+                                  size: 14,
+                                  color: isDark
+                                      ? const Color(0xFF60A5FA)
+                                      : const Color(0xFF2563EB),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -2326,16 +2353,16 @@ class _DonutChartPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final double radius = size.width / 2;
     final Rect rect =
-        Rect.fromCircle(center: Offset(radius, radius), radius: radius - 14);
+        Rect.fromCircle(center: Offset(radius, radius), radius: radius - 10);
 
     final Paint bgPaint = Paint()
       ..color = isDark
-          ? const Color(0xFF334155).withOpacity(0.3)
+          ? const Color(0xFF334155).withValues(alpha: 0.3)
           : const Color(0xFFF1F5F9)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 24.0;
+      ..strokeWidth = 14.0;
 
-    canvas.drawCircle(Offset(radius, radius), radius - 14, bgPaint);
+    canvas.drawCircle(Offset(radius, radius), radius - 10, bgPaint);
 
     if (topics.isEmpty) return;
 
@@ -2356,7 +2383,7 @@ class _DonutChartPainter extends CustomPainter {
         ..color = _getTopicColor(i)
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.butt // Flat ends matching reference exactly
-        ..strokeWidth = 24.0; // Proportional thick band width
+        ..strokeWidth = 14.0; // Proportional band width
 
       if (sweepAngle > 0.05) {
         canvas.drawArc(
@@ -3171,6 +3198,7 @@ class _SmallPillButton extends StatelessWidget {
     required this.onTap,
     this.isDark = false,
     this.themeMode = AppThemeMode.kids,
+    this.gradient,
   });
 
   final IconData icon;
@@ -3178,27 +3206,33 @@ class _SmallPillButton extends StatelessWidget {
   final VoidCallback onTap;
   final bool isDark;
   final AppThemeMode themeMode;
+  final Gradient? gradient;
 
   @override
   Widget build(BuildContext context) {
     final isMature = themeMode == AppThemeMode.mature;
 
-    if (isMature) {
-      // ── Teen & College: full-width gradient accent button ──
+    if (isMature || gradient != null) {
+      // ── Gradient accent button ──
+      final Color shadowColor = gradient is LinearGradient
+          ? (gradient as LinearGradient).colors.last
+          : const Color(0xFF2563EB);
+
       return Container(
         height: 46,
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: isDark
-                ? [const Color(0xFF1D4ED8), const Color(0xFF4F46E5)]
-                : [const Color(0xFF2563EB), const Color(0xFF4F46E5)],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ),
+          gradient: gradient ??
+              LinearGradient(
+                colors: isDark
+                    ? [const Color(0xFF1D4ED8), const Color(0xFF4F46E5)]
+                    : [const Color(0xFF2563EB), const Color(0xFF4F46E5)],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF2563EB).withValues(alpha: 0.25),
+              color: shadowColor.withValues(alpha: 0.25),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),

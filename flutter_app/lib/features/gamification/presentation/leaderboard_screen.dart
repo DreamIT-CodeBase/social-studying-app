@@ -12,15 +12,15 @@ import 'package:flutter_animate/flutter_animate.dart';
 // Colours & constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-const _gold   = Color(0xFFFFD700);
+const _gold = Color(0xFFFFD700);
 const _silver = Color(0xFFC0C0C0);
 const _bronze = Color(0xFFCD7F32);
 const _accent = Color(0xFF58CC02); // Duolingo green
 const _purple = Color(0xFF6366F1);
 
-const _bgDark  = Color(0xFF0D1117);
+const _bgDark = Color(0xFF0D1117);
 const _cardDark = Color(0xFF161B22);
-const _divDark  = Color(0xFF21262D);
+const _divDark = Color(0xFF21262D);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Root screen widget
@@ -87,7 +87,20 @@ class _LeaderboardBody extends StatelessWidget {
   final bool isDark;
 
   String _flag(String id) {
-    const flags = ['🇺🇸','🇬🇧','🇨🇦','🇮🇳','🇩🇪','🇫🇷','🇦🇺','🇯🇵','🇧🇷','🇪🇸','🇮🇹','🇳🇱'];
+    const flags = [
+      '🇺🇸',
+      '🇬🇧',
+      '🇨🇦',
+      '🇮🇳',
+      '🇩🇪',
+      '🇫🇷',
+      '🇦🇺',
+      '🇯🇵',
+      '🇧🇷',
+      '🇪🇸',
+      '🇮🇹',
+      '🇳🇱'
+    ];
     return flags[id.hashCode.abs() % flags.length];
   }
 
@@ -108,10 +121,11 @@ class _LeaderboardBody extends StatelessWidget {
       );
     }
 
-    final entries  = response.entries;
-    final top3     = entries.take(3).toList();
-    final rest     = entries.skip(3).toList();
-    final myEntry  = entries.where((e) => e.studentId == currentUserId).firstOrNull;
+    final entries = response.entries;
+    final top3 = entries.take(3).toList();
+    final rest = entries.skip(3).toList();
+    final myEntry =
+        entries.where((e) => e.studentId == currentUserId).firstOrNull;
 
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
@@ -134,10 +148,11 @@ class _LeaderboardBody extends StatelessWidget {
               currentUserId: currentUserId,
               isDark: isDark,
               getFlag: _flag,
-            )
-            .animate()
-            .fadeIn(duration: 600.ms)
-            .slideY(begin: 0.12, end: 0, duration: 600.ms, curve: Curves.easeOutCubic),
+            ).animate().fadeIn(duration: 600.ms).slideY(
+                begin: 0.12,
+                end: 0,
+                duration: 600.ms,
+                curve: Curves.easeOutCubic),
           ),
 
         // ── Section header ────────────────────────────────────────────────
@@ -153,7 +168,9 @@ class _LeaderboardBody extends StatelessWidget {
                       fontSize: 11,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 1.5,
-                      color: isDark ? const Color(0xFF8B949E) : const Color(0xFF6B7280),
+                      color: isDark
+                          ? const Color(0xFF8B949E)
+                          : const Color(0xFF6B7280),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -178,10 +195,8 @@ class _LeaderboardBody extends StatelessWidget {
                 isMe: rest[i].studentId == currentUserId,
                 isDark: isDark,
                 flag: _flag(rest[i].studentId),
-              )
-              .animate()
-              .fadeIn(duration: 300.ms, delay: (i * 40).ms)
-              .slideX(begin: 0.06, end: 0, duration: 300.ms, delay: (i * 40).ms),
+              ).animate().fadeIn(duration: 300.ms, delay: (i * 40).ms).slideX(
+                  begin: 0.06, end: 0, duration: 300.ms, delay: (i * 40).ms),
               childCount: rest.length,
             ),
           ),
@@ -271,7 +286,8 @@ class _HeroHeader extends StatelessWidget {
                           color: Colors.white.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+                        child: const Icon(Icons.arrow_back_ios_new_rounded,
+                            color: Colors.white, size: 18),
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -290,7 +306,8 @@ class _HeroHeader extends StatelessWidget {
 
                 // League badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: _gold.withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(20),
@@ -317,11 +334,13 @@ class _HeroHeader extends StatelessWidget {
                 // Your rank pill
                 if (myRank != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.18)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -358,10 +377,8 @@ class _HeroHeader extends StatelessWidget {
           ),
         ),
       ],
-    )
-    .animate()
-    .fadeIn(duration: 500.ms)
-    .slideY(begin: -0.08, end: 0, duration: 500.ms, curve: Curves.easeOutCubic);
+    ).animate().fadeIn(duration: 500.ms).slideY(
+        begin: -0.08, end: 0, duration: 500.ms, curve: Curves.easeOutCubic);
   }
 }
 
@@ -490,7 +507,8 @@ class _PodiumPillar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initial = entry.displayName.isNotEmpty ? entry.displayName[0].toUpperCase() : '?';
+    final initial =
+        entry.displayName.isNotEmpty ? entry.displayName[0].toUpperCase() : '?';
     final avatarSize = isWinner ? 58.0 : 48.0;
 
     return Column(
@@ -498,9 +516,8 @@ class _PodiumPillar extends StatelessWidget {
       children: [
         // Crown above winner
         if (isWinner)
-          const Text('👑', style: TextStyle(fontSize: 26))
-              .animate(onPlay: (c) => c.repeat(reverse: true))
-              .scaleXY(begin: 1.0, end: 1.12, duration: 900.ms, curve: Curves.easeInOut)
+          const Text('👑', style: TextStyle(fontSize: 26)).animate().scaleXY(
+              begin: 1.0, end: 1.12, duration: 900.ms, curve: Curves.easeInOut)
         else
           const SizedBox(height: 20),
         const SizedBox(height: 4),
@@ -550,7 +567,9 @@ class _PodiumPillar extends StatelessWidget {
                     fontSize: isWinner ? 22 : 18,
                     fontWeight: FontWeight.w900,
                     color: Colors.white,
-                    shadows: const [Shadow(color: Colors.black38, blurRadius: 4)],
+                    shadows: const [
+                      Shadow(color: Colors.black38, blurRadius: 4)
+                    ],
                   ),
                 ),
               ),
@@ -568,7 +587,9 @@ class _PodiumPillar extends StatelessWidget {
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w800,
-            color: isMe ? _purple : (isDark ? Colors.white : const Color(0xFF111827)),
+            color: isMe
+                ? _purple
+                : (isDark ? Colors.white : const Color(0xFF111827)),
           ),
         ),
         const SizedBox(height: 2),
@@ -589,7 +610,8 @@ class _PodiumPillar extends StatelessWidget {
               end: Alignment.bottomCenter,
             ),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-            border: Border.all(color: medalColor.withValues(alpha: 0.5), width: 1.5),
+            border: Border.all(
+                color: medalColor.withValues(alpha: 0.5), width: 1.5),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -621,7 +643,10 @@ class _PodiumPillar extends StatelessWidget {
               ),
               const Text(
                 'XP',
-                style: TextStyle(fontSize: 10, color: Colors.white70, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.white70,
+                    fontWeight: FontWeight.bold),
               ),
             ],
           ),
@@ -630,7 +655,8 @@ class _PodiumPillar extends StatelessWidget {
     );
   }
 
-  String _rankEmoji(int r) => switch (r) { 1 => '🥇', 2 => '🥈', 3 => '🥉', _ => '#$r' };
+  String _rankEmoji(int r) =>
+      switch (r) { 1 => '🥇', 2 => '🥈', 3 => '🥉', _ => '#$r' };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -652,7 +678,8 @@ class _LeaderboardTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initial = entry.displayName.isNotEmpty ? entry.displayName[0].toUpperCase() : '?';
+    final initial =
+        entry.displayName.isNotEmpty ? entry.displayName[0].toUpperCase() : '?';
     final xpProgress = (entry.xpTotal % 500) / 500.0;
 
     return Container(
@@ -669,7 +696,12 @@ class _LeaderboardTile extends StatelessWidget {
           width: isMe ? 1.5 : 1.0,
         ),
         boxShadow: isMe
-            ? [BoxShadow(color: _purple.withValues(alpha: 0.15), blurRadius: 12, offset: const Offset(0, 3))]
+            ? [
+                BoxShadow(
+                    color: _purple.withValues(alpha: 0.15),
+                    blurRadius: 12,
+                    offset: const Offset(0, 3))
+              ]
             : [],
       ),
       child: Padding(
@@ -685,7 +717,9 @@ class _LeaderboardTile extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w900,
-                  color: isDark ? const Color(0xFF8B949E) : const Color(0xFF6B7280),
+                  color: isDark
+                      ? const Color(0xFF8B949E)
+                      : const Color(0xFF6B7280),
                 ),
               ),
             ),
@@ -703,7 +737,9 @@ class _LeaderboardTile extends StatelessWidget {
                       : [const Color(0xFF374151), const Color(0xFF1F2937)],
                 ),
                 border: Border.all(
-                  color: isMe ? _purple : (isDark ? _divDark : const Color(0xFFD1D5DB)),
+                  color: isMe
+                      ? _purple
+                      : (isDark ? _divDark : const Color(0xFFD1D5DB)),
                   width: 2,
                 ),
               ),
@@ -737,7 +773,9 @@ class _LeaderboardTile extends StatelessWidget {
                             fontWeight: FontWeight.w700,
                             color: isMe
                                 ? _purple
-                                : (isDark ? Colors.white : const Color(0xFF111827)),
+                                : (isDark
+                                    ? Colors.white
+                                    : const Color(0xFF111827)),
                           ),
                         ),
                       ),
@@ -746,7 +784,8 @@ class _LeaderboardTile extends StatelessWidget {
                       if (isMe) ...[
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
                           decoration: BoxDecoration(
                             color: _purple.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
@@ -769,7 +808,8 @@ class _LeaderboardTile extends StatelessWidget {
                     children: [
                       // Level chip
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 2),
                         decoration: BoxDecoration(
                           color: _accent.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(6),
@@ -785,7 +825,8 @@ class _LeaderboardTile extends StatelessWidget {
                       ),
                       if (entry.streakDays > 0) ...[
                         const SizedBox(width: 6),
-                        const Icon(Icons.local_fire_department_rounded, size: 13, color: Color(0xFFFF6B35)),
+                        const Icon(Icons.local_fire_department_rounded,
+                            size: 13, color: Color(0xFFFF6B35)),
                         Text(
                           '${entry.streakDays}d',
                           style: const TextStyle(
@@ -804,7 +845,8 @@ class _LeaderboardTile extends StatelessWidget {
                     child: LinearProgressIndicator(
                       value: xpProgress,
                       minHeight: 4,
-                      backgroundColor: isDark ? _divDark : const Color(0xFFF3F4F6),
+                      backgroundColor:
+                          isDark ? _divDark : const Color(0xFFF3F4F6),
                       valueColor: AlwaysStoppedAnimation<Color>(
                         isMe ? _purple : _accent,
                       ),
@@ -825,7 +867,9 @@ class _LeaderboardTile extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
-                    color: isMe ? _purple : (isDark ? Colors.white : const Color(0xFF111827)),
+                    color: isMe
+                        ? _purple
+                        : (isDark ? Colors.white : const Color(0xFF111827)),
                   ),
                 ),
                 const Text(
@@ -873,7 +917,8 @@ class _ShimmerSkeletonState extends State<_ShimmerSkeleton>
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1400))
       ..repeat();
     _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
   }
@@ -892,25 +937,30 @@ class _ShimmerSkeletonState extends State<_ShimmerSkeleton>
       builder: (_, __) {
         final t = (_anim.value * math.pi * 2);
         final shimmer = 0.5 + 0.5 * math.sin(t);
-        final base   = isDark ? const Color(0xFF21262D) : const Color(0xFFE5E7EB);
-        final shine  = isDark ? const Color(0xFF30363D) : const Color(0xFFF9FAFB);
+        final base = isDark ? const Color(0xFF21262D) : const Color(0xFFE5E7EB);
+        final shine =
+            isDark ? const Color(0xFF30363D) : const Color(0xFFF9FAFB);
         final bg = Color.lerp(base, shine, shimmer)!;
 
-        return Column(
+        return ListView(
           children: [
-            Container(height: 220, color: isDark ? _cardDark : const Color(0xFFF3F4F6)),
+            Container(
+                height: 220,
+                color: isDark ? _cardDark : const Color(0xFFF3F4F6)),
             const SizedBox(height: 16),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
-                children: List.generate(5, (i) => Container(
-                  height: 72,
-                  margin: const EdgeInsets.only(bottom: 8),
-                  decoration: BoxDecoration(
-                    color: bg,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                )),
+                children: List.generate(
+                    5,
+                    (i) => Container(
+                          height: 72,
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: bg,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        )),
               ),
             ),
           ],

@@ -5,7 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// active session questions/cards, and filters across application restarts.
 class SessionPersistenceService {
   SessionPersistenceService._();
-  static final SessionPersistenceService instance = SessionPersistenceService._();
+  static final SessionPersistenceService instance =
+      SessionPersistenceService._();
 
   static SharedPreferences? _prefs;
 
@@ -21,6 +22,17 @@ class SessionPersistenceService {
   String? getQuestionIdSync() => _prefs?.getString(_keyQuestion);
   String? getFlashcardIdSync() => _prefs?.getString(_keyFlashcard);
   double? getScrollPositionSync() => _prefs?.getDouble(_keyScroll);
+
+  bool isPermissionSetupCompleteSync(String userId) =>
+      _prefs?.getBool('$_keyPermissionSetup$userId') ?? false;
+
+  Future<void> setPermissionSetupComplete(
+    String userId, {
+    required bool complete,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('$_keyPermissionSetup$userId', complete);
+  }
 
   Map<String, dynamic>? getFiltersSync() {
     final raw = _prefs?.getString(_keyFilters);
@@ -52,6 +64,7 @@ class SessionPersistenceService {
   static const String _keyScroll = 'persisted_scroll_position';
   static const String _keyFilters = 'persisted_filters';
   static const String _keyProgress = 'persisted_session_progress';
+  static const String _keyPermissionSetup = 'permission_setup_complete_';
 
   Future<void> saveWorkspace(String workspaceId) async {
     final prefs = await SharedPreferences.getInstance();

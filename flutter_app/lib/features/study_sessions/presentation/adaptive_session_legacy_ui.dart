@@ -25,6 +25,7 @@ class LegacyAdaptiveQuestionView extends ConsumerWidget {
     required this.lastXpDelta,
     required this.draftAnswer,
     required this.answerRevealed,
+    required this.answerSubmitting,
     required this.answerMatched,
     required this.isLast,
     required this.onClose,
@@ -41,6 +42,7 @@ class LegacyAdaptiveQuestionView extends ConsumerWidget {
   final int? lastXpDelta;
   final String draftAnswer;
   final bool answerRevealed;
+  final bool answerSubmitting;
   final bool? answerMatched;
   final bool isLast;
   final VoidCallback onClose;
@@ -117,7 +119,7 @@ class LegacyAdaptiveQuestionView extends ConsumerWidget {
                       key: ValueKey('adaptive-input:${question.id}'),
                       question: adaptedQuestion,
                       draftAnswer: draftAnswer,
-                      enabled: !answerRevealed,
+                      enabled: !answerRevealed && !answerSubmitting,
                       onChanged: onAnswerChanged,
                       feedback: feedback,
                     ),
@@ -134,7 +136,9 @@ class LegacyAdaptiveQuestionView extends ConsumerWidget {
                 ),
               ),
               _StudyActionBar(
-                enabled: answerRevealed || draftAnswer.trim().isNotEmpty,
+                enabled: !answerSubmitting &&
+                    (answerRevealed || draftAnswer.trim().isNotEmpty),
+                submitting: answerSubmitting,
                 feedbackVisible: answerRevealed,
                 isLast: isLast,
                 onPressed: answerRevealed ? onNext : onSubmit,
@@ -205,13 +209,11 @@ class LegacyAdaptiveFlashcardView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final border =
-        isDark ? const Color(0xFF2A2A50) : const Color(0xFFE5E7EB);
+    final border = isDark ? const Color(0xFF2A2A50) : const Color(0xFFE5E7EB);
     final progress = (dragOffset.abs() / 150).clamp(0.0, 1.0);
     final target = dragOffset >= 0 ? _green : _red;
-    final swipeColor = dragOffset.abs() < 10
-        ? border
-        : Color.lerp(border, target, progress)!;
+    final swipeColor =
+        dragOffset.abs() < 10 ? border : Color.lerp(border, target, progress)!;
     final adaptedCard = Flashcard(
       id: card.id,
       topic: card.topic,
@@ -290,6 +292,7 @@ class LegacyAdaptiveFlashcardView extends StatelessWidget {
           _FlashcardActions(
             revealed: revealed,
             enabled: !rating,
+            isFirstCard: current == 1,
             onReveal: onReveal,
             onNeedsReview: () => onRate(false),
             onRemember: () => onRate(true),
@@ -324,19 +327,12 @@ class LegacySessionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final surface = isDark
-        ? (flashcardStyle
-            ? const Color(0xFF13132A)
-            : const Color(0xFF1E293B))
+        ? (flashcardStyle ? const Color(0xFF13132A) : const Color(0xFF1E293B))
         : Colors.white;
     final border = isDark
-        ? (flashcardStyle
-            ? const Color(0xFF2A2A50)
-            : const Color(0xFF2D3748))
+        ? (flashcardStyle ? const Color(0xFF2A2A50) : const Color(0xFF2D3748))
         : const Color(0xFFE2E8F0);
     final muted = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
-    final minutes = remainingSeconds ~/ 60;
-    final seconds = remainingSeconds % 60;
-    final timerColor = remainingSeconds <= 60 ? _red : const Color(0xFF6366F1);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -366,14 +362,7 @@ class LegacySessionHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              _HeaderPill(
-                surface: surface,
-                border: border,
-                icon: Icons.timer_outlined,
-                iconColor: timerColor,
-                text: '$minutes:${seconds.toString().padLeft(2, '0')}',
-              ),
-              const SizedBox(width: 7),
+              const SizedBox(width: 8),
               Stack(
                 clipBehavior: Clip.none,
                 children: [
@@ -401,6 +390,14 @@ class LegacySessionHeader extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(width: 6),
+              _HeaderPill(
+                surface: surface,
+                border: border,
+                icon: Icons.timer_outlined,
+                iconColor: _purple,
+                text: _formatRemainingTime(remainingSeconds),
               ),
               const Spacer(),
               _HeaderPill(
@@ -448,6 +445,13 @@ class LegacySessionHeader extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatRemainingTime(int totalSeconds) {
+  final safeSeconds = totalSeconds.clamp(0, 99 * 60 + 59);
+  final minutes = (safeSeconds ~/ 60).toString().padLeft(2, '0');
+  final seconds = (safeSeconds % 60).toString().padLeft(2, '0');
+  return '$minutes:$seconds';
 }
 
 class _HeaderPill extends StatelessWidget {
@@ -601,7 +605,8 @@ class _QuestionCard extends StatelessWidget {
 }
 
 class _InfoChip extends StatelessWidget {
-  const _InfoChip({required this.icon, required this.label, required this.color});
+  const _InfoChip(
+      {required this.icon, required this.label, required this.color});
 
   final IconData icon;
   final String label;
@@ -761,7 +766,8 @@ class _FeedbackBadge extends StatelessWidget {
               ),
             ),
             if (correct)
-              const Icon(Icons.star_rounded, color: Color(0xFFFFD700), size: 14),
+              const Icon(Icons.star_rounded,
+                  color: Color(0xFFFFD700), size: 14),
           ],
         ),
       ),
@@ -773,19 +779,22 @@ class _StudyActionBar extends StatelessWidget {
   const _StudyActionBar({
     required this.enabled,
     required this.feedbackVisible,
+    required this.submitting,
     required this.isLast,
     required this.onPressed,
   });
 
   final bool enabled;
   final bool feedbackVisible;
+  final bool submitting;
   final bool isLast;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final color = feedbackVisible ? const Color(0xFF10B981) : const Color(0xFF4F46E5);
+    final color =
+        feedbackVisible ? const Color(0xFF10B981) : const Color(0xFF4F46E5);
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       decoration: BoxDecoration(
@@ -806,23 +815,35 @@ class _StudyActionBar extends StatelessWidget {
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                feedbackVisible
-                    ? (isLast ? 'Finish Session' : 'Next Question')
-                    : 'Submit Answer',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(width: 8),
-              Icon(
-                feedbackVisible
-                    ? (isLast ? Icons.flag_rounded : Icons.arrow_forward_rounded)
-                    : Icons.check_rounded,
-              ),
-            ],
-          ),
+          child: submitting
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
+                  ),
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      feedbackVisible
+                          ? (isLast ? 'Finish Session' : 'Next Question')
+                          : 'Submit Answer',
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      feedbackVisible
+                          ? (isLast
+                              ? Icons.flag_rounded
+                              : Icons.arrow_forward_rounded)
+                          : Icons.check_rounded,
+                    ),
+                  ],
+                ),
         ),
       ),
     );
@@ -861,6 +882,7 @@ class _FlashcardActions extends StatelessWidget {
   const _FlashcardActions({
     required this.revealed,
     required this.enabled,
+    required this.isFirstCard,
     required this.onReveal,
     required this.onNeedsReview,
     required this.onRemember,
@@ -868,6 +890,9 @@ class _FlashcardActions extends StatelessWidget {
 
   final bool revealed;
   final bool enabled;
+
+  /// True only for the very first card in the session — shows swipe guidelines.
+  final bool isFirstCard;
   final VoidCallback onReveal;
   final VoidCallback onNeedsReview;
   final VoidCallback onRemember;
@@ -878,67 +903,49 @@ class _FlashcardActions extends StatelessWidget {
     final background = isDark ? const Color(0xFF0D0D1F) : Colors.white;
     final surface = isDark ? const Color(0xFF1A1A3A) : Colors.white;
     final border = isDark ? const Color(0xFF2A2A50) : const Color(0xFFE5E7EB);
-    final muted = isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C);
 
     return Container(
       color: background,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
       child: SafeArea(
         top: false,
+        // After reveal: show swipe guide on card 1, nothing on later cards.
+        // Before reveal: show nothing (tap-to-reveal hint removed).
         child: revealed
-            ? Container(
-                decoration: BoxDecoration(
-                  color: surface,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: border, width: 1.5),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _SwipeAction(
-                        icon: Icons.arrow_back_rounded,
-                        title: 'Swipe Left',
-                        subtitle: 'Needs Review  -1',
-                        color: _red,
-                        onTap: enabled ? onNeedsReview : null,
-                      ),
+            ? (isFirstCard
+                ? Container(
+                    decoration: BoxDecoration(
+                      color: surface,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: border, width: 1.5),
                     ),
-                    Container(width: 1, height: 50, color: border),
-                    Expanded(
-                      child: _SwipeAction(
-                        icon: Icons.arrow_forward_rounded,
-                        title: 'Swipe Right',
-                        subtitle: 'Remember  +1',
-                        color: _green,
-                        trailingIcon: true,
-                        onTap: enabled ? onRemember : null,
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            : InkWell(
-                onTap: enabled ? onReveal : null,
-                borderRadius: BorderRadius.circular(14),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.touch_app_rounded, color: muted, size: 17),
-                      const SizedBox(width: 7),
-                      Text(
-                        'Tap card to reveal answer',
-                        style: TextStyle(
-                          color: muted,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _SwipeAction(
+                            icon: Icons.arrow_back_rounded,
+                            title: 'Swipe Left',
+                            subtitle: 'Needs Review  -1',
+                            color: _red,
+                            onTap: enabled ? onNeedsReview : null,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+                        Container(width: 1, height: 50, color: border),
+                        Expanded(
+                          child: _SwipeAction(
+                            icon: Icons.arrow_forward_rounded,
+                            title: 'Swipe Right',
+                            subtitle: 'Remember  +1',
+                            color: _green,
+                            trailingIcon: true,
+                            onTap: enabled ? onRemember : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink())
+            : const SizedBox.shrink(),
       ),
     );
   }
@@ -978,13 +985,13 @@ class _SwipeAction extends StatelessWidget {
       children: [
         Text(
           title,
-          style:
-              TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600),
+          style: TextStyle(
+              color: color, fontSize: 12, fontWeight: FontWeight.w600),
         ),
         Text(
           subtitle,
-          style:
-              TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
+          style: TextStyle(
+              color: color, fontSize: 12, fontWeight: FontWeight.w700),
         ),
       ],
     );

@@ -13,10 +13,9 @@ should still pass — they pin the spec, not the implementation.
 
 from __future__ import annotations
 
-import pytest
-
-pytestmark = pytest.mark.asyncio
 from unittest.mock import patch
+
+import pytest
 
 from app.models.question import (
     DifficultyLevel,
@@ -26,6 +25,8 @@ from app.models.question import (
     QuestionType,
 )
 from app.services.answer_evaluation import evaluate
+
+pytestmark = pytest.mark.asyncio
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -106,7 +107,7 @@ async def test_true_false_accepts_t_shorthand():
 
 
 async def test_true_false_rejects_synonyms_as_wrong():
-    """"yes"/"no" aren't t/f synonyms in this evaluator — they grade
+    """ "yes"/"no" aren't t/f synonyms in this evaluator — they grade
     as wrong rather than triggering an error. The client should have
     constrained the input.
     """
@@ -164,6 +165,7 @@ async def test_short_answer_collapses_internal_whitespace():
     q = _question(question_type=QuestionType.short_answer, answer="two words")
     assert (await evaluate(q, "two   words")).is_correct is True
 
+
 @patch("app.services.answer_evaluation.azure_openai.chat_json")
 async def test_short_answer_accepts_semantic_synonyms(mock_chat):
     """If exact substring / normalisation fails, semantic grading kicks in.
@@ -212,23 +214,37 @@ async def test_long_answer_correct_when_all_hints_present():
 async def test_long_answer_correct_at_half_threshold():
     """Exactly 2 of 4 hints = 50% = passes the threshold."""
     q = _long()
-    response = (
-        "Chlorophyll absorbs photons and ATP and NADPH are produced."
-    )
+    response = "Chlorophyll absorbs photons and ATP and NADPH are produced."
     result = await evaluate(q, response)
     assert result.is_correct is True
     assert result.rubric_score == pytest.approx(0.5)
     assert len(result.matched_hints) == 2
 
 
-async def test_long_answer_wrong_below_threshold():
+@patch("app.services.answer_evaluation.azure_openai.chat_json")
+async def test_long_answer_wrong_below_threshold(mock_chat):
     """1 of 4 hints = 25% = below the 50% threshold."""
     q = _long()
+    mock_chat.return_value = {"is_correct": False, "rubric_score": 0.25}
     response = "Chlorophyll absorbs photons and that is all I remember."
     result = await evaluate(q, response)
     assert result.is_correct is False
     assert result.rubric_score == pytest.approx(0.25)
     assert result.matched_hints == ["Chlorophyll absorbs photons"]
+
+
+@patch("app.services.answer_evaluation.azure_openai.chat_json")
+async def test_long_answer_accepts_semantically_equivalent_paraphrase(mock_chat):
+    mock_chat.return_value = {"is_correct": True, "rubric_score": 0.75}
+    q = _long()
+    result = await evaluate(
+        q,
+        "Light energy drives reactions that release oxygen and create the "
+        "energy carriers later used to build sugar from carbon dioxide.",
+    )
+    assert result.is_correct is True
+    assert result.rubric_score == pytest.approx(0.75)
+    mock_chat.assert_called_once()
 
 
 async def test_long_answer_accepts_paraphrased_token_overlap():
@@ -291,21 +307,20 @@ async def test_mathematical_strips_latex_delimiters_and_spaces():
     assert (await evaluate(q, "2x+3")).is_correct is True
 
 
-async def test_mathematical_does_not_yet_accept_commutative_equivalence():
-    """v1 limitation: ``"3+2x"`` is algebraically equivalent to
-    ``"$2x + 3$"`` but the substring check doesn't catch it.
-    Documented as a Sprint 5 polish item; this test pins the v1
-    behaviour so a future change to enable algebraic equivalence
-    breaks loudly.
-    """
+@patch("app.services.answer_evaluation.azure_openai.chat_json")
+async def test_mathematical_accepts_semantic_equivalence(mock_chat):
+    mock_chat.return_value = {"is_correct": True}
     q = _question(
         question_type=QuestionType.mathematical,
         answer="$2x + 3$",
     )
-    assert (await evaluate(q, "$3 + 2x$")).is_correct is False
+    assert (await evaluate(q, "3 + 2x")).is_correct is True
+    mock_chat.assert_called_once()
 
 
-async def test_mathematical_wrong_answer_is_marked_wrong():
+@patch("app.services.answer_evaluation.azure_openai.chat_json")
+async def test_mathematical_wrong_answer_is_marked_wrong(mock_chat):
+    mock_chat.return_value = {"is_correct": False}
     q = _question(
         question_type=QuestionType.mathematical,
         answer="$2x + 3$",
@@ -313,12 +328,14 @@ async def test_mathematical_wrong_answer_is_marked_wrong():
     assert (await evaluate(q, "$x + 1$")).is_correct is False
 
 
-async def test_mathematical_rubric_score_is_one_or_zero():
+@patch("app.services.answer_evaluation.azure_openai.chat_json")
+async def test_mathematical_rubric_score_is_one_or_zero(mock_chat):
     """v1 mathematical scoring is boolean — no partial credit. The
     rubric_score still populates so the response shape stays uniform
     across rubric-scored types.
     """
     q = _question(question_type=QuestionType.mathematical, answer="$2x$")
+    mock_chat.return_value = {"is_correct": False}
     assert (await evaluate(q, "$2x$")).rubric_score == 1.0
     assert (await evaluate(q, "$3x$")).rubric_score == 0.0
 

@@ -32,6 +32,11 @@ abstract class DocumentsRepository {
     required String contentType,
   });
 
+  Future<Document> scrape({
+    required String workspaceId,
+    required String url,
+  });
+
   Future<void> delete({
     required String workspaceId,
     required String documentId,

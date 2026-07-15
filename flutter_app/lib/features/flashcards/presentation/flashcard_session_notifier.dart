@@ -230,6 +230,7 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
       ref.invalidate(gamificationProfileProvider(key));
       ref.invalidate(streakSummaryProvider(key));
       ref.invalidate(studentProgressNotifierProvider(_workspaceId));
+      ref.invalidate(leaderboardProvider(_workspaceId));
     }
   }
 

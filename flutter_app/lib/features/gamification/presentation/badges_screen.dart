@@ -32,8 +32,7 @@ class BadgesScreen extends ConsumerWidget {
   final String workspaceId;
   final String userId;
 
-  GamificationKey get _key =>
-      (workspaceId: workspaceId, userId: userId);
+  GamificationKey get _key => (workspaceId: workspaceId, userId: userId);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -60,8 +59,7 @@ class BadgesScreen extends ConsumerWidget {
                 height: context.screenHeight * 0.7,
                 child: ErrorView(
                   message: error.toString(),
-                  onRetry: () =>
-                      ref.invalidate(badgesSummaryProvider(_key)),
+                  onRetry: () => ref.invalidate(badgesSummaryProvider(_key)),
                 ),
               ),
             ],
@@ -90,13 +88,28 @@ class _BadgesBodyState extends State<_BadgesBody> {
     if (category == 'All') return true;
     final name = badgeName.toLowerCase();
     if (category == 'Biology') {
-      return name.contains('cell') || name.contains('bio') || name.contains('mitosis') || name.contains('photosynthesis') || name.contains('genetics');
+      return name.contains('cell') ||
+          name.contains('bio') ||
+          name.contains('mitosis') ||
+          name.contains('photosynthesis') ||
+          name.contains('genetics');
     }
     if (category == 'Chemistry') {
-      return name.contains('chem') || name.contains('atom') || name.contains('bond') || name.contains('reaction');
+      return name.contains('chem') ||
+          name.contains('atom') ||
+          name.contains('bond') ||
+          name.contains('reaction');
     }
     if (category == 'General') {
-      return !name.contains('cell') && !name.contains('bio') && !name.contains('mitosis') && !name.contains('photosynthesis') && !name.contains('genetics') && !name.contains('chem') && !name.contains('atom') && !name.contains('bond') && !name.contains('reaction');
+      return !name.contains('cell') &&
+          !name.contains('bio') &&
+          !name.contains('mitosis') &&
+          !name.contains('photosynthesis') &&
+          !name.contains('genetics') &&
+          !name.contains('chem') &&
+          !name.contains('atom') &&
+          !name.contains('bond') &&
+          !name.contains('reaction');
     }
     return true;
   }
@@ -139,50 +152,6 @@ class _BadgesBodyState extends State<_BadgesBody> {
         _ProgressHeader(summary: widget.summary),
         const SizedBox(height: Spacing.lg),
 
-        // ── View mode and filter controls ─────────────────────────────────
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            // Segmented filter (All / Earned / Locked)
-            DropdownButton<String>(
-              value: _selectedFilter,
-              underline: const SizedBox(),
-              icon: const Icon(Icons.tune_rounded, size: 16),
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : const Color(0xFF0F172A),
-              ),
-              items: ['All', 'Earned', 'Locked'].map((f) => DropdownMenuItem(value: f, child: Text(f))).toList(),
-              onChanged: (val) {
-                if (val != null) setState(() => _selectedFilter = val);
-              },
-            ),
-            // Segmented category dropdown
-            DropdownButton<String>(
-              value: _selectedCategory,
-              underline: const SizedBox(),
-              icon: const Icon(Icons.category_rounded, size: 16),
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : const Color(0xFF0F172A),
-              ),
-              items: ['All', 'Biology', 'Chemistry', 'General'].map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-              onChanged: (val) {
-                if (val != null) setState(() => _selectedCategory = val);
-              },
-            ),
-            // Grid / List toggle
-            IconButton(
-              icon: Icon(_isGridView ? Icons.list_alt_rounded : Icons.grid_view_rounded),
-              onPressed: () => setState(() => _isGridView = !_isGridView),
-              tooltip: _isGridView ? 'Switch to Timeline' : 'Switch to Grid',
-            ),
-          ],
-        ),
-        const SizedBox(height: Spacing.md),
-
         // ── Render actual list ───────────────────────────────────────────
         if (_isGridView) ...[
           if (filteredEarned.isNotEmpty) ...[
@@ -223,7 +192,10 @@ class _BadgesBodyState extends State<_BadgesBody> {
                   decoration: BoxDecoration(
                     color: isDark ? const Color(0xFF1E293B) : Colors.white,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+                    border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF2D3748)
+                            : const Color(0xFFE2E8F0)),
                   ),
                   child: Row(
                     children: [
@@ -233,23 +205,31 @@ class _BadgesBodyState extends State<_BadgesBody> {
                           color: AppColors.secondary.withAlpha(40),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(iconForBadgeName(badge.icon), color: AppColors.secondary),
+                        child: Icon(iconForBadgeName(badge.icon),
+                            color: AppColors.secondary),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(badge.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            Text(badge.name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 14)),
                             const SizedBox(height: 2),
-                            Text(badge.description, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                            Text(badge.description,
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.grey)),
                           ],
                         ),
                       ),
                       const SizedBox(width: 8),
                       Text(
                         _relativeEarned(badge.earnedAt),
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.secondary),
+                        style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.secondary),
                       ),
                     ],
                   ),
@@ -273,7 +253,10 @@ class _BadgesBodyState extends State<_BadgesBody> {
                   decoration: BoxDecoration(
                     color: isDark ? const Color(0xFF1E293B) : Colors.white,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+                    border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF2D3748)
+                            : const Color(0xFFE2E8F0)),
                   ),
                   child: Row(
                     children: [
@@ -283,16 +266,23 @@ class _BadgesBodyState extends State<_BadgesBody> {
                           color: isDark ? Colors.grey[800] : Colors.grey[200],
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.lock_outline_rounded, color: Colors.grey),
+                        child: const Icon(Icons.lock_outline_rounded,
+                            color: Colors.grey),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(badge.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.grey)),
+                            Text(badge.name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    color: Colors.grey)),
                             const SizedBox(height: 2),
-                            Text(badge.description, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                            Text(badge.description,
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.grey)),
                           ],
                         ),
                       ),
@@ -467,13 +457,20 @@ enum BadgeTier { common, rare, epic, legendary }
 
 BadgeTier getBadgeTier(String title) {
   final name = title.toLowerCase();
-  if (name.contains('legend') || name.contains('gold') || name.contains('champion')) {
+  if (name.contains('legend') ||
+      name.contains('gold') ||
+      name.contains('champion')) {
     return BadgeTier.legendary;
   }
-  if (name.contains('epic') || name.contains('silver') || name.contains('streak') || name.contains('master')) {
+  if (name.contains('epic') ||
+      name.contains('silver') ||
+      name.contains('streak') ||
+      name.contains('master')) {
     return BadgeTier.epic;
   }
-  if (name.contains('rare') || name.contains('bronze') || name.contains('scholar')) {
+  if (name.contains('rare') ||
+      name.contains('bronze') ||
+      name.contains('scholar')) {
     return BadgeTier.rare;
   }
   return BadgeTier.common;
@@ -498,10 +495,10 @@ class _BadgeTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final tier = getBadgeTier(title);
-    
+
     Color tierColor;
     List<BoxShadow> glowShadows = [];
-    
+
     switch (tier) {
       case BadgeTier.legendary:
         tierColor = const Color(0xFFF59E0B);
@@ -543,9 +540,7 @@ class _BadgeTile extends StatelessWidget {
         break;
     }
 
-    final accent = locked
-        ? context.colorScheme.onSurfaceVariant
-        : tierColor;
+    final accent = locked ? context.colorScheme.onSurfaceVariant : tierColor;
 
     return Material(
       color: locked
@@ -630,82 +625,86 @@ class _BadgeDetailSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = locked
-        ? context.colorScheme.onSurfaceVariant
-        : AppColors.secondary;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        Spacing.xl,
-        Spacing.md,
-        Spacing.xl,
-        Spacing.xxl,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: accent.withAlpha(locked ? 31 : 51),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              locked ? Icons.lock_outline_rounded : icon,
-              color: accent,
-              size: 36,
-            ),
-          ),
-          const SizedBox(height: Spacing.lg),
-          Text(
-            name,
-            textAlign: TextAlign.center,
-            style: context.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: Spacing.sm),
-          Text(
-            description,
-            textAlign: TextAlign.center,
-            style: context.textTheme.bodyMedium?.copyWith(
-              color: context.colorScheme.onSurfaceVariant,
-              height: 1.5,
-            ),
-          ),
-          if (earnedAt != null) ...[
-            const SizedBox(height: Spacing.lg),
+    final accent =
+        locked ? context.colorScheme.onSurfaceVariant : AppColors.secondary;
+    return SizedBox(
+      key: const ValueKey('badge-detail-sheet'),
+      width: double.infinity,
+      height: 320,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          Spacing.xl,
+          Spacing.md,
+          Spacing.xl,
+          Spacing.xxl,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: Spacing.lg,
-                vertical: Spacing.sm,
-              ),
+              width: 72,
+              height: 72,
+              alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: AppColors.tertiary.withAlpha(31),
-                borderRadius: BorderRadius.circular(999),
+                color: accent.withAlpha(locked ? 31 : 51),
+                shape: BoxShape.circle,
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.check_circle_rounded,
-                    color: AppColors.tertiary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: Spacing.xs),
-                  Text(
-                    'Earned ${_formatDate(earnedAt!)}',
-                    style: context.textTheme.labelMedium?.copyWith(
-                      color: AppColors.tertiary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
+              child: Icon(
+                locked ? Icons.lock_outline_rounded : icon,
+                color: accent,
+                size: 36,
               ),
             ),
+            const SizedBox(height: Spacing.lg),
+            Text(
+              name,
+              textAlign: TextAlign.center,
+              style: context.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: Spacing.sm),
+            Text(
+              description,
+              textAlign: TextAlign.center,
+              style: context.textTheme.bodyMedium?.copyWith(
+                color: context.colorScheme.onSurfaceVariant,
+                height: 1.5,
+              ),
+            ),
+            if (earnedAt != null) ...[
+              const SizedBox(height: Spacing.lg),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Spacing.lg,
+                  vertical: Spacing.sm,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.tertiary.withAlpha(31),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      color: AppColors.tertiary,
+                      size: 16,
+                    ),
+                    const SizedBox(width: Spacing.xs),
+                    Text(
+                      'Earned ${_formatDate(earnedAt!)}',
+                      style: context.textTheme.labelMedium?.copyWith(
+                        color: AppColors.tertiary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -726,8 +725,18 @@ String _formatDate(String iso) {
   final parsed = DateTime.tryParse(iso);
   if (parsed == null) return 'recently';
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${months[parsed.month - 1]} ${parsed.day}';
 }

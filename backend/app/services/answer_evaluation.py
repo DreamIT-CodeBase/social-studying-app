@@ -5,14 +5,12 @@ a persisted :class:`Question`. Returns an :class:`EvaluationResult`
 the orchestrator turns into a database write + a user-facing feedback
 response.
 
-Why deterministic, not AI-graded
---------------------------------
-Sprint 3 v1 ships with substring-and-equality matching across all five
-question types. Sprint 5/6 polish can swap in GPT-4o rubric grading
-for ``long_answer`` and symbolic-equivalence grading for
-``mathematical``. The contract here — one function, ``evaluate``,
-returning a fixed-shape :class:`EvaluationResult` — stays stable
-across that change.
+Semantic grading
+----------------
+Fast deterministic checks handle exact answers first. Free-text and
+mathematical responses that do not match textually fall back to semantic AI
+grading so paraphrases, equivalent reasoning, and equivalent expressions can
+receive credit without weakening the deterministic paths.
 
 Two v1 approximations are worth knowing:
 
@@ -38,7 +36,6 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
-from app.core.exceptions import ServiceUnavailableError
 from app.models.question import Question, QuestionType
 from app.services import azure_openai
 
@@ -82,9 +79,8 @@ async def evaluate(question: Question, submitted: str) -> EvaluationResult:
         :class:`EvaluationResult` with correctness + canonical answer
         + (optional) rubric score + (optional) matched hints.
 
-    The function is pure and synchronous — no I/O, no AI calls. Adding
-    AI grading later means swapping the long_answer / mathematical
-    branches; the contract above stays.
+    Free-response branches may call the semantic grader after deterministic
+    checks fail. The fixed result contract stays the same.
     """
     submitted = (submitted or "").strip()
 
@@ -95,15 +91,13 @@ async def evaluate(question: Question, submitted: str) -> EvaluationResult:
     if question.question_type == QuestionType.short_answer:
         return await _evaluate_short_answer(question, submitted)
     if question.question_type == QuestionType.long_answer:
-        return _evaluate_long_answer(question, submitted)
+        return await _evaluate_long_answer(question, submitted)
     if question.question_type == QuestionType.mathematical:
-        return _evaluate_mathematical(question, submitted)
+        return await _evaluate_mathematical(question, submitted)
 
     # The QuestionType enum is closed; a new value without a branch
     # here means a missing test branch. Fail loud.
-    raise ValueError(
-        f"No evaluation branch for question_type={question.question_type!r}"
-    )
+    raise ValueError(f"No evaluation branch for question_type={question.question_type!r}")
 
 
 # ── Per-type evaluators ─────────────────────────────────────────────────────
@@ -125,9 +119,7 @@ def _evaluate_mcq(question: Question, submitted: str) -> EvaluationResult:
     )
 
 
-def _evaluate_true_false(
-    question: Question, submitted: str
-) -> EvaluationResult:
+def _evaluate_true_false(question: Question, submitted: str) -> EvaluationResult:
     """Accept ``true``/``false``/``t``/``f`` case-insensitively.
 
     The expanded set isn't generosity — a one-character button on the
@@ -152,16 +144,14 @@ def _evaluate_true_false(
     )
 
 
-async def _evaluate_short_answer(
-    question: Question, submitted: str
-) -> EvaluationResult:
+async def _evaluate_short_answer(question: Question, submitted: str) -> EvaluationResult:
     """Match against the canonical answer + every acceptable variant.
 
     Normalisation drops whitespace, lowercases, and strips trailing
     punctuation. ``"DNA"`` and ``"dna."`` and ``" DNA "`` all collapse
     to ``"dna"`` for comparison. Diacritics are stripped via Unicode
     NFKD so ``"café"`` and ``"cafe"`` match.
-    
+
     If the exact string match fails, falls back to a semantic LLM
     check to award credit for valid synonyms (Sprint 5/6 polish).
     """
@@ -176,17 +166,20 @@ async def _evaluate_short_answer(
 
     # Deterministic check failed. Fall back to semantic AI grading for synonyms.
     system_prompt = (
-        "You are an expert educational grader. You are grading a student's short answer response. "
-        "The expected canonical answer is provided, along with any acceptable variations (grading hints). "
-        "Your task is to determine if the student's answer is semantically equivalent, synonymous, "
-        "or conceptually identical to the expected answer in the context of general science or the question's topic. "
-        "If the student provided a correct synonym (e.g., 'spirilla' vs 'spirochetes'), mark it correct. "
-        "If the student's answer is conceptually wrong, unrelated, or too vague, mark it incorrect. "
+        "You are an expert educational grader. You are grading a student's "
+        "short answer response. The expected canonical answer is provided, "
+        "along with any acceptable variations (grading hints). Determine if "
+        "the student's answer is semantically equivalent, synonymous, or "
+        "conceptually identical to the expected answer in context. If the "
+        "student provided a correct synonym (for example, 'spirilla' versus "
+        "'spirochetes'), mark it correct. If the answer is conceptually wrong, "
+        "unrelated, or too vague, mark it incorrect. "
         "Return ONLY a JSON object with a single boolean field: 'is_correct'."
     )
+    acceptable = ", ".join(question.grading_hints) if question.grading_hints else "None"
     user_prompt = (
         f"Expected answer: {question.answer}\n"
-        f"Acceptable variations: {', '.join(question.grading_hints) if question.grading_hints else 'None'}\n"
+        f"Acceptable variations: {acceptable}\n"
         f"Student answer: {submitted}"
     )
 
@@ -199,9 +192,16 @@ async def _evaluate_short_answer(
         )
         is_correct = bool(result.get("is_correct", False))
         if is_correct:
-            logger.info("AI marked synonym %r as correct for expected %r", submitted, question.answer)
+            logger.info(
+                "AI marked synonym %r as correct for expected %r",
+                submitted,
+                question.answer,
+            )
     except Exception as exc:
-        logger.warning("AI short_answer evaluation failed, falling back to deterministic result. Error: %s", exc)
+        logger.warning(
+            "AI short_answer evaluation failed; using deterministic result: %s",
+            exc,
+        )
         is_correct = False
 
     return EvaluationResult(
@@ -210,9 +210,7 @@ async def _evaluate_short_answer(
     )
 
 
-def _evaluate_long_answer(
-    question: Question, submitted: str
-) -> EvaluationResult:
+async def _evaluate_long_answer(question: Question, submitted: str) -> EvaluationResult:
     """Substring-match the student response against each grading_hint.
 
     Each hit increments the score numerator. Correctness threshold is
@@ -255,17 +253,55 @@ def _evaluate_long_answer(
 
     score = len(matched) / len(question.grading_hints)
     threshold = 0.5
-    return EvaluationResult(
-        is_correct=score >= threshold,
-        canonical_answer=question.answer,
-        rubric_score=score,
-        matched_hints=matched,
+    if score >= threshold:
+        return EvaluationResult(
+            is_correct=True,
+            canonical_answer=question.answer,
+            rubric_score=score,
+            matched_hints=matched,
+        )
+
+    system_prompt = (
+        "You are an expert educational grader. Evaluate the student's answer "
+        "by meaning and demonstrated understanding, not by exact wording. "
+        "Paraphrases and equivalent explanations must receive credit. The answer "
+        "is correct when it accurately covers at least half of the required key "
+        "ideas without a major conceptual error. Return only JSON with "
+        "is_correct (boolean) and rubric_score (number from 0 to 1)."
     )
+    user_prompt = (
+        f"Question: {question.body}\n"
+        f"Reference answer: {question.answer}\n"
+        f"Required key ideas: {'; '.join(question.grading_hints)}\n"
+        f"Student answer: {submitted}"
+    )
+    try:
+        semantic = await azure_openai.chat_json(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_output_tokens=80,
+            temperature=0.0,
+        )
+        is_correct = bool(semantic.get("is_correct", False))
+        semantic_score = float(semantic.get("rubric_score", score))
+        semantic_score = max(0.0, min(1.0, semantic_score))
+        return EvaluationResult(
+            is_correct=is_correct,
+            canonical_answer=question.answer,
+            rubric_score=semantic_score,
+            matched_hints=matched,
+        )
+    except Exception as exc:
+        logger.warning("AI long_answer evaluation failed; using deterministic score: %s", exc)
+        return EvaluationResult(
+            is_correct=False,
+            canonical_answer=question.answer,
+            rubric_score=score,
+            matched_hints=matched,
+        )
 
 
-def _evaluate_mathematical(
-    question: Question, submitted: str
-) -> EvaluationResult:
+async def _evaluate_mathematical(question: Question, submitted: str) -> EvaluationResult:
     """Normalize whitespace + symbol-strip; check substring match.
 
     LaTeX delimiters (``$``, ``\\(``, ``\\)``), whitespace, and braces
@@ -289,7 +325,39 @@ def _evaluate_mathematical(
             canonical_answer=question.answer,
             rubric_score=0.0,
         )
-    is_correct = norm_answer in norm_submitted
+    if norm_answer in norm_submitted:
+        return EvaluationResult(
+            is_correct=True,
+            canonical_answer=question.answer,
+            rubric_score=1.0,
+        )
+
+    system_prompt = (
+        "You are an exact mathematical grader. Decide whether the student's "
+        "answer is mathematically equivalent to the reference answer in the "
+        "context of the question. Accept equivalent forms and plain-text math, "
+        "but reject different values, missing required units, or incompatible "
+        "expressions. Return only JSON with is_correct (boolean)."
+    )
+    user_prompt = (
+        f"Question: {question.body}\n"
+        f"Reference answer: {question.answer}\n"
+        f"Student answer: {submitted}"
+    )
+    try:
+        semantic = await azure_openai.chat_json(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_output_tokens=50,
+            temperature=0.0,
+        )
+        is_correct = bool(semantic.get("is_correct", False))
+    except Exception as exc:
+        logger.warning(
+            "AI mathematical evaluation failed; using deterministic result: %s",
+            exc,
+        )
+        is_correct = False
     return EvaluationResult(
         is_correct=is_correct,
         canonical_answer=question.answer,

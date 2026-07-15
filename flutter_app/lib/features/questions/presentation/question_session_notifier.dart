@@ -204,6 +204,7 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
       ref.invalidate(gamificationProfileProvider(key));
       ref.invalidate(streakSummaryProvider(key));
       ref.invalidate(studentProgressNotifierProvider(_workspaceId));
+      ref.invalidate(leaderboardProvider(_workspaceId));
     }
   }
 

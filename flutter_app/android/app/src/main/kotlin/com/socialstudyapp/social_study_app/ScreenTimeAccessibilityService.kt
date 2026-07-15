@@ -1,12 +1,17 @@
 package com.socialstudyapp.social_study_app
 
 import android.accessibilityservice.AccessibilityService
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -17,61 +22,39 @@ import android.widget.Space
 import android.widget.TextView
 import org.json.JSONArray
 
+/**
+ * Enforces the locally cached screen-time policy without making network calls.
+ *
+ * Flutter owns authentication and cloud synchronization. It writes the active
+ * student, wallet, and workspace policy into FlutterSharedPreferences. This
+ * service reads that cache so blocking keeps working while Flutter is stopped
+ * or the device is offline.
+ */
 class ScreenTimeAccessibilityService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var currentForegroundPackage: String? = null
-    private var checkUsageRunnable: Runnable? = null
+    private var usageTickRunnable: Runnable? = null
+    private var foregroundVerificationRunnable: Runnable? = null
+    private var lastUsageTickElapsedRealtime = 0L
     private var isOverlayShowing = false
     private var overlayView: View? = null
 
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        startForegroundVerification()
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            val packageName = event.packageName?.toString() ?: return
-            
-            // If the package is our own app, hide the overlay only if it is our main activity.
-            // This prevents the overlay from dismissing itself when it is first drawn.
-            if (packageName == this.packageName) {
-                val className = event.className?.toString() ?: ""
-                if (className.contains("MainActivity")) {
-                    hideLockOverlay()
-                    stopUsageTracking()
-                }
-                return
-            }
-
-            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-
-            val currentUserId = prefs.getString("flutter.current_user_id", "") ?: ""
-            val suffix = if (currentUserId.isNotEmpty()) "_$currentUserId" else ""
-
-            val enableBlocking = prefs.getBoolean("flutter.enable_blocking", true)
-            if (!enableBlocking) {
-                hideLockOverlay()
-                stopUsageTracking()
-                return
-            }
-
-            val blockedPackages = getBlockedPackages(prefs)
-
-            if (blockedPackages.contains(packageName)) {
-                currentForegroundPackage = packageName
-                val availableMinutes = getSafeLongPref(prefs, "flutter.available_minutes$suffix", 0L).toInt()
-                if (availableMinutes <= 0) {
-                    showLockOverlay()
-                    stopUsageTracking()
-                } else {
-                    hideLockOverlay()
-                    startUsageTracking(packageName)
-                }
-            } else {
-                // If it is another application or home launcher, stop usage tracking.
-                // We do NOT hide overlay here unless we are absolutely sure, but typically leaving 
-                // a blocked app should hide the overlay automatically.
-                hideLockOverlay()
-                stopUsageTracking()
-            }
+        if (
+            event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            event.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED
+        ) {
+            return
         }
+
+        val foregroundPackage = event.packageName?.toString() ?: return
+        handleForegroundPackage(foregroundPackage, event.className?.toString().orEmpty())
     }
 
     override fun onInterrupt() {
@@ -80,271 +63,395 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        foregroundVerificationRunnable?.let(handler::removeCallbacks)
+        foregroundVerificationRunnable = null
+        stopUsageTracking()
+        hideLockOverlay()
         super.onDestroy()
+    }
+
+    private fun handleForegroundPackage(foregroundPackage: String, className: String = "") {
+        if (foregroundPackage == packageName) {
+            if (className.contains("MainActivity")) {
+                leaveBlockedApp()
+            }
+            return
+        }
+
+        val prefs = getSharedPreferences(FLUTTER_PREFS, Context.MODE_PRIVATE)
+        val userId = prefs.getString(KEY_CURRENT_USER_ID, "").orEmpty()
+        val enforcementReady = prefs.getBoolean(KEY_ENFORCEMENT_READY, false)
+        val enableBlocking = prefs.getBoolean(KEY_ENABLE_BLOCKING, true)
+
+        if (userId.isEmpty() || !enforcementReady || !enableBlocking) {
+            leaveBlockedApp()
+            return
+        }
+
+        if (!getBlockedPackages(prefs).contains(foregroundPackage)) {
+            leaveBlockedApp()
+            return
+        }
+
+        currentForegroundPackage = foregroundPackage
+        val availableMinutes = getSafeLongPref(
+            prefs,
+            "$KEY_AVAILABLE_MINUTES$userId",
+            0L,
+        )
+        if (availableMinutes <= 0L) {
+            stopUsageTracking()
+            showLockOverlay()
+            return
+        }
+
+        hideLockOverlay()
+        startUsageTracking()
+    }
+
+    private fun leaveBlockedApp() {
         stopUsageTracking()
         hideLockOverlay()
     }
 
-    private fun startUsageTracking(packageName: String) {
-        if (checkUsageRunnable != null) return // Timer is already running
+    /**
+     * Deduct only actual foreground time. Partial seconds survive app switches,
+     * so reopening an app no longer spends a whole minute immediately.
+     */
+    private fun startUsageTracking() {
+        if (usageTickRunnable != null) return
 
-        checkUsageRunnable = object : Runnable {
+        lastUsageTickElapsedRealtime = SystemClock.elapsedRealtime()
+        usageTickRunnable = object : Runnable {
             override fun run() {
-                val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-                val currentUserId = prefs.getString("flutter.current_user_id", "") ?: ""
-                val suffix = if (currentUserId.isNotEmpty()) "_$currentUserId" else ""
-
-                val enableBlocking = prefs.getBoolean("flutter.enable_blocking", true)
-                val blockedPackages = getBlockedPackages(prefs)
-
-                if (enableBlocking && blockedPackages.contains(packageName)) {
-                    var availableMinutes = getSafeLongPref(prefs, "flutter.available_minutes$suffix", 0L).toInt()
-                    if (availableMinutes > 0) {
-                        availableMinutes -= 1
-
-                        val consumedMinutes = getSafeLongPref(prefs, "flutter.consumed_minutes$suffix", 0L).toInt() + 1
-                        val consumedToday = getSafeLongPref(prefs, "flutter.consumed_today$suffix", 0L).toInt() + 1
-
-                        prefs.edit().apply {
-                            putLong("flutter.available_minutes$suffix", availableMinutes.toLong())
-                            putLong("flutter.consumed_minutes$suffix", consumedMinutes.toLong())
-                            putLong("flutter.consumed_today$suffix", consumedToday.toLong())
-                            putLong("flutter.last_sync_time$suffix", System.currentTimeMillis())
-                            apply()
-                        }
-
-                        if (availableMinutes <= 0) {
-                            showLockOverlay()
-                            stopUsageTracking()
-                            return
-                        }
-                    } else {
-                        showLockOverlay()
-                        stopUsageTracking()
-                        return
-                    }
-                } else {
+                val foregroundPackage = currentForegroundPackage
+                if (foregroundPackage == null) {
                     stopUsageTracking()
                     return
                 }
 
-                // Repeat in 60 seconds
-                handler.postDelayed(this, 60000)
+                val prefs = getSharedPreferences(FLUTTER_PREFS, Context.MODE_PRIVATE)
+                val userId = prefs.getString(KEY_CURRENT_USER_ID, "").orEmpty()
+                val stillEnforced = userId.isNotEmpty() &&
+                    prefs.getBoolean(KEY_ENFORCEMENT_READY, false) &&
+                    prefs.getBoolean(KEY_ENABLE_BLOCKING, true) &&
+                    getBlockedPackages(prefs).contains(foregroundPackage)
+                if (!stillEnforced) {
+                    leaveBlockedApp()
+                    return
+                }
+
+                val nowElapsed = SystemClock.elapsedRealtime()
+                val elapsedMillis = (nowElapsed - lastUsageTickElapsedRealtime).coerceAtLeast(0L)
+                lastUsageTickElapsedRealtime = nowElapsed
+
+                val pendingKey = "$KEY_PENDING_USAGE_MILLIS$userId"
+                val pendingMillis = getSafeLongPref(prefs, pendingKey, 0L) + elapsedMillis
+                val wholeMinutes = pendingMillis / MILLIS_PER_MINUTE
+                val availableKey = "$KEY_AVAILABLE_MINUTES$userId"
+                val availableMinutes = getSafeLongPref(prefs, availableKey, 0L)
+
+                if (availableMinutes <= 0L) {
+                    stopUsageTracking()
+                    showLockOverlay()
+                    return
+                }
+
+                if (wholeMinutes > 0L) {
+                    val minutesToConsume = wholeMinutes.coerceAtMost(availableMinutes)
+                    val remainingMinutes = availableMinutes - minutesToConsume
+                    val consumedKey = "$KEY_CONSUMED_MINUTES$userId"
+                    val consumedTodayKey = "$KEY_CONSUMED_TODAY$userId"
+
+                    prefs.edit()
+                        .putLong(availableKey, remainingMinutes)
+                        .putLong(
+                            consumedKey,
+                            getSafeLongPref(prefs, consumedKey, 0L) + minutesToConsume,
+                        )
+                        .putLong(
+                            consumedTodayKey,
+                            getSafeLongPref(prefs, consumedTodayKey, 0L) + minutesToConsume,
+                        )
+                        .putLong(
+                            pendingKey,
+                            pendingMillis - (minutesToConsume * MILLIS_PER_MINUTE),
+                        )
+                        .putLong("$KEY_LAST_SYNC_TIME$userId", System.currentTimeMillis())
+                        .apply()
+
+                    if (remainingMinutes <= 0L) {
+                        stopUsageTracking()
+                        showLockOverlay()
+                        return
+                    }
+                } else {
+                    prefs.edit().putLong(pendingKey, pendingMillis).apply()
+                }
+
+                handler.postDelayed(this, USAGE_TICK_MILLIS)
             }
         }
 
-        // Fire the first check immediately so the first minute is deducted
-        // at t=0 rather than after a free 60-second grace period.
-        handler.post(checkUsageRunnable!!)
+        handler.postDelayed(usageTickRunnable!!, USAGE_TICK_MILLIS)
     }
 
     private fun stopUsageTracking() {
-        checkUsageRunnable?.let {
-            handler.removeCallbacks(it)
-        }
-        checkUsageRunnable = null
+        usageTickRunnable?.let(handler::removeCallbacks)
+        usageTickRunnable = null
+        lastUsageTickElapsedRealtime = 0L
         currentForegroundPackage = null
     }
 
+    /**
+     * Usage Access is a fallback for OEM/app combinations that do not emit a
+     * reliable window-state accessibility event. Without the grant this query
+     * simply returns no events and accessibility events remain the primary path.
+     */
+    private fun startForegroundVerification() {
+        if (foregroundVerificationRunnable != null) return
+
+        foregroundVerificationRunnable = object : Runnable {
+            override fun run() {
+                latestForegroundPackageFromUsageStats()?.let { foregroundPackage ->
+                    handleForegroundPackage(foregroundPackage)
+                }
+                handler.postDelayed(this, FOREGROUND_VERIFY_MILLIS)
+            }
+        }
+        handler.post(foregroundVerificationRunnable!!)
+    }
+
+    private fun latestForegroundPackageFromUsageStats(): String? {
+        val usageStatsManager = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
+        val endTime = System.currentTimeMillis()
+        val events = usageStatsManager.queryEvents(endTime - USAGE_LOOKBACK_MILLIS, endTime)
+        val event = UsageEvents.Event()
+        var latestTimestamp = Long.MIN_VALUE
+        var latestPackage: String? = null
+
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            val isForegroundEvent = event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                    event.eventType == UsageEvents.Event.ACTIVITY_RESUMED)
+            if (isForegroundEvent && event.timeStamp >= latestTimestamp) {
+                latestTimestamp = event.timeStamp
+                latestPackage = event.packageName
+            }
+        }
+        return latestPackage
+    }
+
     private fun showLockOverlay() {
-        if (isOverlayShowing) return
+        if (isOverlayShowing || overlayView != null) return
+        isOverlayShowing = true
 
         handler.post {
+            if (!isOverlayShowing || overlayView != null) return@post
             try {
                 val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
                 val layoutParams = WindowManager.LayoutParams().apply {
                     type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
                     format = PixelFormat.TRANSLUCENT
-                    flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                            WindowManager.LayoutParams.FLAG_FULLSCREEN
+                    flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        WindowManager.LayoutParams.FLAG_FULLSCREEN
                     width = WindowManager.LayoutParams.MATCH_PARENT
                     height = WindowManager.LayoutParams.MATCH_PARENT
                 }
 
                 val view = createOverlayView()
                 overlayView = view
-                windowManager.addView(view, layoutParams)
-                isOverlayShowing = true
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-
-    private fun hideLockOverlay() {
-        if (!isOverlayShowing || overlayView == null) return
-
-        handler.post {
-            try {
-                val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-                windowManager.removeView(overlayView)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
+                try {
+                    windowManager.addView(view, layoutParams)
+                } catch (accessibilityOverlayError: Exception) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
+                        layoutParams.type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                        } else {
+                            @Suppress("DEPRECATION")
+                            WindowManager.LayoutParams.TYPE_PHONE
+                        }
+                        windowManager.addView(view, layoutParams)
+                    } else {
+                        throw accessibilityOverlayError
+                    }
+                }
+            } catch (_: Exception) {
                 overlayView = null
                 isOverlayShowing = false
             }
         }
     }
 
-    private fun createOverlayView(): View {
-        val context = this
-
-        val root = FrameLayout(context).apply {
-            setBackgroundColor(Color.parseColor("#0F172A")) // Slate 900
+    private fun hideLockOverlay() {
+        val view = overlayView ?: run {
+            isOverlayShowing = false
+            return
         }
 
-        val container = LinearLayout(context).apply {
+        handler.post {
+            try {
+                val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+                windowManager.removeView(view)
+            } catch (_: Exception) {
+                // The OS may already have detached the accessibility overlay.
+            } finally {
+                if (overlayView === view) {
+                    overlayView = null
+                    isOverlayShowing = false
+                }
+            }
+        }
+    }
+
+    private fun createOverlayView(): View {
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#0F172A"))
+        }
+        val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding(dpToPx(32), dpToPx(32), dpToPx(32), dpToPx(32))
         }
-
-        val rootParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            Gravity.CENTER
+        root.addView(
+            container,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER,
+            ),
         )
-        root.addView(container, rootParams)
 
-        val iconView = TextView(context).apply {
-            text = "📚"
-            textSize = 64f
-            gravity = Gravity.CENTER
-        }
-        container.addView(iconView)
+        container.addView(
+            TextView(this).apply {
+                text = "📚"
+                textSize = 64f
+                gravity = Gravity.CENTER
+            },
+        )
+        container.addView(Space(this), LinearLayout.LayoutParams(1, dpToPx(24)))
+        container.addView(
+            TextView(this).apply {
+                text = "Study Time Exhausted"
+                textSize = 24f
+                setTextColor(Color.WHITE)
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                gravity = Gravity.CENTER
+            },
+        )
+        container.addView(Space(this), LinearLayout.LayoutParams(1, dpToPx(12)))
+        container.addView(
+            TextView(this).apply {
+                text = "You have used all earned screen time. Study and earn XP to unlock more social media time."
+                textSize = 14f
+                setTextColor(Color.parseColor("#94A3B8"))
+                gravity = Gravity.CENTER
+                setLineSpacing(0f, 1.2f)
+            },
+        )
+        container.addView(Space(this), LinearLayout.LayoutParams(1, dpToPx(36)))
 
-        container.addView(Space(context), LinearLayout.LayoutParams(1, dpToPx(24)))
-
-        val titleView = TextView(context).apply {
-            text = "Study Time Exhausted"
-            textSize = 24f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-        }
-        container.addView(titleView)
-
-        container.addView(Space(context), LinearLayout.LayoutParams(1, dpToPx(12)))
-
-        val subtitleView = TextView(context).apply {
-            text = "You have used all earned screen time. Answer questions and earn XP to unlock more social media usage."
-            textSize = 14f
-            setTextColor(Color.parseColor("#94A3B8")) // Slate 400
-            gravity = Gravity.CENTER
-            setLineSpacing(0f, 1.2f)
-        }
-        container.addView(subtitleView)
-
-        container.addView(Space(context), LinearLayout.LayoutParams(1, dpToPx(36)))
-
-        val studyButton = TextView(context).apply {
-            text = "Study Now"
-            textSize = 16f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, dpToPx(16), 0, dpToPx(16))
-
-            val shape = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                cornerRadius = dpToPx(12).toFloat()
-                setColor(Color.parseColor("#1D4ED8")) // Primary Blue
-            }
-            background = shape
-            isClickable = true
-            isFocusable = true
-
-            setOnClickListener {
-                val intent = packageManager.getLaunchIntentForPackage(packageName)
-                if (intent != null) {
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                    startActivity(intent)
-                }
-                hideLockOverlay()
-            }
-        }
         val buttonParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
+            LinearLayout.LayoutParams.WRAP_CONTENT,
         )
-        container.addView(studyButton, buttonParams)
-
-        container.addView(Space(context), LinearLayout.LayoutParams(1, dpToPx(12)))
-
-        val closeButton = TextView(context).apply {
-            text = "Close App"
-            textSize = 16f
-            setTextColor(Color.parseColor("#E2E8F0")) // Slate 200
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, dpToPx(16), 0, dpToPx(16))
-
-            val shape = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                cornerRadius = dpToPx(12).toFloat()
-                setColor(Color.parseColor("#1E293B")) // Slate 800
-                setStroke(dpToPx(1), Color.parseColor("#475569")) // Slate 600
+        container.addView(createActionButton("Study Now", "#1D4ED8") {
+            packageManager.getLaunchIntentForPackage(packageName)?.let { intent ->
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                startActivity(intent)
             }
-            background = shape
-            isClickable = true
-            isFocusable = true
-
-            setOnClickListener {
-                performGlobalAction(GLOBAL_ACTION_HOME)
-                hideLockOverlay()
-            }
-        }
-        container.addView(closeButton, buttonParams)
-
+            hideLockOverlay()
+        }, buttonParams)
+        container.addView(Space(this), LinearLayout.LayoutParams(1, dpToPx(12)))
+        container.addView(createActionButton("Close App", "#1E293B") {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            hideLockOverlay()
+        }, buttonParams)
         return root
     }
 
-    private fun dpToPx(dp: Int): Int {
-        val density = resources.displayMetrics.density
-        return (dp * density).toInt()
-    }
-
-    private fun getBlockedPackages(prefs: android.content.SharedPreferences): List<String> {
-        val jsonStr = prefs.getString("flutter.blocked_packages_json", null)
-        if (jsonStr == null) {
-            return listOf(
-                "com.instagram.android",
-                "com.zhiliaoapp.musically",
-                "com.google.android.youtube",
-                "com.facebook.katana",
-                "com.twitter.android",
-                "com.snapchat.android"
-            )
+    private fun createActionButton(label: String, backgroundColor: String, onClick: () -> Unit): TextView {
+        return TextView(this).apply {
+            text = label
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(0, dpToPx(16), 0, dpToPx(16))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = dpToPx(12).toFloat()
+                setColor(Color.parseColor(backgroundColor))
+                if (label == "Close App") {
+                    setStroke(dpToPx(1), Color.parseColor("#475569"))
+                }
+            }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
         }
-        return parseJsonArray(jsonStr)
     }
 
-    private fun getSafeLongPref(prefs: android.content.SharedPreferences, key: String, defaultValue: Long): Long {
+    private fun dpToPx(dp: Int): Int = (dp * resources.displayMetrics.density).toInt()
+
+    private fun getBlockedPackages(prefs: android.content.SharedPreferences): Set<String> {
+        val jsonString = prefs.getString(KEY_BLOCKED_PACKAGES, null)
+            ?: return DEFAULT_BLOCKED_PACKAGES
+        return parseJsonArray(jsonString).toSet()
+    }
+
+    private fun getSafeLongPref(
+        prefs: android.content.SharedPreferences,
+        key: String,
+        defaultValue: Long,
+    ): Long {
         return try {
             prefs.getLong(key, defaultValue)
-        } catch (e: ClassCastException) {
+        } catch (_: ClassCastException) {
             try {
                 prefs.getInt(key, defaultValue.toInt()).toLong()
-            } catch (e2: Exception) {
+            } catch (_: Exception) {
                 defaultValue
             }
-        } catch (e: Exception) {
-            defaultValue
         }
     }
 
-    private fun parseJsonArray(jsonStr: String): List<String> {
-        val list = mutableListOf<String>()
-        try {
-            val jsonArray = JSONArray(jsonStr)
-            for (i in 0 until jsonArray.length()) {
-                list.add(jsonArray.getString(i))
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
+    private fun parseJsonArray(jsonString: String): List<String> {
+        return try {
+            val jsonArray = JSONArray(jsonString)
+            List(jsonArray.length()) { index -> jsonArray.getString(index) }
+        } catch (_: Exception) {
+            emptyList()
         }
-        return list
+    }
+
+    companion object {
+        private const val FLUTTER_PREFS = "FlutterSharedPreferences"
+        private const val KEY_CURRENT_USER_ID = "flutter.current_user_id"
+        private const val KEY_ENFORCEMENT_READY = "flutter.enforcement_ready"
+        private const val KEY_ENABLE_BLOCKING = "flutter.enable_blocking"
+        private const val KEY_BLOCKED_PACKAGES = "flutter.blocked_packages_json"
+        private const val KEY_AVAILABLE_MINUTES = "flutter.available_minutes_"
+        private const val KEY_CONSUMED_MINUTES = "flutter.consumed_minutes_"
+        private const val KEY_CONSUMED_TODAY = "flutter.consumed_today_"
+        private const val KEY_LAST_SYNC_TIME = "flutter.last_sync_time_"
+        private const val KEY_PENDING_USAGE_MILLIS = "flutter.pending_usage_millis_"
+        private const val MILLIS_PER_MINUTE = 60_000L
+        private const val USAGE_TICK_MILLIS = 1_000L
+        private const val FOREGROUND_VERIFY_MILLIS = 1_500L
+        private const val USAGE_LOOKBACK_MILLIS = 10_000L
+
+        private val DEFAULT_BLOCKED_PACKAGES = setOf(
+            "com.instagram.android",
+            "com.instagram.barcelona",
+            "com.zhiliaoapp.musically",
+            "com.google.android.youtube",
+            "com.facebook.katana",
+            "com.twitter.android",
+            "com.snapchat.android",
+            "com.reddit.frontpage",
+            "com.pinterest",
+        )
     }
 }

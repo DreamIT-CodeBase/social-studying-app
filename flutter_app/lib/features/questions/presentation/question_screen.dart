@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -29,15 +28,55 @@ class QuestionScreen extends ConsumerStatefulWidget {
 }
 
 class _QuestionScreenState extends ConsumerState<QuestionScreen> {
+  Timer? _sessionTimer;
+  int _secondsRemaining = 0;
+
   QuestionSessionNotifier get _notifier =>
       ref.read(questionSessionNotifierProvider(widget.workspaceId).notifier);
+
+  int _limitFor(DifficultyLevel difficulty) => switch (difficulty) {
+        DifficultyLevel.beginner => 15 * 60,
+        DifficultyLevel.intermediate => 25 * 60,
+        DifficultyLevel.advanced => 30 * 60,
+      };
+
+  String _formatSeconds(int totalSeconds) {
+    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  void _startSessionTimer(DifficultyLevel difficulty) {
+    if (_sessionTimer != null) return;
+    setState(() => _secondsRemaining = _limitFor(difficulty));
+    _sessionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      if (_secondsRemaining <= 1) {
+        timer.cancel();
+        _sessionTimer = null;
+        setState(() => _secondsRemaining = 0);
+        ref.invalidate(questionSessionNotifierProvider(widget.workspaceId));
+        ref.read(studentHomeTabProvider.notifier).state = 0;
+        return;
+      }
+      setState(() => _secondsRemaining--);
+    });
+  }
+
+  void _resetSessionTimer() {
+    _sessionTimer?.cancel();
+    _sessionTimer = null;
+    _secondsRemaining = 0;
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        final progressVal = ref.read(studentProgressNotifierProvider(widget.workspaceId)).valueOrNull;
+        final progressVal = ref
+            .read(studentProgressNotifierProvider(widget.workspaceId))
+            .valueOrNull;
         _notifier.start(mastery: progressVal?.overallMastery);
       }
     });
@@ -47,9 +86,12 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
   void didUpdateWidget(QuestionScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.workspaceId != oldWidget.workspaceId) {
+      _resetSessionTimer();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          final progressVal = ref.read(studentProgressNotifierProvider(widget.workspaceId)).valueOrNull;
+          final progressVal = ref
+              .read(studentProgressNotifierProvider(widget.workspaceId))
+              .valueOrNull;
           _notifier.start(mastery: progressVal?.overallMastery);
         }
       });
@@ -57,9 +99,23 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
   }
 
   void _restart() {
+    _resetSessionTimer();
     ref.invalidate(questionSessionNotifierProvider(widget.workspaceId));
-    final progressVal = ref.read(studentProgressNotifierProvider(widget.workspaceId)).valueOrNull;
+    final progressVal = ref
+        .read(studentProgressNotifierProvider(widget.workspaceId))
+        .valueOrNull;
     _notifier.start(mastery: progressVal?.overallMastery);
+  }
+
+  void _endSession() {
+    _resetSessionTimer();
+    _notifier.endSession();
+  }
+
+  @override
+  void dispose() {
+    _sessionTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -68,6 +124,22 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
         ref.watch(questionSessionNotifierProvider(widget.workspaceId));
     final isAdmin = ref.watch(isActiveWorkspaceAdminProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final difficulty = session.maybeWhen(
+      ready: (question, _) => question.difficulty,
+      submitting: (question, _) => question.difficulty,
+      feedback: (question, _, __) => question.difficulty,
+      orElse: () => null,
+    );
+    if (difficulty != null && _sessionTimer == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startSessionTimer(difficulty);
+      });
+    }
+    final timerText = _formatSeconds(
+      _sessionTimer == null && difficulty != null
+          ? _limitFor(difficulty)
+          : _secondsRemaining,
+    );
 
     return session.when(
       idle: () => Scaffold(
@@ -81,25 +153,27 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
                 Container(
                   padding: const EdgeInsets.all(Spacing.lg),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withOpacity(0.12),
+                    color:
+                        Theme.of(context).colorScheme.primary.withOpacity(0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.quiz_rounded, size: 72, color: Theme.of(context).colorScheme.primary),
+                  child: Icon(Icons.quiz_rounded,
+                      size: 72, color: Theme.of(context).colorScheme.primary),
                 ),
                 const SizedBox(height: Spacing.xl),
                 Text(
                   'Ready to study?',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                        fontWeight: FontWeight.bold,
+                      ),
                 ),
                 const SizedBox(height: Spacing.sm),
                 Text(
                   'Your study session length is automatically customized based on your mastery.',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                 ),
                 const SizedBox(height: Spacing.xl),
                 FilledButton.icon(
@@ -107,8 +181,10 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
                   icon: const Icon(Icons.play_arrow_rounded),
                   label: const Text('Start Study Session'),
                   style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
                   ),
                 ),
               ],
@@ -126,6 +202,8 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
         submitting: false,
         feedback: null,
         onSubmit: _notifier.submit,
+        onEndSession: _endSession,
+        timerText: timerText,
       ),
       submitting: (question, draftAnswer) => _UnifiedQuestionView(
         workspaceId: widget.workspaceId,
@@ -135,6 +213,8 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
         submitting: true,
         feedback: null,
         onSubmit: _notifier.submit,
+        onEndSession: _endSession,
+        timerText: timerText,
       ),
       feedback: (question, submittedAnswer, feedback) => _UnifiedQuestionView(
         workspaceId: widget.workspaceId,
@@ -144,12 +224,13 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
         submitting: false,
         feedback: feedback,
         onNext: _notifier.next,
-        onEndSession: _notifier.endSession,
+        onEndSession: _endSession,
+        timerText: timerText,
       ),
       completed: (correctCount, totalCount) => _StudyCompleteView(
         correctCount: correctCount,
         totalCount: totalCount,
-        onDone: _notifier.endSession,
+        onDone: _endSession,
       ),
       unavailable: (message, isNoTopics, retryAfterSeconds) => EmptyStateView(
         icon: isNoTopics
@@ -179,13 +260,24 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
 // Helper methods for subject mapping based on topic
 String _getSubjectFromTopic(String topic) {
   final lowercase = topic.toLowerCase();
-  if (lowercase.contains('cell') || lowercase.contains('bio') || lowercase.contains('gene') || lowercase.contains('dna') || lowercase.contains('mitosis')) {
+  if (lowercase.contains('cell') ||
+      lowercase.contains('bio') ||
+      lowercase.contains('gene') ||
+      lowercase.contains('dna') ||
+      lowercase.contains('mitosis')) {
     return 'Biology';
   }
-  if (lowercase.contains('chem') || lowercase.contains('atom') || lowercase.contains('bond') || lowercase.contains('molec')) {
+  if (lowercase.contains('chem') ||
+      lowercase.contains('atom') ||
+      lowercase.contains('bond') ||
+      lowercase.contains('molec')) {
     return 'Chemistry';
   }
-  if (lowercase.contains('phys') || lowercase.contains('force') || lowercase.contains('grav') || lowercase.contains('motion') || lowercase.contains('wave')) {
+  if (lowercase.contains('phys') ||
+      lowercase.contains('force') ||
+      lowercase.contains('grav') ||
+      lowercase.contains('motion') ||
+      lowercase.contains('wave')) {
     return 'Physics';
   }
   return 'Study';
@@ -230,7 +322,6 @@ Color _getSubjectBgColor(String subject) {
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────
 // Unified Answering & Feedback layout matching mockup
 // ─────────────────────────────────────────────────────────────────────────
@@ -245,6 +336,7 @@ class _UnifiedQuestionView extends ConsumerStatefulWidget {
     this.onSubmit,
     this.onNext,
     this.onEndSession,
+    required this.timerText,
   });
 
   final String workspaceId;
@@ -256,44 +348,20 @@ class _UnifiedQuestionView extends ConsumerStatefulWidget {
   final Future<void> Function()? onSubmit;
   final Future<void> Function()? onNext;
   final VoidCallback? onEndSession;
+  final String timerText;
 
   @override
-  ConsumerState<_UnifiedQuestionView> createState() => _UnifiedQuestionViewState();
+  ConsumerState<_UnifiedQuestionView> createState() =>
+      _UnifiedQuestionViewState();
 }
 
 class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
   bool _triggerConfetti = false;
-  Timer? _timer;
-  int _seconds = 0;
-
-  String get _timerText {
-    final minutes = (_seconds ~/ 60).toString().padLeft(2, '0');
-    final seconds = (_seconds % 60).toString().padLeft(2, '0');
-    return "$minutes:$seconds";
-  }
-
-  void _startTimer() {
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
-        setState(() {
-          _seconds++;
-        });
-      }
-    });
-  }
 
   @override
   void initState() {
     super.initState();
     _updateMascotAndTriggers();
-    _startTimer();
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
   }
 
   @override
@@ -310,7 +378,7 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
         _triggerConfetti = true;
         HapticFeedback.heavyImpact();
         SoundService.instance.playCorrectAnswer();
-        
+
         WidgetsBinding.instance.addPostFrameCallback((_) => _runCelebrations());
       } else {
         _triggerConfetti = false;
@@ -346,16 +414,15 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
     final question = widget.question;
     final feedback = widget.feedback;
     final isFeedbackState = feedback != null;
-    
+
     final canSubmit = !widget.submitting &&
         widget.selectedAnswer != null &&
         widget.selectedAnswer!.trim().isNotEmpty;
-        
+
     final subject = _getSubjectFromTopic(question.topic);
     final subjectColor = _getSubjectColor(subject);
     final subjectBgColor = _getSubjectBgColor(subject);
     final subjectIcon = _getIconForSubject(subject);
-    
 
     final themeMode = ref.watch(appThemeModeProvider);
 
@@ -374,7 +441,10 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
                       gradient: LinearGradient(
                         colors: isDark
                             ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
-                            : [const Color(0xFFEFF6FF), const Color(0xFFDBEAFE)],
+                            : [
+                                const Color(0xFFEFF6FF),
+                                const Color(0xFFDBEAFE)
+                              ],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                       ),
@@ -391,24 +461,31 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
               children: [
                 // Top Custom Header Row
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: Row(
                     children: [
                       // Back Button
                       GestureDetector(
                         onTap: () {
+                          widget.onEndSession?.call();
                           ref.read(studentHomeTabProvider.notifier).state = 0;
                         },
                         child: Container(
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            color:
+                                isDark ? const Color(0xFF1E293B) : Colors.white,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+                            border: Border.all(
+                                color: isDark
+                                    ? const Color(0xFF2D3748)
+                                    : const Color(0xFFE2E8F0)),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.03),
+                                color: Colors.black
+                                    .withValues(alpha: isDark ? 0.15 : 0.03),
                                 blurRadius: 4,
                                 offset: const Offset(0, 2),
                               ),
@@ -416,102 +493,144 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
                           ),
                           child: Icon(
                             Icons.arrow_back_rounded,
-                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                            color:
+                                isDark ? Colors.white : const Color(0xFF0F172A),
                             size: 20,
                           ),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // Timer Pill
+                      // XP Pill
+                      Consumer(
+                        builder: (context, ref, _) {
+                          final notifier = ref.read(
+                              questionSessionNotifierProvider(
+                                      widget.workspaceId)
+                                  .notifier);
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0xFF1E293B)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color: isDark
+                                      ? const Color(0xFF2D3748)
+                                      : const Color(0xFFE2E8F0)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.star_rounded,
+                                    size: 13, color: Color(0xFFFFC93C)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${notifier.questionsCorrect * 15} XP',
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 6),
+                      // Reverse timer — immediately to the right of XP.
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 6),
                         decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                          color:
+                              isDark ? const Color(0xFF1E293B) : Colors.white,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+                          border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF2D3748)
+                                  : const Color(0xFFE2E8F0)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.timer_outlined, size: 13, color: Color(0xFF6366F1)),
+                            const Icon(Icons.timer_outlined,
+                                size: 13, color: Color(0xFF6366F1)),
                             const SizedBox(width: 4),
                             Text(
-                              _timerText,
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                              widget.timerText,
+                              style: const TextStyle(
+                                  fontSize: 11, fontWeight: FontWeight.bold),
                             ),
                           ],
                         ),
                       ),
                       const SizedBox(width: 6),
-                      // XP Pill
-                      Consumer(
-                        builder: (context, ref, _) {
-                          final notifier = ref.read(questionSessionNotifierProvider(widget.workspaceId).notifier);
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.star_rounded, size: 13, color: Color(0xFFFFC93C)),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '${notifier.questionsCorrect * 15} XP',
-                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(width: 6),
                       // Accuracy Pill
                       Consumer(
                         builder: (context, ref, _) {
-                          final notifier = ref.read(questionSessionNotifierProvider(widget.workspaceId).notifier);
+                          final notifier = ref.read(
+                              questionSessionNotifierProvider(
+                                      widget.workspaceId)
+                                  .notifier);
                           final acc = notifier.questionsAnswered > 0
-                              ? (notifier.questionsCorrect / notifier.questionsAnswered * 100).round()
+                              ? (notifier.questionsCorrect /
+                                      notifier.questionsAnswered *
+                                      100)
+                                  .round()
                               : 100;
                           return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 6),
                             decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                              color: isDark
+                                  ? const Color(0xFF1E293B)
+                                  : Colors.white,
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+                              border: Border.all(
+                                  color: isDark
+                                      ? const Color(0xFF2D3748)
+                                      : const Color(0xFFE2E8F0)),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.gps_fixed_rounded, size: 13, color: Color(0xFF22C55E)),
+                                const Icon(Icons.gps_fixed_rounded,
+                                    size: 13, color: Color(0xFF22C55E)),
                                 const SizedBox(width: 4),
                                 Text(
                                   '$acc%',
-                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold),
                                 ),
                               ],
                             ),
                           );
                         },
                       ),
-
                     ],
                   ),
                 ),
-                
+
                 // Study Session Progress Bar
                 Consumer(
                   builder: (context, ref, _) {
-                    final notifier = ref.read(questionSessionNotifierProvider(widget.workspaceId).notifier);
+                    final notifier = ref.read(
+                        questionSessionNotifierProvider(widget.workspaceId)
+                            .notifier);
                     final isFeedback = widget.feedback != null;
-                    final currentProgressIndex = (notifier.questionsAnswered + (isFeedback ? 0 : 1)).clamp(1, notifier.sessionTargetLength);
-                    final progressText = "Question $currentProgressIndex of ${notifier.sessionTargetLength}";
-                    final progressPercent = (currentProgressIndex - (isFeedback ? 0 : 1)) / notifier.sessionTargetLength;
+                    final currentProgressIndex =
+                        (notifier.questionsAnswered + (isFeedback ? 0 : 1))
+                            .clamp(1, notifier.sessionTargetLength);
+                    final progressText =
+                        "Question $currentProgressIndex of ${notifier.sessionTargetLength}";
+                    final progressPercent =
+                        (currentProgressIndex - (isFeedback ? 0 : 1)) /
+                            notifier.sessionTargetLength;
                     return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -521,7 +640,9 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
                               Text(
                                 progressText,
                                 style: TextStyle(
-                                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                                  color: isDark
+                                      ? const Color(0xFF94A3B8)
+                                      : const Color(0xFF475569),
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -529,7 +650,9 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
                               Text(
                                 "${(progressPercent * 100).round()}% Completed",
                                 style: TextStyle(
-                                  color: isDark ? const Color(0xFF64748B) : const Color(0xFF64748B),
+                                  color: isDark
+                                      ? const Color(0xFF64748B)
+                                      : const Color(0xFF64748B),
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -542,7 +665,9 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
                             child: LinearProgressIndicator(
                               value: progressPercent,
                               minHeight: 6,
-                              backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                              backgroundColor: isDark
+                                  ? const Color(0xFF1E293B)
+                                  : const Color(0xFFE2E8F0),
                               valueColor: AlwaysStoppedAnimation<Color>(
                                 Theme.of(context).colorScheme.primary,
                               ),
@@ -553,7 +678,7 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
                     );
                   },
                 ),
-                
+
                 // Question / Input Body
                 Expanded(
                   child: AnimatedSwitcher(
@@ -562,176 +687,206 @@ class _UnifiedQuestionViewState extends ConsumerState<_UnifiedQuestionView> {
                       key: ValueKey('qst:${question.id}'),
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                       children: [
-                      if (themeMode == AppThemeMode.mature)
-                        // ── Teen & College theme: clean card, no topic/level pills ──
-                        Container(
-                          margin: EdgeInsets.only(top: math.max(0.0, 60.0 - MediaQuery.of(context).padding.top)),
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(
-                              color: isDark ? const Color(0xFF2D3748) : const Color(0xFFF1F5F9),
-                              width: 1.5,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.04),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
+                        if (themeMode == AppThemeMode.mature)
+                          // ── Teen & College theme: clean card, no topic/level pills ──
+                          Container(
+                            margin: EdgeInsets.only(
+                                top: math.max(0.0,
+                                    60.0 - MediaQuery.of(context).padding.top)),
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0xFF1E293B)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: isDark
+                                    ? const Color(0xFF2D3748)
+                                    : const Color(0xFFF1F5F9),
+                                width: 1.5,
                               ),
-                            ],
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    width: 60,
-                                    height: 60,
-                                    decoration: BoxDecoration(
-                                      color: subjectBgColor,
-                                      borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black
+                                      .withValues(alpha: isDark ? 0.15 : 0.04),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 60,
+                                      height: 60,
+                                      decoration: BoxDecoration(
+                                        color: subjectBgColor,
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: Icon(subjectIcon,
+                                          color: subjectColor, size: 28),
                                     ),
-                                    child: Icon(subjectIcon, color: subjectColor, size: 28),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: subjectBgColor,
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text(
-                                      subject.toUpperCase(),
-                                      style: TextStyle(
-                                        color: subjectColor,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w800,
+                                    const SizedBox(height: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: subjectBgColor,
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        subject.toUpperCase(),
+                                        style: TextStyle(
+                                          color: subjectColor,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w800,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Text(
-                                  question.body,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    color: isDark ? Colors.white : const Color(0xFF0F172A),
-                                    height: 1.4,
+                                  ],
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Text(
+                                    question.body,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: isDark
+                                          ? Colors.white
+                                          : const Color(0xFF0F172A),
+                                      height: 1.4,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        )
-                      else
-                        // ── Kids theme: original layout with topic + level pills ──
-                        Container(
-                          margin: EdgeInsets.only(top: math.max(0.0, 105.0 - MediaQuery.of(context).padding.top)),
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(
-                              color: isDark ? const Color(0xFF2D3748) : const Color(0xFFF1F5F9),
-                              width: 1.5,
+                              ],
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.04),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
+                          )
+                        else
+                          // ── Kids theme: original layout with topic + level pills ──
+                          Container(
+                            margin: EdgeInsets.only(
+                                top: math.max(
+                                    0.0,
+                                    105.0 -
+                                        MediaQuery.of(context).padding.top)),
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0xFF1E293B)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: isDark
+                                    ? const Color(0xFF2D3748)
+                                    : const Color(0xFFF1F5F9),
+                                width: 1.5,
                               ),
-                            ],
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Container(
-                                        width: 60,
-                                        height: 60,
-                                        decoration: BoxDecoration(
-                                          color: subjectBgColor,
-                                          borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black
+                                      .withValues(alpha: isDark ? 0.15 : 0.04),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(
+                                          width: 60,
+                                          height: 60,
+                                          decoration: BoxDecoration(
+                                            color: subjectBgColor,
+                                            borderRadius:
+                                                BorderRadius.circular(16),
+                                          ),
+                                          child: Icon(subjectIcon,
+                                              color: subjectColor, size: 28),
                                         ),
-                                        child: Icon(subjectIcon, color: subjectColor, size: 28),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                        decoration: BoxDecoration(
-                                          color: subjectBgColor,
-                                          borderRadius: BorderRadius.circular(20),
-                                        ),
-                                        child: Text(
-                                          subject.toUpperCase(),
-                                          style: TextStyle(
-                                            color: subjectColor,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w800,
+                                        const SizedBox(height: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: subjectBgColor,
+                                            borderRadius:
+                                                BorderRadius.circular(20),
+                                          ),
+                                          child: Text(
+                                            subject.toUpperCase(),
+                                            style: TextStyle(
+                                              color: subjectColor,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w800,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: Text(
-                                      question.body,
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                        color: isDark ? Colors.white : const Color(0xFF0F172A),
-                                        height: 1.4,
+                                      ],
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Text(
+                                        question.body,
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          color: isDark
+                                              ? Colors.white
+                                              : const Color(0xFF0F172A),
+                                          height: 1.4,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                child: Divider(
-                                  height: 1,
-                                  thickness: 1,
-                                  color: isDark ? const Color(0xFF2D3748) : const Color(0xFFF1F5F9),
+                                  ],
                                 ),
-                              ),
-                              _UnifiedQuestionHeader(question: question),
-                            ],
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
+                                  child: Divider(
+                                    height: 1,
+                                    thickness: 1,
+                                    color: isDark
+                                        ? const Color(0xFF2D3748)
+                                        : const Color(0xFFF1F5F9),
+                                  ),
+                                ),
+                                _UnifiedQuestionHeader(question: question),
+                              ],
+                            ),
                           ),
-                        ),
-                      const SizedBox(height: 12),
-                      // Option Cards / Text Input
-                      AnswerInput(
-                        key: ValueKey('input:${question.id}'),
-                        question: question,
-                        draftAnswer: widget.selectedAnswer,
-                        enabled: !isFeedbackState && !widget.submitting,
-                        onChanged: widget.onAnswerChanged ?? (_) {},
-                        feedback: feedback,
-                      ),
-                      // Inline Feedback Card
-                      if (isFeedbackState) ...[
                         const SizedBox(height: 12),
-                        _UnifiedFeedbackCard(question: question, feedback: feedback),
+                        // Option Cards / Text Input
+                        AnswerInput(
+                          key: ValueKey('input:${question.id}'),
+                          question: question,
+                          draftAnswer: widget.selectedAnswer,
+                          enabled: !isFeedbackState && !widget.submitting,
+                          onChanged: widget.onAnswerChanged ?? (_) {},
+                          feedback: feedback,
+                        ),
+                        // Inline Feedback Card
+                        if (isFeedbackState) ...[
+                          const SizedBox(height: 12),
+                          _UnifiedFeedbackCard(
+                              question: question, feedback: feedback),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
-              ),
-                
+
                 // Bottom Submit / Next Button Bar
                 _UnifiedSubmitBar(
                   enabled: canSubmit || isFeedbackState,
@@ -763,27 +918,37 @@ class _UnifiedQuestionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
-    final topicColor = isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB);
-    final topicBgColor = isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF);
-    
-    final (diffLabel, diffColor, diffBgColor, diffIcon) = switch (question.difficulty) {
+
+    final topicColor =
+        isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB);
+    final topicBgColor = isDark
+        ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
+        : const Color(0xFFEFF6FF);
+
+    final (diffLabel, diffColor, diffBgColor, diffIcon) =
+        switch (question.difficulty) {
       DifficultyLevel.beginner => (
           'Beginner',
           isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A),
-          isDark ? const Color(0xFF064E3B).withValues(alpha: 0.3) : const Color(0xFFF0FDF4),
+          isDark
+              ? const Color(0xFF064E3B).withValues(alpha: 0.3)
+              : const Color(0xFFF0FDF4),
           Icons.grade_outlined
         ),
       DifficultyLevel.intermediate => (
           'Intermediate',
           isDark ? const Color(0xFFFB923C) : const Color(0xFFD97706),
-          isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : const Color(0xFFFEF3C7),
+          isDark
+              ? const Color(0xFF78350F).withValues(alpha: 0.3)
+              : const Color(0xFFFEF3C7),
           Icons.star_half_rounded
         ),
       DifficultyLevel.advanced => (
           'Advanced',
           isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
-          isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.3) : const Color(0xFFFEF2F2),
+          isDark
+              ? const Color(0xFF7F1D1D).withValues(alpha: 0.3)
+              : const Color(0xFFFEF2F2),
           Icons.star_rounded
         ),
     };
@@ -909,7 +1074,8 @@ class _OptionCard extends StatefulWidget {
   State<_OptionCard> createState() => _OptionCardState();
 }
 
-class _OptionCardState extends State<_OptionCard> with SingleTickerProviderStateMixin {
+class _OptionCardState extends State<_OptionCard>
+    with SingleTickerProviderStateMixin {
   bool _isPressed = false;
   AnimationController? _pulseController;
   Animation<double>? _pulseAnimation;
@@ -919,18 +1085,10 @@ class _OptionCardState extends State<_OptionCard> with SingleTickerProviderState
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
-    _pulseAnimation = Tween<double>(begin: 0.0, end: 8.0).animate(_pulseController!);
+    _pulseAnimation =
+        Tween<double>(begin: 0.0, end: 8.0).animate(_pulseController!);
 
-    bool isTest = false;
-    try {
-      isTest = Platform.environment.containsKey('FLUTTER_TEST');
-    } catch (_) {}
-
-    if (isTest) {
-      _pulseController!.forward();
-    } else {
-      _pulseController!.repeat(reverse: true);
-    }
+    _pulseController!.forward();
   }
 
   @override
@@ -961,12 +1119,12 @@ class _OptionCardState extends State<_OptionCard> with SingleTickerProviderState
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final pulseAnim = _pulseAnimation;
-    
+
     Color cardBgColor = Colors.white;
     if (isDark) {
       cardBgColor = const Color(0xFF1E293B);
     }
-    
+
     if (widget.isCorrect) {
       cardBgColor = isDark ? const Color(0xFF052E16) : const Color(0xFFF0FDF4);
     } else if (widget.isIncorrect) {
@@ -975,7 +1133,8 @@ class _OptionCardState extends State<_OptionCard> with SingleTickerProviderState
       cardBgColor = isDark ? const Color(0xFF1E3A8A) : const Color(0xFFEFF6FF);
     }
 
-    Color borderColor = isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0);
+    Color borderColor =
+        isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0);
     if (widget.isCorrect) {
       borderColor = const Color(0xFF22C55E);
     } else if (widget.isIncorrect) {
@@ -1015,12 +1174,16 @@ class _OptionCardState extends State<_OptionCard> with SingleTickerProviderState
     }
 
     return GestureDetector(
-      onTapDown: widget.enabled ? (_) => setState(() => _isPressed = true) : null,
-      onTapUp: widget.enabled ? (_) {
-        setState(() => _isPressed = false);
-        widget.onTap();
-      } : null,
-      onTapCancel: widget.enabled ? () => setState(() => _isPressed = false) : null,
+      onTapDown:
+          widget.enabled ? (_) => setState(() => _isPressed = true) : null,
+      onTapUp: widget.enabled
+          ? (_) {
+              setState(() => _isPressed = false);
+              widget.onTap();
+            }
+          : null,
+      onTapCancel:
+          widget.enabled ? () => setState(() => _isPressed = false) : null,
       child: AnimatedScale(
         scale: _isPressed ? 0.97 : 1.0,
         duration: const Duration(milliseconds: 100),
@@ -1031,7 +1194,11 @@ class _OptionCardState extends State<_OptionCard> with SingleTickerProviderState
           decoration: BoxDecoration(
             color: cardBgColor,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: borderColor, width: widget.selected || widget.isCorrect || widget.isIncorrect ? 2.0 : 1.5),
+            border: Border.all(
+                color: borderColor,
+                width: widget.selected || widget.isCorrect || widget.isIncorrect
+                    ? 2.0
+                    : 1.5),
             boxShadow: [
               if (widget.isCorrect && pulseAnim != null)
                 BoxShadow(
@@ -1076,7 +1243,11 @@ class _OptionCardState extends State<_OptionCard> with SingleTickerProviderState
                 child: Text(
                   widget.text,
                   style: TextStyle(
-                    fontWeight: widget.selected || widget.isCorrect || widget.isIncorrect ? FontWeight.w700 : FontWeight.w500,
+                    fontWeight: widget.selected ||
+                            widget.isCorrect ||
+                            widget.isIncorrect
+                        ? FontWeight.w700
+                        : FontWeight.w500,
                     color: textColor,
                     fontSize: 15,
                     height: 1.3,
@@ -1103,7 +1274,9 @@ class _OptionCardState extends State<_OptionCard> with SingleTickerProviderState
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1),
+                      color: isDark
+                          ? const Color(0xFF475569)
+                          : const Color(0xFFCBD5E1),
                       width: 1.5,
                     ),
                   ),
@@ -1148,21 +1321,21 @@ class _UnifiedFeedbackCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final correct = feedback.isCorrect;
-    
+
     final cardBgColor = correct
         ? (isDark ? const Color(0xFF062F1D) : const Color(0xFFF0FDF4))
         : (isDark ? const Color(0xFF450A0A) : const Color(0xFFFEF2F2));
-        
+
     final borderColor = correct
         ? (isDark ? const Color(0xFF15803D) : const Color(0xFFBBF7D0))
         : (isDark ? const Color(0xFF991B1B) : const Color(0xFFFCA5A5));
-        
+
     final titleColor = correct
         ? (isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A))
         : (isDark ? const Color(0xFFF87171) : const Color(0xFFEF4444));
-        
+
     final titleText = correct ? 'Correct!' : 'Not quite';
-    
+
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
       duration: const Duration(milliseconds: 400),
@@ -1204,9 +1377,12 @@ class _UnifiedFeedbackCard extends StatelessWidget {
                       _FeedbackActionIcon(
                         icon: Icons.share_rounded,
                         onTap: () {
-                          Clipboard.setData(ClipboardData(text: feedback.explanation));
+                          Clipboard.setData(
+                              ClipboardData(text: feedback.explanation));
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Explanation copied to clipboard!')),
+                            const SnackBar(
+                                content:
+                                    Text('Explanation copied to clipboard!')),
                           );
                         },
                       ),
@@ -1215,7 +1391,8 @@ class _UnifiedFeedbackCard extends StatelessWidget {
                         icon: Icons.flag_rounded,
                         onTap: () {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Question reported. Thank you!')),
+                            const SnackBar(
+                                content: Text('Question reported. Thank you!')),
                           );
                         },
                       ),
@@ -1228,7 +1405,9 @@ class _UnifiedFeedbackCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
-                        color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF0F172A),
+                        color: isDark
+                            ? const Color(0xFFE2E8F0)
+                            : const Color(0xFF0F172A),
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -1248,7 +1427,9 @@ class _UnifiedFeedbackCard extends StatelessWidget {
                       fontSize: 13,
                       height: 1.4,
                       fontWeight: FontWeight.w500,
-                      color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+                      color: isDark
+                          ? const Color(0xFFCBD5E1)
+                          : const Color(0xFF475569),
                     ),
                   ),
                 ],
@@ -1278,7 +1459,9 @@ class _FeedbackActionIcon extends StatelessWidget {
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF334155) : Colors.white,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: isDark ? const Color(0xFF475569) : const Color(0xFFE2E8F0)),
+          border: Border.all(
+              color:
+                  isDark ? const Color(0xFF475569) : const Color(0xFFE2E8F0)),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.03),
@@ -1331,9 +1514,10 @@ class _FeedbackShieldBadgeState extends State<_FeedbackShieldBadge>
       parent: _controller,
       curve: Curves.elasticOut,
     );
-    
-    final color = widget.correct ? const Color(0xFF22C55E) : const Color(0xFFEF4444);
-    
+
+    final color =
+        widget.correct ? const Color(0xFF22C55E) : const Color(0xFFEF4444);
+
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) => Transform.scale(
@@ -1350,33 +1534,41 @@ class _FeedbackShieldBadgeState extends State<_FeedbackShieldBadge>
               const Positioned(
                 top: 4,
                 left: 6,
-                child: Icon(Icons.star_rounded, size: 8, color: Color(0xFFFFD700)),
+                child:
+                    Icon(Icons.star_rounded, size: 8, color: Color(0xFFFFD700)),
               ),
               const Positioned(
                 bottom: 8,
                 left: 2,
-                child: Icon(Icons.star_rounded, size: 10, color: Color(0xFFFFD700)),
+                child: Icon(Icons.star_rounded,
+                    size: 10, color: Color(0xFFFFD700)),
               ),
               const Positioned(
                 top: 12,
                 right: 4,
-                child: Icon(Icons.star_rounded, size: 6, color: Color(0xFFFFD700)),
+                child:
+                    Icon(Icons.star_rounded, size: 6, color: Color(0xFFFFD700)),
               ),
               const Positioned(
                 bottom: 12,
                 right: 2,
-                child: Icon(Icons.star_rounded, size: 8, color: Color(0xFFFFD700)),
+                child:
+                    Icon(Icons.star_rounded, size: 8, color: Color(0xFFFFD700)),
               ),
             ],
             Container(
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: widget.correct ? const Color(0xFF22C55E).withValues(alpha: 0.15) : const Color(0xFFEF4444).withValues(alpha: 0.15),
+                color: widget.correct
+                    ? const Color(0xFF22C55E).withValues(alpha: 0.15)
+                    : const Color(0xFFEF4444).withValues(alpha: 0.15),
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                widget.correct ? Icons.shield_rounded : Icons.cancel_presentation_rounded,
+                widget.correct
+                    ? Icons.shield_rounded
+                    : Icons.cancel_presentation_rounded,
                 color: color,
                 size: 28,
               ),
@@ -1406,7 +1598,8 @@ class _ConfettiLayer extends StatefulWidget {
   State<_ConfettiLayer> createState() => _ConfettiLayerState();
 }
 
-class _ConfettiLayerState extends State<_ConfettiLayer> with SingleTickerProviderStateMixin {
+class _ConfettiLayerState extends State<_ConfettiLayer>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
 
   @override
@@ -1454,7 +1647,8 @@ class _ConfettiLayerState extends State<_ConfettiLayer> with SingleTickerProvide
 }
 
 class _LocalConfettiPainter extends CustomPainter {
-  _LocalConfettiPainter({required this.progress}) : _particles = _seedParticles();
+  _LocalConfettiPainter({required this.progress})
+      : _particles = _seedParticles();
 
   final double progress;
   final List<_LocalParticle> _particles;
@@ -1489,7 +1683,8 @@ class _LocalConfettiPainter extends CustomPainter {
       if (t <= 0) continue;
       final x = p.xFraction * size.width;
       final y = -20 + (size.height + 40) * (t * t * 0.4 + t * 0.6);
-      final opacity = (t < 0.1) ? (t / 0.1) : (t > 0.8 ? (1.0 - (t - 0.8) / 0.2) : 1.0);
+      final opacity =
+          (t < 0.1) ? (t / 0.1) : (t > 0.8 ? (1.0 - (t - 0.8) / 0.2) : 1.0);
       paint.color = p.color.withValues(alpha: opacity);
 
       canvas.save();
@@ -1508,7 +1703,8 @@ class _LocalConfettiPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _LocalConfettiPainter old) => old.progress != progress;
+  bool shouldRepaint(covariant _LocalConfettiPainter old) =>
+      old.progress != progress;
 }
 
 class _LocalParticle {
@@ -1540,7 +1736,8 @@ class _MascotBounceWrapper extends StatefulWidget {
   State<_MascotBounceWrapper> createState() => _MascotBounceWrapperState();
 }
 
-class _MascotBounceWrapperState extends State<_MascotBounceWrapper> with SingleTickerProviderStateMixin {
+class _MascotBounceWrapperState extends State<_MascotBounceWrapper>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _animation;
 
@@ -1552,10 +1749,22 @@ class _MascotBounceWrapperState extends State<_MascotBounceWrapper> with SingleT
       duration: const Duration(milliseconds: 700),
     );
     _animation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.0, end: -20.0).chain(CurveTween(curve: Curves.easeOut)), weight: 30),
-      TweenSequenceItem(tween: Tween(begin: -20.0, end: 8.0).chain(CurveTween(curve: Curves.easeIn)), weight: 25),
-      TweenSequenceItem(tween: Tween(begin: 8.0, end: -6.0).chain(CurveTween(curve: Curves.easeOut)), weight: 20),
-      TweenSequenceItem(tween: Tween(begin: -6.0, end: 0.0).chain(CurveTween(curve: Curves.easeIn)), weight: 25),
+      TweenSequenceItem(
+          tween: Tween(begin: 0.0, end: -20.0)
+              .chain(CurveTween(curve: Curves.easeOut)),
+          weight: 30),
+      TweenSequenceItem(
+          tween: Tween(begin: -20.0, end: 8.0)
+              .chain(CurveTween(curve: Curves.easeIn)),
+          weight: 25),
+      TweenSequenceItem(
+          tween: Tween(begin: 8.0, end: -6.0)
+              .chain(CurveTween(curve: Curves.easeOut)),
+          weight: 20),
+      TweenSequenceItem(
+          tween: Tween(begin: -6.0, end: 0.0)
+              .chain(CurveTween(curve: Curves.easeIn)),
+          weight: 25),
     ]).animate(_controller);
 
     if (widget.trigger) {
@@ -1646,7 +1855,7 @@ class AnswerInput extends StatelessWidget {
           initialValue: draftAnswer,
           enabled: enabled,
           onChanged: onChanged,
-          hintText: 'Enter your answer — LaTeX notation is supported',
+          hintText: 'Enter your answer',
           minLines: 1,
           maxLines: 3,
           monospace: true,
@@ -1681,8 +1890,12 @@ class _McqInput extends StatelessWidget {
             selected: option.key.toLowerCase() == selectedKey?.toLowerCase(),
             enabled: enabled,
             onTap: () => onSelect(option.key),
-            isCorrect: feedback != null && option.key.toLowerCase() == feedback!.canonicalAnswer.toLowerCase(),
-            isIncorrect: feedback != null && !feedback!.isCorrect && option.key.toLowerCase() == selectedKey?.toLowerCase(),
+            isCorrect: feedback != null &&
+                option.key.toLowerCase() ==
+                    feedback!.canonicalAnswer.toLowerCase(),
+            isIncorrect: feedback != null &&
+                !feedback!.isCorrect &&
+                option.key.toLowerCase() == selectedKey?.toLowerCase(),
           ),
         ],
       ],
@@ -1714,8 +1927,10 @@ class _TrueFalseInput extends StatelessWidget {
             selected: selected == 'true',
             enabled: enabled,
             onTap: () => onSelect('true'),
-            isCorrect: feedback != null && feedback!.canonicalAnswer.toLowerCase() == 'true',
-            isIncorrect: feedback != null && !feedback!.isCorrect && selected == 'true',
+            isCorrect: feedback != null &&
+                feedback!.canonicalAnswer.toLowerCase() == 'true',
+            isIncorrect:
+                feedback != null && !feedback!.isCorrect && selected == 'true',
           ),
         ),
         const SizedBox(width: Spacing.sm),
@@ -1726,8 +1941,10 @@ class _TrueFalseInput extends StatelessWidget {
             selected: selected == 'false',
             enabled: enabled,
             onTap: () => onSelect('false'),
-            isCorrect: feedback != null && feedback!.canonicalAnswer.toLowerCase() == 'false',
-            isIncorrect: feedback != null && !feedback!.isCorrect && selected == 'false',
+            isCorrect: feedback != null &&
+                feedback!.canonicalAnswer.toLowerCase() == 'false',
+            isIncorrect:
+                feedback != null && !feedback!.isCorrect && selected == 'false',
           ),
         ),
       ],
@@ -1777,7 +1994,7 @@ class _TextAnswerInputState extends State<_TextAnswerInput> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    
+
     return TextField(
       controller: _controller,
       enabled: widget.enabled,
@@ -1787,9 +2004,7 @@ class _TextAnswerInputState extends State<_TextAnswerInput> {
       textCapitalization: widget.monospace
           ? TextCapitalization.none
           : TextCapitalization.sentences,
-      style: widget.monospace
-          ? const TextStyle(fontFamily: 'monospace')
-          : null,
+      style: widget.monospace ? const TextStyle(fontFamily: 'monospace') : null,
       decoration: InputDecoration(
         hintText: widget.hintText,
         hintStyle: theme.textTheme.bodyMedium?.copyWith(
@@ -1856,11 +2071,10 @@ class _UnifiedSubmitBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    
+
     final label = isFeedbackState ? 'Next Question' : 'Submit Answer';
-    final buttonColor = isFeedbackState
-        ? const Color(0xFF10B981)
-        : const Color(0xFF4F46E5);
+    final buttonColor =
+        isFeedbackState ? const Color(0xFF10B981) : const Color(0xFF4F46E5);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1892,7 +2106,9 @@ class _UnifiedSubmitBar extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                   ),
                   side: BorderSide(
-                    color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1),
+                    color: isDark
+                        ? const Color(0xFF475569)
+                        : const Color(0xFFCBD5E1),
                     width: 1.5,
                   ),
                 ),
@@ -1912,9 +2128,15 @@ class _UnifiedSubmitBar extends StatelessWidget {
                 style: FilledButton.styleFrom(
                   backgroundColor: enabled && !submitting
                       ? buttonColor
-                      : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                  disabledBackgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                  shadowColor: enabled && !submitting ? buttonColor.withValues(alpha: 0.3) : Colors.transparent,
+                      : (isDark
+                          ? const Color(0xFF334155)
+                          : const Color(0xFFE2E8F0)),
+                  disabledBackgroundColor: isDark
+                      ? const Color(0xFF334155)
+                      : const Color(0xFFE2E8F0),
+                  shadowColor: enabled && !submitting
+                      ? buttonColor.withValues(alpha: 0.3)
+                      : Colors.transparent,
                   elevation: enabled && !submitting ? 4 : 0,
                   minimumSize: const Size.fromHeight(54),
                   shape: RoundedRectangleBorder(
@@ -1942,7 +2164,9 @@ class _UnifiedSubmitBar extends StatelessWidget {
                             style: TextStyle(
                               color: enabled && !submitting
                                   ? Colors.white
-                                  : (isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
+                                  : (isDark
+                                      ? const Color(0xFF64748B)
+                                      : const Color(0xFF94A3B8)),
                               fontWeight: FontWeight.w800,
                               fontSize: 16,
                               letterSpacing: 0.5,
@@ -1953,7 +2177,9 @@ class _UnifiedSubmitBar extends StatelessWidget {
                             Icons.arrow_forward_rounded,
                             color: enabled && !submitting
                                 ? Colors.white
-                                : (isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
+                                : (isDark
+                                    ? const Color(0xFF64748B)
+                                    : const Color(0xFF94A3B8)),
                             size: 20,
                           ),
                         ],
@@ -1981,8 +2207,9 @@ class _StudyCompleteView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final percent = totalCount > 0 ? (correctCount / totalCount * 100).round() : 0;
-    
+    final percent =
+        totalCount > 0 ? (correctCount / totalCount * 100).round() : 0;
+
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
       body: Center(
@@ -2008,20 +2235,22 @@ class _StudyCompleteView extends StatelessWidget {
               Text(
                 'Session Completed!',
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: isDark ? Colors.white : const Color(0xFF0F172A),
-                ),
+                      fontWeight: FontWeight.w800,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
               ),
               const SizedBox(height: Spacing.md),
               Text(
                 'Great job! You\'ve completed your study session requirements.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
-                ),
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF475569),
+                    ),
               ),
               const SizedBox(height: Spacing.xxl),
-              
+
               // Score breakdown card
               Container(
                 padding: const EdgeInsets.all(Spacing.xl),
@@ -2029,12 +2258,15 @@ class _StudyCompleteView extends StatelessWidget {
                   color: isDark ? const Color(0xFF1E293B) : Colors.white,
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(
-                    color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0),
+                    color: isDark
+                        ? const Color(0xFF2D3748)
+                        : const Color(0xFFE2E8F0),
                     width: 1.5,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.03),
+                      color:
+                          Colors.black.withValues(alpha: isDark ? 0.15 : 0.03),
                       blurRadius: 8,
                       offset: const Offset(0, 4),
                     ),
@@ -2051,7 +2283,8 @@ class _StudyCompleteView extends StatelessWidget {
                         ),
                         Text(
                           '$totalCount',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16),
                         ),
                       ],
                     ),
@@ -2061,7 +2294,9 @@ class _StudyCompleteView extends StatelessWidget {
                       children: [
                         const Text(
                           'Correct Answers',
-                          style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF10B981)),
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF10B981)),
                         ),
                         Text(
                           '$correctCount',
@@ -2086,7 +2321,9 @@ class _StudyCompleteView extends StatelessWidget {
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
-                            color: percent >= 70 ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                            color: percent >= 70
+                                ? const Color(0xFF10B981)
+                                : const Color(0xFFF59E0B),
                           ),
                         ),
                       ],

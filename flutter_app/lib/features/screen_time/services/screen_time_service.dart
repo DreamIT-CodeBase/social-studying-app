@@ -9,7 +9,8 @@ class ScreenTimeService {
   ScreenTimeService({SharedPreferences? prefs}) : _prefs = prefs;
 
   final SharedPreferences? _prefs;
-  final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
 
   static const _channel = MethodChannel('com.socialstudyapp.app/screen_time');
 
@@ -22,6 +23,7 @@ class ScreenTimeService {
   static const String _keyXpToMinuteRatio = 'xp_to_minute_ratio';
   static const String _keyEnableBlocking = 'enable_blocking';
   static const String _keyBlockedPackages = 'blocked_packages_json';
+  static const String _keyEnforcementReady = 'enforcement_ready';
 
   static const String _keyCurrentUserId = 'current_user_id';
 
@@ -33,10 +35,24 @@ class ScreenTimeService {
   Future<void> setCurrentUserId(String? userId) async {
     final prefs = await _getPrefs();
     if (userId != null) {
+      if (prefs.getString(_keyCurrentUserId) != userId) {
+        await prefs.setBool(_keyEnforcementReady, false);
+      }
       await prefs.setString(_keyCurrentUserId, userId);
     } else {
       await prefs.remove(_keyCurrentUserId);
+      await prefs.setBool(_keyEnforcementReady, false);
     }
+  }
+
+  Future<void> setEnforcementReady(bool ready) async {
+    final prefs = await _getPrefs();
+    await prefs.setBool(_keyEnforcementReady, ready);
+  }
+
+  Future<bool> isEnforcementReady() async {
+    final prefs = await _getPrefs();
+    return prefs.getBool(_keyEnforcementReady) ?? false;
   }
 
   Future<ScreenTimeWallet> loadWallet([String? userId]) async {
@@ -50,7 +66,8 @@ class ScreenTimeService {
     }
     final availableMinutes = prefs.getInt('$_keyAvailableMinutes$suffix') ?? 0;
     final consumedMinutes = prefs.getInt('$_keyConsumedMinutes$suffix') ?? 0;
-    final totalEarnedMinutes = prefs.getInt('$_keyTotalEarnedMinutes$suffix') ?? 0;
+    final totalEarnedMinutes =
+        prefs.getInt('$_keyTotalEarnedMinutes$suffix') ?? 0;
     final lastKnownXp = prefs.getInt('$_keyLastKnownXp$suffix') ?? 0;
     final lastSyncMs = prefs.getInt('$_keyLastSyncTime$suffix') ?? 0;
     final consumedToday = prefs.getInt('$_keyConsumedToday$suffix') ?? 0;
@@ -71,15 +88,18 @@ class ScreenTimeService {
     final prefs = await _getPrefs();
     await prefs.setInt('$_keyAvailableMinutes$suffix', wallet.availableMinutes);
     await prefs.setInt('$_keyConsumedMinutes$suffix', wallet.consumedMinutes);
-    await prefs.setInt('$_keyTotalEarnedMinutes$suffix', wallet.totalEarnedMinutes);
+    await prefs.setInt(
+        '$_keyTotalEarnedMinutes$suffix', wallet.totalEarnedMinutes);
     await prefs.setInt('$_keyLastKnownXp$suffix', wallet.lastKnownXp);
-    await prefs.setInt('$_keyLastSyncTime$suffix', wallet.lastSyncTime?.millisecondsSinceEpoch ?? 0);
+    await prefs.setInt('$_keyLastSyncTime$suffix',
+        wallet.lastSyncTime?.millisecondsSinceEpoch ?? 0);
     await prefs.setInt('$_keyConsumedToday$suffix', wallet.consumedToday);
   }
 
   Future<int> getXpToMinuteRatio() async {
     final prefs = await _getPrefs();
-    return prefs.getInt(_keyXpToMinuteRatio) ?? 10; // default 100 XP = 10 Minutes -> 10 XP = 1 Minute
+    return prefs.getInt(_keyXpToMinuteRatio) ??
+        10; // default 100 XP = 10 Minutes -> 10 XP = 1 Minute
   }
 
   Future<void> saveXpToMinuteRatio(int ratio) async {
@@ -104,11 +124,14 @@ class ScreenTimeService {
       // Default list of apps to block
       return [
         'com.instagram.android',
+        'com.instagram.barcelona',
         'com.zhiliaoapp.musically',
         'com.google.android.youtube',
         'com.facebook.katana',
         'com.twitter.android',
         'com.snapchat.android',
+        'com.reddit.frontpage',
+        'com.pinterest',
       ];
     }
     try {
@@ -133,16 +156,16 @@ class ScreenTimeService {
       priority: Priority.high,
     );
     const notificationDetails = NotificationDetails(android: androidDetails);
-    
+
     // Fallback: in case notifications plugin isn't fully initialized
     try {
       await _localNotifications.show(
         id: 888,
         title: 'Earn Digital Freedom!',
-        body: 'Great job! You earned $minutesEarned more minutes of screen time.',
+        body:
+            'Great job! You earned $minutesEarned more minutes of screen time.',
         notificationDetails: notificationDetails,
       );
-
     } catch (_) {
       // Swallowed: best effort local notification
     }
@@ -151,10 +174,53 @@ class ScreenTimeService {
   Future<bool> isAccessibilityServiceEnabled() async {
     if (!Platform.isAndroid) return false;
     try {
-      return await _channel.invokeMethod<bool>('isAccessibilityEnabled') ?? false;
+      return await _channel.invokeMethod<bool>('isAccessibilityEnabled') ??
+          false;
     } catch (_) {
       return false;
     }
+  }
+
+  Future<DevicePermissionStatus> getPermissionStatus() async {
+    if (!Platform.isAndroid) return DevicePermissionStatus.notRequired();
+
+    Future<bool> check(String method) async {
+      try {
+        return await _channel.invokeMethod<bool>(method) ?? false;
+      } on PlatformException {
+        return false;
+      } on MissingPluginException {
+        return false;
+      }
+    }
+
+    return DevicePermissionStatus(
+      usageAccess: await check('isUsageAccessGranted'),
+      overlay: await check('isOverlayGranted'),
+      notifications: await check('isNotificationGranted'),
+      accessibility: await check('isAccessibilityEnabled'),
+      batteryExempt: await check('isBatteryOptimizationExempt'),
+    );
+  }
+
+  Future<void> openUsageAccessSettings() =>
+      _invokeSettingsMethod('openUsageAccessSettings');
+
+  Future<void> openOverlaySettings() =>
+      _invokeSettingsMethod('openOverlaySettings');
+
+  Future<void> requestNotificationPermission() =>
+      _invokeSettingsMethod('requestNotificationPermission');
+
+  Future<void> openNotificationSettings() =>
+      _invokeSettingsMethod('openNotificationSettings');
+
+  Future<void> openBatteryOptimizationSettings() =>
+      _invokeSettingsMethod('openBatteryOptimizationSettings');
+
+  Future<void> _invokeSettingsMethod(String method) async {
+    if (!Platform.isAndroid) return;
+    await _channel.invokeMethod<void>(method);
   }
 
   Future<void> openAccessibilitySettings() async {
@@ -163,4 +229,33 @@ class ScreenTimeService {
       await _channel.invokeMethod<void>('openAccessibilitySettings');
     } catch (_) {}
   }
+}
+
+class DevicePermissionStatus {
+  const DevicePermissionStatus({
+    required this.usageAccess,
+    required this.overlay,
+    required this.notifications,
+    required this.accessibility,
+    required this.batteryExempt,
+  });
+
+  factory DevicePermissionStatus.notRequired() => const DevicePermissionStatus(
+        usageAccess: true,
+        overlay: true,
+        notifications: true,
+        accessibility: true,
+        batteryExempt: true,
+      );
+
+  final bool usageAccess;
+  final bool overlay;
+  final bool notifications;
+  final bool accessibility;
+  final bool batteryExempt;
+
+  bool get requiredPermissionsGranted => usageAccess && accessibility;
+
+  bool get allRecommendedPermissionsGranted =>
+      requiredPermissionsGranted && overlay && notifications && batteryExempt;
 }

@@ -2,6 +2,7 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -61,6 +62,72 @@ def _document_doc(
         doc_type=DocumentType.pdf,
         status=status_,
     ).model_dump(by_alias=True)
+
+
+# POST /api/v1/workspaces/{ws}/documents/scrape
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://[::1]/",
+        "http://localhost/",
+    ],
+)
+def test_scrape_document_rejects_private_destinations(client, url):
+    admin = make_user(role=UserRole.tenant_admin)
+    app.dependency_overrides[get_current_user] = lambda: admin
+
+    response = client.post(
+        "/api/v1/workspaces/wsp_test001/documents/scrape",
+        json={"url": url},
+    )
+
+    assert response.status_code == 422
+    assert "private or local" in response.json()["detail"].lower()
+
+
+def test_scrape_document_happy_path_saves_plain_text(client):
+    admin = make_user(role=UserRole.tenant_admin)
+    app.dependency_overrides[get_current_user] = lambda: admin
+    col = _col_with_docs([])
+    page = b"<html><body><h1>Photosynthesis</h1><p>Light &amp; energy</p></body></html>"
+
+    with (
+        patch("app.api.documents.get_collection", return_value=col),
+        patch(
+            "app.api.documents._fetch_public_document",
+            AsyncMock(
+                return_value=(
+                    page,
+                    "text/html",
+                    httpx.URL("https://example.com/biology/lesson"),
+                )
+            ),
+        ),
+        patch(
+            "app.api.documents.blob_storage.upload_document",
+            AsyncMock(return_value="https://x.blob/scraped.txt"),
+        ) as mock_upload,
+        patch(
+            "app.api.documents.document_queue.publish_extraction_message",
+            AsyncMock(return_value=None),
+        ) as mock_publish,
+    ):
+        response = client.post(
+            "/api/v1/workspaces/wsp_test001/documents/scrape",
+            json={"url": "https://example.com/biology/lesson"},
+        )
+
+    assert response.status_code == 201
+    assert response.json()["filename"] == "scraped_example.com_biology_lesson.txt"
+    saved_text = mock_upload.await_args.kwargs["content"].decode("utf-8")
+    assert "<html>" not in saved_text
+    assert "Photosynthesis" in saved_text
+    assert "Light & energy" in saved_text
+    mock_publish.assert_awaited_once()
 
 
 # ── POST /api/v1/workspaces/{ws}/documents ────────────────────────────────────
@@ -308,14 +375,10 @@ def test_get_document_happy_path(client):
     admin = make_user(role=UserRole.tenant_admin)
     app.dependency_overrides[get_current_user] = lambda: admin
     col = MagicMock()
-    col.find_one = AsyncMock(
-        return_value=_document_doc(status_=DocumentStatus.vectorizing)
-    )
+    col.find_one = AsyncMock(return_value=_document_doc(status_=DocumentStatus.vectorizing))
 
     with patch("app.api.documents.get_collection", return_value=col):
-        response = client.get(
-            "/api/v1/workspaces/wsp_test001/documents/doc_test001"
-        )
+        response = client.get("/api/v1/workspaces/wsp_test001/documents/doc_test001")
 
     assert response.status_code == 200
     data = response.json()
@@ -336,9 +399,7 @@ def test_get_document_not_found_returns_404(client):
     col.find_one = AsyncMock(return_value=None)
 
     with patch("app.api.documents.get_collection", return_value=col):
-        response = client.get(
-            "/api/v1/workspaces/wsp_test001/documents/doc_missing"
-        )
+        response = client.get("/api/v1/workspaces/wsp_test001/documents/doc_missing")
 
     assert response.status_code == 404
 
@@ -353,9 +414,7 @@ def test_get_document_soft_deleted_returns_404(client):
     col.find_one = AsyncMock(return_value=None)
 
     with patch("app.api.documents.get_collection", return_value=col):
-        response = client.get(
-            "/api/v1/workspaces/wsp_test001/documents/doc_test001"
-        )
+        response = client.get("/api/v1/workspaces/wsp_test001/documents/doc_test001")
 
     assert response.status_code == 404
 
@@ -368,9 +427,7 @@ def test_get_document_as_member_student_succeeds(client):
     col.find_one = AsyncMock(return_value=_document_doc())
 
     with patch("app.api.documents.get_collection", return_value=col):
-        response = client.get(
-            "/api/v1/workspaces/wsp_test001/documents/doc_test001"
-        )
+        response = client.get("/api/v1/workspaces/wsp_test001/documents/doc_test001")
 
     assert response.status_code == 200
 
@@ -379,9 +436,7 @@ def test_get_document_as_non_member_student_is_forbidden(client):
     student = make_user(role=UserRole.student, workspace_ids=[])
     app.dependency_overrides[get_current_user] = lambda: student
 
-    response = client.get(
-        "/api/v1/workspaces/wsp_test001/documents/doc_test001"
-    )
+    response = client.get("/api/v1/workspaces/wsp_test001/documents/doc_test001")
 
     assert response.status_code == 403
 

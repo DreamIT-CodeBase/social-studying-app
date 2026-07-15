@@ -1,14 +1,16 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
-import 'package:social_study_app/core/extensions/context_extensions.dart';
+import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/screen_time/data/screen_time_repository.dart';
+import 'package:social_study_app/features/screen_time/services/screen_time_service.dart';
+import 'package:social_study_app/shared/services/session_persistence_service.dart';
 
 class PermissionOnboardingScreen extends ConsumerStatefulWidget {
   const PermissionOnboardingScreen({super.key});
@@ -19,491 +21,485 @@ class PermissionOnboardingScreen extends ConsumerStatefulWidget {
 }
 
 class _PermissionOnboardingScreenState
-    extends ConsumerState<PermissionOnboardingScreen> {
-  static const _channel = MethodChannel('com.socialstudyapp.app/screen_time');
-  final PageController _pageController = PageController();
-  int _currentPage = 0;
+    extends ConsumerState<PermissionOnboardingScreen>
+    with WidgetsBindingObserver {
+  final ScreenTimeService _screenTimeService = ScreenTimeService();
+  final Set<_PermissionKind> _attempted = {};
+
+  DevicePermissionStatus _status = const DevicePermissionStatus(
+    usageAccess: false,
+    overlay: false,
+    notifications: false,
+    accessibility: false,
+    batteryExempt: false,
+  );
+  bool _isChecking = true;
+  bool _isDialogOpen = false;
   bool _isSubmitting = false;
+  bool _sequenceActive = true;
+  bool _waitingForAndroidSettings = false;
 
-  // Track granted statuses for each of the 5 steps
-  bool _usageGranted = false;
-  bool _overlayGranted = false;
-  bool _notificationGranted = false;
-  bool _accessibilityGranted = false;
-  bool _batteryExempt = false;
-
-  Timer? _statusCheckTimer;
+  static const _permissionOrder = <_PermissionKind>[
+    _PermissionKind.notifications,
+    _PermissionKind.accessibility,
+    _PermissionKind.usageAccess,
+    _PermissionKind.overlay,
+    _PermissionKind.battery,
+  ];
 
   @override
   void initState() {
     super.initState();
-    _checkAllStatuses();
-    // Start periodic check to automatically update when user comes back from settings
-    _statusCheckTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      _checkAllStatuses();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _refreshStatus();
+      _scheduleNextDialog();
     });
   }
 
   @override
   void dispose() {
-    _statusCheckTimer?.cancel();
-    _pageController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  Future<void> _checkAllStatuses() async {
-    if (!Platform.isAndroid) {
-      // Mock true for non-Android platforms
-      if (mounted) {
-        setState(() {
-          _usageGranted = true;
-          _overlayGranted = true;
-          _notificationGranted = true;
-          _accessibilityGranted = true;
-          _batteryExempt = true;
-        });
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !_waitingForAndroidSettings) {
+      return;
+    }
+    _waitingForAndroidSettings = false;
+    unawaited(_continueAfterAndroidSettings());
+  }
+
+  Future<void> _continueAfterAndroidSettings() async {
+    // Give the OEM Settings app a moment to persist its switch before reading it.
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    await _refreshStatus();
+    _scheduleNextDialog();
+  }
+
+  Future<void> _refreshStatus() async {
+    final status = await _screenTimeService.getPermissionStatus();
+    if (!mounted) return;
+    setState(() {
+      _status = status;
+      _isChecking = false;
+    });
+  }
+
+  void _scheduleNextDialog() {
+    if (!mounted || !_sequenceActive || _isDialogOpen || _isSubmitting) return;
+
+    final next = _permissionOrder.cast<_PermissionKind?>().firstWhere(
+          (permission) =>
+              permission != null &&
+              !_isGranted(permission) &&
+              !_attempted.contains(permission),
+          orElse: () => null,
+        );
+
+    if (next == null) {
+      _sequenceActive = false;
+      if (_status.requiredPermissionsGranted) {
+        unawaited(_finishOnboarding());
+      } else if (mounted) {
+        setState(() {});
       }
       return;
     }
 
-    try {
-      final usage = await _channel.invokeMethod<bool>('isUsageAccessGranted') ?? false;
-      final overlay = await _channel.invokeMethod<bool>('isOverlayGranted') ?? false;
-      final notification = await _channel.invokeMethod<bool>('isNotificationGranted') ?? false;
-      final accessibility = await _channel.invokeMethod<bool>('isAccessibilityEnabled') ?? false;
-      final battery = await _channel.invokeMethod<bool>('isBatteryOptimizationExempt') ?? false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_showPermissionDialog(next));
+    });
+  }
 
-      if (mounted) {
-        setState(() {
-          _usageGranted = usage;
-          _overlayGranted = overlay;
-          _notificationGranted = notification;
-          _accessibilityGranted = accessibility;
-          _batteryExempt = battery;
-        });
+  Future<void> _showPermissionDialog(_PermissionKind permission) async {
+    if (!mounted || _isDialogOpen) return;
+    setState(() => _isDialogOpen = true);
+
+    final shouldOpen = await showDialog<bool>(
+      context: context,
+      barrierDismissible: !permission.isRequired,
+      builder: (dialogContext) => AlertDialog(
+        icon: Icon(permission.icon, color: AppColors.primary, size: 32),
+        title: Text(permission.title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(permission.description),
+            if (permission == _PermissionKind.accessibility) ...[
+              const SizedBox(height: Spacing.md),
+              Container(
+                padding: const EdgeInsets.all(Spacing.md),
+                decoration: BoxDecoration(
+                  color: Theme.of(dialogContext)
+                      .colorScheme
+                      .surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Social Studying detects only the foreground app so it can block selected social apps when earned time reaches zero. It does not read screen content, passwords, or messages.',
+                  style: TextStyle(fontSize: 13, height: 1.35),
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          if (!permission.isRequired)
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Not now'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(permission.actionLabel),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+    setState(() => _isDialogOpen = false);
+    _attempted.add(permission);
+
+    if (shouldOpen != true) {
+      _scheduleNextDialog();
+      return;
+    }
+
+    await _requestPermission(permission);
+  }
+
+  Future<void> _requestPermission(_PermissionKind permission) async {
+    if (!Platform.isAndroid) {
+      await _refreshStatus();
+      _scheduleNextDialog();
+      return;
+    }
+
+    try {
+      switch (permission) {
+        case _PermissionKind.notifications:
+          await _screenTimeService.requestNotificationPermission();
+          await _refreshStatus();
+          _scheduleNextDialog();
+          return;
+        case _PermissionKind.accessibility:
+          _waitingForAndroidSettings = true;
+          await _screenTimeService.openAccessibilitySettings();
+          break;
+        case _PermissionKind.usageAccess:
+          _waitingForAndroidSettings = true;
+          await _screenTimeService.openUsageAccessSettings();
+          break;
+        case _PermissionKind.overlay:
+          _waitingForAndroidSettings = true;
+          await _screenTimeService.openOverlaySettings();
+          break;
+        case _PermissionKind.battery:
+          _waitingForAndroidSettings = true;
+          await _screenTimeService.openBatteryOptimizationSettings();
+          break;
       }
-    } catch (e) {
-      debugPrint('Error checking permissions: $e');
+
+      // Some OEM settings panels behave like dialogs and do not emit a full
+      // paused/resumed lifecycle pair. Continue when that happens.
+      Future<void>.delayed(const Duration(seconds: 1), () {
+        if (!mounted || !_waitingForAndroidSettings) return;
+        if (WidgetsBinding.instance.lifecycleState ==
+            AppLifecycleState.resumed) {
+          _waitingForAndroidSettings = false;
+          unawaited(_continueAfterAndroidSettings());
+        }
+      });
+    } catch (_) {
+      _waitingForAndroidSettings = false;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Android could not open that permission control.'),
+          ),
+        );
+      }
+      _scheduleNextDialog();
     }
   }
 
-  Future<void> _grantPermission(int stepIndex) async {
-    if (!Platform.isAndroid) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Mocking grant on non-Android platform.')),
-      );
-      return;
-    }
-
-    try {
-      switch (stepIndex) {
-        case 0:
-          await _channel.invokeMethod<void>('openUsageAccessSettings');
-          break;
-        case 1:
-          await _channel.invokeMethod<void>('openOverlaySettings');
-          break;
-        case 2:
-          await _channel.invokeMethod<void>('openNotificationSettings');
-          break;
-        case 3:
-          await _channel.invokeMethod<void>('openAccessibilitySettings');
-          break;
-        case 4:
-          await _channel.invokeMethod<void>('openBatteryOptimizationSettings');
-          break;
+  void _restartSequence([_PermissionKind? only]) {
+    setState(() {
+      if (only == null) {
+        _attempted.removeWhere((permission) => !_isGranted(permission));
+      } else {
+        _attempted.remove(only);
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error launching settings: $e')),
-      );
-    }
+      _sequenceActive = true;
+    });
+    _scheduleNextDialog();
+  }
+
+  bool _isGranted(_PermissionKind permission) {
+    return switch (permission) {
+      _PermissionKind.notifications => _status.notifications,
+      _PermissionKind.accessibility => _status.accessibility,
+      _PermissionKind.usageAccess => _status.usageAccess,
+      _PermissionKind.overlay => _status.overlay,
+      _PermissionKind.battery => _status.batteryExempt,
+    };
   }
 
   Future<void> _finishOnboarding() async {
+    if (_isSubmitting) return;
+    await _refreshStatus();
+    if (!mounted) return;
+    if (!_status.requiredPermissionsGranted) {
+      _restartSequence();
+      return;
+    }
+
+    final authState = ref.read(authNotifierProvider).valueOrNull;
+    final user = authState?.maybeWhen(
+      authenticated: (authenticatedUser) => authenticatedUser,
+      orElse: () => null,
+    );
+    if (user == null) {
+      context.go(AppRoutes.login);
+      return;
+    }
+
     setState(() => _isSubmitting = true);
     try {
-      final repo = ref.read(screenTimeRepositoryProvider);
-      await repo.reportPermissionStatus(
-        overlayPermission: _overlayGranted,
-        usageAccessPermission: _usageGranted,
-        notificationAccess: _notificationGranted,
-        accessibilityService: _accessibilityGranted,
-        batteryOptimizationExempt: _batteryExempt,
-        deviceAdministrator: false, // fallback/optional
+      await SessionPersistenceService.instance.setPermissionSetupComplete(
+        user.id,
+        complete: true,
       );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not save permission setup. Please try again.'),
+        ),
+      );
+      return;
+    }
 
-      if (mounted) {
-        context.go(AppRoutes.studentHome);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to sync statuses: $e. Proceeding to home...'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-        context.go(AppRoutes.studentHome);
-      }
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+    unawaited(_reportPermissionStatus());
+    if (mounted) {
+      context.go(AppRoutes.studentHome);
+    }
+  }
+
+  Future<void> _reportPermissionStatus() async {
+    try {
+      await ref.read(screenTimeRepositoryProvider).reportPermissionStatus(
+            overlayPermission: _status.overlay,
+            usageAccessPermission: _status.usageAccess,
+            notificationAccess: _status.notifications,
+            accessibilityService: _status.accessibility,
+            batteryOptimizationExempt: _status.batteryExempt,
+            deviceAdministrator: false,
+          );
+    } catch (_) {
+      // Local enforcement is already active; cloud health retries on resume.
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final steps = [
-      _PermissionStepData(
-        title: 'Usage Access',
-        description:
-            'Allows the app to track which apps you use, so we can calculate your screen time and reward you for study milestones.',
-        icon: Icons.insights_rounded,
-        isGranted: _usageGranted,
-        gradientColors: [const Color(0xFF3B82F6), const Color(0xFF60A5FA)],
-      ),
-      _PermissionStepData(
-        title: 'System Overlay',
-        description:
-            'Allows the app to show a blocking overlay when you try to open social media during restricted study hours.',
-        icon: Icons.layers_rounded,
-        isGranted: _overlayGranted,
-        gradientColors: [const Color(0xFFEC4899), const Color(0xFFF472B6)],
-      ),
-      _PermissionStepData(
-        title: 'Notifications Access',
-        description:
-            'Ensures you receive screen time awards and study session warnings instantly.',
-        icon: Icons.notifications_rounded,
-        isGranted: _notificationGranted,
-        gradientColors: [const Color(0xFF10B981), const Color(0xFF34D399)],
-      ),
-      _PermissionStepData(
-        title: 'Accessibility Service',
-        description:
-            'Monitors active apps in the background to automatically restrict apps when study schedules are active.',
-        icon: Icons.accessibility_new_rounded,
-        isGranted: _accessibilityGranted,
-        gradientColors: [const Color(0xFF8B5CF6), const Color(0xFFA78BFA)],
-      ),
-      _PermissionStepData(
-        title: 'Battery Saver Exemption',
-        description:
-            'Allows the screen time monitoring service to run continuously in the background without being suspended by Android.',
-        icon: Icons.battery_charging_full_rounded,
-        isGranted: _batteryExempt,
-        gradientColors: [const Color(0xFFF59E0B), const Color(0xFFFBBF24)],
-      ),
-    ];
-
-    final currentStep = steps[_currentPage];
-
+    final requiredReady = _status.requiredPermissionsGranted;
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF0F172A),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Spacing.xl,
-                  vertical: Spacing.md,
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      'Permissions Setup',
-                      style: context.textTheme.titleMedium?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                      ),
+      appBar: AppBar(title: const Text('App permissions')),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(Spacing.lg),
+                children: [
+                  Icon(
+                    Icons.admin_panel_settings_rounded,
+                    size: 64,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(height: Spacing.md),
+                  Text(
+                    'Set up social app blocking',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: Spacing.sm),
+                  Text(
+                    'Android will show its own permission controls one at a time. Return to Social Studying after enabling each switch.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: Spacing.xl),
+                  Card(
+                    child: Column(
+                      children: [
+                        for (var index = 0;
+                            index < _permissionOrder.length;
+                            index++) ...[
+                          _PermissionTile(
+                            permission: _permissionOrder[index],
+                            granted: _isGranted(_permissionOrder[index]),
+                            onTap: () =>
+                                _restartSequence(_permissionOrder[index]),
+                          ),
+                          if (index < _permissionOrder.length - 1)
+                            const Divider(height: 1),
+                        ],
+                      ],
                     ),
-                    const Spacer(),
+                  ),
+                  if (!requiredReady && !_sequenceActive) ...[
+                    const SizedBox(height: Spacing.md),
                     Text(
-                      '${_currentPage + 1} of ${steps.length}',
-                      style: context.textTheme.bodyMedium?.copyWith(
-                        color: Colors.white70,
+                      'Accessibility and Usage Access are required for automatic blocking.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
-                ),
+                ],
               ),
-
-              // Page View
-              Expanded(
-                child: PageView.builder(
-                  controller: _pageController,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: steps.length,
-                  itemBuilder: (context, index) {
-                    final step = steps[index];
-                    return SingleChildScrollView(
-                      padding: const EdgeInsets.all(Spacing.xl),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          const SizedBox(height: Spacing.md),
-                          // Premium Gradient Card with Icon
-                          Container(
-                            height: 160,
-                            width: 160,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: step.gradientColors,
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(36),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: step.gradientColors.first.withOpacity(0.4),
-                                  blurRadius: 24,
-                                  offset: const Offset(0, 10),
-                                ),
-                              ],
-                            ),
-                            child: Icon(
-                              step.icon,
-                              size: 72,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: Spacing.xxl),
-
-                          // Text Info
-                          Text(
-                            step.title,
-                            style: context.textTheme.headlineMedium?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const SizedBox(height: Spacing.md),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: Spacing.md),
-                            child: Text(
-                              step.description,
-                              textAlign: TextAlign.center,
-                              style: context.textTheme.bodyLarge?.copyWith(
-                                color: Colors.white.withOpacity(0.7),
-                                height: 1.5,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: Spacing.xxl),
-
-                          // Status Badge
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: Spacing.xl,
-                              vertical: Spacing.sm,
-                            ),
-                            decoration: BoxDecoration(
-                              color: step.isGranted
-                                  ? const Color(0xFF065F46)
-                                  : const Color(0xFF7F1D1D),
-                              borderRadius: BorderRadius.circular(30),
-                              border: Border.all(
-                                color: step.isGranted
-                                    ? const Color(0xFF10B981)
-                                    : const Color(0xFFEF4444),
-                                width: 1.5,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  step.isGranted
-                                      ? Icons.check_circle_outline_rounded
-                                      : Icons.error_outline_rounded,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: Spacing.sm),
-                                Text(
-                                  step.isGranted ? 'GRANTED' : 'MISSING',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 14,
-                                    letterSpacing: 1.1,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (!Platform.isAndroid) ...[
-                            const SizedBox(height: Spacing.md),
-                            Text(
-                              'Platform not supported — Mocked as Granted',
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.4),
-                                fontSize: 12,
-                                fontStyle: FontStyle.italic,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    );
-                  },
+            ),
+            Padding(
+              padding: const EdgeInsets.all(Spacing.lg),
+              child: FilledButton.icon(
+                onPressed: _isChecking || _isSubmitting || _sequenceActive
+                    ? null
+                    : requiredReady
+                        ? _finishOnboarding
+                        : _restartSequence,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 52),
                 ),
-              ),
-
-              // Step Indicators
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  steps.length,
-                  (index) => Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    height: 8,
-                    width: _currentPage == index ? 24 : 8,
-                    decoration: BoxDecoration(
-                      color: _currentPage == index
-                          ? AppColors.primary
-                          : Colors.white24,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: Spacing.xl),
-
-              // Action Buttons
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  Spacing.xl, 0, Spacing.xl, Spacing.xl,
-                ),
-                child: Column(
-                  children: [
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 56),
-                        backgroundColor: currentStep.isGranted
-                            ? const Color(0xFF1E293B)
-                            : AppColors.primary,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                icon: _isChecking || _isSubmitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
                         ),
-                      ),
-                      onPressed: () => _grantPermission(_currentPage),
-                      child: Text(
-                        currentStep.isGranted
-                            ? 'Already Granted'
-                            : 'Grant Permission',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: currentStep.isGranted
-                              ? Colors.white60
-                              : Colors.white,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: Spacing.md),
-                    Row(
-                      children: [
-                        if (_currentPage > 0)
-                          Expanded(
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                minimumSize: const Size(0, 56),
-                                side: const BorderSide(color: Color(0xFF334155)),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
-                              onPressed: () {
-                                setState(() => _currentPage--);
-                                _pageController.previousPage(
-                                  duration: const Duration(milliseconds: 250),
-                                  curve: Curves.easeInOut,
-                                );
-                              },
-                              child: const Text(
-                                'Back',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        if (_currentPage > 0) const SizedBox(width: Spacing.md),
-                        Expanded(
-                          child: FilledButton(
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size(0, 56),
-                              backgroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16)),
-                            ),
-                            onPressed: _isSubmitting
-                                ? null
-                                : () async {
-                                    if (_currentPage < steps.length - 1) {
-                                      setState(() => _currentPage++);
-                                      _pageController.nextPage(
-                                        duration: const Duration(milliseconds: 250),
-                                        curve: Curves.easeInOut,
-                                      );
-                                    } else {
-                                      await _finishOnboarding();
-                                    }
-                                  },
-                            child: _isSubmitting
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.5,
-                                      color: Color(0xFF0F172A),
-                                    ),
-                                  )
-                                : Text(
-                                    _currentPage == steps.length - 1
-                                        ? 'Finish Setup'
-                                        : 'Next',
-                                    style: const TextStyle(
-                                      color: Color(0xFF0F172A),
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                      )
+                    : const Icon(Icons.arrow_forward_rounded),
+                label: Text(
+                  _sequenceActive
+                      ? 'Complete the Android prompt'
+                      : requiredReady
+                          ? 'Finish setup'
+                          : 'Continue permission setup',
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _PermissionStepData {
-  const _PermissionStepData({
-    required this.title,
-    required this.description,
-    required this.icon,
-    required this.isGranted,
-    required this.gradientColors,
+class _PermissionTile extends StatelessWidget {
+  const _PermissionTile({
+    required this.permission,
+    required this.granted,
+    required this.onTap,
   });
 
-  final String title;
-  final String description;
-  final IconData icon;
-  final bool isGranted;
-  final List<Color> gradientColors;
+  final _PermissionKind permission;
+  final bool granted;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      onTap: granted ? null : onTap,
+      leading: Icon(
+        granted ? Icons.check_circle_rounded : permission.icon,
+        color: granted
+            ? Colors.green
+            : permission.isRequired
+                ? Theme.of(context).colorScheme.error
+                : Theme.of(context).colorScheme.primary,
+      ),
+      title: Text(
+        permission.shortTitle,
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+      subtitle: Text(permission.isRequired ? 'Required' : 'Recommended'),
+      trailing: Text(
+        granted ? 'Allowed' : 'Set up',
+        style: TextStyle(
+          color: granted ? Colors.green : Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+enum _PermissionKind {
+  notifications,
+  accessibility,
+  usageAccess,
+  overlay,
+  battery;
+
+  bool get isRequired =>
+      this == _PermissionKind.accessibility ||
+      this == _PermissionKind.usageAccess;
+
+  String get shortTitle => switch (this) {
+        _PermissionKind.notifications => 'Notifications',
+        _PermissionKind.accessibility => 'App blocking service',
+        _PermissionKind.usageAccess => 'Usage Access',
+        _PermissionKind.overlay => 'Display over apps',
+        _PermissionKind.battery => 'Battery optimization',
+      };
+
+  String get title => switch (this) {
+        _PermissionKind.notifications => 'Allow Social Studying notifications?',
+        _PermissionKind.accessibility => 'Turn on app blocking?',
+        _PermissionKind.usageAccess => 'Allow Usage Access?',
+        _PermissionKind.overlay => 'Allow display over other apps?',
+        _PermissionKind.battery => 'Keep app blocking responsive?',
+      };
+
+  String get description => switch (this) {
+        _PermissionKind.notifications =>
+          'Get earned-time awards, policy updates, and study-session reminders.',
+        _PermissionKind.accessibility =>
+          'Android requires an Accessibility service to detect selected social apps and display the study lock.',
+        _PermissionKind.usageAccess =>
+          'Usage Access provides a reliable second signal for detecting the foreground social app and measuring elapsed time.',
+        _PermissionKind.overlay =>
+          'This optional fallback lets the study lock remain visible on phones with stricter window behavior.',
+        _PermissionKind.battery =>
+          'This optional setting helps Android keep the blocking service responsive when the phone is idle.',
+      };
+
+  String get actionLabel => switch (this) {
+        _PermissionKind.notifications => 'Allow',
+        _PermissionKind.accessibility => 'Open Android settings',
+        _PermissionKind.usageAccess => 'Open Android settings',
+        _PermissionKind.overlay => 'Open Android settings',
+        _PermissionKind.battery => 'Continue',
+      };
+
+  IconData get icon => switch (this) {
+        _PermissionKind.notifications => Icons.notifications_rounded,
+        _PermissionKind.accessibility => Icons.accessibility_new_rounded,
+        _PermissionKind.usageAccess => Icons.insights_rounded,
+        _PermissionKind.overlay => Icons.layers_rounded,
+        _PermissionKind.battery => Icons.battery_saver_rounded,
+      };
 }
