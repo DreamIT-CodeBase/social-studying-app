@@ -16,7 +16,7 @@ class ThemeSelectionScreen extends ConsumerStatefulWidget {
 }
 
 class _ThemeSelectionScreenState extends ConsumerState<ThemeSelectionScreen> {
-  AppThemeMode _selectedMode = AppThemeMode.kids;
+  AppThemeMode _selectedMode = AppThemeMode.mature;
 
   @override
   void initState() {

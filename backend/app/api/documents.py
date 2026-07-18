@@ -63,7 +63,9 @@ async def scrape_document(
     current_user: User = Depends(get_current_user),
 ) -> DocumentResponse:
     """Fetch a public study page, store its text, and enqueue ingestion."""
-    await _assert_admin(current_user, workspace_id)
+    # Self-study material belongs to the learner. Workspace membership is
+    # sufficient for scraping public pages; SSRF and size limits still apply.
+    _assert_workspace_access(current_user, workspace_id)
 
     raw_bytes, content_type_header, final_url = await _fetch_public_document(str(body.url))
     if (
@@ -162,7 +164,10 @@ async def _fetch_public_document(url: str) -> tuple[bytes, str, httpx.URL]:
                 async with client.stream(
                     "GET",
                     current_url,
-                    headers={"Accept": "text/html, application/xhtml+xml, text/plain"},
+                    headers={
+                        "Accept": "text/html, application/xhtml+xml, text/plain",
+                        "User-Agent": "Mozilla/5.0 (compatible; SocialStudyingBot/1.0)",
+                    },
                 ) as response:
                     if response.is_redirect:
                         if redirect_count >= _MAX_SCRAPE_REDIRECTS:
@@ -257,7 +262,13 @@ async def _assert_public_http_url(url: str) -> None:
 
 
 def _html_to_plain(html_text: str) -> str:
-    """Remove scripts, styles, markup, and excess whitespace from an HTML page."""
+    """Extract readable page text, including useful metadata for JS-heavy pages."""
+    metadata = re.findall(
+        r'<meta[^>]+(?:name|property)=["\'](?:description|og:description)["\'][^>]+content=["\']([^"\']+)',
+        html_text,
+        flags=re.IGNORECASE,
+    )
+    title = re.findall(r"<title[^>]*>(.*?)</title>", html_text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(
         r"<(script|style)[^>]*>.*?</\1>",
         " ",
@@ -267,7 +278,11 @@ def _html_to_plain(html_text: str) -> str:
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
-    return html.unescape(text).strip()
+    readable = html.unescape(text).strip()
+    supplements = [html.unescape(value).strip() for value in [*title, *metadata] if value.strip()]
+    if supplements:
+        readable = "\n\n".join(dict.fromkeys([*supplements, readable]))
+    return readable.strip()
 
 
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)

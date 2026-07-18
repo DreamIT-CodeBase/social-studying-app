@@ -159,6 +159,46 @@ async def test_handle_happy_path_transitions_pending_to_text_extracted():
     assert handoff.extracted_text_blob_path == "ten_abc/wsp_abc/extracted-text/doc_abc.txt"
 
 
+@pytest.mark.asyncio
+async def test_handle_scraped_plain_text_bypasses_document_intelligence():
+    msg = _msg(_payload(content_type="text/plain", blob_path="ten/wsp/doc/page.txt"))
+    docs, logs, route = _collection_router()
+
+    with (
+        patch("app.workers.document_ingestion.get_collection", side_effect=route),
+        patch(
+            "app.workers.document_ingestion.blob_storage.download_document",
+            AsyncMock(return_value=b"  Article heading\\nUseful study text  "),
+        ),
+        patch(
+            "app.workers.document_ingestion.document_intelligence.extract_text",
+            AsyncMock(),
+        ) as mock_extract,
+        patch(
+            "app.workers.document_ingestion.blob_storage.upload_extracted_text",
+            AsyncMock(return_value="extracted/doc.txt"),
+        ) as mock_upload,
+        patch(
+            "app.workers.document_ingestion.content_safety.analyze_extracted_text",
+            AsyncMock(return_value=_clean_verdict()),
+        ),
+        patch("app.workers.document_ingestion.publish_topic_message", AsyncMock()),
+    ):
+        await document_ingestion._handle(msg)
+
+    mock_extract.assert_not_awaited()
+    mock_upload.assert_awaited_once_with(
+        tenant_id=msg.payload.tenant_id,
+        workspace_id=msg.payload.workspace_id,
+        document_id=msg.payload.document_id,
+        text="Article heading\\nUseful study text",
+    )
+    assert (
+        docs.update_one.await_args_list[-1].args[1]["$set"]["status"]
+        == DocumentStatus.text_extracted.value
+    )
+
+
 # ── Permanent failure: unsupported content → dead-letter + status=failed ─────
 
 

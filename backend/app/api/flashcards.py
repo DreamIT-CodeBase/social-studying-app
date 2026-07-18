@@ -23,21 +23,20 @@ Same shape elsewhere:
 from __future__ import annotations
 
 import logging
+import random
 from dataclasses import dataclass
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel, Field
-import random
-from app.models.question import Question
 
 from app.core.auth import get_current_user
 from app.core.database import (
     FLASHCARD_RATINGS,
     FLASHCARDS,
-    WORKSPACES,
     INTERACTIONS,
     QUESTION_QUEUE,
+    WORKSPACES,
     get_collection,
 )
 from app.core.exceptions import (
@@ -46,10 +45,30 @@ from app.core.exceptions import (
     NotFoundError,
     ServiceUnavailableError,
 )
-from app.mcp_tools import invoke
-from app.mcp_tools.retrieve_content import (
-    RetrieveContentInput,
-    RetrieveContentOutput,
+from app.mcp_tools import invoke  # noqa: F401 - kept for route test/extension patch seam
+from app.models.base import utc_now
+from app.models.flashcard import (
+    Flashcard,
+    FlashcardForStudent,
+    FlashcardRatingBadgeUnlock,
+    FlashcardRatingEvent,
+    FlashcardRatingResponse,
+    FlashcardRatingSubmission,
+    FlashcardStatus,
+)
+from app.models.question import Question
+from app.models.user import User
+from app.models.workspace import Workspace
+from app.services import content_safety, flashcard_generation
+from app.services import gamification as gamification_service
+from app.services import notifications as notification_service
+from app.services.flashcard_generation import (
+    FlashcardShapeError,
+    GeneratedFlashcard,
+    InsufficientFlashcardSource,
+)
+from app.services.learning_path import (  # noqa: F401 - kept for compatibility patch seam
+    select_next_topic,
 )
 
 
@@ -98,33 +117,6 @@ def _resolve_descendants(workspace: Workspace, selected_topic_ids: list[str]) ->
 
     return [topics_map[tid].name for tid in resolved_ids if tid in topics_map]
 
-
-from app.models.base import utc_now
-from app.models.flashcard import (
-    Flashcard,
-    FlashcardForStudent,
-    FlashcardRatingBadgeUnlock,
-    FlashcardRatingEvent,
-    FlashcardRatingResponse,
-    FlashcardRatingSubmission,
-    FlashcardStatus,
-)
-from app.models.user import User
-from app.models.workspace import Workspace
-from app.services import content_safety, flashcard_generation
-from app.services import gamification as gamification_service
-from app.services import notifications as notification_service
-from app.services.flashcard_generation import (
-    FlashcardShapeError,
-    GeneratedFlashcard,
-    InsufficientFlashcardSource,
-)
-from app.services.learning_path import (
-    NoTopicsAvailable,
-    TopicScore,
-    WorkspaceNotFound,
-    select_next_topic,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -640,6 +632,28 @@ async def _persist_flashcard(
     generated: GeneratedFlashcard,
     verdict: _FlashcardVerdict,
 ) -> Flashcard:
+    """Persist a generated card grounded by a question record."""
+    return await _persist_grounded_flashcard(
+        current_user=current_user,
+        workspace_id=workspace_id,
+        topic_name=topic_name,
+        document_id=question_doc.document_id,
+        source_chunk_ids=question_doc.source_chunk_ids,
+        generated=generated,
+        verdict=verdict,
+    )
+
+
+async def _persist_grounded_flashcard(
+    *,
+    current_user: User,
+    workspace_id: str,
+    topic_name: str,
+    document_id: str,
+    source_chunk_ids: list[str],
+    generated: GeneratedFlashcard,
+    verdict: _FlashcardVerdict,
+) -> Flashcard:
     """Write the flashcard to Cosmos if the verdict allows.
 
     Rejected verdicts are NOT persisted — same policy as question
@@ -650,12 +664,12 @@ async def _persist_flashcard(
         **{"_id": f"fc_{uuid4().hex}"},
         tenant_id=current_user.tenant_id,
         workspace_id=workspace_id,
-        document_id=question_doc.document_id,
+        document_id=document_id,
         topic=topic_name,
         front=generated.front,
         back=generated.back,
         explanation=generated.explanation,
-        source_chunk_ids=question_doc.source_chunk_ids,
+        source_chunk_ids=source_chunk_ids,
         status=verdict.status,
         prompt_version=generated.prompt_version,
         moderation_flagged=verdict.status == FlashcardStatus.flagged,

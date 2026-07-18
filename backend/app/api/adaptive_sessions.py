@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 from collections.abc import Iterable
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends
 
+from app.api import flashcards as flashcards_api
 from app.api.questions import _record_interaction
 from app.core.auth import get_current_user
 from app.core.database import (
     ADAPTIVE_SESSIONS,
+    CHUNKS,
     FLASHCARD_RATINGS,
     FLASHCARDS,
     GAMIFICATION,
@@ -25,6 +29,11 @@ from app.core.exceptions import (
     ForbiddenError,
     NotFoundError,
     ServiceUnavailableError,
+)
+from app.mcp_tools.retrieve_content import (
+    RetrieveContentInput,
+    RetrievedChunk,
+    retrieve_content,
 )
 from app.models.adaptive_session import (
     AdaptiveAnswerEvaluation,
@@ -45,7 +54,7 @@ from app.models.base import utc_now
 from app.models.flashcard import Flashcard, FlashcardRatingEvent, FlashcardStatus
 from app.models.question import AnswerSubmission, DifficultyLevel, Question, QuestionStatus
 from app.models.user import User, UserRole
-from app.services import answer_evaluation, question_pipeline
+from app.services import answer_evaluation, flashcard_generation, question_pipeline, study_sources
 from app.services import gamification as gamification_service
 from app.services import knowledge_state as knowledge_state_service
 
@@ -76,6 +85,7 @@ _COMPLETION_BONUSES = {
     AdaptiveSessionMode.revision: 5,
     AdaptiveSessionMode.flashcard: 5,
 }
+_MAX_GENERATED_FLASHCARDS_PER_PREPARE = 4
 
 
 def _assert_workspace_access(user: User, workspace_id: str) -> None:
@@ -227,14 +237,137 @@ async def _history(
     return interactions, weak_topics
 
 
+def _question_fingerprint(body: str) -> str:
+    """Return a stable comparison key for a question stem.
+
+    IDs are not sufficient for deduplication because historical imports and
+    concurrent generation can create two records with equivalent wording.
+    Normalising Unicode, case, punctuation, and whitespace catches those
+    duplicates without conflating genuinely different questions.
+    """
+    normalized = unicodedata.normalize("NFKC", body).casefold()
+    normalized = re.sub(r"[^\w\s]", " ", normalized)
+    return " ".join(normalized.split())
+
+
 def _unique_questions(items: Iterable[Question]) -> list[Question]:
     result: list[Question] = []
-    seen: set[str] = set()
+    seen_ids: set[str] = set()
+    seen_bodies: set[str] = set()
     for item in items:
-        if item.id not in seen:
-            seen.add(item.id)
-            result.append(item)
+        fingerprint = _question_fingerprint(item.body)
+        if item.id in seen_ids or fingerprint in seen_bodies:
+            continue
+        seen_ids.add(item.id)
+        seen_bodies.add(fingerprint)
+        result.append(item)
     return result
+
+
+async def _reserved_questions(
+    *, tenant_id: str, workspace_id: str, student_id: str
+) -> tuple[set[str], set[str]]:
+    """Questions already allocated to unfinished sessions for this learner.
+
+    Preparing a second session before completing the first must not return the
+    same questions. Completed sessions are covered by interaction history.
+    """
+    cursor = get_collection(tenant_id, ADAPTIVE_SESSIONS).find(
+        {
+            "workspace_id": workspace_id,
+            "student_id": student_id,
+            "status": "prepared",
+        }
+    )
+    rows = await cursor.to_list(length=50)
+    questions = [
+        question for row in rows for question in (row.get("plan") or {}).get("questions", [])
+    ]
+    ids = {str(question["id"]) for question in questions if question.get("id")}
+    fingerprints = {
+        _question_fingerprint(str(question["body"]))
+        for question in questions
+        if question.get("body")
+    }
+    return ids, fingerprints
+
+
+def _flashcard_fingerprint(front: str, back: str) -> str:
+    """Identify equivalent cards even when they have different record IDs."""
+    return f"{_question_fingerprint(front)}|{_question_fingerprint(back)}"
+
+
+def _unique_flashcards(items: Iterable[PreparedFlashcard]) -> list[PreparedFlashcard]:
+    result: list[PreparedFlashcard] = []
+    seen_ids: set[str] = set()
+    seen_content: set[str] = set()
+    for item in items:
+        fingerprint = _flashcard_fingerprint(item.front, item.back)
+        if item.id in seen_ids or fingerprint in seen_content:
+            continue
+        seen_ids.add(item.id)
+        seen_content.add(fingerprint)
+        result.append(item)
+    return result
+
+
+async def _flashcard_history(
+    *, tenant_id: str, workspace_id: str, student_id: str
+) -> tuple[set[str], set[str], list[str]]:
+    rating_cursor = get_collection(tenant_id, FLASHCARD_RATINGS).find(
+        {
+            "workspace_id": workspace_id,
+            "student_id": student_id,
+            "deleted_at": None,
+        }
+    )
+    rating_rows = await rating_cursor.to_list(length=5000)
+    ids = {str(row["flashcard_id"]) for row in rating_rows if row.get("flashcard_id")}
+
+    # A card counts as seen when it was delivered in a prior session plan, not
+    # only when it was rated. This covers sessions the learner exited or let
+    # time out after seeing some/all of their prepared cards.
+    session_cursor = get_collection(tenant_id, ADAPTIVE_SESSIONS).find(
+        {
+            "workspace_id": workspace_id,
+            "student_id": student_id,
+            "mode": AdaptiveSessionMode.flashcard.value,
+            "status": {"$ne": "prepared"},
+        }
+    )
+    session_rows = await session_cursor.to_list(length=500)
+    cards = [card for row in session_rows for card in (row.get("plan") or {}).get("flashcards", [])]
+    ids.update(str(card["id"]) for card in cards if card.get("id"))
+    fingerprints = {
+        _flashcard_fingerprint(str(card["front"]), str(card["back"]))
+        for card in cards
+        if card.get("front") and card.get("back")
+    }
+    fronts = [str(card["front"]) for card in cards if card.get("front")]
+    return ids, fingerprints, fronts
+
+
+async def _reserved_flashcards(
+    *, tenant_id: str, workspace_id: str, student_id: str
+) -> tuple[set[str], set[str]]:
+    """Cards allocated to another unfinished flashcard session."""
+    cursor = get_collection(tenant_id, ADAPTIVE_SESSIONS).find(
+        {
+            "workspace_id": workspace_id,
+            "student_id": student_id,
+            "mode": AdaptiveSessionMode.flashcard.value,
+            "status": "prepared",
+        }
+    )
+    rows = await cursor.to_list(length=50)
+    cards = [card for row in rows for card in (row.get("plan") or {}).get("flashcards", [])]
+    ids = {str(card["id"]) for card in cards if card.get("id")}
+    fingerprints = {
+        _flashcard_fingerprint(str(card["front"]), str(card["back"]))
+        for card in cards
+        if card.get("front") and card.get("back")
+    }
+    return ids, fingerprints
 
 
 async def _prepare_questions(
@@ -251,6 +384,11 @@ async def _prepare_questions(
         student_id=user.id,
     )
     seen_ids = {str(row.get("question_id")) for row in interactions}
+    reserved_ids, reserved_fingerprints = await _reserved_questions(
+        tenant_id=user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=user.id,
+    )
     wrong_order = {
         str(row.get("question_id")): index
         for index, row in enumerate(interactions)
@@ -302,7 +440,27 @@ async def _prepare_questions(
         except Exception:
             logger.warning("Skipping malformed queued question id=%s", raw.get("_id"))
 
-    selected = _unique_questions(available)[:target]
+    seen_fingerprints = {
+        _question_fingerprint(question.body) for question in available if question.id in seen_ids
+    }
+
+    # A normal study session is fresh-only. Previously answered questions and
+    # questions allocated to another unfinished session are not fallback
+    # candidates. Revision deliberately retains history so incorrect questions
+    # can be practised again.
+    if revision:
+        eligible = available
+    else:
+        eligible = [
+            question
+            for question in available
+            if question.id not in seen_ids
+            and question.id not in reserved_ids
+            and _question_fingerprint(question.body) not in seen_fingerprints
+            and _question_fingerprint(question.body) not in reserved_fingerprints
+        ]
+
+    selected = _unique_questions(eligible)[:target]
     missing = target - len(selected)
     if missing > 0:
         try:
@@ -314,6 +472,18 @@ async def _prepare_questions(
                 revision=revision,
                 batch_size=missing,
             )
+            # Generation is also filtered against interaction/reservation
+            # history. This is defensive: the generator normally creates new
+            # IDs, but callers must enforce the session contract themselves.
+            if not revision:
+                generated = [
+                    question
+                    for question in generated
+                    if question.id not in seen_ids
+                    and question.id not in reserved_ids
+                    and _question_fingerprint(question.body) not in seen_fingerprints
+                    and _question_fingerprint(question.body) not in reserved_fingerprints
+                ]
             selected = _unique_questions([*selected, *generated])[:target]
         except Exception:
             logger.exception("Adaptive session batch generation failed")
@@ -343,8 +513,178 @@ async def _prepare_questions(
     ]
 
 
+async def _current_grounding_chunks(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    topic: str,
+    current_document_ids: frozenset[str],
+) -> list[RetrievedChunk]:
+    """Retrieve grounding only from the current ready source snapshot.
+
+    Search can briefly lag a newly indexed document or rank an older scrape
+    first. The Cosmos fallback keeps session preparation source-backed while
+    guaranteeing that superseded document versions are never used.
+    """
+    chunks: list[RetrievedChunk] = []
+    try:
+        retrieved = await retrieve_content(
+            RetrieveContentInput(
+                tenant_id=tenant_id,
+                workspace_id=workspace_id,
+                query_text=topic,
+                top_k=50,
+            )
+        )
+        chunks.extend(
+            chunk for chunk in retrieved.chunks if chunk.document_id in current_document_ids
+        )
+    except Exception:
+        logger.exception(
+            "Flashcard source retrieval failed workspace=%s topic=%s",
+            workspace_id,
+            topic,
+        )
+
+    seen_chunk_ids = {chunk.chunk_id for chunk in chunks}
+    if len(chunks) < 5:
+        cursor = get_collection(tenant_id, CHUNKS).find(
+            {
+                "workspace_id": workspace_id,
+                "document_id": {"$in": sorted(current_document_ids)},
+                "deleted_at": None,
+            }
+        )
+        rows = await cursor.to_list(length=200)
+        topic_terms = set(re.findall(r"[a-z0-9]+", topic.casefold()))
+        rows.sort(
+            key=lambda row: (
+                -len(
+                    topic_terms & set(re.findall(r"[a-z0-9]+", str(row.get("text", "")).casefold()))
+                ),
+                str(row.get("document_id", "")),
+                int(row.get("chunk_index", 0)),
+            )
+        )
+        for row in rows:
+            chunk_id = str(row.get("_id", ""))
+            document_id = str(row.get("document_id", ""))
+            text = str(row.get("text", "")).strip()
+            if (
+                not chunk_id
+                or chunk_id in seen_chunk_ids
+                or document_id not in current_document_ids
+                or not text
+            ):
+                continue
+            chunks.append(
+                RetrievedChunk(
+                    chunk_id=chunk_id,
+                    chunk_index=int(row.get("chunk_index", 0)),
+                    document_id=document_id,
+                    text=text,
+                    topic_ids=[str(value) for value in row.get("topic_ids") or []],
+                    score=0.0,
+                )
+            )
+            seen_chunk_ids.add(chunk_id)
+            if len(chunks) >= 5:
+                break
+    return chunks[:5]
+
+
+async def _generate_fresh_flashcards(
+    *,
+    user: User,
+    workspace_id: str,
+    target: int,
+    level: AdaptiveLevel,
+    current_sources: study_sources.CurrentStudySources,
+    weak_topics: dict[str, float],
+    historical_fronts: list[str],
+    blocked_fingerprints: set[str],
+) -> list[PreparedFlashcard]:
+    """Generate a bounded batch from current source chunks."""
+    generation_target = min(target, _MAX_GENERATED_FLASHCARDS_PER_PREPARE)
+    if generation_target <= 0 or not current_sources.document_ids:
+        return []
+
+    topics = list(current_sources.topic_names) or ["key concepts"]
+    topics.sort(
+        key=lambda topic: (
+            weak_topics.get(topic, weak_topics.get(topic.casefold(), 1.0)),
+            topic.casefold(),
+        )
+    )
+    prompt_fronts = list(dict.fromkeys(historical_fronts))[-30:]
+    fingerprints = set(blocked_fingerprints)
+    prepared: list[PreparedFlashcard] = []
+    attempt_budget = max(len(topics), generation_target * 3)
+
+    for attempt in range(attempt_budget):
+        if len(prepared) >= generation_target:
+            break
+        topic = topics[attempt % len(topics)]
+        try:
+            chunks = await _current_grounding_chunks(
+                tenant_id=user.tenant_id,
+                workspace_id=workspace_id,
+                topic=topic,
+                current_document_ids=current_sources.document_ids,
+            )
+            generated = await flashcard_generation.generate_flashcard(
+                topic=topic,
+                grounding_chunks=chunks,
+                seen_card_fronts=prompt_fronts,
+                mastery_tier=level.value,
+            )
+            fingerprint = _flashcard_fingerprint(generated.front, generated.back)
+            prompt_fronts.append(generated.front)
+            if fingerprint in fingerprints:
+                logger.info(
+                    "Discarding duplicate generated flashcard workspace=%s topic=%s",
+                    workspace_id,
+                    topic,
+                )
+                continue
+            fingerprints.add(fingerprint)
+
+            verdict = await flashcards_api._review(generated)
+            card = await flashcards_api._persist_grounded_flashcard(
+                current_user=user,
+                workspace_id=workspace_id,
+                topic_name=topic,
+                document_id=chunks[0].document_id,
+                source_chunk_ids=[chunk.chunk_id for chunk in chunks],
+                generated=generated,
+                verdict=verdict,
+            )
+            if card.status != FlashcardStatus.approved:
+                continue
+            prepared.append(
+                PreparedFlashcard(
+                    id=card.id,
+                    topic=card.topic,
+                    front=card.front,
+                    back=card.back,
+                    explanation=card.explanation,
+                )
+            )
+        except Exception:
+            logger.exception(
+                "Fresh flashcard generation failed workspace=%s topic=%s",
+                workspace_id,
+                topic,
+            )
+    return prepared
+
+
 async def _prepare_flashcards(
-    *, user: User, workspace_id: str, target: int
+    *,
+    user: User,
+    workspace_id: str,
+    target: int,
+    level: AdaptiveLevel = AdaptiveLevel.beginner,
 ) -> list[PreparedFlashcard]:
     _, weak_topics = await _history(
         tenant_id=user.tenant_id,
@@ -355,6 +695,25 @@ async def _prepare_flashcards(
         topic.casefold(): index
         for index, (topic, _) in enumerate(sorted(weak_topics.items(), key=lambda pair: pair[1]))
     }
+    seen_ids, historical_fingerprints, historical_fronts = await _flashcard_history(
+        tenant_id=user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=user.id,
+    )
+    reserved_ids, reserved_fingerprints = await _reserved_flashcards(
+        tenant_id=user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=user.id,
+    )
+    current_sources = await study_sources.current_study_sources(
+        tenant_id=user.tenant_id,
+        workspace_id=workspace_id,
+    )
+    if not current_sources.document_ids:
+        raise ConflictError(
+            "No ready study material is available for flashcards. Wait for the latest "
+            "source to finish processing, then try again."
+        )
     cursor = get_collection(user.tenant_id, FLASHCARDS).find(
         {
             "workspace_id": workspace_id,
@@ -370,13 +729,17 @@ async def _prepare_flashcards(
             str(row.get("_id", "")),
         )
     )
-    cards: list[PreparedFlashcard] = []
+    available_cards: list[PreparedFlashcard] = []
+    all_existing_fingerprints: set[str] = set()
     for raw in raw_cards:
         try:
             card = Flashcard.model_validate(raw)
         except Exception:
             continue
-        cards.append(
+        all_existing_fingerprints.add(_flashcard_fingerprint(card.front, card.back))
+        if card.document_id not in current_sources.document_ids:
+            continue
+        available_cards.append(
             PreparedFlashcard(
                 id=card.id,
                 topic=card.topic,
@@ -385,8 +748,23 @@ async def _prepare_flashcards(
                 explanation=card.explanation,
             )
         )
-        if len(cards) >= target:
-            return cards
+
+    seen_fingerprints = historical_fingerprints | {
+        _flashcard_fingerprint(card.front, card.back)
+        for card in available_cards
+        if card.id in seen_ids
+    }
+    historical_fronts.extend(card.front for card in available_cards if card.id in seen_ids)
+    cards = _unique_flashcards(
+        card
+        for card in available_cards
+        if card.id not in seen_ids
+        and card.id not in reserved_ids
+        and _flashcard_fingerprint(card.front, card.back) not in seen_fingerprints
+        and _flashcard_fingerprint(card.front, card.back) not in reserved_fingerprints
+    )[:target]
+    if len(cards) >= target:
+        return cards
 
     # Approved questions are valid source-backed recall cards and let a new
     # learner receive a full flashcard session without a chain of AI calls.
@@ -410,25 +788,56 @@ async def _prepare_flashcards(
             question = Question.model_validate(raw)
         except Exception:
             continue
-        derived_id = f"derived_{question.id}"
-        if derived_id in existing_ids:
+        if question.document_id not in current_sources.document_ids:
             continue
-        cards.append(
-            PreparedFlashcard(
-                id=derived_id,
-                topic=question.topic,
-                front=question.body,
-                back=question.answer,
-                explanation=question.explanation,
-            )
+        derived_id = f"derived_{question.id}"
+        fingerprint = _flashcard_fingerprint(question.body, question.answer)
+        if (
+            derived_id in existing_ids
+            or derived_id in seen_ids
+            or derived_id in reserved_ids
+            or fingerprint in seen_fingerprints
+            or fingerprint in reserved_fingerprints
+        ):
+            continue
+        candidate = PreparedFlashcard(
+            id=derived_id,
+            topic=question.topic,
+            front=question.body,
+            back=question.answer,
+            explanation=question.explanation,
         )
+        # Protect against duplicate content among native and derived cards.
+        if fingerprint in {_flashcard_fingerprint(card.front, card.back) for card in cards}:
+            continue
+        cards.append(candidate)
         existing_ids.add(derived_id)
         if len(cards) >= target:
             break
 
+    missing = target - len(cards)
+    if missing > 0:
+        generated_cards = await _generate_fresh_flashcards(
+            user=user,
+            workspace_id=workspace_id,
+            target=missing,
+            level=level,
+            current_sources=current_sources,
+            weak_topics=weak_topics,
+            historical_fronts=[*historical_fronts, *(card.front for card in cards)],
+            blocked_fingerprints=(
+                historical_fingerprints
+                | reserved_fingerprints
+                | all_existing_fingerprints
+                | {_flashcard_fingerprint(card.front, card.back) for card in cards}
+            ),
+        )
+        cards.extend(generated_cards)
+
     if not cards:
         raise ConflictError(
-            "No source-backed flashcards are ready yet. Complete a study session first."
+            "No new flashcards could be generated from the current ready study material. "
+            "Try again shortly or add a new source."
         )
     return cards
 
@@ -455,7 +864,10 @@ async def prepare_adaptive_session(
     flashcards: list[PreparedFlashcard] = []
     if request.mode == AdaptiveSessionMode.flashcard:
         flashcards = await _prepare_flashcards(
-            user=current_user, workspace_id=workspace_id, target=target
+            user=current_user,
+            workspace_id=workspace_id,
+            target=target,
+            level=level,
         )
         item_count = len(flashcards)
         xp_min = -item_count + _COMPLETION_BONUSES[request.mode]

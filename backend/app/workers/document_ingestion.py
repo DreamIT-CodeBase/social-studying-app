@@ -79,6 +79,7 @@ from app.models.document import DocumentStatus  # noqa: E402
 from app.models.moderation import ModerationAction, ModerationLog, ModerationTarget  # noqa: E402
 from app.services import blob_storage, content_safety, document_intelligence  # noqa: E402
 from app.services.content_safety import SafetyVerdict  # noqa: E402
+from app.services.document_intelligence import ExtractedDocument  # noqa: E402
 from app.services.document_queue import (  # noqa: E402
     ExtractionMessage,
     ReceivedExtractionMessage,
@@ -162,18 +163,32 @@ async def _handle(msg: ReceivedExtractionMessage) -> None:
         await msg.dead_letter("BlobNotFound", str(exc))
         return False
 
-    # 2. Send to Document Intelligence (prebuilt-read).
-    try:
-        extracted = await document_intelligence.extract_text(
-            content, content_type=payload.content_type
+    # 2. Extract text. Scrape jobs already contain normalized UTF-8 text;
+    #    sending that text through Document Intelligence is unsupported and
+    #    can leave the UI stuck at "Reading text" while the queue retries.
+    #    Keep DI for binary uploads, but handle plain text locally.
+    if payload.content_type.lower().split(";", 1)[0].strip() == "text/plain":
+        extracted = ExtractedDocument(
+            text=content.decode("utf-8", errors="replace").strip(),
+            page_count=1,
+            languages=[],
         )
-    except HttpResponseError as exc:
-        if _is_permanent(exc):
-            await _mark_failed(payload, f"Document Intelligence rejected file: {exc.message}")
-            await msg.dead_letter("UnsupportedContent", str(exc))
+        if not extracted.text:
+            await _mark_failed(payload, "Scraped page contained no readable text")
+            await msg.dead_letter("EmptyContent", "Scraped page contained no readable text")
             return False
-        # Transient — let Service Bus redeliver.
-        raise
+    else:
+        try:
+            extracted = await document_intelligence.extract_text(
+                content, content_type=payload.content_type
+            )
+        except HttpResponseError as exc:
+            if _is_permanent(exc):
+                await _mark_failed(payload, f"Document Intelligence rejected file: {exc.message}")
+                await msg.dead_letter("UnsupportedContent", str(exc))
+                return False
+            # Transient — let Service Bus redeliver.
+            raise
 
     # 3. Persist extracted text — always written to blob, even if flagged, so
     #    admins reviewing a flagged document can read what tripped the scanner.
@@ -287,11 +302,7 @@ async def _write_moderation_log(
     must not regress a finished document back into the retry queue — the
     scan already happened and Service Bus would re-charge us for it.
     """
-    reason = (
-        ", ".join(verdict.flagged_categories)
-        if verdict.flagged_categories
-        else "clean"
-    )
+    reason = ", ".join(verdict.flagged_categories) if verdict.flagged_categories else "clean"
     entry = ModerationLog(
         id=f"mod_{uuid4().hex}",
         tenant_id=payload.tenant_id,
@@ -337,13 +348,19 @@ def _is_permanent(exc: HttpResponseError) -> bool:
 
 
 async def run_forever(*, max_wait_seconds: int = 30) -> None:
+    """Keep the worker alive across idle Service Bus receive windows."""
+    logger.info("Document ingestion worker starting")
+    while True:
+        await _consume_until_idle(max_wait_seconds=max_wait_seconds)
+
+
+async def _consume_until_idle(*, max_wait_seconds: int) -> None:
     """Consume the document-ingestion queue until cancelled.
 
     Cancellation comes from SIGTERM (Container Apps shutdown) or SIGINT
     (local dev Ctrl-C). On cancel, the current message in flight is
     abandoned (not completed) so a sibling replica will retry it.
     """
-    logger.info("Document ingestion worker starting")
     async with consume_extraction_messages(max_wait_seconds=max_wait_seconds) as messages:
         async for msg in messages:
             try:
@@ -351,7 +368,9 @@ async def run_forever(*, max_wait_seconds: int = 30) -> None:
                 if res is not False:
                     await msg.complete()
             except asyncio.CancelledError:
-                logger.warning("Cancelled while handling doc=%s — abandoning", msg.payload.document_id)
+                logger.warning(
+                    "Cancelled while handling doc=%s — abandoning", msg.payload.document_id
+                )
                 await msg.abandon()
                 raise
             except Exception as exc:

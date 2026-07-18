@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,13 +32,11 @@ class Settings(BaseSettings):
 
     def get_db_name(self, tenant_id: str) -> str:
         """Map tenant ID to configured database name, or return tenant ID if not mapped."""
-        if tenant_id == "ten_smoke001":
-            return self.db_name_smoke
-        elif tenant_id == "ten_demo_001":
-            return self.db_name_demo
-        elif tenant_id == "93e3ce50-a29e-462b-8956-85674a34d167":
-            return self.db_name_uuid
-        return tenant_id
+        return {
+            "ten_smoke001": self.db_name_smoke,
+            "ten_demo_001": self.db_name_demo,
+            "93e3ce50-a29e-462b-8956-85674a34d167": self.db_name_uuid,
+        }.get(tenant_id, tenant_id)
 
     # Azure AI Search
     search_endpoint: str = ""
@@ -77,6 +76,16 @@ class Settings(BaseSettings):
     smtp_username: str | None = None
     smtp_password: str | None = None
 
+    # Transactional email provider. ``auto`` preserves the legacy behavior:
+    # use SMTP when credentials exist, otherwise log messages locally.
+    # Production uses Microsoft Graph client credentials so Security Defaults
+    # can remain enabled in the Microsoft 365 tenant.
+    email_provider: str = "auto"
+    microsoft_graph_tenant_id: str = ""
+    microsoft_graph_client_id: str = ""
+    microsoft_graph_client_secret: str = ""
+    microsoft_graph_sender_email: str = ""
+
     # Redis
     redis_url: str = "redis://localhost:6379"
 
@@ -106,13 +115,18 @@ class Settings(BaseSettings):
     service_bus_topics_queue: str = "topic-extraction"
     service_bus_chunks_queue: str = "chunking"
     service_bus_vectorization_queue: str = "vectorization"
+    # Dedicated Container Apps own the production pipeline. Local developers
+    # may set INLINE_WORKERS_ENABLED=true to run those workers in uvicorn.
+    # Keeping this explicit prevents a non-production API environment from
+    # competing with the queue-backed worker apps for the same messages.
+    inline_workers_enabled: bool = False
 
     # Sprint 2.8 — chunker tuning. Character-based for simplicity (no
     # tokenizer dependency). 2000 chars ≈ 500 tokens at the GPT-4o
     # ~4-char/token average for English educational content.
     chunk_target_chars: int = 2_000
     chunk_overlap_chars: int = 200
-    chunk_min_chars: int = 200      # below this and we'd be emitting too-small chunks
+    chunk_min_chars: int = 200  # below this and we'd be emitting too-small chunks
 
     # Azure OpenAI tuning knobs for topic extraction (Sprint 2.5).
     # Token cap protects against runaway prompts; very long textbooks get

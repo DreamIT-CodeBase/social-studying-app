@@ -1293,6 +1293,12 @@ mixin _$GamificationProfile {
   int get questionsCorrect => throw _privateConstructorUsedError;
   @JsonKey(name: 'flashcards_reviewed')
   int get flashcardsReviewed => throw _privateConstructorUsedError;
+  @JsonKey(name: 'study_sessions_completed')
+  int get studySessionsCompleted => throw _privateConstructorUsedError;
+  @JsonKey(name: 'revision_sessions_completed')
+  int get revisionSessionsCompleted => throw _privateConstructorUsedError;
+  @JsonKey(name: 'flashcard_sessions_completed')
+  int get flashcardSessionsCompleted => throw _privateConstructorUsedError;
   List<EarnedBadge> get badges => throw _privateConstructorUsedError;
 
   /// Last 30 days of activity counts — `{"2026-05-23": 12, ...}`.
@@ -1334,6 +1340,11 @@ abstract class $GamificationProfileCopyWith<$Res> {
       @JsonKey(name: 'questions_answered') int questionsAnswered,
       @JsonKey(name: 'questions_correct') int questionsCorrect,
       @JsonKey(name: 'flashcards_reviewed') int flashcardsReviewed,
+      @JsonKey(name: 'study_sessions_completed') int studySessionsCompleted,
+      @JsonKey(name: 'revision_sessions_completed')
+      int revisionSessionsCompleted,
+      @JsonKey(name: 'flashcard_sessions_completed')
+      int flashcardSessionsCompleted,
       List<EarnedBadge> badges,
       @JsonKey(name: 'daily_activity') Map<String, int> dailyActivity,
       @JsonKey(name: 'daily_xp') Map<String, int> dailyXp});
@@ -1368,6 +1379,9 @@ class _$GamificationProfileCopyWithImpl<$Res, $Val extends GamificationProfile>
     Object? questionsAnswered = null,
     Object? questionsCorrect = null,
     Object? flashcardsReviewed = null,
+    Object? studySessionsCompleted = null,
+    Object? revisionSessionsCompleted = null,
+    Object? flashcardSessionsCompleted = null,
     Object? badges = null,
     Object? dailyActivity = null,
     Object? dailyXp = null,
@@ -1429,6 +1443,18 @@ class _$GamificationProfileCopyWithImpl<$Res, $Val extends GamificationProfile>
           ? _value.flashcardsReviewed
           : flashcardsReviewed // ignore: cast_nullable_to_non_nullable
               as int,
+      studySessionsCompleted: null == studySessionsCompleted
+          ? _value.studySessionsCompleted
+          : studySessionsCompleted // ignore: cast_nullable_to_non_nullable
+              as int,
+      revisionSessionsCompleted: null == revisionSessionsCompleted
+          ? _value.revisionSessionsCompleted
+          : revisionSessionsCompleted // ignore: cast_nullable_to_non_nullable
+              as int,
+      flashcardSessionsCompleted: null == flashcardSessionsCompleted
+          ? _value.flashcardSessionsCompleted
+          : flashcardSessionsCompleted // ignore: cast_nullable_to_non_nullable
+              as int,
       badges: null == badges
           ? _value.badges
           : badges // ignore: cast_nullable_to_non_nullable
@@ -1468,6 +1494,11 @@ abstract class _$$GamificationProfileImplCopyWith<$Res>
       @JsonKey(name: 'questions_answered') int questionsAnswered,
       @JsonKey(name: 'questions_correct') int questionsCorrect,
       @JsonKey(name: 'flashcards_reviewed') int flashcardsReviewed,
+      @JsonKey(name: 'study_sessions_completed') int studySessionsCompleted,
+      @JsonKey(name: 'revision_sessions_completed')
+      int revisionSessionsCompleted,
+      @JsonKey(name: 'flashcard_sessions_completed')
+      int flashcardSessionsCompleted,
       List<EarnedBadge> badges,
       @JsonKey(name: 'daily_activity') Map<String, int> dailyActivity,
       @JsonKey(name: 'daily_xp') Map<String, int> dailyXp});
@@ -1500,6 +1531,9 @@ class __$$GamificationProfileImplCopyWithImpl<$Res>
     Object? questionsAnswered = null,
     Object? questionsCorrect = null,
     Object? flashcardsReviewed = null,
+    Object? studySessionsCompleted = null,
+    Object? revisionSessionsCompleted = null,
+    Object? flashcardSessionsCompleted = null,
     Object? badges = null,
     Object? dailyActivity = null,
     Object? dailyXp = null,
@@ -1561,6 +1595,18 @@ class __$$GamificationProfileImplCopyWithImpl<$Res>
           ? _value.flashcardsReviewed
           : flashcardsReviewed // ignore: cast_nullable_to_non_nullable
               as int,
+      studySessionsCompleted: null == studySessionsCompleted
+          ? _value.studySessionsCompleted
+          : studySessionsCompleted // ignore: cast_nullable_to_non_nullable
+              as int,
+      revisionSessionsCompleted: null == revisionSessionsCompleted
+          ? _value.revisionSessionsCompleted
+          : revisionSessionsCompleted // ignore: cast_nullable_to_non_nullable
+              as int,
+      flashcardSessionsCompleted: null == flashcardSessionsCompleted
+          ? _value.flashcardSessionsCompleted
+          : flashcardSessionsCompleted // ignore: cast_nullable_to_non_nullable
+              as int,
       badges: null == badges
           ? _value._badges
           : badges // ignore: cast_nullable_to_non_nullable
@@ -1596,6 +1642,12 @@ class _$GamificationProfileImpl extends _GamificationProfile {
       @JsonKey(name: 'questions_answered') this.questionsAnswered = 0,
       @JsonKey(name: 'questions_correct') this.questionsCorrect = 0,
       @JsonKey(name: 'flashcards_reviewed') this.flashcardsReviewed = 0,
+      @JsonKey(name: 'study_sessions_completed')
+      this.studySessionsCompleted = 0,
+      @JsonKey(name: 'revision_sessions_completed')
+      this.revisionSessionsCompleted = 0,
+      @JsonKey(name: 'flashcard_sessions_completed')
+      this.flashcardSessionsCompleted = 0,
       final List<EarnedBadge> badges = const <EarnedBadge>[],
       @JsonKey(name: 'daily_activity')
       final Map<String, int> dailyActivity = const <String, int>{},
@@ -1662,6 +1714,15 @@ class _$GamificationProfileImpl extends _GamificationProfile {
   @override
   @JsonKey(name: 'flashcards_reviewed')
   final int flashcardsReviewed;
+  @override
+  @JsonKey(name: 'study_sessions_completed')
+  final int studySessionsCompleted;
+  @override
+  @JsonKey(name: 'revision_sessions_completed')
+  final int revisionSessionsCompleted;
+  @override
+  @JsonKey(name: 'flashcard_sessions_completed')
+  final int flashcardSessionsCompleted;
   final List<EarnedBadge> _badges;
   @override
   @JsonKey()
@@ -1697,7 +1758,7 @@ class _$GamificationProfileImpl extends _GamificationProfile {
 
   @override
   String toString() {
-    return 'GamificationProfile(studentId: $studentId, workspaceId: $workspaceId, xpTotal: $xpTotal, xpThisWeek: $xpThisWeek, xpByTopic: $xpByTopic, level: $level, xpIntoLevel: $xpIntoLevel, xpForNextLevel: $xpForNextLevel, streakDays: $streakDays, longestStreakDays: $longestStreakDays, lastActiveDate: $lastActiveDate, questionsAnswered: $questionsAnswered, questionsCorrect: $questionsCorrect, flashcardsReviewed: $flashcardsReviewed, badges: $badges, dailyActivity: $dailyActivity, dailyXp: $dailyXp)';
+    return 'GamificationProfile(studentId: $studentId, workspaceId: $workspaceId, xpTotal: $xpTotal, xpThisWeek: $xpThisWeek, xpByTopic: $xpByTopic, level: $level, xpIntoLevel: $xpIntoLevel, xpForNextLevel: $xpForNextLevel, streakDays: $streakDays, longestStreakDays: $longestStreakDays, lastActiveDate: $lastActiveDate, questionsAnswered: $questionsAnswered, questionsCorrect: $questionsCorrect, flashcardsReviewed: $flashcardsReviewed, studySessionsCompleted: $studySessionsCompleted, revisionSessionsCompleted: $revisionSessionsCompleted, flashcardSessionsCompleted: $flashcardSessionsCompleted, badges: $badges, dailyActivity: $dailyActivity, dailyXp: $dailyXp)';
   }
 
   @override
@@ -1731,6 +1792,15 @@ class _$GamificationProfileImpl extends _GamificationProfile {
                 other.questionsCorrect == questionsCorrect) &&
             (identical(other.flashcardsReviewed, flashcardsReviewed) ||
                 other.flashcardsReviewed == flashcardsReviewed) &&
+            (identical(other.studySessionsCompleted, studySessionsCompleted) ||
+                other.studySessionsCompleted == studySessionsCompleted) &&
+            (identical(other.revisionSessionsCompleted,
+                    revisionSessionsCompleted) ||
+                other.revisionSessionsCompleted == revisionSessionsCompleted) &&
+            (identical(other.flashcardSessionsCompleted,
+                    flashcardSessionsCompleted) ||
+                other.flashcardSessionsCompleted ==
+                    flashcardSessionsCompleted) &&
             const DeepCollectionEquality().equals(other._badges, _badges) &&
             const DeepCollectionEquality()
                 .equals(other._dailyActivity, _dailyActivity) &&
@@ -1739,25 +1809,29 @@ class _$GamificationProfileImpl extends _GamificationProfile {
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(
-      runtimeType,
-      studentId,
-      workspaceId,
-      xpTotal,
-      xpThisWeek,
-      const DeepCollectionEquality().hash(_xpByTopic),
-      level,
-      xpIntoLevel,
-      xpForNextLevel,
-      streakDays,
-      longestStreakDays,
-      lastActiveDate,
-      questionsAnswered,
-      questionsCorrect,
-      flashcardsReviewed,
-      const DeepCollectionEquality().hash(_badges),
-      const DeepCollectionEquality().hash(_dailyActivity),
-      const DeepCollectionEquality().hash(_dailyXp));
+  int get hashCode => Object.hashAll([
+        runtimeType,
+        studentId,
+        workspaceId,
+        xpTotal,
+        xpThisWeek,
+        const DeepCollectionEquality().hash(_xpByTopic),
+        level,
+        xpIntoLevel,
+        xpForNextLevel,
+        streakDays,
+        longestStreakDays,
+        lastActiveDate,
+        questionsAnswered,
+        questionsCorrect,
+        flashcardsReviewed,
+        studySessionsCompleted,
+        revisionSessionsCompleted,
+        flashcardSessionsCompleted,
+        const DeepCollectionEquality().hash(_badges),
+        const DeepCollectionEquality().hash(_dailyActivity),
+        const DeepCollectionEquality().hash(_dailyXp)
+      ]);
 
   /// Create a copy of GamificationProfile
   /// with the given fields replaced by the non-null parameter values.
@@ -1792,6 +1866,12 @@ abstract class _GamificationProfile extends GamificationProfile {
           @JsonKey(name: 'questions_answered') final int questionsAnswered,
           @JsonKey(name: 'questions_correct') final int questionsCorrect,
           @JsonKey(name: 'flashcards_reviewed') final int flashcardsReviewed,
+          @JsonKey(name: 'study_sessions_completed')
+          final int studySessionsCompleted,
+          @JsonKey(name: 'revision_sessions_completed')
+          final int revisionSessionsCompleted,
+          @JsonKey(name: 'flashcard_sessions_completed')
+          final int flashcardSessionsCompleted,
           final List<EarnedBadge> badges,
           @JsonKey(name: 'daily_activity') final Map<String, int> dailyActivity,
           @JsonKey(name: 'daily_xp') final Map<String, int> dailyXp}) =
@@ -1844,6 +1924,15 @@ abstract class _GamificationProfile extends GamificationProfile {
   @override
   @JsonKey(name: 'flashcards_reviewed')
   int get flashcardsReviewed;
+  @override
+  @JsonKey(name: 'study_sessions_completed')
+  int get studySessionsCompleted;
+  @override
+  @JsonKey(name: 'revision_sessions_completed')
+  int get revisionSessionsCompleted;
+  @override
+  @JsonKey(name: 'flashcard_sessions_completed')
+  int get flashcardSessionsCompleted;
   @override
   List<EarnedBadge> get badges;
 

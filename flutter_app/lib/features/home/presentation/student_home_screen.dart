@@ -66,7 +66,17 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
           await SessionPersistenceService.instance.getWorkspace();
       final savedTab = await SessionPersistenceService.instance.getTab();
 
-      if (savedWorkspaceId != null) {
+      final authState = ref.read(authNotifierProvider).valueOrNull;
+      final user = authState?.maybeWhen(
+        authenticated: (value) => value,
+        orElse: () => null,
+      );
+      final validSavedWorkspace = savedWorkspaceId != null &&
+          (user?.workspaceMemberships.any(
+                (membership) => membership.workspaceId == savedWorkspaceId,
+              ) ??
+              false);
+      if (validSavedWorkspace) {
         ref
             .read(activeWorkspaceIdProvider.notifier)
             .setWorkspaceId(savedWorkspaceId);

@@ -31,6 +31,21 @@ param b2cClientId string = ''
 @description('Azure AD B2C sign-up/sign-in policy name')
 param b2cPolicyName string = 'B2C_1_signupsignin'
 
+@description('Transactional email provider: auto, smtp, logging, or microsoft_graph')
+param emailProvider string = 'auto'
+
+@description('Microsoft 365 tenant used for Graph app-only email')
+param microsoftGraphTenantId string = ''
+
+@description('Microsoft Graph application client ID')
+param microsoftGraphClientId string = ''
+
+@description('Versioned Key Vault URI for the Microsoft Graph client secret')
+param microsoftGraphClientSecretUri string = ''
+
+@description('Microsoft 365 mailbox used as the transactional sender')
+param microsoftGraphSenderEmail string = ''
+
 @description('GPT-4o tokens-per-minute capacity (thousands). 10 = 10K TPM.')
 param gpt4oCapacity int = 10
 
@@ -225,6 +240,11 @@ module containerApp 'modules/container-apps.bicep' = {
     b2cTenantId: b2cTenantId
     b2cClientId: b2cClientId
     b2cPolicyName: b2cPolicyName
+    emailProvider: emailProvider
+    microsoftGraphTenantId: microsoftGraphTenantId
+    microsoftGraphClientId: microsoftGraphClientId
+    microsoftGraphClientSecretUri: microsoftGraphClientSecretUri
+    microsoftGraphSenderEmail: microsoftGraphSenderEmail
     registryLoginServer: acr.outputs.registryLoginServer
   }
 }

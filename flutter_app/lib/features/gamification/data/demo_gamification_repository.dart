@@ -109,6 +109,9 @@ class DemoGamificationRepository implements GamificationRepository {
     questionsAnswered: 33,
     questionsCorrect: 24,
     flashcardsReviewed: 17,
+    studySessionsCompleted: 5,
+    revisionSessionsCompleted: 2,
+    flashcardSessionsCompleted: 3,
     badges: [
       EarnedBadge(
         badgeId: 'first_steps',

@@ -17,7 +17,7 @@ SharedPreferences on startup and after each XP change.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -37,6 +37,10 @@ from app.models.screen_time import ScreenTimeSettings, ScreenTimeWallet
 from app.models.user import User, UserRole
 
 logger = logging.getLogger(__name__)
+
+# A student can convert at most two hours of XP into social time during a
+# weekly balance period. XP itself continues to accrue normally.
+MAX_EARNED_MINUTES_PER_WEEK = 120
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/screen-time",
@@ -91,6 +95,7 @@ class ScreenTimeWalletView(BaseModel):
     last_known_xp: int
     last_sync_time: str | None
     last_reset_date: str | None
+    week_start_date: str | None
 
 
 class ConsumeMinutesRequest(BaseModel):
@@ -260,7 +265,10 @@ async def get_wallet(
         workspace_id=workspace_id,
         student_id=current_user.id,
     )
-    wallet = _maybe_reset_today(wallet)
+    wallet_changed = _apply_wallet_resets(wallet)
+    if wallet_changed:
+        wallet.updated_at = utc_now()
+        await _save_wallet(current_user.tenant_id, wallet)
     return _wallet_to_view(wallet)
 
 
@@ -288,13 +296,14 @@ async def consume_minutes(
         workspace_id=workspace_id,
         student_id=current_user.id,
     )
-    wallet = _maybe_reset_today(wallet)
+    _apply_wallet_resets(wallet)
 
     wallet.available_minutes = max(0, wallet.available_minutes - body.minutes)
     wallet.consumed_minutes += body.minutes
     wallet.consumed_today += body.minutes
-    wallet.last_sync_time = utc_now()
-    wallet.updated_at = utc_now()
+    now = utc_now()
+    wallet.last_sync_time = now
+    wallet.updated_at = now
 
     await _save_wallet(current_user.tenant_id, wallet)
     return _wallet_to_view(wallet)
@@ -335,17 +344,30 @@ async def sync_xp(
         workspace_id=workspace_id,
         student_id=current_user.id,
     )
-    wallet = _maybe_reset_today(wallet)
+    wallet_changed = _apply_wallet_resets(wallet)
 
     ratio = settings.xp_to_minute_ratio
-    expected_earned = current_xp // ratio
+    weekly_xp_baseline = wallet.weekly_xp_baseline or 0
+    expected_earned = min(
+        MAX_EARNED_MINUTES_PER_WEEK,
+        max(0, current_xp - weekly_xp_baseline) // ratio,
+    )
+
+    # Bring wallets created before the cap into compliance without treating
+    # already-consumed minutes as available again.
+    if wallet.total_earned_minutes > MAX_EARNED_MINUTES_PER_WEEK:
+        excess_minutes = wallet.total_earned_minutes - MAX_EARNED_MINUTES_PER_WEEK
+        wallet.total_earned_minutes = MAX_EARNED_MINUTES_PER_WEEK
+        wallet.available_minutes = max(0, wallet.available_minutes - excess_minutes)
+        wallet_changed = True
+
     delta = expected_earned - wallet.total_earned_minutes
 
     now = utc_now()
     if delta > 0:
         wallet.total_earned_minutes += delta
         wallet.available_minutes += delta
-        wallet.last_known_xp = expected_earned * ratio
+        wallet.last_known_xp = current_xp
         wallet.last_sync_time = now
         wallet.updated_at = now
         await _save_wallet(current_user.tenant_id, wallet)
@@ -356,10 +378,8 @@ async def sync_xp(
             delta,
             wallet.available_minutes,
         )
-    elif current_xp != wallet.last_known_xp:
-        # Align last_known_xp to the floored threshold (keeps fractional XP safe)
-        aligned = expected_earned * ratio
-        wallet.last_known_xp = aligned
+    elif current_xp != wallet.last_known_xp or wallet_changed:
+        wallet.last_known_xp = current_xp
         wallet.last_sync_time = now
         wallet.updated_at = now
         await _save_wallet(current_user.tenant_id, wallet)
@@ -407,13 +427,47 @@ async def _save_wallet(tenant_id: str, wallet: ScreenTimeWallet) -> None:
     )
 
 
-def _maybe_reset_today(wallet: ScreenTimeWallet) -> ScreenTimeWallet:
-    """Zero consumed_today when the calendar date has advanced."""
-    today = datetime.now(UTC).date().isoformat()
-    if wallet.last_reset_date != today:
+def _apply_wallet_resets(
+    wallet: ScreenTimeWallet,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Apply daily usage and Monday-based weekly balance resets.
+
+    The weekly reset expires unused social time but leaves lifetime
+    consumption intact for auditing.  It also snapshots the XP seen at the
+    last sync, so an unchanged lifetime XP total cannot recreate a balance in
+    the new week.  Existing wallets receive a period marker without losing
+    their current balance; their first automatic reset is the next Monday.
+    """
+    current_time = now or datetime.now(UTC)
+    today = current_time.date()
+    changed = False
+
+    today_iso = today.isoformat()
+    if wallet.last_reset_date != today_iso:
         wallet.consumed_today = 0
-        wallet.last_reset_date = today
-    return wallet
+        wallet.last_reset_date = today_iso
+        changed = True
+
+    week_start = today - timedelta(days=today.weekday())
+    week_start_iso = week_start.isoformat()
+    if wallet.week_start_date is None:
+        # Seamless rollout for existing wallets: preserve the legacy
+        # lifetime-earned total until next Monday. A zero baseline keeps the
+        # pre-existing XP-to-minute delta calculation intact for this week.
+        wallet.week_start_date = week_start_iso
+        wallet.weekly_xp_baseline = 0
+        changed = True
+    elif wallet.week_start_date != week_start_iso:
+        wallet.total_earned_minutes = 0
+        wallet.available_minutes = 0
+        wallet.consumed_today = 0
+        wallet.week_start_date = week_start_iso
+        wallet.weekly_xp_baseline = wallet.last_known_xp
+        changed = True
+
+    return changed
 
 
 def _settings_to_view(s: ScreenTimeSettings) -> ScreenTimeSettingsView:
@@ -437,6 +491,7 @@ def _wallet_to_view(w: ScreenTimeWallet) -> ScreenTimeWalletView:
         last_known_xp=w.last_known_xp,
         last_sync_time=w.last_sync_time,
         last_reset_date=w.last_reset_date,
+        week_start_date=w.week_start_date,
     )
 
 

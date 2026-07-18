@@ -21,18 +21,25 @@ class ActiveWorkspaceId extends _$ActiveWorkspaceId {
     }
 
     // Try to get the synchronously loaded workspace from persistence
+    // Prefer a joined class/family workspace over the automatic self-study
+    // workspace so enrolled students land in their active learning space.
+    final selfWorkspaceId = 'wsp_self_${user.id}';
     final savedId = SessionPersistenceService.instance.getWorkspaceSync();
-    if (savedId != null && user.workspaceMemberships.any((m) => m.workspaceId == savedId)) {
+    if (savedId != null &&
+        savedId != selfWorkspaceId &&
+        user.workspaceMemberships.any((m) => m.workspaceId == savedId)) {
       return savedId;
     }
-
-    // Default to the self-learning workspace if present
-    final selfWorkspaceId = 'wsp_self_${user.id}';
-    final hasSelf = user.workspaceMemberships.any((m) => m.workspaceId == selfWorkspaceId);
-    if (hasSelf) {
-      return selfWorkspaceId;
+    for (final membership in user.workspaceMemberships) {
+      if (membership.workspaceId != selfWorkspaceId) {
+        return membership.workspaceId;
+      }
     }
-    // Default to the first membership in the list
+    // Only self-study exists; preserve a valid saved self-study selection.
+    if (savedId == selfWorkspaceId &&
+        user.workspaceMemberships.any((m) => m.workspaceId == savedId)) {
+      return savedId;
+    }
     return user.workspaceMemberships.first.workspaceId;
   }
 

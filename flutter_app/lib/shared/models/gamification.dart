@@ -139,6 +139,15 @@ class GamificationProfile with _$GamificationProfile {
     @JsonKey(name: 'questions_answered') @Default(0) int questionsAnswered,
     @JsonKey(name: 'questions_correct') @Default(0) int questionsCorrect,
     @JsonKey(name: 'flashcards_reviewed') @Default(0) int flashcardsReviewed,
+    @JsonKey(name: 'study_sessions_completed')
+    @Default(0)
+    int studySessionsCompleted,
+    @JsonKey(name: 'revision_sessions_completed')
+    @Default(0)
+    int revisionSessionsCompleted,
+    @JsonKey(name: 'flashcard_sessions_completed')
+    @Default(0)
+    int flashcardSessionsCompleted,
     @Default(<EarnedBadge>[]) List<EarnedBadge> badges,
 
     /// Last 30 days of activity counts — `{"2026-05-23": 12, ...}`.
@@ -175,6 +184,12 @@ class GamificationProfile with _$GamificationProfile {
   /// failure).
   double get accuracy =>
       questionsAnswered == 0 ? 0 : questionsCorrect / questionsAnswered;
+
+  /// Completed adaptive sessions across all three learning modes.
+  int get totalSessionsCompleted =>
+      studySessionsCompleted +
+      revisionSessionsCompleted +
+      flashcardSessionsCompleted;
 }
 
 /// One row on the workspace leaderboard.

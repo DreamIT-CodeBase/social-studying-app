@@ -8,7 +8,7 @@ final appThemeModeProvider = StateNotifierProvider<AppThemeModeNotifier, AppThem
 });
 
 class AppThemeModeNotifier extends StateNotifier<AppThemeMode> {
-  AppThemeModeNotifier() : super(AppThemeMode.kids) {
+  AppThemeModeNotifier() : super(AppThemeMode.mature) {
     _loadPreference();
   }
 
@@ -18,13 +18,13 @@ class AppThemeModeNotifier extends StateNotifier<AppThemeMode> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getString(_prefKey);
-      if (saved == 'mature') {
-        state = AppThemeMode.mature;
-      } else {
+      if (saved == 'kids') {
         state = AppThemeMode.kids;
+      } else {
+        state = AppThemeMode.mature;
       }
     } catch (_) {
-      // SharedPreferences error or uninitialized, fallback to default (kids)
+      // Fresh installs and preference failures use Teen & College mode.
     }
   }
 

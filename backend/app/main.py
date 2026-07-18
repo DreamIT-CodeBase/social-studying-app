@@ -35,9 +35,10 @@ from app.core.versioning import API_VERSIONS, VersionResponseMiddleware
 _startup_logger = logging.getLogger("app.main")
 
 # ── Inline worker loop ────────────────────────────────────────────────────────
-# In local / non-production mode the pipeline workers run as asyncio tasks
-# inside the same uvicorn process so you don't need a separate terminal.
-# In production the workers are separate Container Apps, so this is a no-op.
+# Local developers can opt into running the pipeline workers as asyncio tasks
+# inside the same uvicorn process. Deployed environments use dedicated
+# Container Apps, even when their API environment is "development" for the
+# dev-auth bypass.
 
 async def _run_worker_loop(name: str) -> None:
     """Import and run a worker's run_forever(), restarting when it exits."""
@@ -71,9 +72,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     startup_logger.info(f"  - Tenant 'ten_demo_001' maps to database: {settings.db_name_demo}")
     startup_logger.info(f"  - Tenant '93e3ce50-a29e-462b-8956-85674a34d167' maps to database: {settings.db_name_uuid}")
 
-    # Start inline workers (non-production only)
+    # Start inline workers only when explicitly enabled for local development.
     worker_tasks: list[asyncio.Task] = []
-    if settings.environment != "production" and settings.service_bus_connection:
+    if settings.inline_workers_enabled and settings.service_bus_connection:
         for worker_name in _INLINE_WORKERS:
             task = asyncio.create_task(
                 _run_worker_loop(worker_name), name=f"worker-{worker_name}"
@@ -84,7 +85,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         )
     else:
         startup_logger.info(
-            "Inline workers skipped (production mode or SERVICE_BUS_CONNECTION not set)."
+            "Inline workers skipped (disabled or SERVICE_BUS_CONNECTION not set)."
         )
 
     yield

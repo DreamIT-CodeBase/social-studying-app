@@ -147,7 +147,8 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
       final gamKey = (workspaceId: widget.workspaceId, userId: userId);
       final profileAsync = ref.watch(gamificationProfileProvider(gamKey));
       streakDays = profileAsync.valueOrNull?.streakDays ?? 0;
-      sessionsCompleted = profileAsync.valueOrNull?.questionsAnswered ?? 0;
+      sessionsCompleted =
+          profileAsync.valueOrNull?.totalSessionsCompleted ?? 0;
     }
 
     final overallMasteryPercent =
@@ -1593,5 +1594,4 @@ class _ZeroStatePlaceholder extends StatelessWidget {
     );
   }
 }
-
 

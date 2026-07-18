@@ -20,6 +20,7 @@ class ScreenTimeService {
   static const String _keyLastKnownXp = 'last_known_xp';
   static const String _keyLastSyncTime = 'last_sync_time';
   static const String _keyConsumedToday = 'consumed_today';
+  static const String _keyWeekStartDate = 'week_start_date';
   static const String _keyXpToMinuteRatio = 'xp_to_minute_ratio';
   static const String _keyEnableBlocking = 'enable_blocking';
   static const String _keyBlockedPackages = 'blocked_packages_json';
@@ -64,6 +65,7 @@ class ScreenTimeService {
       // In some test/mock environments or platforms, reload might throw or be unsupported.
       // We catch and swallow to maintain stability.
     }
+    await _resetExpiredWeeklyBalance(prefs, suffix);
     final availableMinutes = prefs.getInt('$_keyAvailableMinutes$suffix') ?? 0;
     final consumedMinutes = prefs.getInt('$_keyConsumedMinutes$suffix') ?? 0;
     final totalEarnedMinutes =
@@ -86,6 +88,7 @@ class ScreenTimeService {
   Future<void> saveWallet(ScreenTimeWallet wallet, [String? userId]) async {
     final suffix = userId != null ? '_$userId' : '';
     final prefs = await _getPrefs();
+    await _resetExpiredWeeklyBalance(prefs, suffix);
     await prefs.setInt('$_keyAvailableMinutes$suffix', wallet.availableMinutes);
     await prefs.setInt('$_keyConsumedMinutes$suffix', wallet.consumedMinutes);
     await prefs.setInt(
@@ -94,6 +97,38 @@ class ScreenTimeService {
     await prefs.setInt('$_keyLastSyncTime$suffix',
         wallet.lastSyncTime?.millisecondsSinceEpoch ?? 0);
     await prefs.setInt('$_keyConsumedToday$suffix', wallet.consumedToday);
+    await prefs.setString('$_keyWeekStartDate$suffix', _currentWeekStart());
+  }
+
+  /// Expires locally cached social time on Monday even while the device is
+  /// offline. The backend performs the authoritative matching reset; this
+  /// protects Android's native accessibility service between synchronizations.
+  Future<void> _resetExpiredWeeklyBalance(
+    SharedPreferences prefs,
+    String suffix,
+  ) async {
+    final key = '$_keyWeekStartDate$suffix';
+    final currentWeek = _currentWeekStart();
+    final savedWeek = prefs.getString(key);
+    if (savedWeek == null) {
+      await prefs.setString(key, currentWeek);
+      return;
+    }
+    if (savedWeek == currentWeek) return;
+
+    await prefs.setInt('$_keyAvailableMinutes$suffix', 0);
+    await prefs.setInt('$_keyTotalEarnedMinutes$suffix', 0);
+    await prefs.setInt('$_keyConsumedToday$suffix', 0);
+    await prefs.setString(key, currentWeek);
+  }
+
+  String _currentWeekStart() {
+    final today = DateTime.now().toUtc();
+    final monday =
+        today.subtract(Duration(days: today.weekday - DateTime.monday));
+    return '${monday.year.toString().padLeft(4, '0')}-'
+        '${monday.month.toString().padLeft(2, '0')}-'
+        '${monday.day.toString().padLeft(2, '0')}';
   }
 
   Future<int> getXpToMinuteRatio() async {

@@ -107,6 +107,9 @@ class GamificationProfile(BaseModel):
     questions_answered: int
     questions_correct: int
     flashcards_reviewed: int
+    study_sessions_completed: int
+    revision_sessions_completed: int
+    flashcard_sessions_completed: int
 
     badges: list[EarnedBadgeView]
     daily_activity: dict[str, int]
@@ -416,6 +419,9 @@ def _state_to_profile(state: GamificationState) -> GamificationProfile:
         questions_answered=state.questions_answered,
         questions_correct=state.questions_correct,
         flashcards_reviewed=state.flashcards_reviewed,
+        study_sessions_completed=state.study_sessions_completed,
+        revision_sessions_completed=state.revision_sessions_completed,
+        flashcard_sessions_completed=state.flashcard_sessions_completed,
         badges=[
             EarnedBadgeView(
                 badge_id=b.badge_id,

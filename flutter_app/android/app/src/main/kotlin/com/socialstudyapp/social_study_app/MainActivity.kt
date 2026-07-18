@@ -12,6 +12,8 @@ import android.os.Process
 import android.os.Build
 import android.os.PowerManager
 import android.net.Uri
+import android.os.Bundle
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -19,6 +21,15 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.socialstudyapp.app/screen_time"
     private var pendingNotificationResult: MethodChannel.Result? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // Prevent app content from appearing in screenshots, screen recordings,
+        // screen sharing, and the Android recent-apps preview. Android replaces
+        // the protected window with a blank frame in captured output.
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

@@ -79,10 +79,26 @@ class ScreenTimeWallet(CosmosDocument):
 
     # Earned balance
     total_earned_minutes: int = 0
-    """Cumulative minutes earned across all time (monotonically increasing)."""
+    """Minutes earned during the current weekly balance period."""
 
     available_minutes: int = 0
-    """Minutes currently available to spend (total_earned - consumed)."""
+    """Minutes currently available to spend during the current week."""
+
+    week_start_date: str | None = None
+    """ISO date for the Monday that starts the current balance period.
+
+    At the start of a new UTC week, unused balance expires and this field is
+    advanced.  Storing the boundary on the wallet keeps the reset idempotent
+    across API requests and device synchronizations.
+    """
+
+    weekly_xp_baseline: int | None = None
+    """XP total recorded at the start of the current balance period.
+
+    The XP counter itself is lifetime-based.  This checkpoint prevents XP
+    earned in a previous week from being converted into social time again
+    after a weekly wallet reset.
+    """
 
     # Consumed balance
     consumed_minutes: int = 0
@@ -98,8 +114,7 @@ class ScreenTimeWallet(CosmosDocument):
 
     # XP tracking (for sync-xp recalculation)
     last_known_xp: int = 0
-    """The XP total that was used in the last sync.  Used to compute the
-    delta when the student earns more XP."""
+    """The raw XP total observed during the most recent wallet sync."""
 
     last_sync_time: str | None = None
     """ISO timestamp of the last time this wallet was written."""

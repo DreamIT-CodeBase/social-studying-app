@@ -10,6 +10,7 @@ import 'package:social_study_app/features/progress/data/demo_progress_repository
 import 'package:social_study_app/features/progress/data/progress_repository.dart';
 import 'package:social_study_app/features/progress/presentation/progress_screen.dart';
 import 'package:social_study_app/shared/models/progress.dart';
+import 'package:social_study_app/shared/models/gamification.dart';
 import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/features/screen_time/providers/screen_time_providers.dart';
 import 'package:social_study_app/features/screen_time/models/screen_time_wallet.dart';
@@ -134,6 +135,18 @@ void main() {
   setUp(() {
     repo = _MockProgressRepo();
     authRepo = _authedRepo();
+  });
+
+  test('session total combines study, revision, and flashcard sessions', () {
+    const profile = GamificationProfile(
+      studentId: 'stu_a',
+      workspaceId: _wsId,
+      studySessionsCompleted: 5,
+      revisionSessionsCompleted: 2,
+      flashcardSessionsCompleted: 3,
+    );
+
+    expect(profile.totalSessionsCompleted, 10);
   });
 
   testWidgets('shows a loading state while the snapshot fetches',

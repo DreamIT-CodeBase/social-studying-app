@@ -14,13 +14,14 @@
 # .coverage
 
 # # Environment / secrets — NEVER commit these
-# backend/.env
-# mcp-server/.env
-# *.env.local
-# *.env.dev
-# *.env.staging
-# *.env.prod
-# *.env.production
+backend/.env
+backend/.env.dev
+mcp-server/.env
+*.env.local
+*.env.dev
+*.env.staging
+*.env.prod
+*.env.production
 
 # # Flutter / Dart
 # flutter_app/.dart_tool/

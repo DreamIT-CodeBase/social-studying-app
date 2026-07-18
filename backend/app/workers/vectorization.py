@@ -98,8 +98,7 @@ async def _set_status(
     )
     if result.matched_count == 0:
         logger.warning(
-            "Document not found during vectorization status update: "
-            "tenant=%s workspace=%s doc=%s",
+            "Document not found during vectorization status update: tenant=%s workspace=%s doc=%s",
             tenant_id,
             workspace_id,
             document_id,
@@ -170,8 +169,7 @@ async def _handle(msg: ReceivedVectorizationMessage) -> None:
         },
     )
     logger.info(
-        "Vectorization complete doc=%s indexed=%d deleted_stale=%d topics=%d "
-        "workspace_missing=%s",
+        "Vectorization complete doc=%s indexed=%d deleted_stale=%d topics=%d workspace_missing=%s",
         payload.document_id,
         outcome.chunks_indexed,
         outcome.deleted_stale,
@@ -187,11 +185,15 @@ _MAX_DELIVERY = 3  # matches queue maxDeliveryCount in service-bus.bicep
 
 
 async def run_forever(*, max_wait_seconds: int = 30) -> None:
-    """Consume the vectorization queue until cancelled."""
+    """Keep the worker alive across idle Service Bus receive windows."""
     logger.info("Vectorization worker starting")
-    async with consume_vectorization_messages(
-        max_wait_seconds=max_wait_seconds
-    ) as messages:
+    while True:
+        await _consume_until_idle(max_wait_seconds=max_wait_seconds)
+
+
+async def _consume_until_idle(*, max_wait_seconds: int) -> None:
+    """Consume the vectorization queue until cancelled."""
+    async with consume_vectorization_messages(max_wait_seconds=max_wait_seconds) as messages:
         async for msg in messages:
             try:
                 res = await _handle(msg)
@@ -212,9 +214,7 @@ async def run_forever(*, max_wait_seconds: int = 30) -> None:
                     exc,
                 )
                 if msg.delivery_count >= _MAX_DELIVERY:
-                    await _mark_failed(
-                        msg.payload, f"Max retries exceeded: {exc}"
-                    )
+                    await _mark_failed(msg.payload, f"Max retries exceeded: {exc}")
                 await msg.abandon()
 
 

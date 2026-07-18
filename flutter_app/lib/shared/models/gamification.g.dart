@@ -119,6 +119,12 @@ _$GamificationProfileImpl _$$GamificationProfileImplFromJson(
       questionsAnswered: (json['questions_answered'] as num?)?.toInt() ?? 0,
       questionsCorrect: (json['questions_correct'] as num?)?.toInt() ?? 0,
       flashcardsReviewed: (json['flashcards_reviewed'] as num?)?.toInt() ?? 0,
+      studySessionsCompleted:
+          (json['study_sessions_completed'] as num?)?.toInt() ?? 0,
+      revisionSessionsCompleted:
+          (json['revision_sessions_completed'] as num?)?.toInt() ?? 0,
+      flashcardSessionsCompleted:
+          (json['flashcard_sessions_completed'] as num?)?.toInt() ?? 0,
       badges: (json['badges'] as List<dynamic>?)
               ?.map((e) => EarnedBadge.fromJson(e as Map<String, dynamic>))
               .toList() ??
@@ -150,6 +156,9 @@ Map<String, dynamic> _$$GamificationProfileImplToJson(
       'questions_answered': instance.questionsAnswered,
       'questions_correct': instance.questionsCorrect,
       'flashcards_reviewed': instance.flashcardsReviewed,
+      'study_sessions_completed': instance.studySessionsCompleted,
+      'revision_sessions_completed': instance.revisionSessionsCompleted,
+      'flashcard_sessions_completed': instance.flashcardSessionsCompleted,
       'badges': instance.badges,
       'daily_activity': instance.dailyActivity,
       'daily_xp': instance.dailyXp,
