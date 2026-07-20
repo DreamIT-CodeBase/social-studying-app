@@ -7,6 +7,7 @@ from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials
 
 from app.core.auth import (
+    _ensure_self_learning_workspace,
     _validate_token,
     get_current_user,
     require_role,
@@ -16,6 +17,40 @@ from app.core.config import settings
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.models.user import UserRole
 from tests.unit.conftest import make_user
+
+
+@pytest.mark.asyncio
+async def test_self_learning_workspace_is_not_created_for_admins():
+    admin = make_user(role=UserRole.workspace_admin)
+
+    with patch("app.core.auth.get_collection") as get_collection:
+        result = await _ensure_self_learning_workspace(admin)
+
+    assert result is admin
+    assert result.workspace_memberships == []
+    get_collection.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_self_learning_workspace_is_still_created_for_students():
+    student = make_user(user_id="usr_student", role=UserRole.student)
+    workspace_col = MagicMock()
+    workspace_col.find_one = AsyncMock(return_value=None)
+    workspace_col.insert_one = AsyncMock()
+    user_col = MagicMock()
+    user_col.replace_one = AsyncMock()
+
+    def collection_for(_tenant_id, collection_name):
+        return user_col if collection_name == "users" else workspace_col
+
+    with (
+        patch("app.core.auth.get_collection", side_effect=collection_for),
+        patch("app.core.auth.get_redis", AsyncMock(side_effect=RuntimeError)),
+    ):
+        result = await _ensure_self_learning_workspace(student)
+
+    assert result.workspace_memberships[0].workspace_id == "wsp_self_usr_student"
+    workspace_col.insert_one.assert_awaited_once()
 
 # ── _validate_token ───────────────────────────────────────────────────────────
 

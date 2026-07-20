@@ -251,8 +251,17 @@ async def _lookup_or_create_user(b2c_object_id: str, tenant_id: str, claims: dic
 async def _ensure_self_learning_workspace(user: User) -> User:
     """Ensure the user has a self-learning workspace.
 
-    Creates wsp_self_{user_id} workspace if missing and appends the membership.
+    Self-learning is a student-only product surface. Admin accounts manage
+    shared classroom/family workspaces and must never receive a personal
+    workspace in the admin app.
+
+    Creates ``wsp_self_{user_id}`` for students when missing and appends the
+    membership. Existing admin self-workspaces are left untouched in storage;
+    the workspace and profile APIs filter them from admin responses.
     """
+    if user.role != UserRole.student:
+        return user
+
     self_ws_id = f"wsp_self_{user.id}"
     has_self = any(m.workspace_id == self_ws_id for m in user.workspace_memberships)
     if not has_self:

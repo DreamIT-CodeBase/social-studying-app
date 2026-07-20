@@ -92,6 +92,44 @@ def test_list_workspaces_tenant_admin_sees_all(client):
 
     assert response.status_code == 200
     assert response.json() == []
+    query = col.find.call_args.args[0]
+    assert query["_id"] == {"$not": {"$regex": "^wsp_self_"}}
+
+
+def test_list_workspaces_workspace_admin_excludes_self_learning(client):
+    admin = make_user(
+        role=UserRole.workspace_admin,
+        workspace_ids=["wsp_self_usr_test001", "wsp_classroom"],
+    )
+    app.dependency_overrides[get_current_user] = lambda: admin
+    col = _col_with_doc(None)
+
+    with patch("app.api.workspaces.get_collection", return_value=col):
+        response = client.get("/api/v1/workspaces/")
+
+    assert response.status_code == 200
+    query = col.find.call_args.args[0]
+    assert query["_id"]["$in"] == ["wsp_classroom"]
+
+
+def test_list_workspaces_student_keeps_self_learning(client):
+    student = make_user(
+        user_id="usr_student",
+        role=UserRole.student,
+        workspace_ids=["wsp_self_usr_student", "wsp_classroom"],
+    )
+    app.dependency_overrides[get_current_user] = lambda: student
+    col = _col_with_doc(None)
+
+    with patch("app.api.workspaces.get_collection", return_value=col):
+        response = client.get("/api/v1/workspaces/")
+
+    assert response.status_code == 200
+    query = col.find.call_args.args[0]
+    assert query["_id"]["$in"] == [
+        "wsp_self_usr_student",
+        "wsp_classroom",
+    ]
 
 
 # ── GET /api/v1/workspaces/{id} ───────────────────────────────────────────────

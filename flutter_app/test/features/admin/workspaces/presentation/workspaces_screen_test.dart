@@ -82,8 +82,26 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('No workspaces yet'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Create Workspace'),
-        findsOneWidget);
+    expect(
+        find.widgetWithText(FilledButton, 'Create Workspace'), findsOneWidget);
+  });
+
+  testWidgets('self-learning workspace is absent from the admin screen',
+      (tester) async {
+    when(repo.list).thenAnswer(
+      (_) async => [
+        _ws(
+          id: 'wsp_self_usr_1',
+          name: 'Self Learning Workspace',
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(_wrap(repo));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Self Learning Workspace'), findsNothing);
+    expect(find.text('No workspaces yet'), findsOneWidget);
   });
 
   testWidgets('populated list renders the workspace name and counts',
@@ -105,7 +123,9 @@ void main() {
     var listCalls = 0;
     when(repo.list).thenAnswer((_) async {
       listCalls++;
-      return listCalls == 1 ? <Workspace>[] : [_ws(id: 'wsp_2', name: 'Algebra')];
+      return listCalls == 1
+          ? <Workspace>[]
+          : [_ws(id: 'wsp_2', name: 'Algebra')];
     });
     when(() => repo.create(
           name: any(named: 'name'),
@@ -115,12 +135,14 @@ void main() {
     await tester.pumpWidget(_wrap(repo));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Create Workspace').first);
+    await tester
+        .tap(find.widgetWithText(FilledButton, 'Create Workspace').first);
     await tester.pumpAndSettle();
     expect(find.text('New Workspace'), findsWidgets); // sheet title
 
     await tester.enterText(find.byType(TextField).first, 'Algebra');
-    await tester.tap(find.widgetWithText(FilledButton, 'Create Workspace').last);
+    await tester
+        .tap(find.widgetWithText(FilledButton, 'Create Workspace').last);
     await tester.pumpAndSettle();
 
     verify(() => repo.create(name: 'Algebra', description: null)).called(1);
@@ -141,11 +163,13 @@ void main() {
     await tester.pumpWidget(_wrap(repo));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Create Workspace').first);
+    await tester
+        .tap(find.widgetWithText(FilledButton, 'Create Workspace').first);
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).first, 'Grade 5 Science');
-    await tester.tap(find.widgetWithText(FilledButton, 'Create Workspace').last);
+    await tester
+        .tap(find.widgetWithText(FilledButton, 'Create Workspace').last);
     await tester.pumpAndSettle();
 
     expect(find.text("Name 'Grade 5 Science' is taken"), findsOneWidget);
@@ -161,10 +185,12 @@ void main() {
     await tester.pumpWidget(_wrap(repo));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Create Workspace').first);
+    await tester
+        .tap(find.widgetWithText(FilledButton, 'Create Workspace').first);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Create Workspace').last);
+    await tester
+        .tap(find.widgetWithText(FilledButton, 'Create Workspace').last);
     await tester.pumpAndSettle();
 
     expect(find.text('Enter a workspace name'), findsOneWidget);
@@ -204,7 +230,9 @@ void main() {
     var listCalls = 0;
     when(repo.list).thenAnswer((_) async {
       listCalls++;
-      return [_ws(name: listCalls == 1 ? 'Grade 5 Science' : 'Grade 6 Science')];
+      return [
+        _ws(name: listCalls == 1 ? 'Grade 5 Science' : 'Grade 6 Science')
+      ];
     });
     when(() => repo.update(
           workspaceId: any(named: 'workspaceId'),

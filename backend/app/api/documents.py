@@ -21,11 +21,17 @@ from pydantic import BaseModel, HttpUrl
 
 from app.core.auth import get_current_user
 from app.core.database import DOCUMENTS, WORKSPACES, get_collection
-from app.core.exceptions import ForbiddenError, NotFoundError, ValidationError
+from app.core.exceptions import (
+    ForbiddenError,
+    NotFoundError,
+    ServiceUnavailableError,
+    ValidationError,
+)
 from app.models.base import utc_now
 from app.models.document import Document, DocumentResponse, DocumentStatus, DocumentType
 from app.models.user import User, UserRole
-from app.services import blob_storage, document_queue
+from app.services import blob_storage, document_purge, document_queue
+from app.services.cosmos_retry import run_with_throttle_retry
 from app.services.document_queue import ExtractionMessage
 
 logger = logging.getLogger(__name__)
@@ -433,19 +439,61 @@ async def delete_document(
     document_id: str,
     current_user: User = Depends(get_current_user),
 ) -> None:
-    """Soft-delete a document record (blob is retained for audit; purge via worker)."""
+    """Permanently erase a study material and every stored derivative."""
     await _assert_admin(current_user, workspace_id)
     col = get_collection(current_user.tenant_id, DOCUMENTS)
-    result = await col.update_one(
-        {"_id": document_id, "workspace_id": workspace_id, "deleted_at": None},
-        {"$set": {"deleted_at": utc_now(), "updated_at": utc_now()}},
+    raw = await run_with_throttle_retry(
+        lambda: col.find_one(
+            {
+                "_id": document_id,
+                "workspace_id": workspace_id,
+                "tenant_id": current_user.tenant_id,
+            }
+        ),
+        operation_name=f"read document {document_id} for purge",
     )
-    if result.matched_count == 0:
+    if raw is None:
         raise NotFoundError("Document", document_id)
 
-    # Update workspace document count
-    wsp_col = get_collection(current_user.tenant_id, "workspaces")
-    await wsp_col.update_one({"_id": workspace_id}, {"$inc": {"document_count": -1}})
+    document = Document.model_validate(raw)
+    purge_started_at = document.deleted_at or utc_now()
+    if document.deleted_at is None:
+        marker = await run_with_throttle_retry(
+            lambda: col.update_one(
+                {
+                    "_id": document_id,
+                    "workspace_id": workspace_id,
+                    "tenant_id": current_user.tenant_id,
+                    "deleted_at": None,
+                },
+                {"$set": {"deleted_at": purge_started_at, "updated_at": purge_started_at}},
+            ),
+            operation_name=f"mark document {document_id} for purge",
+        )
+        if marker.matched_count == 0:
+            raise NotFoundError("Document", document_id)
+
+    try:
+        await document_purge.purge_document(document=document)
+    except Exception as exc:
+        logger.exception("Permanent purge failed for document=%s", document_id)
+        # Make the row visible again so the admin can retry the idempotent
+        # purge instead of being left with an inaccessible partial deletion.
+        try:
+            await run_with_throttle_retry(
+                lambda: col.update_one(
+                    {"_id": document_id, "deleted_at": purge_started_at},
+                    {"$set": {"deleted_at": None, "updated_at": utc_now()}},
+                ),
+                operation_name=f"restore document {document_id} after failed purge",
+            )
+        except Exception:
+            # Never let a failed recovery write replace the intentional 503
+            # with an unhandled 500. A later DELETE can resume a marked row.
+            logger.exception("Could not restore document=%s after failed purge", document_id)
+        raise ServiceUnavailableError(
+            "The study material could not be completely deleted. Please try again."
+        ) from exc
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

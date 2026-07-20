@@ -90,7 +90,12 @@ async def list_workspaces(
             "deleted_at": None,
         })
     else:
-        member_ids = [m.workspace_id for m in current_user.workspace_memberships]
+        member_ids = [
+            membership.workspace_id
+            for membership in current_user.workspace_memberships
+            if current_user.role == UserRole.student
+            or not membership.workspace_id.startswith("wsp_self_")
+        ]
         cursor = col.find({"_id": {"$in": member_ids}, "deleted_at": None})
 
     return [WorkspaceResponse.from_doc(Workspace.model_validate(doc)) async for doc in cursor]

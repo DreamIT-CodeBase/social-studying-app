@@ -4,6 +4,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/shared/models/user.dart';
+import 'package:social_study_app/shared/models/workspace.dart';
 import 'package:social_study_app/features/profile/presentation/profile_screen.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/admin/moderation/presentation/moderation_screen.dart';
@@ -97,9 +98,10 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
             // The student flavor doesn't get this — students join a
             // workspace via invite code, not creation.
             final adminWorkspaces = user.workspaceMemberships.where((m) =>
-                m.role == UserRole.tenantAdmin ||
-                m.role == UserRole.workspaceAdmin ||
-                user.role == UserRole.tenantAdmin);
+                !isSelfLearningWorkspaceId(m.workspaceId) &&
+                (m.role == UserRole.tenantAdmin ||
+                    m.role == UserRole.workspaceAdmin ||
+                    user.role == UserRole.tenantAdmin));
             final needsOnboarding =
                 currentFlavor == AppFlavor.admin && adminWorkspaces.isEmpty;
 

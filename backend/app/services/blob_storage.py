@@ -19,7 +19,13 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def _blob_path(tenant_id: str, workspace_id: str, user_id: str, document_id: str, filename: str) -> str:
+def _blob_path(
+    tenant_id: str,
+    workspace_id: str,
+    user_id: str,
+    document_id: str,
+    filename: str,
+) -> str:
     return f"{tenant_id}/{workspace_id}/{user_id}/{document_id}/{filename}"
 
 
@@ -138,8 +144,26 @@ async def delete_document(
     document_id: str,
     filename: str,
 ) -> None:
-    """Soft-delete the blob. Ignores 404 (blob already gone)."""
+    """Permanently delete the raw upload. Ignores 404 (blob already gone)."""
     path = _blob_path(tenant_id, workspace_id, user_id, document_id, filename)
+
+    await _delete_blob(path)
+
+
+async def delete_extracted_text(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    document_id: str,
+) -> None:
+    """Permanently delete a document's extracted-text blob, if it exists."""
+    path = _extracted_text_path(tenant_id, workspace_id, document_id)
+
+    await _delete_blob(path)
+
+
+async def _delete_blob(path: str) -> None:
+    """Delete one blob path, treating an already-absent blob as success."""
 
     def _sync() -> None:
         try:

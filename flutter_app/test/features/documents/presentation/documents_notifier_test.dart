@@ -83,6 +83,32 @@ void main() {
     verify(() => repo.list(workspaceId: 'wsp_test')).called(2);
   });
 
+  test('deleteDocument deletes through repository and updates the list', () async {
+    when(() => repo.list(workspaceId: 'wsp_test')).thenAnswer(
+      (_) async => [_doc(id: 'doc_a'), _doc(id: 'doc_b')],
+    );
+    when(
+      () => repo.delete(
+        workspaceId: 'wsp_test',
+        documentId: 'doc_a',
+      ),
+    ).thenAnswer((_) async {});
+
+    await container.read(documentsListProvider('wsp_test').future);
+    await container
+        .read(documentsListProvider('wsp_test').notifier)
+        .deleteDocument('doc_a');
+
+    final remaining = container.read(documentsListProvider('wsp_test')).requireValue;
+    expect(remaining.map((document) => document.id), ['doc_b']);
+    verify(
+      () => repo.delete(
+        workspaceId: 'wsp_test',
+        documentId: 'doc_a',
+      ),
+    ).called(1);
+  });
+
   test('repository error propagates as AsyncError', () async {
     when(() => repo.list(workspaceId: 'wsp_test'))
         .thenThrow(Exception('backend is down'));

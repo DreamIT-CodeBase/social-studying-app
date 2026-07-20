@@ -15,8 +15,13 @@ part 'workspaces_notifier.g.dart';
 @riverpod
 class WorkspacesList extends _$WorkspacesList {
   @override
-  Future<List<Workspace>> build() {
-    return ref.read(workspacesRepositoryProvider).list();
+  Future<List<Workspace>> build() async {
+    final workspaces = await ref.read(workspacesRepositoryProvider).list();
+    return List.unmodifiable(
+      workspaces.where(
+        (workspace) => !isSelfLearningWorkspaceId(workspace.id),
+      ),
+    );
   }
 
   /// Re-fetch the list. Used by pull-to-refresh and after every mutation.

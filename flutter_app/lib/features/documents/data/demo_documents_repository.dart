@@ -37,7 +37,7 @@ class DemoDocumentsRepository implements DocumentsRepository {
   final Map<String, Map<String, Document>> _byWorkspace = {};
 
   /// Active timers keyed by `documentId`. Held so we can cancel on
-  /// soft-delete and so we never leak timers across re-uploads of the
+  /// permanent deletion and so we never leak timers across re-uploads of the
   /// same doc id (which can't happen in practice but defends against
   /// bugs in tests).
   final Map<String, Timer> _activeTimers = {};

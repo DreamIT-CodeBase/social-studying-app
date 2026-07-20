@@ -47,7 +47,14 @@ async def create_user(
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)) -> UserResponse:
     """Return the authenticated caller's own profile."""
-    return UserResponse.from_doc(current_user)
+    response = UserResponse.from_doc(current_user)
+    if current_user.role != UserRole.student:
+        response.workspace_memberships = [
+            membership
+            for membership in response.workspace_memberships
+            if not membership.workspace_id.startswith("wsp_self_")
+        ]
+    return response
 
 
 @router.get("/{user_id}", response_model=UserResponse)

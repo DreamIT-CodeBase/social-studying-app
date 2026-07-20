@@ -55,6 +55,8 @@ class DocumentsListScreen extends ConsumerWidget {
                 : _DocsList(
                     docs: docs,
                     workspaceId: workspaceId,
+                    canDelete: currentFlavor == AppFlavor.admin ||
+                        workspaceId.startsWith('wsp_self_'),
                   ),
             loading: () => const LoadingIndicator(),
             error: (error, _) => ErrorView(
@@ -229,10 +231,15 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _DocsList extends StatelessWidget {
-  const _DocsList({required this.docs, required this.workspaceId});
+  const _DocsList({
+    required this.docs,
+    required this.workspaceId,
+    required this.canDelete,
+  });
 
   final List<Document> docs;
   final String workspaceId;
+  final bool canDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -247,24 +254,44 @@ class _DocsList extends StatelessWidget {
       ),
       itemCount: docs.length,
       separatorBuilder: (_, __) => const SizedBox(height: Spacing.sm),
-      itemBuilder: (_, i) => _DocRow(doc: docs[i], workspaceId: workspaceId),
+      itemBuilder: (_, i) => _DocRow(
+        doc: docs[i],
+        workspaceId: workspaceId,
+        canDelete: canDelete,
+      ),
     );
   }
 }
 
-class _DocRow extends StatelessWidget {
-  const _DocRow({required this.doc, required this.workspaceId});
+class _DocRow extends ConsumerStatefulWidget {
+  const _DocRow({
+    required this.doc,
+    required this.workspaceId,
+    required this.canDelete,
+  });
 
   final Document doc;
   final String workspaceId;
+  final bool canDelete;
+
+  @override
+  ConsumerState<_DocRow> createState() => _DocRowState();
+}
+
+class _DocRowState extends ConsumerState<_DocRow> {
+  bool _isDeleting = false;
 
   @override
   Widget build(BuildContext context) {
+    final doc = widget.doc;
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () =>
-            context.push(_pollingRouteFor(workspaceId, doc.id)),
+        onTap: _isDeleting
+            ? null
+            : () => context.push(
+                  _pollingRouteFor(widget.workspaceId, doc.id),
+                ),
         child: Padding(
           padding: const EdgeInsets.all(Spacing.lg),
           child: Row(
@@ -296,6 +323,19 @@ class _DocRow extends StatelessWidget {
                   ],
                 ),
               ),
+              if (widget.canDelete)
+                IconButton(
+                  key: ValueKey('delete-document-${doc.id}'),
+                  tooltip: 'Delete study material',
+                  onPressed: _isDeleting ? null : _confirmAndDelete,
+                  color: context.colorScheme.error,
+                  icon: _isDeleting
+                      ? const SizedBox.square(
+                          dimension: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.delete_outline_rounded),
+                ),
               Icon(
                 Icons.chevron_right_rounded,
                 color: context.colorScheme.onSurfaceVariant,
@@ -305,6 +345,65 @@ class _DocRow extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmAndDelete() async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Permanently delete material?'),
+            content: Text(
+              '"${widget.doc.filename}" and all of its processed study '
+              'content will be completely erased. This cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(dialogContext).colorScheme.error,
+                  foregroundColor:
+                      Theme.of(dialogContext).colorScheme.onError,
+                ),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                icon: const Icon(Icons.delete_forever_rounded),
+                label: const Text('Delete permanently'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      await ref
+          .read(documentsListProvider(widget.workspaceId).notifier)
+          .deleteDocument(widget.doc.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              '${widget.doc.filename} was permanently deleted.',
+            ),
+          ),
+        );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('Could not delete study material: $error'),
+          ),
+        );
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
+    }
   }
 
   String _detailLine(Document doc) {

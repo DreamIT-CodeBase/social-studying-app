@@ -20,4 +20,24 @@ class DocumentsList extends _$DocumentsList {
   /// `invalidateSelf` re-runs `build` with the same arguments — cheaper
   /// than dropping into AsyncLoading + manual refetch.
   void refresh() => ref.invalidateSelf();
+
+  /// Permanently delete one study material, then remove it from the visible
+  /// list without forcing the rest of the screen through a loading state.
+  Future<void> deleteDocument(String documentId) async {
+    await ref.read(documentsRepositoryProvider).delete(
+          workspaceId: workspaceId,
+          documentId: documentId,
+        );
+
+    final current = state.valueOrNull;
+    if (current == null) {
+      ref.invalidateSelf();
+      return;
+    }
+    state = AsyncData(
+      current.where((document) => document.id != documentId).toList(
+            growable: false,
+          ),
+    );
+  }
 }
