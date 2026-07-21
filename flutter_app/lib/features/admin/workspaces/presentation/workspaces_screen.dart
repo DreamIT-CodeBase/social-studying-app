@@ -234,20 +234,20 @@ class _WorkspaceCard extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: Spacing.md),
-            Row(
+            Wrap(
+              spacing: Spacing.sm,
+              runSpacing: Spacing.xs,
               children: [
                 _CountChip(
                   icon: Icons.people_rounded,
                   value: workspace.studentCount,
                   label: 'students',
                 ),
-                const SizedBox(width: Spacing.sm),
                 _CountChip(
                   icon: Icons.description_rounded,
                   value: workspace.documentCount,
                   label: 'documents',
                 ),
-                const SizedBox(width: Spacing.sm),
                 _CountChip(
                   icon: Icons.shield_rounded,
                   value: workspace.adminCount,

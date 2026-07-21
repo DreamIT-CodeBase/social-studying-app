@@ -265,7 +265,10 @@ void main() {
       calls++;
       return calls == 1 ? [_user()] : <User>[];
     });
-    when(() => usersRepo.deactivateUser(any())).thenAnswer((_) async {});
+    when(() => usersRepo.removeMember(
+          workspaceId: any(named: 'workspaceId'),
+          userId: any(named: 'userId'),
+        )).thenAnswer((_) async {});
 
     await tester.pumpWidget(_wrap(usersRepo));
     await tester.pumpAndSettle();
@@ -279,7 +282,10 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Remove'));
     await tester.pumpAndSettle();
 
-    verify(() => usersRepo.deactivateUser('usr_1')).called(1);
+    verify(() => usersRepo.removeMember(
+          workspaceId: _wsId,
+          userId: 'usr_1',
+        )).called(1);
     expect(find.text('Maya Chen removed'), findsOneWidget);
   });
 

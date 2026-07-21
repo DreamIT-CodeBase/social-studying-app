@@ -47,6 +47,16 @@ class WorkspaceUsersList extends _$WorkspaceUsersList {
     ref.read(workspacesListProvider.notifier).refresh();
   }
 
+  /// Remove a student/member from this workspace, then refresh.
+  Future<void> removeMember(String userId) async {
+    await ref.read(usersRepositoryProvider).removeMember(
+          workspaceId: workspaceId,
+          userId: userId,
+        );
+    refresh();
+    ref.read(workspacesListProvider.notifier).refresh();
+  }
+
   /// Change a user's role, then refresh both the user list and the
   /// workspace list so the admin/student counts update immediately.
   Future<User> changeRole({

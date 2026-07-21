@@ -699,7 +699,7 @@ class _TopicMapCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final topic = row.topic;
     final accent = _complexityColor(colorScheme, topic.complexityLevel);
-    final indent = row.depth.clamp(0, 4) * 18.0;
+    final indent = row.depth.clamp(0, 4) * (context.isMobile ? 8.0 : 18.0);
     final cardSurface =
         isDark ? colorScheme.surfaceContainerHighest : colorScheme.surface;
     final insetSurface =

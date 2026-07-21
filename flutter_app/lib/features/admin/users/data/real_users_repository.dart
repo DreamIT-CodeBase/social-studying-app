@@ -78,6 +78,25 @@ class RealUsersRepository implements UsersRepository {
   }
 
   @override
+  Future<void> removeMember({
+    required String workspaceId,
+    required String userId,
+  }) async {
+    try {
+      await dio.delete<void>(
+        '$_apiPrefix/workspaces/$workspaceId/members/$userId',
+      );
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) {
+        throw UserNotFoundException(
+          _detail(e.response?.data) ?? 'Member not found',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  @override
   Future<User> changeRole({
     required String workspaceId,
     required String userId,

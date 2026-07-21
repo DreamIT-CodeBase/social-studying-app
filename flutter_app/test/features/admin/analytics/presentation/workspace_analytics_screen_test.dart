@@ -82,6 +82,7 @@ void main() {
 
   testWidgets('error state shows ErrorView with a retry that refetches',
       (tester) async {
+    await _tallViewport(tester);
     var calls = 0;
     when(() => repo.fetchWorkspace(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async {

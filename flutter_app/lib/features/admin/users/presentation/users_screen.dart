@@ -563,7 +563,7 @@ class _UserMenu extends ConsumerWidget {
     try {
       await ref
           .read(workspaceUsersListProvider(workspaceId).notifier)
-          .deactivateUser(user.id);
+          .removeMember(user.id);
       if (context.mounted) {
         _snack(context, '${user.displayName} removed');
       }

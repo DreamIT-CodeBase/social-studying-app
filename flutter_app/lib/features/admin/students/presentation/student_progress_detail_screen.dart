@@ -251,6 +251,44 @@ class _SummaryRow extends StatelessWidget {
       0,
       (sum, t) => sum + t.attempts,
     );
+    final isMobile = context.isMobile;
+
+    if (isMobile) {
+      return Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _StatTile(
+                  icon: Icons.insights_rounded,
+                  color: AppColors.primary,
+                  label: 'Overall Mastery',
+                  value: '$overallPct%',
+                ),
+              ),
+              const SizedBox(width: Spacing.sm),
+              Expanded(
+                child: _StatTile(
+                  icon: Icons.menu_book_rounded,
+                  color: AppColors.secondary,
+                  label: 'Topics Studied',
+                  value: '${progress.topics.length}',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Spacing.sm),
+          _StatTile(
+            icon: Icons.quiz_rounded,
+            color: AppColors.tertiary,
+            label: 'Total Attempts',
+            value: '$totalAttempts',
+            horizontal: true,
+          ),
+        ],
+      );
+    }
+
     return Row(
       children: [
         Expanded(
@@ -290,40 +328,67 @@ class _StatTile extends StatelessWidget {
     required this.color,
     required this.label,
     required this.value,
+    this.horizontal = false,
   });
 
   final IconData icon;
   final Color color;
   final String label;
   final String value;
+  final bool horizontal;
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(Spacing.md),
       decoration: BoxDecoration(
         color: color.withAlpha(31),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(height: Spacing.xs),
-          Text(
-            value,
-            style: context.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-              color: color,
+      child: horizontal
+          ? Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: color, size: 20),
+                const SizedBox(width: Spacing.sm),
+                Text(
+                  value,
+                  style: context.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(width: Spacing.xs),
+                Text(
+                  label,
+                  style: context.textTheme.labelSmall?.copyWith(
+                    color: context.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            )
+          : Column(
+              children: [
+                Icon(icon, color: color, size: 20),
+                const SizedBox(height: Spacing.xs),
+                Text(
+                  value,
+                  style: context.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                  ),
+                ),
+                Text(
+                  label,
+                  style: context.textTheme.labelSmall?.copyWith(
+                    color: context.colorScheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
-          ),
-          Text(
-            label,
-            style: context.textTheme.labelSmall?.copyWith(
-              color: context.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -509,10 +574,12 @@ class _ActivityRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
-                  Row(
+                  Wrap(
+                    spacing: Spacing.sm,
+                    runSpacing: Spacing.xs,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       _StatusPill(entry: entry),
-                      const SizedBox(width: Spacing.sm),
                       Text(
                         _relativeTime(entry.occurredAt),
                         style: context.textTheme.labelSmall?.copyWith(

@@ -378,6 +378,8 @@ class _WelcomeBanner extends StatelessWidget {
             ),
             child: Text(
               '$workspaceName  •  Admin',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: context.textTheme.bodySmall?.copyWith(
                 color: Colors.white,
                 fontWeight: FontWeight.w500,
@@ -399,9 +401,25 @@ class _StatsRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final workspacesAsync = ref.watch(workspacesListProvider);
+    final isMobile = context.isMobile;
 
     // While loading show skeleton placeholders
     if (workspacesAsync.isLoading) {
+      if (isMobile) {
+        return const Column(
+          children: [
+            Row(
+              children: [
+                Expanded(child: _StatCard(value: '—', label: 'Students', icon: Icons.people_rounded, color: AppColors.primary)),
+                SizedBox(width: Spacing.md),
+                Expanded(child: _StatCard(value: '—', label: 'Documents', icon: Icons.description_rounded, color: AppColors.secondary)),
+              ],
+            ),
+            SizedBox(height: Spacing.md),
+            _StatCard(value: '—', label: 'Admins', icon: Icons.shield_rounded, color: AppColors.tertiary, horizontal: true),
+          ],
+        );
+      }
       return const Row(
         children: [
           Expanded(child: _StatCard(value: '—', label: 'Students', icon: Icons.people_rounded, color: AppColors.primary)),
@@ -419,6 +437,42 @@ class _StatsRow extends ConsumerWidget {
         : workspaces.isNotEmpty
             ? workspaces.first
             : null;
+
+    if (isMobile) {
+      return Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _StatCard(
+                  value: activeWs != null ? '${activeWs.studentCount}' : '0',
+                  label: 'Students',
+                  icon: Icons.people_rounded,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: Spacing.md),
+              Expanded(
+                child: _StatCard(
+                  value: activeWs != null ? '${activeWs.documentCount}' : '0',
+                  label: 'Documents',
+                  icon: Icons.description_rounded,
+                  color: AppColors.secondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Spacing.md),
+          _StatCard(
+            value: activeWs != null ? '${activeWs.adminCount}' : '0',
+            label: 'Admins',
+            icon: Icons.shield_rounded,
+            color: AppColors.tertiary,
+            horizontal: true,
+          ),
+        ],
+      );
+    }
 
     return Row(
       children: [
@@ -459,40 +513,64 @@ class _StatCard extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.color,
+    this.horizontal = false,
   });
 
   final String value;
   final String label;
   final IconData icon;
   final Color color;
+  final bool horizontal;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(Spacing.lg),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: Spacing.sm),
-            Text(
-              value,
-              style: context.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: color,
+        child: horizontal
+            ? Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, color: color, size: 24),
+                  const SizedBox(width: Spacing.md),
+                  Text(
+                    value,
+                    style: context.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(width: Spacing.sm),
+                  Text(
+                    label,
+                    style: context.textTheme.bodySmall?.copyWith(
+                      color: context.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                children: [
+                  Icon(icon, color: color, size: 24),
+                  const SizedBox(height: Spacing.sm),
+                  Text(
+                    value,
+                    style: context.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                  Text(
+                    label,
+                    style: context.textTheme.bodySmall?.copyWith(
+                      color: context.colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
-            ),
-            Text(
-              label,
-              style: context.textTheme.bodySmall?.copyWith(
-                color: context.colorScheme.onSurfaceVariant,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -705,6 +705,12 @@ def _platform_payload(
                     "body": payload.body,
                 },
                 "data": payload.data,
+                "android": {
+                    "priority": "HIGH",
+                    "notification": {
+                        "channel_id": "social_study_channel",
+                    },
+                },
             }
         }
     else:  # APNs

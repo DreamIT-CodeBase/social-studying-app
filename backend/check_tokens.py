@@ -7,7 +7,13 @@ async def main():
     
     docs = await collection.find({}).to_list(length=10)
     for doc in docs:
-        print(f"User: {doc.get('user_id')}, Token: {doc.get('token')[:30]}..., Platform: {doc.get('platform')}")
+        print(
+            f"User: {doc.get('user_id')}, "
+            f"Token: {doc.get('token')[:20]}..., "
+            f"Platform: {doc.get('platform')}, "
+            f"Last Seen: {doc.get('last_seen_at')}, "
+            f"Registered: {doc.get('registered_at')}"
+        )
 
 if __name__ == "__main__":
     asyncio.run(main())

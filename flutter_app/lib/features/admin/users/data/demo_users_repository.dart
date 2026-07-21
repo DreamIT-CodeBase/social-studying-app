@@ -140,6 +140,21 @@ class DemoUsersRepository implements UsersRepository {
   }
 
   @override
+  Future<void> removeMember({
+    required String workspaceId,
+    required String userId,
+  }) async {
+    await _latency();
+    final index = _users.indexWhere((u) => u.id == userId);
+    if (index == -1) throw const UserNotFoundException();
+    final user = _users[index];
+    final memberships = user.workspaceMemberships
+        .where((m) => m.workspaceId != workspaceId)
+        .toList();
+    _users[index] = user.copyWith(workspaceMemberships: memberships);
+  }
+
+  @override
   Future<User> changeRole({
     required String workspaceId,
     required String userId,

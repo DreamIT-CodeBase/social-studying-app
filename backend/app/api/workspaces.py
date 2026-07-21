@@ -301,5 +301,41 @@ async def add_workspace_member(
     return UserResponse.from_doc(user)
 
 
+@router.delete("/{workspace_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_workspace_member(
+    workspace_id: str,
+    user_id: str,
+    current_user: User = Depends(require_role(UserRole.tenant_admin, UserRole.workspace_admin)),
+) -> None:
+    """Remove a student/member from a workspace."""
+    _assert_admin(current_user, workspace_id)
+    wsp_col = get_collection(current_user.tenant_id, WORKSPACES)
+    workspace_doc = await wsp_col.find_one({"_id": workspace_id, "deleted_at": None})
+    if workspace_doc is None:
+        raise NotFoundError("Workspace", workspace_id)
+        
+    user_col = get_collection(current_user.tenant_id, "users")
+    user_doc = await user_col.find_one({"_id": user_id, "deleted_at": None})
+    if user_doc is None:
+        raise NotFoundError("User", user_id)
+        
+    user = User.model_validate(user_doc)
+    
+    # 1. Pull user_id from workspace student_ids and admin_ids
+    await wsp_col.update_one(
+        {"_id": workspace_id},
+        {"$pull": {"student_ids": user_id, "admin_ids": user_id}}
+    )
+    
+    # 2. Pull workspace membership from user
+    await user_col.update_one(
+        {"_id": user_id},
+        {"$pull": {"workspace_memberships": {"workspace_id": workspace_id}}}
+    )
+    
+    # 3. Invalidate cache
+    await invalidate_user_cache(user)
+
+
 
 

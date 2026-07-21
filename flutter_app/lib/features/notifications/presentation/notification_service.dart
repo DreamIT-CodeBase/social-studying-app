@@ -167,12 +167,16 @@ class NotificationService {
           id: notification.hashCode,
           title: notification.title,
           body: notification.body,
-          notificationDetails: const NotificationDetails(
+          notificationDetails: NotificationDetails(
             android: AndroidNotificationDetails(
               'social_study_channel',
               'Social Study Notifications',
               importance: Importance.max,
               priority: Priority.high,
+              styleInformation: BigTextStyleInformation(
+                notification.body ?? '',
+                contentTitle: notification.title,
+              ),
             ),
           ),
           payload: jsonEncode(message.data),

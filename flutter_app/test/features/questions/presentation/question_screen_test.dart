@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:social_study_app/core/theme/app_theme.dart';
+import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/features/questions/data/demo_questions_repository.dart';
 import 'package:social_study_app/features/questions/data/questions_repository.dart';
 import 'package:social_study_app/features/questions/presentation/question_screen.dart';
@@ -74,6 +75,7 @@ AnswerFeedback _feedback({bool correct = true}) => AnswerFeedback(
 Widget _wrap(_MockRepo repo) => ProviderScope(
       overrides: [
         questionsRepositoryProvider.overrideWithValue(repo),
+        appThemeModeProvider.overrideWith((ref) => AppThemeModeNotifier()..state = AppThemeMode.kids),
       ],
       child: MaterialApp(
         theme: AppTheme.light,
