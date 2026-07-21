@@ -2420,21 +2420,14 @@ class _DonutChartPainter extends CustomPainter {
 }
 
 class _WeeklyProgressCard extends StatelessWidget {
-  const _WeeklyProgressCard({
-    required this.dailyXp,
-  });
+  const _WeeklyProgressCard({required this.dailyXp});
 
   final Map<String, int> dailyXp;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final summary = WeeklyXpSummary.fromHistory(
-      dailyXp: dailyXp,
-      now: DateTime.now(),
-    );
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
         borderRadius: BorderRadius.circular(22),
@@ -2450,28 +2443,189 @@ class _WeeklyProgressCard extends StatelessWidget {
           width: 1,
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Weekly Progress',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: isDark ? Colors.white : const Color(0xFF0F172A),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 200,
-            width: double.infinity,
-            child: _WeeklySplineChart(summary: summary),
-          ),
-        ],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: _WeeklyXpPageView(dailyXp: dailyXp),
       ),
     );
   }
 }
+
+/// PageView that shows 3 pages of weekly XP:
+///   page 0 — "2 Weeks Ago"  (weekOffset=2)
+///   page 1 — "Last Week"    (weekOffset=1)
+///   page 2 — "This Week"    (weekOffset=0)
+///
+/// Starts on page 2 (This Week). User swipes left to go back in time.
+class _WeeklyXpPageView extends StatefulWidget {
+  const _WeeklyXpPageView({required this.dailyXp});
+
+  final Map<String, int> dailyXp;
+
+  @override
+  State<_WeeklyXpPageView> createState() => _WeeklyXpPageViewState();
+}
+
+class _WeeklyXpPageViewState extends State<_WeeklyXpPageView> {
+  static const _totalPages = 4;
+  late final PageController _pageCtrl;
+  int _currentPage = _totalPages - 1; // start on "This Week"
+  bool _hasScrolled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageCtrl = PageController(initialPage: _totalPages - 1);
+    _pageCtrl.addListener(_onPageScroll);
+  }
+
+  void _onPageScroll() {
+    if (!_hasScrolled && _pageCtrl.page != null && _pageCtrl.page!.round() != _currentPage) {
+      setState(() => _hasScrolled = true);
+    }
+    final page = _pageCtrl.page?.round() ?? _currentPage;
+    if (page != _currentPage) {
+      setState(() => _currentPage = page);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pageCtrl.removeListener(_onPageScroll);
+    _pageCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final now = DateTime.now();
+
+    // Build 4 summaries: page 0 = 3 weeks ago … page 3 = this week
+    final summaries = List.generate(_totalPages, (page) {
+      final weekOffset = _totalPages - 1 - page;
+      return WeeklyXpSummary.fromHistory(
+        dailyXp: widget.dailyXp,
+        now: now,
+        weekOffset: weekOffset,
+      );
+    });
+
+    final currentSummary = summaries[_currentPage];
+    final improvementColor = currentSummary.isImproving
+        ? const Color(0xFF16A34A)
+        : currentSummary.isDeclining
+            ? const Color(0xFFDC2626)
+            : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B));
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Top Row (XP & Improvement Badge on Left, Swipe hint on Right) ──
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Left: XP total & improvement badge (animated on page shift)
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: Row(
+                  key: ValueKey('${currentSummary.weekOffset}_xp'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${currentSummary.currentTotal} XP',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                      ),
+                    ),
+                    if (currentSummary.improvementPercent.abs() > 0.05) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: improvementColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          currentSummary.improvementLabel,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: improvementColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              // Right: Swipe hint (fades after first scroll)
+              AnimatedOpacity(
+                opacity: _hasScrolled ? 0.0 : 0.4,
+                duration: const Duration(milliseconds: 400),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.chevron_left_rounded,
+                      size: 16,
+                      color: isDark
+                          ? const Color(0xFF64748B)
+                          : const Color(0xFF94A3B8),
+                    ),
+                    Text(
+                      'swipe',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isDark
+                            ? const Color(0xFF64748B)
+                            : const Color(0xFF94A3B8),
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 16,
+                      color: isDark
+                          ? const Color(0xFF64748B)
+                          : const Color(0xFF94A3B8),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        // ── Chart PageView ────────────────────────────────────────────
+        SizedBox(
+          height: 240,
+          child: PageView.builder(
+            controller: _pageCtrl,
+            physics: const BouncingScrollPhysics(),
+            itemCount: _totalPages,
+            itemBuilder: (context, page) {
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+                child: _WeeklySplineChart(summary: summaries[page]),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Chart widget — unchanged in behavior, gains weekOffset-aware "today" dot
+// ---------------------------------------------------------------------------
 
 class _WeeklySplineChart extends StatefulWidget {
   const _WeeklySplineChart({required this.summary});
@@ -2506,7 +2660,7 @@ class _WeeklySplineChartState extends State<_WeeklySplineChart>
       duration: const Duration(milliseconds: 1100),
     )..repeat(reverse: true);
 
-    Future.delayed(const Duration(milliseconds: 300), () {
+    Future.delayed(const Duration(milliseconds: 150), () {
       if (mounted) _drawCtrl.forward();
     });
   }
@@ -2569,10 +2723,10 @@ class _SplineChartPainter extends CustomPainter {
     final elapsedPoints = summary.currentWeek
         .take(summary.elapsedDayCount)
         .toList(growable: false);
-    const maxVal = 60.0;
+    const maxVal = 80.0;
     const minVal = -20.0;
     const valueRange = maxVal - minVal;
-    const yTicks = <int>[60, 40, 20, 0, -20];
+    const yTicks = <int>[80, 60, 40, 20, 0];
 
     final gridPaint = Paint()
       ..color = isDark ? const Color(0xFF334155) : Colors.grey.shade100
@@ -2618,7 +2772,9 @@ class _SplineChartPainter extends CustomPainter {
       final x = leftPadding + fraction * chartWidth;
       xCoords.add(x);
       final point = summary.currentWeek[i];
-      final isToday = i == summary.elapsedDayCount - 1;
+      // Only mark "today" on the current-week page
+      final isToday =
+          summary.weekOffset == 0 && i == summary.elapsedDayCount - 1;
 
       textPainter.text = TextSpan(
         text: point.weekdayLabel,

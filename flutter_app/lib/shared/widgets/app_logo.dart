@@ -12,6 +12,11 @@ class AppLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final logoAsset = isDark
+        ? 'assets/icons/socialstudylogo-removebg-preview.png'
+        : 'assets/branding/app_logo.jpg';
+
     return Container(
       width: size,
       height: size,
@@ -22,10 +27,10 @@ class AppLogo extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(size / 2),
         child: Image.asset(
-          'assets/branding/app_logo.jpg',
+          logoAsset,
           width: size,
           height: size,
-          fit: BoxFit.cover,
+          fit: isDark ? BoxFit.contain : BoxFit.cover,
           errorBuilder: (_, __, ___) => const SizedBox.shrink(),
         ),
       ),
