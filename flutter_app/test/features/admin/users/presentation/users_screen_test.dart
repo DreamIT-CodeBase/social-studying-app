@@ -11,10 +11,22 @@ import 'package:social_study_app/features/admin/users/presentation/users_screen.
 import 'package:social_study_app/features/admin/workspaces/data/workspaces_repository.dart';
 import 'package:social_study_app/shared/models/invite_code.dart';
 import 'package:social_study_app/shared/models/user.dart';
+import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/features/auth/domain/auth_state.dart';
 
 class _MockUsersRepo extends Mock implements UsersRepository {}
 
 class _MockWorkspacesRepo extends Mock implements WorkspacesRepository {}
+
+class MockAuthNotifier extends AuthNotifier {
+  MockAuthNotifier(this._user);
+  final User _user;
+
+  @override
+  Future<AuthState> build() async {
+    return AuthState.authenticated(user: _user);
+  }
+}
 
 const _wsId = 'wsp_test';
 
@@ -36,12 +48,18 @@ User _user({
       createdAt: DateTime(2026, 4, 10),
     );
 
-Widget _wrap(_MockUsersRepo usersRepo, {_MockWorkspacesRepo? wsRepo}) =>
+Widget _wrap(
+  _MockUsersRepo usersRepo, {
+  _MockWorkspacesRepo? wsRepo,
+  User? currentUser,
+}) =>
     ProviderScope(
       overrides: [
         usersRepositoryProvider.overrideWithValue(usersRepo),
         workspacesRepositoryProvider
             .overrideWithValue(wsRepo ?? _MockWorkspacesRepo()),
+        if (currentUser != null)
+          authNotifierProvider.overrideWith(() => MockAuthNotifier(currentUser)),
       ],
       child: MaterialApp(
         theme: AppTheme.light,
@@ -275,7 +293,7 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.more_vert_rounded));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Remove'));
+    await tester.tap(find.text('Remove from workspace'));
     await tester.pumpAndSettle();
 
     expect(find.text('Remove user?'), findsOneWidget);
@@ -287,6 +305,33 @@ void main() {
           userId: 'usr_1',
         )).called(1);
     expect(find.text('Maya Chen removed'), findsOneWidget);
+  });
+
+  testWidgets('deactivating/deleting a user completely confirms then calls the repository',
+      (tester) async {
+    var calls = 0;
+    when(() => usersRepo.listWorkspaceUsers(any())).thenAnswer((_) async {
+      calls++;
+      return calls == 1 ? [_user()] : <User>[];
+    });
+    when(() => usersRepo.deactivateUser(any())).thenAnswer((_) async {});
+
+    final tenantAdmin = _user(id: 'usr_owner', name: 'Owner', role: UserRole.tenantAdmin);
+
+    await tester.pumpWidget(_wrap(usersRepo, currentUser: tenantAdmin));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.more_vert_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete student'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete student completely?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+
+    verify(() => usersRepo.deactivateUser('usr_1')).called(1);
+    expect(find.text('Maya Chen deleted'), findsOneWidget);
   });
 
   testWidgets('promoting a student to admin calls changeRole',
