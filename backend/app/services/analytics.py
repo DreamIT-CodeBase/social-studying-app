@@ -42,13 +42,14 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from app.core.database import (
     FLASHCARD_RATINGS,
     INTERACTIONS,
     KNOWLEDGE_STATES,
+    USERS,
     WORKSPACES,
     get_collection,
 )
@@ -77,6 +78,19 @@ flashcard rating in the last N days (UTC)."""
 ENGAGEMENT_HEATMAP_DAYS: int = 14
 """Number of UTC dates in the engagement heatmap. Two weeks gives the
 admin enough signal to spot a streak vs. a one-off spike."""
+
+ATTENTION_MASTERY_THRESHOLD: float = 0.5
+"""Students below this current mastery are included in attention counts."""
+
+ATTENTION_DECLINE_THRESHOLD: float = -0.05
+"""A five-point mastery decline over the selected range needs attention."""
+
+FLASHCARD_RECALL_SCORES: dict[str, float] = {
+    "easy": 1.0,
+    "medium": 0.6,
+    "hard": 0.0,
+}
+"""Convert the app's three self-rating buckets to a recall percentage."""
 
 
 # ── Student progress ────────────────────────────────────────────────────────
@@ -287,6 +301,144 @@ async def build_tenant_analytics(*, tenant_id: str) -> dict[str, Any]:
     }
 
 
+async def build_learning_progress_trend(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    start_date: date,
+    end_date: date,
+    student_id: str | None = None,
+    topic: str | None = None,
+    compare_workspace: bool = False,
+) -> dict[str, Any]:
+    """Build a contiguous, filterable learning trend from persisted events.
+
+    Mastery is replayed from the append-only question interaction stream using
+    the same intermediate-difficulty EMA used by ``knowledge_state``. Quiz
+    accuracy and flashcard recall are cumulative within the selected date
+    window. No chart values are synthesized when a day has no activity: the
+    latest measured value is carried forward and ``activity_count`` remains
+    zero for that date.
+    """
+    states = await _read_workspace_states(
+        tenant_id=tenant_id, workspace_id=workspace_id
+    )
+    interactions = await _read_workspace_interactions(
+        tenant_id=tenant_id, workspace_id=workspace_id
+    )
+    ratings = await _read_workspace_flashcard_ratings(
+        tenant_id=tenant_id, workspace_id=workspace_id
+    )
+    workspace = await _read_workspace(
+        tenant_id=tenant_id, workspace_id=workspace_id
+    )
+    users = await _read_workspace_users(
+        tenant_id=tenant_id, workspace_id=workspace_id
+    )
+
+    known_student_ids = set(workspace.student_ids if workspace is not None else [])
+    known_student_ids.update(state.student_id for state in states)
+    known_student_ids.update(
+        str(event["student_id"])
+        for event in (*interactions, *ratings)
+        if event.get("student_id")
+    )
+    user_names = {user["id"]: user["display_name"] for user in users}
+    for user in users:
+        if user.get("role") == "student":
+            known_student_ids.add(user["id"])
+
+    selected_student_ids = (
+        {student_id} if student_id is not None else known_student_ids
+    )
+    points = _aggregate_learning_trend(
+        interactions=interactions,
+        ratings=ratings,
+        student_ids=selected_student_ids,
+        start_date=start_date,
+        end_date=end_date,
+        topic=topic,
+    )
+
+    comparison_points: list[dict[str, Any]] = []
+    if student_id is not None and compare_workspace:
+        comparison_points = _aggregate_learning_trend(
+            interactions=interactions,
+            ratings=ratings,
+            student_ids=known_student_ids,
+            start_date=start_date,
+            end_date=end_date,
+            topic=topic,
+        )
+
+    student_rows: list[dict[str, Any]] = []
+    for sid in sorted(known_student_ids, key=lambda value: user_names.get(value, value)):
+        student_points = _aggregate_learning_trend(
+            interactions=interactions,
+            ratings=ratings,
+            student_ids={sid},
+            start_date=start_date,
+            end_date=end_date,
+            topic=topic,
+        )
+        first = student_points[0] if student_points else _empty_trend_point(start_date)
+        last = student_points[-1] if student_points else first
+        change = last["overall_mastery"] - first["overall_mastery"]
+        has_activity = any(point["activity_count"] > 0 for point in student_points)
+        student_rows.append(
+            {
+                "student_id": sid,
+                "display_name": user_names.get(sid, sid),
+                "overall_mastery": last["overall_mastery"],
+                "mastery_change": change,
+                "quiz_accuracy": last["quiz_accuracy"],
+                "flashcard_recall": last["flashcard_recall"],
+                "activity_count": sum(
+                    point["activity_count"] for point in student_points
+                ),
+                "needs_attention": has_activity
+                and (
+                    last["overall_mastery"] < ATTENTION_MASTERY_THRESHOLD
+                    or change <= ATTENTION_DECLINE_THRESHOLD
+                ),
+            }
+        )
+
+    first_point = points[0] if points else _empty_trend_point(start_date)
+    last_point = points[-1] if points else first_point
+    topics = sorted(
+        {
+            str(event["topic"])
+            for event in (*interactions, *ratings)
+            if event.get("topic")
+        },
+        key=str.casefold,
+    )
+    return {
+        "workspace_id": workspace_id,
+        "scope": "student" if student_id is not None else "workspace",
+        "student_id": student_id,
+        "student_name": user_names.get(student_id) if student_id else None,
+        "topic": topic,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "available_topics": topics,
+        "kpis": {
+            "overall_mastery": last_point["overall_mastery"],
+            "mastery_change": (
+                last_point["overall_mastery"] - first_point["overall_mastery"]
+            ),
+            "quiz_accuracy": last_point["quiz_accuracy"],
+            "students_needing_attention": sum(
+                1 for row in student_rows if row["needs_attention"]
+            ),
+        },
+        "points": points,
+        "workspace_comparison": comparison_points,
+        "students": student_rows,
+    }
+
+
 # ── Aggregation helpers (pure) ──────────────────────────────────────────────
 
 
@@ -388,6 +540,128 @@ def _engagement_heatmap(
     return [{"date": d, "events": counts[d]} for d in counts]
 
 
+def _aggregate_learning_trend(
+    *,
+    interactions: list[dict[str, Any]],
+    ratings: list[dict[str, Any]],
+    student_ids: set[str],
+    start_date: date,
+    end_date: date,
+    topic: str | None,
+) -> list[dict[str, Any]]:
+    """Replay real learning events into one contiguous daily trend."""
+    mastery: dict[tuple[str, str], float] = {}
+    quiz_correct = quiz_attempts = 0
+    recall_total = 0.0
+    recall_attempts = 0
+    events_by_day: dict[date, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
+
+    question_events: list[tuple[datetime, dict[str, Any]]] = []
+    for event in interactions:
+        if str(event.get("student_id", "")) not in student_ids:
+            continue
+        if topic and event.get("topic") != topic:
+            continue
+        occurred_at = _parse_iso(event.get("answered_at"))
+        if occurred_at is None or occurred_at.date() > end_date:
+            continue
+        question_events.append((occurred_at, event))
+
+    for occurred_at, event in sorted(question_events, key=lambda row: row[0]):
+        if occurred_at.date() < start_date:
+            _apply_mastery_event(mastery, event)
+        else:
+            events_by_day[occurred_at.date()].append(("question", event))
+
+    for event in ratings:
+        if str(event.get("student_id", "")) not in student_ids:
+            continue
+        if topic and event.get("topic") != topic:
+            continue
+        occurred_at = _parse_iso(event.get("rated_at"))
+        if occurred_at is None or not start_date <= occurred_at.date() <= end_date:
+            continue
+        events_by_day[occurred_at.date()].append(("flashcard", event))
+
+    points: list[dict[str, Any]] = []
+    day = start_date
+    while day <= end_date:
+        day_events = events_by_day.get(day, [])
+        for kind, event in day_events:
+            if kind == "question":
+                _apply_mastery_event(mastery, event)
+                quiz_attempts += 1
+                quiz_correct += int(bool(event.get("is_correct")))
+            else:
+                recall_attempts += 1
+                recall_total += _flashcard_recall_score(event)
+
+        points.append(
+            {
+                "date": day.isoformat(),
+                "overall_mastery": _overall_mastery(mastery),
+                "quiz_accuracy": (
+                    quiz_correct / quiz_attempts if quiz_attempts else 0.0
+                ),
+                "flashcard_recall": (
+                    recall_total / recall_attempts if recall_attempts else 0.0
+                ),
+                "activity_count": len(day_events),
+            }
+        )
+        day += timedelta(days=1)
+    return points
+
+
+def _overall_mastery(mastery: dict[tuple[str, str], float]) -> float:
+    """Average topics per student first so every student has equal weight."""
+    by_student: dict[str, list[float]] = defaultdict(list)
+    for (student_id, _), score in mastery.items():
+        by_student[student_id].append(score)
+    student_averages = [
+        sum(scores) / len(scores) for scores in by_student.values() if scores
+    ]
+    return (
+        sum(student_averages) / len(student_averages)
+        if student_averages
+        else 0.0
+    )
+
+
+def _apply_mastery_event(
+    mastery: dict[tuple[str, str], float],
+    event: dict[str, Any],
+) -> None:
+    student_id = str(event.get("student_id", ""))
+    event_topic = str(event.get("topic", "")).strip()
+    if not student_id or not event_topic:
+        return
+    key = (student_id, event_topic)
+    old_score = mastery.get(key, 0.0)
+    target = 1.0 if bool(event.get("is_correct")) else 0.0
+    mastery[key] = old_score + 0.2 * (target - old_score)
+
+
+def _flashcard_recall_score(event: dict[str, Any]) -> float:
+    accuracy = event.get("accuracy_percentage")
+    if isinstance(accuracy, (int, float)):
+        value = float(accuracy)
+        return max(0.0, min(1.0, value / 100 if value > 1 else value))
+    if isinstance(event.get("is_correct"), bool):
+        return 1.0 if event["is_correct"] else 0.0
+    return FLASHCARD_RECALL_SCORES.get(str(event.get("rating", "")).lower(), 0.0)
+
+
+def _empty_trend_point(day: date) -> dict[str, Any]:
+    return {
+        "date": day.isoformat(),
+        "overall_mastery": 0.0,
+        "quiz_accuracy": 0.0,
+        "flashcard_recall": 0.0,
+        "activity_count": 0,
+    }
+
+
 # ── Cosmos reads ────────────────────────────────────────────────────────────
 
 
@@ -429,6 +703,36 @@ async def _read_workspace_flashcard_ratings(
     col = get_collection(tenant_id, FLASHCARD_RATINGS)
     cursor = col.find({"workspace_id": workspace_id, "deleted_at": None})
     return [doc async for doc in cursor]
+
+
+async def _read_workspace(
+    *, tenant_id: str, workspace_id: str
+) -> Workspace | None:
+    col = get_collection(tenant_id, WORKSPACES)
+    raw = await col.find_one({"_id": workspace_id, "deleted_at": None})
+    return Workspace.model_validate(raw) if raw is not None else None
+
+
+async def _read_workspace_users(
+    *, tenant_id: str, workspace_id: str
+) -> list[dict[str, Any]]:
+    col = get_collection(tenant_id, USERS)
+    cursor = col.find(
+        {
+            "deleted_at": None,
+            "workspace_memberships": {
+                "$elemMatch": {"workspace_id": workspace_id}
+            },
+        }
+    )
+    return [
+        {
+            "id": str(doc["_id"]),
+            "display_name": str(doc.get("display_name") or doc["_id"]),
+            "role": str(doc.get("role", "")),
+        }
+        async for doc in cursor
+    ]
 
 
 async def _read_tenant_workspaces(*, tenant_id: str) -> list[Workspace]:

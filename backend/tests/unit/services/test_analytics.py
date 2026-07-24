@@ -8,6 +8,7 @@ behaviour, and the activity merge.
 
 from __future__ import annotations
 
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,6 +25,84 @@ from app.services.analytics import (
     build_workspace_analytics,
 )
 from app.services.gamification import FLASHCARD_XP
+
+
+def test_learning_trend_replays_real_events_and_carries_forward():
+    points = analytics_service._aggregate_learning_trend(
+        interactions=[
+            {
+                "student_id": "stu_a",
+                "topic": "Algebra",
+                "is_correct": True,
+                "answered_at": "2026-07-01T10:00:00+00:00",
+            },
+            {
+                "student_id": "stu_a",
+                "topic": "Algebra",
+                "is_correct": False,
+                "answered_at": "2026-07-03T10:00:00+00:00",
+            },
+        ],
+        ratings=[
+            {
+                "student_id": "stu_a",
+                "topic": "Algebra",
+                "rating": "easy",
+                "rated_at": "2026-07-03T11:00:00+00:00",
+            }
+        ],
+        student_ids={"stu_a"},
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 4),
+        topic=None,
+    )
+
+    assert [point["date"] for point in points] == [
+        "2026-07-01",
+        "2026-07-02",
+        "2026-07-03",
+        "2026-07-04",
+    ]
+    assert points[0]["overall_mastery"] == pytest.approx(0.2)
+    assert points[1]["overall_mastery"] == pytest.approx(0.2)
+    assert points[2]["overall_mastery"] == pytest.approx(0.16)
+    assert points[2]["quiz_accuracy"] == pytest.approx(0.5)
+    assert points[2]["flashcard_recall"] == pytest.approx(1.0)
+    assert points[3]["activity_count"] == 0
+
+
+def test_learning_trend_filters_student_and_topic():
+    points = analytics_service._aggregate_learning_trend(
+        interactions=[
+            {
+                "student_id": "stu_a",
+                "topic": "Algebra",
+                "is_correct": True,
+                "answered_at": "2026-07-01T10:00:00+00:00",
+            },
+            {
+                "student_id": "stu_b",
+                "topic": "Algebra",
+                "is_correct": False,
+                "answered_at": "2026-07-01T10:00:00+00:00",
+            },
+            {
+                "student_id": "stu_a",
+                "topic": "Geometry",
+                "is_correct": False,
+                "answered_at": "2026-07-01T10:00:00+00:00",
+            },
+        ],
+        ratings=[],
+        student_ids={"stu_a"},
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 1),
+        topic="Algebra",
+    )
+
+    assert points[0]["activity_count"] == 1
+    assert points[0]["overall_mastery"] == pytest.approx(0.2)
+    assert points[0]["quiz_accuracy"] == pytest.approx(1.0)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
