@@ -25,9 +25,9 @@ class AuthSessionService {
   static const _storage = FlutterSecureStorage();
   static const _appAuth = FlutterAppAuth();
 
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
+  late final Future<void> _googleInitialization = _googleSignIn.initialize(
     serverClientId: Environment.googleWebClientId,
-    scopes: const ['email', 'profile'],
   );
 
   bool _loaded = false;
@@ -89,6 +89,25 @@ class AuthSessionService {
       refreshToken: null,
       provider: _googleProvider,
     );
+  }
+
+  /// Authenticates with Google and returns the ID token used by Entra.
+  Future<String> authenticateWithGoogle() async {
+    await _googleInitialization;
+    if (!_googleSignIn.supportsAuthenticate()) {
+      throw UnsupportedError(
+        'Interactive Google sign-in is not supported on this platform.',
+      );
+    }
+
+    final account = await _googleSignIn.authenticate(
+      scopeHint: const ['email', 'profile'],
+    );
+    final idToken = account.authentication.idToken;
+    if (idToken == null || idToken.isEmpty) {
+      throw StateError('Google sign in failed: no ID token returned');
+    }
+    return idToken;
   }
 
   Future<void> writeUser(String userJson) async {
@@ -161,6 +180,7 @@ class AuthSessionService {
     ]);
 
     try {
+      await _googleInitialization;
       await _googleSignIn.signOut();
     } catch (_) {
       // Local secure state is already cleared; provider cleanup is best effort.
@@ -237,15 +257,14 @@ class AuthSessionService {
   }
 
   Future<String?> _refreshGoogle(String oldToken, int generation) async {
-    final account = await _googleSignIn.signInSilently(
-      suppressErrors: true,
-      reAuthenticate: true,
-    );
+    await _googleInitialization;
+    final authentication = _googleSignIn.attemptLightweightAuthentication();
+    final account = authentication == null ? null : await authentication;
     if (account == null) {
       return generation == _sessionGeneration ? oldToken : null;
     }
 
-    final refreshedIdToken = (await account.authentication).idToken;
+    final refreshedIdToken = account.authentication.idToken;
     if (refreshedIdToken == null || refreshedIdToken.isEmpty) {
       return generation == _sessionGeneration ? oldToken : null;
     }

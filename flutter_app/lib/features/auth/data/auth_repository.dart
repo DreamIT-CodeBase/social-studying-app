@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter_appauth/flutter_appauth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/core/config/environment.dart';
 import 'package:social_study_app/shared/models/user.dart';
@@ -28,10 +27,6 @@ class RealAuthRepository implements AuthRepository {
   final AuthRepositoryRef _ref;
   static const _userKey = AuthSessionService.userKey;
   final _appAuth = const FlutterAppAuth();
-  final _googleSignIn = GoogleSignIn(
-    serverClientId: Environment.googleWebClientId,
-    scopes: ['email', 'profile'],
-  );
 
   @override
   Future<User> signInWithMicrosoft() async {
@@ -78,18 +73,8 @@ class RealAuthRepository implements AuthRepository {
   @override
   Future<User> signInWithGoogle() async {
     try {
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) {
-        throw Exception('Google sign in cancelled by user');
-      }
-
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-      final String? idToken = googleAuth.idToken;
-
-      if (idToken == null) {
-        throw Exception('Google sign in failed: no ID token returned');
-      }
+      final idToken =
+          await AuthSessionService.instance.authenticateWithGoogle();
 
       await AuthSessionService.instance.persistGoogleSession(idToken);
 
