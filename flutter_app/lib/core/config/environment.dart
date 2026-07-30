@@ -1,10 +1,13 @@
+import 'package:flutter/foundation.dart';
+
 abstract final class Environment {
   // Default points at the host machine from the Android emulator (10.0.2.2).
   // Override for production deploys:
   //   --dart-define=API_BASE_URL=https://ca-api-dev.ambitiouswave-1e406ff3.centralus.azurecontainerapps.io
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://ca-api-dev.ambitiouswave-1e406ff3.centralus.azurecontainerapps.io',
+    defaultValue:
+        'https://ca-api-dev.ambitiouswave-1e406ff3.centralus.azurecontainerapps.io',
   );
 
   // When true, all repository providers route through Dio → real backend.
@@ -36,13 +39,24 @@ abstract final class Environment {
     defaultValue: 'B2C_1_signupsignin',
   );
 
-  static const String b2cRedirectUri = String.fromEnvironment(
+  static const String _b2cRedirectUri = String.fromEnvironment(
     'B2C_REDIRECT_URI',
     defaultValue: 'msauth://com.socialstudyapp.app/callback',
   );
 
+  static const String b2cIosRedirectUri = String.fromEnvironment(
+    'B2C_IOS_REDIRECT_URI',
+    defaultValue: 'msauth.ai.socialstudying.app://auth',
+  );
+
+  static String get b2cRedirectUri =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS
+          ? b2cIosRedirectUri
+          : _b2cRedirectUri;
+
   static const String googleWebClientId = String.fromEnvironment(
     'GOOGLE_WEB_CLIENT_ID',
-    defaultValue: '140186450317-6d8qopjlvvmlad2847o3i8nru0saclv9.apps.googleusercontent.com',
+    defaultValue:
+        '140186450317-6d8qopjlvvmlad2847o3i8nru0saclv9.apps.googleusercontent.com',
   );
 }

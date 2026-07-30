@@ -8,10 +8,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.socialstudyapp.social-study-app</string>
+			<string>ai.socialstudying.app</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>msauth</string>
+				<string>msauth.ai.socialstudying.app</string>
 			</array>
 		</dict>
 	</array>
@@ -78,17 +78,6 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>msauth</string>
-			</array>
-		</dict>
 	</array>
 </dict>
 </plist>
