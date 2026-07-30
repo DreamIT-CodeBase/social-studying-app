@@ -367,7 +367,7 @@ class _DashboardTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         Spacing.lg,
-        Spacing.sm,
+        0,
         Spacing.lg,
         Spacing.xl,
       ),
@@ -436,7 +436,7 @@ class _ReferenceWelcomeBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 190,
+      height: 160,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -453,10 +453,10 @@ class _ReferenceWelcomeBanner extends StatelessWidget {
       child: Stack(
         children: [
           Positioned(
-            right: -28,
-            top: 8,
-            bottom: -3,
-            width: 228,
+            right: -22,
+            top: 4,
+            bottom: -2,
+            width: 195,
             child: Image.asset(
               'assets/mascot/admin_dashboard_hero.png',
               fit: BoxFit.contain,
@@ -464,9 +464,9 @@ class _ReferenceWelcomeBanner extends StatelessWidget {
           ),
           Positioned(
             left: Spacing.lg,
-            top: 18,
-            bottom: 18,
-            width: 205,
+            top: 12,
+            bottom: 12,
+            width: 185,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -474,7 +474,7 @@ class _ReferenceWelcomeBanner extends StatelessWidget {
                   '👋 Welcome back,',
                   style: TextStyle(
                     color: Color(0xFFC9D4FF),
-                    fontSize: 17,
+                    fontSize: 15,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -485,18 +485,18 @@ class _ReferenceWelcomeBanner extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 28,
+                    fontSize: 24,
                     height: 1.08,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 13),
+                const SizedBox(height: 8),
                 const Text(
                   'Here’s what’s happening\nin your class today.',
                   style: TextStyle(
                     color: Color(0xFFC9D4FF),
-                    fontSize: 14,
-                    height: 1.4,
+                    fontSize: 12,
+                    height: 1.35,
                   ),
                 ),
                 const Spacer(),
@@ -782,7 +782,7 @@ class _GetStartedCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 16,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -793,7 +793,7 @@ class _GetStartedCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: _dashboardMuted,
-                        fontSize: 13,
+                        fontSize: 11,
                         height: 1.2,
                       ),
                     ),

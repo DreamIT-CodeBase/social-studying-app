@@ -337,5 +337,80 @@ async def remove_workspace_member(
     await invalidate_user_cache(user)
 
 
+class WorkspaceMemberRoleUpdate(BaseModel):
+    role: UserRole
+
+
+@router.patch("/{workspace_id}/members/{user_id}", response_model=UserResponse)
+async def update_workspace_member_role(
+    workspace_id: str,
+    user_id: str,
+    body: WorkspaceMemberRoleUpdate,
+    current_user: User = Depends(require_role(UserRole.tenant_admin, UserRole.workspace_admin)),
+) -> UserResponse:
+    """Change the role of an existing workspace member (student ↔ admin)."""
+    _assert_admin(current_user, workspace_id)
+
+    wsp_col = get_collection(current_user.tenant_id, WORKSPACES)
+    workspace_doc = await wsp_col.find_one({"_id": workspace_id, "deleted_at": None})
+    if workspace_doc is None:
+        raise NotFoundError("Workspace", workspace_id)
+
+    user_col = get_collection(current_user.tenant_id, "users")
+    user_doc = await user_col.find_one({"_id": user_id, "deleted_at": None})
+    if user_doc is None:
+        raise NotFoundError("User", user_id)
+
+    user = User.model_validate(user_doc)
+    workspace = Workspace.model_validate(workspace_doc)
+
+    new_role = body.role
+    if new_role == UserRole.tenant_admin:
+        from app.core.exceptions import ForbiddenError
+        raise ForbiddenError("Cannot promote to tenant admin via this endpoint")
+
+    # 1. Update the user's workspace_memberships list in-place
+    updated = False
+    for membership in user.workspace_memberships:
+        if membership.workspace_id == workspace_id:
+            membership.role = new_role
+            updated = True
+            break
+    if not updated:
+        # Member not in the user's memberships — add it
+        user.workspace_memberships.append(
+            WorkspaceMembership(
+                workspace_id=workspace_id,
+                role=new_role,
+                joined_at=utc_now(),
+            )
+        )
+    user.touch()
+    await user_col.replace_one({"_id": user_id}, user.model_dump(by_alias=True))
+
+    # 2. Keep workspace admin_ids / student_ids consistent
+    if new_role == UserRole.workspace_admin:
+        await wsp_col.update_one(
+            {"_id": workspace_id},
+            {
+                "$addToSet": {"admin_ids": user_id},
+                "$pull": {"student_ids": user_id},
+            },
+        )
+    else:
+        await wsp_col.update_one(
+            {"_id": workspace_id},
+            {
+                "$addToSet": {"student_ids": user_id},
+                "$pull": {"admin_ids": user_id},
+            },
+        )
+
+    # 3. Invalidate auth cache so the new role propagates immediately
+    await invalidate_user_cache(user)
+
+    return UserResponse.from_doc(user)
+
+
 
 
