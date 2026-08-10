@@ -480,7 +480,7 @@ class _ReferenceWelcomeBanner extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  displayName,
+                  _firstName(displayName),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -549,6 +549,12 @@ class _ReferenceWelcomeBanner extends StatelessWidget {
       ),
     );
   }
+}
+
+String _firstName(String displayName) {
+  final trimmedName = displayName.trim();
+  if (trimmedName.isEmpty) return 'Admin';
+  return trimmedName.split(RegExp(r'\s+')).first;
 }
 
 class _ReferenceStatsPanel extends ConsumerWidget {

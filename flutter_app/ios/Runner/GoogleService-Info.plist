@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>140186450317-k8bpisr2bp3o1gva3l865gau9enu8r6j.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyALnnX5dNwxkanQkrN6XJPuJSlFhuoh6vg</string>
+	<key>GCM_SENDER_ID</key>
+	<string>140186450317</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>ai.socialstudying.app</string>
+	<key>PROJECT_ID</key>
+	<string>social-study-app-14c31</string>
+	<key>STORAGE_BUCKET</key>
+	<string>social-study-app-14c31.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:140186450317:ios:fb1dcecf2f009566b825c4</string>
+    <key>GIDClientID</key>
+<string>140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb.apps.googleusercontent.com</string>
+
+<key>GIDServerClientID</key>
+<string>140186450317-6d8qopjlvvmlad2847o3i8nru0saclv9.apps.googleusercontent.com</string>
+<key>CFBundleURLTypes</key>
+<array>
+    <!-- Microsoft Entra callback -->
+    <dict>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleURLName</key>
+        <string>ai.socialstudying.app</string>
+        <key>CFBundleURLSchemes</key>
+        <array>
+            <string>msauth.ai.socialstudying.app</string>
+        </array>
+    </dict>
+
+    <!-- Google Sign-In callback -->
+    <dict>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleURLName</key>
+        <string>GoogleSignIn</string>
+        <key>CFBundleURLSchemes</key>
+        <array>
+            <string>com.googleusercontent.apps.140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb</string>
+        </array>
+    </dict>
+</array>
+</dict>
+</plist>
