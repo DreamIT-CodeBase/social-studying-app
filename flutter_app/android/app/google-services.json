@@ -30,6 +30,14 @@
           }
         },
         {
+          "client_id": "140186450317-uvmam60ke95abe4ktcb228c0pv9qdg0q.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.socialstudyapp.social_study_app",
+            "certificate_hash": "c75969d5b6b6cfe25e7b18eff88d6bfbe4aada7c"
+          }
+        },
+        {
           "client_id": "140186450317-6d8qopjlvvmlad2847o3i8nru0saclv9.apps.googleusercontent.com",
           "client_type": 3
         }

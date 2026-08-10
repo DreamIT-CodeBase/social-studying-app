@@ -10,8 +10,10 @@ import android.app.AppOpsManager
 import android.app.NotificationManager
 import android.os.Process
 import android.os.Build
+import android.os.Bundle
 import android.os.PowerManager
 import android.net.Uri
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -19,6 +21,14 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.socialstudyapp.app/screen_time"
     private var pendingNotificationResult: MethodChannel.Result? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // Protect every Flutter route from screenshots, screen recording,
+        // recent-app previews, and non-secure external displays. Applying the
+        // flag before Flutter renders prevents a sensitive first-frame leak.
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        super.onCreate(savedInstanceState)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
