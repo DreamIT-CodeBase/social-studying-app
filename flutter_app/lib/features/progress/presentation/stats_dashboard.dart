@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
+import 'package:social_study_app/core/utils/subject_classifier.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 import 'package:social_study_app/shared/models/progress.dart';
 import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
@@ -21,6 +22,16 @@ class CategoryHierarchy {
 
 CategoryHierarchy mapTopicToHierarchy(String topic) {
   final lowercase = topic.toLowerCase();
+
+  final detectedSubject = subjectForTopic(topic);
+  if (detectedSubject == 'Computer Science') {
+    return CategoryHierarchy(
+        subject: detectedSubject, chapter: 'Computing', topic: topic);
+  }
+  if (detectedSubject == 'Mathematics') {
+    return CategoryHierarchy(
+        subject: detectedSubject, chapter: 'General Mathematics', topic: topic);
+  }
   
   if (lowercase.contains('cell') || lowercase.contains('mitosis') || lowercase.contains('photosynthesis') || lowercase.contains('chloroplast')) {
     return CategoryHierarchy(subject: 'Biology', chapter: 'Cell Biology', topic: topic);
@@ -52,7 +63,8 @@ CategoryHierarchy mapTopicToHierarchy(String topic) {
     return CategoryHierarchy(subject: 'Physics', chapter: 'Electromagnetism', topic: topic);
   }
 
-  return CategoryHierarchy(subject: 'Study', chapter: 'General Review', topic: topic);
+  return CategoryHierarchy(
+      subject: detectedSubject, chapter: 'General Review', topic: topic);
 }
 
 class StatsDashboard extends ConsumerStatefulWidget {

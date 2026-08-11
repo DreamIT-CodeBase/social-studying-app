@@ -378,6 +378,15 @@ async def _prepare_questions(
     level: AdaptiveLevel,
     revision: bool,
 ) -> list[PreparedQuestion]:
+    current_sources = await study_sources.current_study_sources(
+        tenant_id=user.tenant_id,
+        workspace_id=workspace_id,
+    )
+    if not current_sources.document_ids:
+        raise ConflictError(
+            "No ready study material is available for questions. Wait for the latest "
+            "source to finish processing, then try again."
+        )
     interactions, weak_topics = await _history(
         tenant_id=user.tenant_id,
         workspace_id=workspace_id,
@@ -436,7 +445,9 @@ async def _prepare_questions(
     available: list[Question] = []
     for raw in raw_questions:
         try:
-            available.append(Question.model_validate(raw))
+            question = Question.model_validate(raw)
+            if question.document_id in current_sources.document_ids:
+                available.append(question)
         except Exception:
             logger.warning("Skipping malformed queued question id=%s", raw.get("_id"))
 
@@ -479,7 +490,8 @@ async def _prepare_questions(
                 generated = [
                     question
                     for question in generated
-                    if question.id not in seen_ids
+                    if question.document_id in current_sources.document_ids
+                    and question.id not in seen_ids
                     and question.id not in reserved_ids
                     and _question_fingerprint(question.body) not in seen_fingerprints
                     and _question_fingerprint(question.body) not in reserved_fingerprints

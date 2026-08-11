@@ -50,9 +50,12 @@ android {
     productFlavors {
         create("student") {
             dimension = "app"
+            resValue("string", "app_name", "Social Studying AI")
         }
         create("admin") {
             dimension = "app"
+            applicationIdSuffix = ".admin"
+            resValue("string", "app_name", "Social Studying Admin")
         }
     }
 

@@ -15,6 +15,7 @@ import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 import 'package:social_study_app/core/theme/theme_manager.dart';
+import 'package:social_study_app/core/utils/subject_classifier.dart';
 
 /// Question-answering interface (Sprint 4.7) and answer feedback
 /// (Sprint 4.8) — unified into a single visual page style.
@@ -259,28 +260,7 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
 
 // Helper methods for subject mapping based on topic
 String _getSubjectFromTopic(String topic) {
-  final lowercase = topic.toLowerCase();
-  if (lowercase.contains('cell') ||
-      lowercase.contains('bio') ||
-      lowercase.contains('gene') ||
-      lowercase.contains('dna') ||
-      lowercase.contains('mitosis')) {
-    return 'Biology';
-  }
-  if (lowercase.contains('chem') ||
-      lowercase.contains('atom') ||
-      lowercase.contains('bond') ||
-      lowercase.contains('molec')) {
-    return 'Chemistry';
-  }
-  if (lowercase.contains('phys') ||
-      lowercase.contains('force') ||
-      lowercase.contains('grav') ||
-      lowercase.contains('motion') ||
-      lowercase.contains('wave')) {
-    return 'Physics';
-  }
-  return 'Study';
+  return subjectForTopic(topic);
 }
 
 IconData _getIconForSubject(String subject) {

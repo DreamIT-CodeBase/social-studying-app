@@ -25,7 +25,7 @@ from app.core.database import (
 from app.models.base import utc_now
 from app.models.document import Document
 from app.models.workspace import Taxonomy, Workspace
-from app.services import azure_ai_search, blob_storage
+from app.services import azure_ai_search, blob_storage, question_pipeline
 from app.services.cosmos_retry import run_with_throttle_retry
 
 logger = logging.getLogger(__name__)
@@ -81,6 +81,7 @@ async def purge_document(*, document: Document) -> None:
         question_ids=question_ids,
         flashcard_ids=flashcard_ids,
     )
+    await question_pipeline.invalidate_workspace_cache(workspace_id=document.workspace_id)
     await _remove_from_workspace(document=document)
 
     result = await run_with_throttle_retry(
@@ -180,7 +181,11 @@ async def _delete_derived_content(
             operation_name=f"delete flashcard ratings for {document.id}",
         )
 
-    session_conditions: list[dict[str, object]] = []
+    # A prepared plan is a snapshot that may contain legacy `batch_source`
+    # questions whose real document was not recorded. Invalidate every
+    # unfinished plan when the workspace source set changes; the learner can
+    # immediately prepare a fresh session from the remaining documents.
+    session_conditions: list[dict[str, object]] = [{"status": "prepared"}]
     if question_ids:
         session_conditions.append({"plan.questions.id": {"$in": question_ids}})
         session_conditions.append(
@@ -188,13 +193,12 @@ async def _delete_derived_content(
         )
     if flashcard_ids:
         session_conditions.append({"plan.flashcards.id": {"$in": flashcard_ids}})
-    if session_conditions:
-        await _delete_many(
-            tenant_id=tenant_id,
-            collection=ADAPTIVE_SESSIONS,
-            filter_={"workspace_id": workspace_id, "$or": session_conditions},
-            operation_name=f"delete adaptive sessions for {document.id}",
-        )
+    await _delete_many(
+        tenant_id=tenant_id,
+        collection=ADAPTIVE_SESSIONS,
+        filter_={"workspace_id": workspace_id, "$or": session_conditions},
+        operation_name=f"delete adaptive sessions for {document.id}",
+    )
 
 
 async def _delete_many(

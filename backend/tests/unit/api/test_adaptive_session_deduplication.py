@@ -362,6 +362,14 @@ async def test_study_session_excludes_answered_and_reserved_questions():
         ),
         patch("app.api.adaptive_sessions.get_collection", return_value=queue),
         patch(
+            "app.api.adaptive_sessions.study_sources.current_study_sources",
+            AsyncMock(
+                return_value=CurrentStudySources(
+                    document_ids=frozenset({"doc_a"}), topic_names=("Biology",)
+                )
+            ),
+        ),
+        patch(
             "app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch",
             AsyncMock(return_value=[generated]),
         ) as generate,
@@ -405,6 +413,14 @@ async def test_study_session_is_not_padded_with_old_questions_when_generation_is
         ),
         patch("app.api.adaptive_sessions.get_collection", return_value=queue),
         patch(
+            "app.api.adaptive_sessions.study_sources.current_study_sources",
+            AsyncMock(
+                return_value=CurrentStudySources(
+                    document_ids=frozenset({"doc_a"}), topic_names=("Biology",)
+                )
+            ),
+        ),
+        patch(
             "app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch",
             AsyncMock(return_value=[]),
         ),
@@ -418,6 +434,46 @@ async def test_study_session_is_not_padded_with_old_questions_when_generation_is
         )
 
     assert [question.id for question in prepared] == ["qst_fresh"]
+
+
+@pytest.mark.asyncio
+async def test_study_session_excludes_questions_from_deleted_documents():
+    student = make_user(user_id="stu_a", role=UserRole.student, workspace_ids=["wsp_a"])
+    stale = _question("qst_chemistry", "What is an ionic bond?")
+    stale.document_id = "doc_deleted_chemistry"
+    current = _question("qst_foundry", "What is a model deployment?")
+    current.document_id = "doc_current_foundry"
+    queue = MagicMock()
+    queue.find.return_value = _Cursor(
+        [stale.model_dump(by_alias=True), current.model_dump(by_alias=True)]
+    )
+
+    with (
+        patch("app.api.adaptive_sessions._history", AsyncMock(return_value=([], {}))),
+        patch(
+            "app.api.adaptive_sessions._reserved_questions",
+            AsyncMock(return_value=(set(), set())),
+        ),
+        patch("app.api.adaptive_sessions.get_collection", return_value=queue),
+        patch(
+            "app.api.adaptive_sessions.study_sources.current_study_sources",
+            AsyncMock(
+                return_value=CurrentStudySources(
+                    document_ids=frozenset({"doc_current_foundry"}),
+                    topic_names=("Microsoft Foundry",),
+                )
+            ),
+        ),
+    ):
+        prepared = await _prepare_questions(
+            user=student,
+            workspace_id="wsp_a",
+            target=1,
+            level=AdaptiveLevel.beginner,
+            revision=False,
+        )
+
+    assert [question.id for question in prepared] == ["qst_foundry"]
 
 
 @pytest.mark.asyncio
@@ -441,6 +497,14 @@ async def test_revision_session_can_repeat_an_incorrect_question():
             AsyncMock(return_value=(set(), set())),
         ),
         patch("app.api.adaptive_sessions.get_collection", return_value=queue),
+        patch(
+            "app.api.adaptive_sessions.study_sources.current_study_sources",
+            AsyncMock(
+                return_value=CurrentStudySources(
+                    document_ids=frozenset({"doc_a"}), topic_names=("Biology",)
+                )
+            ),
+        ),
     ):
         prepared = await _prepare_questions(
             user=student,

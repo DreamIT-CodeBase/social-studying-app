@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:social_study_app/core/theme/theme_manager.dart';
+import 'package:social_study_app/core/utils/subject_classifier.dart';
 import 'package:social_study_app/features/flashcards/presentation/flashcard_screen.dart'
     show FlashcardFace, FlashcardSide, FlipCard;
 import 'package:social_study_app/features/questions/presentation/question_screen.dart'
@@ -1027,24 +1028,7 @@ String _displayAnswer(PreparedQuestion question, String answer) {
 }
 
 String _subjectFor(String topic) {
-  final value = topic.toLowerCase();
-  if (value.contains('cell') ||
-      value.contains('bio') ||
-      value.contains('gene') ||
-      value.contains('dna')) {
-    return 'Biology';
-  }
-  if (value.contains('chem') ||
-      value.contains('atom') ||
-      value.contains('bond')) {
-    return 'Chemistry';
-  }
-  if (value.contains('phys') ||
-      value.contains('force') ||
-      value.contains('motion')) {
-    return 'Physics';
-  }
-  return 'Study';
+  return subjectForTopic(topic);
 }
 
 IconData _subjectIcon(String subject) => switch (subject) {

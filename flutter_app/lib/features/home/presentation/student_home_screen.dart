@@ -10,6 +10,7 @@ import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/core/theme/theme_manager.dart';
+import 'package:social_study_app/core/utils/subject_classifier.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/flashcards/presentation/flashcard_screen.dart';
 import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
@@ -125,7 +126,8 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
               children: [
                 const Icon(Icons.celebration_rounded, color: Colors.amber),
                 const SizedBox(width: 12),
-                Expanded(child: Text('Daily Login  •  +$next XP\nWelcome Back!')),
+                Expanded(
+                    child: Text('Daily Login  •  +$next XP\nWelcome Back!')),
               ],
             ),
           ),
@@ -268,7 +270,8 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
                       return;
                     }
                     if (workspaceId != null && index == 2) {
-                      context.push('/student/session/$workspaceId?mode=flashcard');
+                      context
+                          .push('/student/session/$workspaceId?mode=flashcard');
                       return;
                     }
                     ref.read(studentHomeTabProvider.notifier).state = index;
@@ -1685,7 +1688,9 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            isMature ? 'Start Your Study Session' : 'Start your study session',
+                            isMature
+                                ? 'Start Your Study Session'
+                                : 'Start your study session',
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               color: Colors.white,
@@ -1849,10 +1854,9 @@ class _StartQuickRevisionCardState
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: (isMature
-                    ? const Color(0xFF2563EB)
-                    : const Color(0xFFF59E0B))
-                .withOpacity(0.35),
+            color:
+                (isMature ? const Color(0xFF2563EB) : const Color(0xFFF59E0B))
+                    .withOpacity(0.35),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -2156,14 +2160,17 @@ class _TopicMasteryDashboardCardState
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800,
-                                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                  color: isDark
+                                      ? Colors.white
+                                      : const Color(0xFF1E293B),
                                 ),
                               ),
                             ],
                           ),
                           GestureDetector(
                             onTap: () {
-                              ref.read(studentHomeTabProvider.notifier).state = 3;
+                              ref.read(studentHomeTabProvider.notifier).state =
+                                  3;
                             },
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -2480,7 +2487,9 @@ class _WeeklyXpPageViewState extends State<_WeeklyXpPageView> {
   }
 
   void _onPageScroll() {
-    if (!_hasScrolled && _pageCtrl.page != null && _pageCtrl.page!.round() != _currentPage) {
+    if (!_hasScrolled &&
+        _pageCtrl.page != null &&
+        _pageCtrl.page!.round() != _currentPage) {
       setState(() => _hasScrolled = true);
     }
     final page = _pageCtrl.page?.round() ?? _currentPage;
@@ -3184,15 +3193,6 @@ class _ActivityEntryItem extends StatelessWidget {
     ),
   ];
 
-  static const _subjectsByHash = [
-    'Biology',
-    'Biology',
-    'Chemistry',
-    'Physics',
-    'Chemistry',
-    'Physics'
-  ];
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -3201,7 +3201,7 @@ class _ActivityEntryItem extends StatelessWidget {
     // Pick icon style by topic hash for consistent per-topic look
     final styleIdx = entry.topic.hashCode.abs() % _iconStyles.length;
     final style = _iconStyles[styleIdx];
-    final subjectTag = _subjectsByHash[styleIdx];
+    final subjectTag = subjectForTopic(entry.topic);
 
     final statusText = isCorrect ? 'Correct' : 'Incorrect';
     final statusColor = isCorrect

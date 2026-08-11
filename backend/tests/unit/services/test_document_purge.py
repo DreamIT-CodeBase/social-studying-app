@@ -123,6 +123,10 @@ async def test_purge_document_erases_all_material_content_and_source_references(
             "app.services.document_purge.azure_ai_search.delete_for_document",
             AsyncMock(return_value=4),
         ) as delete_search,
+        patch(
+            "app.services.document_purge.question_pipeline.invalidate_workspace_cache",
+            AsyncMock(return_value=2),
+        ) as invalidate_cache,
     ):
         await purge_document(document=_document())
 
@@ -142,6 +146,7 @@ async def test_purge_document_erases_all_material_content_and_source_references(
         tenant_id="ten_test",
         document_id="doc_remove",
     )
+    invalidate_cache.assert_awaited_once_with(workspace_id="wsp_test")
     collections[CHUNKS].delete_many.assert_awaited_once_with(
         {"workspace_id": "wsp_test", "document_id": "doc_remove"}
     )
@@ -158,6 +163,8 @@ async def test_purge_document_erases_all_material_content_and_source_references(
     collections[INTERACTIONS].delete_many.assert_awaited_once()
     collections[FLASHCARD_RATINGS].delete_many.assert_awaited_once()
     collections[ADAPTIVE_SESSIONS].delete_many.assert_awaited_once()
+    session_filter = collections[ADAPTIVE_SESSIONS].delete_many.await_args.args[0]
+    assert {"status": "prepared"} in session_filter["$or"]
 
     workspace_update = collections[WORKSPACES].update_one.await_args.args[1]
     assert workspace_update["$inc"] == {
