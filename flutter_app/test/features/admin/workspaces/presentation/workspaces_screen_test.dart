@@ -118,6 +118,22 @@ void main() {
     expect(find.text('1 admins'), findsOneWidget);
   });
 
+  testWidgets('populated list keeps New Workspace available', (tester) async {
+    when(repo.list).thenAnswer((_) async => [_ws()]);
+
+    await tester.pumpWidget(_wrap(repo));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(FloatingActionButton, 'New Workspace'),
+        findsOneWidget);
+    expect(
+      find.text(
+        'Create a workspace for each classroom or family group you manage.',
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('creating a workspace calls the repository and refreshes',
       (tester) async {
     var listCalls = 0;

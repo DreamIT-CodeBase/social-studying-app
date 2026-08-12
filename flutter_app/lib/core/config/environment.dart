@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:social_study_app/core/config/app_flavor.dart';
 
 abstract final class Environment {
   // Default points at the host machine from the Android emulator (10.0.2.2).
@@ -44,10 +45,19 @@ abstract final class Environment {
     defaultValue: 'msauth://com.socialstudyapp.app/callback',
   );
 
-  static const String b2cIosRedirectUri = String.fromEnvironment(
-    'B2C_IOS_REDIRECT_URI',
+  static const String _b2cStudentIosRedirectUri = String.fromEnvironment(
+    'B2C_STUDENT_IOS_REDIRECT_URI',
     defaultValue: 'msauth.ai.socialstudying.app://auth',
   );
+
+  static const String _b2cAdminIosRedirectUri = String.fromEnvironment(
+    'B2C_ADMIN_IOS_REDIRECT_URI',
+    defaultValue: 'msauth.ai.socialstudying.app.admin://auth',
+  );
+
+  static String get b2cIosRedirectUri => currentFlavor == AppFlavor.admin
+      ? _b2cAdminIosRedirectUri
+      : _b2cStudentIosRedirectUri;
 
   static String get b2cRedirectUri =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS

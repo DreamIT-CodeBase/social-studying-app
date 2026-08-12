@@ -253,8 +253,20 @@ Done & verified:
   `NOTIFICATION_HUB_CONNECTION_STRING` is set, else `LoggingSender` (no-op, logs).
 
 **NEXT TASK — prove the device push (only unproven link):**
-1. `cd flutter_app && flutter run --flavor student -t lib/main_student.dart` on a
-   device/emulator (run `dart run build_runner build` first if codegen stale).
+1. **Android:** `cd flutter_app && flutter run --flavor student -t lib/main_student.dart`.
+   **iOS:** this is two separate App Store Connect apps. Archive the committed
+   **student** scheme for `ai.socialstudying.app` / **Social Studying AI**;
+   it uses `lib/main_student.dart` and `AppIcon`. Archive **admin** for
+   `ai.socialstudying.app.admin` / **Social Studying Admin**; it uses
+   `lib/main_admin.dart` and `AdminAppIcon`. Always archive from
+   `ios/Runner.xcworkspace`, never `Runner.xcodeproj`.
+
+   **Microsoft Entra iOS redirect URIs:** register both public-client mobile
+   redirect URIs on application `93e3ce50-a29e-462b-8956-85674a34d167`:
+   `msauth.ai.socialstudying.app://auth` (Student) and
+   `msauth.ai.socialstudying.app.admin://auth` (Admin). Each archive declares
+   only its own `msauth.$(PRODUCT_BUNDLE_IDENTIFIER)` URL scheme, and the Dart
+   client selects the matching redirect URI.
 2. Confirm token registers via `POST /api/v1/users/me/notification-tokens`.
 3. Trigger a milestone (answer to level up, or `POST /api/v1/admin/notifications/run-scheduler`).
 4. Watch `notification_dispatches` Cosmos collection for `outcome=sent`.

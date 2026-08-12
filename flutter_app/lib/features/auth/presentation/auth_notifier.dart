@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -36,21 +37,29 @@ class AuthNotifier extends _$AuthNotifier {
   Future<void> signInWithMicrosoft() async {
     _authGeneration += 1;
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
+    try {
       final user = await ref.read(authRepositoryProvider).signInWithMicrosoft();
-      await _claimDailyLogin(user);
-      return AuthState.authenticated(user: user);
-    });
+      state = AsyncData(AuthState.authenticated(user: user));
+      // Authentication must complete as soon as the account profile arrives.
+      // A daily-login reward is best effort and may involve a slow backend;
+      // keeping it off the critical path prevents iOS from remaining on the
+      // sign-in spinner after Entra redirects back to the app.
+      unawaited(_claimDailyLogin(user));
+    } catch (error, stackTrace) {
+      state = AsyncError(error, stackTrace);
+    }
   }
 
   Future<void> signInWithGoogle() async {
     _authGeneration += 1;
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
+    try {
       final user = await ref.read(authRepositoryProvider).signInWithGoogle();
-      await _claimDailyLogin(user);
-      return AuthState.authenticated(user: user);
-    });
+      state = AsyncData(AuthState.authenticated(user: user));
+      unawaited(_claimDailyLogin(user));
+    } catch (error, stackTrace) {
+      state = AsyncError(error, stackTrace);
+    }
   }
 
   Future<void> redeemInviteCode(String code) async {
