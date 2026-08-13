@@ -89,11 +89,16 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$APP_BUNDLE_ID string $IOS_PROFILE_NAME" "$RUNNER_TEMP/ExportOptions.plist"
 
       - name: Build signed IPA
-        env:
-          CODE_SIGN_STYLE: Manual
-          DEVELOPMENT_TEAM: ${{ env.APPLE_TEAM_ID }}
-          PROVISIONING_PROFILE_SPECIFIER: ${{ env.IOS_PROFILE_NAME }}
         run: |
+          signing_config="ios/Flutter/CI-signing.xcconfig"
+          {
+            printf 'CODE_SIGN_STYLE=Manual\n'
+            printf 'CODE_SIGN_IDENTITY=Apple Distribution\n'
+            printf 'DEVELOPMENT_TEAM=%s\n' "$APPLE_TEAM_ID"
+            printf 'PROVISIONING_PROFILE_SPECIFIER=%s\n' "$IOS_PROFILE_NAME"
+          } > "$signing_config"
+          printf '\n#include "CI-signing.xcconfig"\n' >> ios/Flutter/Release-student.xcconfig
+
           build_number=$((10000 + GITHUB_RUN_NUMBER))
           flutter build ipa \
             --release \
