@@ -1,6 +1,9 @@
 name: Deploy student iOS app
 
 on:
+  push:
+    branches:
+      - tarun/entra-auth
   workflow_dispatch:
     inputs:
       upload_to_testflight:
@@ -108,7 +111,7 @@ jobs:
           retention-days: 14
 
       - name: Configure App Store Connect API key
-        if: inputs.upload_to_testflight
+        if: github.event_name == 'push' || inputs.upload_to_testflight
         env:
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -118,7 +121,7 @@ jobs:
           chmod 600 "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
 
       - name: Upload to TestFlight
-        if: inputs.upload_to_testflight
+        if: github.event_name == 'push' || inputs.upload_to_testflight
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}

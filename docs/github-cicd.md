@@ -8,7 +8,7 @@ The repository contains three workflows:
 
 ## Student iOS and TestFlight
 
-The student deployment is manual so a normal push cannot publish an App Store build. Add these repository Actions secrets under **Settings > Secrets and variables > Actions**:
+The student deployment runs for pushes to `tarun/entra-auth` and can also be started manually. Add these repository Actions secrets under **Settings > Secrets and variables > Actions**:
 
 | Secret | Value |
 | --- | --- |
@@ -19,7 +19,7 @@ The student deployment is manual so a normal push cannot publish an App Store bu
 | `APP_STORE_CONNECT_ISSUER_ID` | App Store Connect issuer ID |
 | `APP_STORE_CONNECT_PRIVATE_KEY` | Complete contents of the API key `.p8` file |
 
-Open **Actions > Deploy student iOS app > Run workflow**. Leave **Upload the signed IPA to TestFlight** enabled to deploy, or disable it to build and retain only the IPA artifact. The iOS build number is `10000` plus GitHub's run number, keeping it monotonically increasing and clear of early local builds.
+Every push to `tarun/entra-auth` builds and uploads that branch to TestFlight. Once the workflow exists on the default branch, it can also be started under **Actions > Deploy student iOS app > Run workflow**; leave **Upload the signed IPA to TestFlight** enabled to deploy, or disable it to build and retain only the IPA artifact. The iOS build number is `10000` plus GitHub's run number, keeping it monotonically increasing and clear of early local builds.
 
 ## 1. Protect `main`
 
