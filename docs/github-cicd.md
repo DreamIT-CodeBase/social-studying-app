@@ -22,6 +22,8 @@ The two-app deployment runs for pushes to `tarun/entra-auth` and can also be sta
 
 Every push to `tarun/entra-auth` builds and uploads both apps from that branch to TestFlight. Once the workflow exists on the default branch, it can also be started under **Actions > Deploy iOS apps > Run workflow**; leave **Upload the signed IPAs to TestFlight** enabled to deploy, or disable it to retain only the artifacts. The iOS build number is `10000` plus GitHub's run number, keeping it monotonically increasing and clear of early local builds.
 
+The jobs use GitHub's `macos-26` runner and fail early unless Xcode 26 or newer is active, matching App Store Connect's current SDK requirement.
+
 ## 1. Protect `main`
 
 In GitHub, open **Settings > Branches > Add branch protection rule** for `main`. Require a pull request and require the three CI checks: `Backend`, `Admin portal`, and `Flutter`.

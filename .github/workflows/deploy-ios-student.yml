@@ -34,7 +34,7 @@ jobs:
             bundle_id: ai.socialstudying.app.admin
             target: lib/main_admin.dart
             profile_secret: IOS_ADMIN_PROVISIONING_PROFILE_BASE64
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     defaults:
       run:
@@ -46,6 +46,17 @@ jobs:
       APPLE_TEAM_ID: B7BJ5HC53B
     steps:
       - uses: actions/checkout@v6
+
+      - name: Verify App Store build toolchain
+        run: |
+          xcode_version=$(xcodebuild -version | awk 'NR == 1 { print $2 }')
+          xcode_major=${xcode_version%%.*}
+          if (( xcode_major < 26 )); then
+            echo "Xcode 26 or later is required by App Store Connect; runner selected Xcode $xcode_version." >&2
+            exit 1
+          fi
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
 
       - uses: subosito/flutter-action@v2
         with:
