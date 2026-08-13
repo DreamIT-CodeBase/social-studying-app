@@ -1,0 +1,138 @@
+name: Deploy student iOS app
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload_to_testflight:
+        description: Upload the signed IPA to TestFlight
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-student-testflight
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and deploy student app
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: flutter_app
+    env:
+      APP_BUNDLE_ID: ai.socialstudying.app
+      APPLE_TEAM_ID: B7BJ5HC53B
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Install Apple signing credentials
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          certificate_path="$RUNNER_TEMP/distribution.p12"
+          profile_path="$RUNNER_TEMP/student.mobileprovision"
+          keychain_path="$RUNNER_TEMP/app-signing.keychain-db"
+
+          printf '%s' "$CERTIFICATE_BASE64" | base64 -D > "$certificate_path"
+          printf '%s' "$PROVISIONING_PROFILE_BASE64" | base64 -D > "$profile_path"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+
+          profile_plist="$RUNNER_TEMP/student-profile.plist"
+          security cms -D -i "$profile_path" > "$profile_plist"
+          profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$profile_plist")
+          profile_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$profile_plist")
+          profile_app_id=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$profile_plist")
+
+          if [[ "$profile_app_id" != "$APPLE_TEAM_ID.$APP_BUNDLE_ID" ]]; then
+            echo "Provisioning profile is for '$profile_app_id', expected '$APPLE_TEAM_ID.$APP_BUNDLE_ID'." >&2
+            exit 1
+          fi
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
+          echo "IOS_PROFILE_NAME=$profile_name" >> "$GITHUB_ENV"
+
+      - name: Create App Store export configuration
+        run: |
+          plutil -create xml1 "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c 'Add :method string app-store-connect' "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c 'Add :signingStyle string manual' "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_TEAM_ID" "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c 'Add :uploadSymbols bool true' "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c 'Add :provisioningProfiles dict' "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$APP_BUNDLE_ID string $IOS_PROFILE_NAME" "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Build signed IPA
+        env:
+          CODE_SIGN_STYLE: Manual
+          DEVELOPMENT_TEAM: ${{ env.APPLE_TEAM_ID }}
+          PROVISIONING_PROFILE_SPECIFIER: ${{ env.IOS_PROFILE_NAME }}
+        run: |
+          build_number=$((10000 + GITHUB_RUN_NUMBER))
+          flutter build ipa \
+            --release \
+            --flavor student \
+            --target lib/main_student.dart \
+            --build-number "$build_number" \
+            --export-options-plist "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: social-studying-student-ios-${{ github.run_number }}
+          path: flutter_app/build/ios/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Configure App Store Connect API key
+        if: inputs.upload_to_testflight
+        env:
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        run: |
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+          chmod 600 "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+
+      - name: Upload to TestFlight
+        if: inputs.upload_to_testflight
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          ipa_path=$(find build/ios/ipa -maxdepth 1 -name '*.ipa' -print -quit)
+          test -n "$ipa_path"
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$ipa_path" \
+            --apiKey "$APP_STORE_CONNECT_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+
+      - name: Remove signing credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" 2>/dev/null || true
+          rm -f "$HOME/.appstoreconnect/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_KEY_ID }}.p8"

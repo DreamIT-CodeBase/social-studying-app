@@ -8,19 +8,19 @@ import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 
 // ─── Colours matching the reference exactly ───────────────────────────────
-const _kSkyTop    = Color(0xFFB8EBF7); // pale sky blue
+const _kSkyTop = Color(0xFFB8EBF7); // pale sky blue
 const _kSkyBottom = Color(0xFF7DD5EE); // deeper sky at horizon
-const _kCream     = Color(0xFFFFFFFF); // clean white body
-const _kAmberL    = Color(0xFFFFBF3C); // amber card left
-const _kAmberR    = Color(0xFFFFD86B); // amber card right (lighter)
-const _kMenuBg    = Color(0xFFFFFFFF);
-const _kMenuText  = Color(0xFF2C2C2C);
-const _kChevron   = Color(0xFFCCCCCC);
+const _kCream = Color(0xFFFFFFFF); // clean white body
+const _kAmberL = Color(0xFFFFBF3C); // amber card left
+const _kAmberR = Color(0xFFFFD86B); // amber card right (lighter)
+const _kMenuBg = Color(0xFFFFFFFF);
+const _kMenuText = Color(0xFF2C2C2C);
+const _kChevron = Color(0xFFCCCCCC);
 const _kNameColor = Color(0xFF1A1A2E);
-const _kSubColor  = Color(0xFF7A7A8C);
+const _kSubColor = Color(0xFF7A7A8C);
 const _kTreeGreen = Color(0xFF4CAF50);
-const _kTreeDark  = Color(0xFF388E3C);
-const _kTrunk     = Color(0xFF8D6E63);
+const _kTreeDark = Color(0xFF388E3C);
+const _kTrunk = Color(0xFF8D6E63);
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -108,7 +108,8 @@ class ProfileScreen extends ConsumerWidget {
                   const SizedBox(height: 36),
 
                   // Avatar centred
-                  _AvatarBadge(initial: initial, radius: avatarR, isDark: isDark),
+                  _AvatarBadge(
+                      initial: initial, radius: avatarR, isDark: isDark),
 
                   const SizedBox(height: 14),
 
@@ -159,7 +160,8 @@ class ProfileScreen extends ConsumerWidget {
                           _MenuItem(
                             icon: Icons.screen_lock_portrait_rounded,
                             label: 'Screen Time Controls',
-                            onTap: () => context.push('/student/screen-time-settings'),
+                            onTap: () =>
+                                context.push('/student/screen-time-settings'),
                           ),
                       ],
                     ),
@@ -192,7 +194,8 @@ class ProfileScreen extends ConsumerWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Sign Out', style: TextStyle(fontWeight: FontWeight.w700)),
+        title: const Text('Sign Out',
+            style: TextStyle(fontWeight: FontWeight.w700)),
         content: const Text('Are you sure you want to sign out?'),
         actions: [
           TextButton(
@@ -238,7 +241,8 @@ class _CollegeProfileScreen extends ConsumerWidget {
     final surface = isDark ? const Color(0xFF172033) : Colors.white;
     final border = isDark ? const Color(0xFF26344D) : const Color(0xFFE2E8F0);
     final primaryText = isDark ? Colors.white : const Color(0xFF0F172A);
-    final secondaryText = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+    final secondaryText =
+        isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
 
     return Scaffold(
       backgroundColor: background,
@@ -251,7 +255,8 @@ class _CollegeProfileScreen extends ConsumerWidget {
           icon: const Icon(Icons.arrow_back_rounded),
           tooltip: 'Back',
         ),
-        title: const Text('Profile', style: TextStyle(fontWeight: FontWeight.w700)),
+        title: const Text('Profile',
+            style: TextStyle(fontWeight: FontWeight.w700)),
         centerTitle: true,
       ),
       body: ListView(
@@ -273,16 +278,23 @@ class _CollegeProfileScreen extends ConsumerWidget {
                     color: Color(0xFFEFF6FF),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.account_circle_rounded, size: 46, color: Color(0xFF2563EB)),
+                  child: const Icon(Icons.account_circle_rounded,
+                      size: 46, color: Color(0xFF2563EB)),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(displayName, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: primaryText)),
+                      Text(displayName,
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: primaryText)),
                       const SizedBox(height: 4),
-                      Text(email, style: TextStyle(fontSize: 13, color: secondaryText), overflow: TextOverflow.ellipsis),
+                      Text(email,
+                          style: TextStyle(fontSize: 13, color: secondaryText),
+                          overflow: TextOverflow.ellipsis),
                     ],
                   ),
                 ),
@@ -290,7 +302,11 @@ class _CollegeProfileScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 28),
-          Text('Preferences', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: secondaryText)),
+          Text('Preferences',
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: secondaryText)),
           const SizedBox(height: 8),
           _CollegeSettingsCard(
             surface: surface,
@@ -337,9 +353,12 @@ class _CollegeProfileScreen extends ConsumerWidget {
         title: const Text('Sign out'),
         content: const Text('Are you sure you want to sign out?'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel')),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFDC2626)),
             onPressed: () {
               Navigator.of(ctx).pop();
               context.pop();
@@ -354,14 +373,20 @@ class _CollegeProfileScreen extends ConsumerWidget {
 }
 
 class _CollegeSettingsCard extends StatelessWidget {
-  const _CollegeSettingsCard({required this.surface, required this.border, required this.children});
+  const _CollegeSettingsCard(
+      {required this.surface, required this.border, required this.children});
   final Color surface;
   final Color border;
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) => Container(
-        decoration: BoxDecoration(color: surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: border)),
+  Widget build(BuildContext context) => Material(
+        color: surface,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: border),
+        ),
         child: Column(children: children),
       );
 }
@@ -383,14 +408,18 @@ class _CollegeSettingsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final color = isDestructive ? const Color(0xFFDC2626) : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155));
+    final color = isDestructive
+        ? const Color(0xFFDC2626)
+        : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155));
     return ListTile(
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: Icon(icon, color: color),
-      title: Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: color)),
+      title: Text(title,
+          style: TextStyle(fontWeight: FontWeight.w600, color: color)),
       subtitle: Text(subtitle),
-      trailing: Icon(Icons.chevron_right_rounded, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
+      trailing: Icon(Icons.chevron_right_rounded,
+          color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
     );
   }
 }
@@ -449,14 +478,18 @@ class _TreePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final trunkPaint = Paint()..color = isDark ? const Color(0xFF475569) : _kTrunk;
-    final leafPaint1 = Paint()..color = isDark ? const Color(0xFF312E81) : _kTreeGreen;
-    final leafPaint2 = Paint()..color = isDark ? const Color(0xFF1E1B4B) : _kTreeDark;
+    final trunkPaint = Paint()
+      ..color = isDark ? const Color(0xFF475569) : _kTrunk;
+    final leafPaint1 = Paint()
+      ..color = isDark ? const Color(0xFF312E81) : _kTreeGreen;
+    final leafPaint2 = Paint()
+      ..color = isDark ? const Color(0xFF1E1B4B) : _kTreeDark;
 
     // trunk
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromLTWH(size.width * 0.44, size.height * 0.6, size.width * 0.12, size.height * 0.4),
+        Rect.fromLTWH(size.width * 0.44, size.height * 0.6, size.width * 0.12,
+            size.height * 0.4),
         const Radius.circular(4),
       ),
       trunkPaint,
@@ -515,7 +548,8 @@ class _TopBar extends StatelessWidget {
         children: [
           _CircleBtn(
             onTap: onBack,
-            child: Icon(Icons.chevron_left_rounded, color: btnIconCol, size: 24),
+            child:
+                Icon(Icons.chevron_left_rounded, color: btnIconCol, size: 24),
           ),
           Expanded(
             child: Text(
@@ -546,7 +580,8 @@ class _CircleBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgCol = isDark ? const Color(0xFF1A1A3A) : Colors.white.withValues(alpha: 0.55);
+    final bgCol =
+        isDark ? const Color(0xFF1A1A3A) : Colors.white.withValues(alpha: 0.55);
     final borderColor = isDark ? const Color(0xFF2A2A50) : Colors.transparent;
 
     return GestureDetector(
@@ -559,7 +594,8 @@ class _CircleBtn extends StatelessWidget {
           shape: BoxShape.circle,
           border: Border.all(color: borderColor, width: isDark ? 1.2 : 0.0),
           boxShadow: const [
-            BoxShadow(color: Color(0x14000000), blurRadius: 6, offset: Offset(0, 2)),
+            BoxShadow(
+                color: Color(0x14000000), blurRadius: 6, offset: Offset(0, 2)),
           ],
         ),
         child: Center(child: child),
@@ -570,7 +606,8 @@ class _CircleBtn extends StatelessWidget {
 
 // ─── Avatar ─────────────────────────────────────────────────────────────────
 class _AvatarBadge extends StatelessWidget {
-  const _AvatarBadge({required this.initial, required this.radius, required this.isDark});
+  const _AvatarBadge(
+      {required this.initial, required this.radius, required this.isDark});
   final String initial;
   final double radius;
   final bool isDark;
@@ -586,7 +623,8 @@ class _AvatarBadge extends StatelessWidget {
         shape: BoxShape.circle,
         color: ringBg,
         boxShadow: const [
-          BoxShadow(color: Color(0x30000000), blurRadius: 18, offset: Offset(0, 6)),
+          BoxShadow(
+              color: Color(0x30000000), blurRadius: 18, offset: Offset(0, 6)),
         ],
       ),
       padding: const EdgeInsets.all(5),
@@ -622,7 +660,7 @@ class _PromoCard extends StatelessWidget {
     final gradientColors = isDark
         ? const [Color(0xFF3B0764), Color(0xFF1E1B4B)]
         : const [_kAmberL, _kAmberR];
-        
+
     final shadowColor = isDark
         ? const Color(0xFF3B0764).withValues(alpha: 0.4)
         : const Color(0x55FFA000);
@@ -686,7 +724,10 @@ class _PromoCard extends StatelessWidget {
                 color: btnBg,
                 borderRadius: BorderRadius.circular(22),
                 boxShadow: const [
-                  BoxShadow(color: Color(0x22000000), blurRadius: 6, offset: Offset(0, 2)),
+                  BoxShadow(
+                      color: Color(0x22000000),
+                      blurRadius: 6,
+                      offset: Offset(0, 2)),
                 ],
               ),
               child: Text(
@@ -714,7 +755,8 @@ class _MenuCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cardBg = isDark ? const Color(0xFF13132A) : _kMenuBg;
-    final borderColor = isDark ? const Color(0xFF2A2A50) : const Color(0xFFF0F0F0);
+    final borderColor =
+        isDark ? const Color(0xFF2A2A50) : const Color(0xFFF0F0F0);
 
     return Container(
       decoration: BoxDecoration(
@@ -722,7 +764,8 @@ class _MenuCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: borderColor, width: isDark ? 1.5 : 0.0),
         boxShadow: const [
-          BoxShadow(color: Color(0x12000000), blurRadius: 10, offset: Offset(0, 3)),
+          BoxShadow(
+              color: Color(0x12000000), blurRadius: 10, offset: Offset(0, 3)),
         ],
       ),
       child: Column(
@@ -752,7 +795,7 @@ class _MenuItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     final iconBg = isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF2F2F2);
     final iconCol = isDark ? const Color(0xFFA78BFA) : const Color(0xFF555555);
     final textCol = isDark ? Colors.white : _kMenuText;
@@ -801,9 +844,10 @@ class _SignOutTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     final cardBg = isDark ? const Color(0xFF13132A) : _kMenuBg;
-    final borderColor = isDark ? const Color(0xFF2A2A50) : const Color(0xFFF0F0F0);
+    final borderColor =
+        isDark ? const Color(0xFF2A2A50) : const Color(0xFFF0F0F0);
     final iconBg = isDark ? const Color(0xFF451A1A) : const Color(0xFFFEEAEA);
     final iconColor = const Color(0xFFE53935);
     final textCol = const Color(0xFFE53935);
@@ -816,7 +860,8 @@ class _SignOutTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: borderColor, width: isDark ? 1.5 : 0.0),
           boxShadow: const [
-            BoxShadow(color: Color(0x12000000), blurRadius: 10, offset: Offset(0, 3)),
+            BoxShadow(
+                color: Color(0x12000000), blurRadius: 10, offset: Offset(0, 3)),
           ],
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -842,7 +887,8 @@ class _SignOutTile extends StatelessWidget {
                 ),
               ),
             ),
-            Icon(Icons.chevron_right_rounded, color: isDark ? const Color(0xFF475569) : _kChevron, size: 22),
+            Icon(Icons.chevron_right_rounded,
+                color: isDark ? const Color(0xFF475569) : _kChevron, size: 22),
           ],
         ),
       ),

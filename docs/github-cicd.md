@@ -1,9 +1,25 @@
 # GitHub CI/CD setup
 
-The repository contains two workflows:
+The repository contains three workflows:
 
 - `CI` validates the FastAPI backend, Next.js admin portal, and Flutter app on every pull request and every push to `main`.
 - `Deploy backend to Azure` builds the backend image after its checks pass, pushes it to Azure Container Registry, and updates the API and worker Container Apps in the `staging` GitHub environment.
+- `Deploy student iOS app` creates a signed student IPA on demand and can upload it to TestFlight.
+
+## Student iOS and TestFlight
+
+The student deployment is manual so a normal push cannot publish an App Store build. Add these repository Actions secrets under **Settings > Secrets and variables > Actions**:
+
+| Secret | Value |
+| --- | --- |
+| `IOS_DISTRIBUTION_CERTIFICATE_BASE64` | Base64-encoded Apple Distribution `.p12` |
+| `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD` | Password used when exporting the `.p12` |
+| `IOS_PROVISIONING_PROFILE_BASE64` | Base64-encoded App Store profile for `ai.socialstudying.app` |
+| `APP_STORE_CONNECT_KEY_ID` | App Store Connect API key ID |
+| `APP_STORE_CONNECT_ISSUER_ID` | App Store Connect issuer ID |
+| `APP_STORE_CONNECT_PRIVATE_KEY` | Complete contents of the API key `.p8` file |
+
+Open **Actions > Deploy student iOS app > Run workflow**. Leave **Upload the signed IPA to TestFlight** enabled to deploy, or disable it to build and retain only the IPA artifact. The iOS build number is `10000` plus GitHub's run number, keeping it monotonically increasing and clear of early local builds.
 
 ## 1. Protect `main`
 

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/core/config/environment.dart';
@@ -35,26 +37,49 @@ class RealAuthRepository implements AuthRepository {
           'https://${Environment.b2cTenantSubdomain}.ciamlogin.com/'
           '${Environment.b2cTenantId}/v2.0/.well-known/openid-configuration';
 
-      final result = await _appAuth.authorizeAndExchangeCode(
-        AuthorizationTokenRequest(
-          Environment.b2cClientId,
-          Environment.b2cRedirectUri,
-          discoveryUrl: discoveryUrl,
-          promptValues: ['login'],
-          scopes: [
-            'openid',
-            'profile',
-            'offline_access',
-            'api://${Environment.b2cClientId}/access_as_user',
-          ],
-        ),
+      debugPrint(
+        'Microsoft sign-in: opening Entra with redirect URI '
+        '${Environment.b2cRedirectUri}',
       );
+      final result = await _appAuth
+          .authorizeAndExchangeCode(
+            AuthorizationTokenRequest(
+              Environment.b2cClientId,
+              Environment.b2cRedirectUri,
+              discoveryUrl: discoveryUrl,
+              promptValues: ['login'],
+              // A custom iOS URI callback cannot receive a browser form POST.
+              // Require Entra to return the authorization code in the callback
+              // URL so AppAuth can resume the authorization flow.
+              responseMode: 'query',
+              // On iOS, use AppAuth's dedicated authentication-session
+              // implementation. It completes inside ASWebAuthenticationSession
+              // rather than relying on a UIApplication/UIScene URL callback.
+              externalUserAgent:
+                  ExternalUserAgent.ephemeralAsWebAuthenticationSession,
+              scopes: [
+                'openid',
+                'profile',
+                'offline_access',
+                'api://${Environment.b2cClientId}/access_as_user',
+              ],
+            ),
+          )
+          .timeout(
+            const Duration(seconds: 75),
+            onTimeout: () => throw TimeoutException(
+              'Microsoft sign-in did not finish after returning from Safari. '
+              'Check the Entra iOS redirect URI and the device connection.',
+            ),
+          );
 
       if (result.idToken == null) {
         throw Exception('Authentication returned empty result');
       }
 
+      debugPrint('Microsoft sign-in: Entra returned tokens.');
       await AuthSessionService.instance.persistMicrosoftSession(result);
+      debugPrint('Microsoft sign-in: session saved; loading account.');
 
       // Fetch the real user profile from the backend
       final dio = _ref.read(dioClientProvider).dio;
@@ -63,6 +88,7 @@ class RealAuthRepository implements AuthRepository {
 
       await AuthSessionService.instance
           .writeUser(jsonEncode(backendUser.toJson()));
+      debugPrint('Microsoft sign-in: account loaded.');
 
       return backendUser;
     } catch (e) {
