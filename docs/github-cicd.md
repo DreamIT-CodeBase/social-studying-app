@@ -4,22 +4,23 @@ The repository contains three workflows:
 
 - `CI` validates the FastAPI backend, Next.js admin portal, and Flutter app on every pull request and every push to `main`.
 - `Deploy backend to Azure` builds the backend image after its checks pass, pushes it to Azure Container Registry, and updates the API and worker Container Apps in the `staging` GitHub environment.
-- `Deploy student iOS app` creates a signed student IPA on demand and can upload it to TestFlight.
+- `Deploy iOS apps` creates signed student and admin IPAs and can upload both to TestFlight.
 
-## Student iOS and TestFlight
+## Student and admin iOS TestFlight deployment
 
-The student deployment runs for pushes to `tarun/entra-auth` and can also be started manually. Add these repository Actions secrets under **Settings > Secrets and variables > Actions**:
+The two-app deployment runs for pushes to `tarun/entra-auth` and can also be started manually. Add these repository Actions secrets under **Settings > Secrets and variables > Actions**:
 
 | Secret | Value |
 | --- | --- |
 | `IOS_DISTRIBUTION_CERTIFICATE_BASE64` | Base64-encoded Apple Distribution `.p12` |
 | `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD` | Password used when exporting the `.p12` |
 | `IOS_PROVISIONING_PROFILE_BASE64` | Base64-encoded App Store profile for `ai.socialstudying.app` |
+| `IOS_ADMIN_PROVISIONING_PROFILE_BASE64` | Base64-encoded App Store profile for `ai.socialstudying.app.admin` |
 | `APP_STORE_CONNECT_KEY_ID` | App Store Connect API key ID |
 | `APP_STORE_CONNECT_ISSUER_ID` | App Store Connect issuer ID |
 | `APP_STORE_CONNECT_PRIVATE_KEY` | Complete contents of the API key `.p8` file |
 
-Every push to `tarun/entra-auth` builds and uploads that branch to TestFlight. Once the workflow exists on the default branch, it can also be started under **Actions > Deploy student iOS app > Run workflow**; leave **Upload the signed IPA to TestFlight** enabled to deploy, or disable it to build and retain only the IPA artifact. The iOS build number is `10000` plus GitHub's run number, keeping it monotonically increasing and clear of early local builds.
+Every push to `tarun/entra-auth` builds and uploads both apps from that branch to TestFlight. Once the workflow exists on the default branch, it can also be started under **Actions > Deploy iOS apps > Run workflow**; leave **Upload the signed IPAs to TestFlight** enabled to deploy, or disable it to retain only the artifacts. The iOS build number is `10000` plus GitHub's run number, keeping it monotonically increasing and clear of early local builds.
 
 ## 1. Protect `main`
 

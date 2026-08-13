@@ -1,4 +1,4 @@
-name: Deploy student iOS app
+name: Deploy iOS apps
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       upload_to_testflight:
-        description: Upload the signed IPA to TestFlight
+        description: Upload both signed IPAs to TestFlight
         required: true
         default: true
         type: boolean
@@ -16,19 +16,33 @@ permissions:
   contents: read
 
 concurrency:
-  group: ios-student-testflight
+  group: ios-apps-testflight
   cancel-in-progress: false
 
 jobs:
   build:
-    name: Build and deploy student app
+    name: Build and deploy ${{ matrix.flavor }} app
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavor: student
+            bundle_id: ai.socialstudying.app
+            target: lib/main_student.dart
+            profile_secret: IOS_PROVISIONING_PROFILE_BASE64
+          - flavor: admin
+            bundle_id: ai.socialstudying.app.admin
+            target: lib/main_admin.dart
+            profile_secret: IOS_ADMIN_PROVISIONING_PROFILE_BASE64
     runs-on: macos-15
     timeout-minutes: 45
     defaults:
       run:
         working-directory: flutter_app
     env:
-      APP_BUNDLE_ID: ai.socialstudying.app
+      APP_BUNDLE_ID: ${{ matrix.bundle_id }}
+      APP_FLAVOR: ${{ matrix.flavor }}
+      APP_TARGET: ${{ matrix.target }}
       APPLE_TEAM_ID: B7BJ5HC53B
     steps:
       - uses: actions/checkout@v6
@@ -45,12 +59,12 @@ jobs:
         env:
           CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
-          PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets[matrix.profile_secret] }}
           KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
           certificate_path="$RUNNER_TEMP/distribution.p12"
-          profile_path="$RUNNER_TEMP/student.mobileprovision"
+          profile_path="$RUNNER_TEMP/$APP_FLAVOR.mobileprovision"
           keychain_path="$RUNNER_TEMP/app-signing.keychain-db"
 
           printf '%s' "$CERTIFICATE_BASE64" | base64 -D > "$certificate_path"
@@ -63,7 +77,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
           security list-keychains -d user -s "$keychain_path"
 
-          profile_plist="$RUNNER_TEMP/student-profile.plist"
+          profile_plist="$RUNNER_TEMP/$APP_FLAVOR-profile.plist"
           security cms -D -i "$profile_path" > "$profile_plist"
           profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$profile_plist")
           profile_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$profile_plist")
@@ -97,20 +111,20 @@ jobs:
             printf 'DEVELOPMENT_TEAM=%s\n' "$APPLE_TEAM_ID"
             printf 'PROVISIONING_PROFILE_SPECIFIER=%s\n' "$IOS_PROFILE_NAME"
           } > "$signing_config"
-          printf '\n#include "CI-signing.xcconfig"\n' >> ios/Flutter/Release-student.xcconfig
+          printf '\n#include "CI-signing.xcconfig"\n' >> "ios/Flutter/Release-$APP_FLAVOR.xcconfig"
 
           build_number=$((10000 + GITHUB_RUN_NUMBER))
           flutter build ipa \
             --release \
-            --flavor student \
-            --target lib/main_student.dart \
+            --flavor "$APP_FLAVOR" \
+            --target "$APP_TARGET" \
             --build-number "$build_number" \
             --export-options-plist "$RUNNER_TEMP/ExportOptions.plist"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: social-studying-student-ios-${{ github.run_number }}
+          name: social-studying-${{ matrix.flavor }}-ios-${{ github.run_number }}
           path: flutter_app/build/ios/ipa/*.ipa
           if-no-files-found: error
           retention-days: 14
