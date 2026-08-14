@@ -119,14 +119,14 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // ── Theme-dependent colors ──────────────────────────────────────────────
-    final Color bgColor = isDark ? const Color(0xFF0D0D1F) : Colors.white;
-    final Color cardBgColor = isDark ? const Color(0xFF13132A) : Colors.white;
+    final Color bgColor = isDark ? const Color(0xFF0F172A) : Colors.white;
+    final Color cardBgColor = isDark ? const Color(0xFF1E293B) : Colors.white;
     final Color cardBorderColor =
-        isDark ? const Color(0xFF2A2A50) : const Color(0xFFE5E7EB);
+        isDark ? const Color(0xFF334155) : const Color(0xFFE5E7EB);
     final Color primaryTextColor =
         isDark ? Colors.white : const Color(0xFF1A1A2E);
     final Color secondaryTextColor =
-        isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C);
+        isDark ? const Color(0xFF94A3B8) : const Color(0xFF7A7A8C);
 
     // ── Gamification data: streak + sessions ────────────────────────────────
     final authValue = ref.watch(authNotifierProvider).valueOrNull;
@@ -185,8 +185,8 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
                     Text(
                       'Progress',
                       style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w900,
+                        fontSize: 30,
+                        fontWeight: FontWeight.w700,
                         color: primaryTextColor,
                         letterSpacing: -0.8,
                       ),

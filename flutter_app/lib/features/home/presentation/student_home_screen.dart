@@ -146,7 +146,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
       authenticated: (u) => u,
       orElse: () => null,
     );
-    final memberships = user?.workspaceMemberships ?? [];
+    final memberships = effectiveStudentMemberships(user);
     final workspaceId = ref.watch(activeWorkspaceIdProvider);
     final userId = authValue?.maybeWhen(
       authenticated: (user) => user.id,
@@ -527,7 +527,7 @@ class _HomeTab extends ConsumerWidget {
       authenticated: (u) => u,
       orElse: () => null,
     );
-    final memberships = user?.workspaceMemberships ?? [];
+    final memberships = effectiveStudentMemberships(user);
 
     // Extract progress parameters safely
     final progressKey = (workspaceId: workspaceId ?? '', userId: userId ?? '');
@@ -2143,7 +2143,6 @@ class _TopicMasteryDashboardCardState
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Row(
                             children: [
@@ -2166,35 +2165,6 @@ class _TopicMasteryDashboardCardState
                                 ),
                               ),
                             ],
-                          ),
-                          GestureDetector(
-                            onTap: () {
-                              ref.read(studentHomeTabProvider.notifier).state =
-                                  3;
-                            },
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'View all',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: isDark
-                                        ? const Color(0xFF60A5FA)
-                                        : const Color(0xFF2563EB),
-                                  ),
-                                ),
-                                const SizedBox(width: 2),
-                                Icon(
-                                  Icons.arrow_forward_rounded,
-                                  size: 14,
-                                  color: isDark
-                                      ? const Color(0xFF60A5FA)
-                                      : const Color(0xFF2563EB),
-                                ),
-                              ],
-                            ),
                           ),
                         ],
                       ),

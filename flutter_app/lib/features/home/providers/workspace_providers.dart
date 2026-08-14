@@ -7,6 +7,29 @@ import 'package:social_study_app/shared/services/session_persistence_service.dar
 
 part 'workspace_providers.g.dart';
 
+/// Memberships used by the student UI. The personal workspace ID is
+/// deterministic and the backend provisions it in `get_current_user`, so the
+/// client can expose it immediately even when secure storage still contains a
+/// profile written before that membership was added.
+List<WorkspaceMembership> effectiveStudentMemberships(User? user) {
+  if (user == null) return const [];
+  final memberships = List<WorkspaceMembership>.of(user.workspaceMemberships);
+  if (user.role != UserRole.student) return memberships;
+
+  final selfWorkspaceId = 'wsp_self_${user.id}';
+  if (!memberships.any((item) => item.workspaceId == selfWorkspaceId)) {
+    memberships.insert(
+      0,
+      WorkspaceMembership(
+        workspaceId: selfWorkspaceId,
+        role: UserRole.workspaceAdmin,
+        workspaceName: 'Self Learning Workspace',
+      ),
+    );
+  }
+  return memberships;
+}
+
 @Riverpod(keepAlive: true)
 class ActiveWorkspaceId extends _$ActiveWorkspaceId {
   @override
@@ -16,7 +39,8 @@ class ActiveWorkspaceId extends _$ActiveWorkspaceId {
       authenticated: (u) => u,
       orElse: () => null,
     );
-    if (user == null || user.workspaceMemberships.isEmpty) {
+    final memberships = effectiveStudentMemberships(user);
+    if (user == null || memberships.isEmpty) {
       return null;
     }
 
@@ -27,20 +51,20 @@ class ActiveWorkspaceId extends _$ActiveWorkspaceId {
     final savedId = SessionPersistenceService.instance.getWorkspaceSync();
     if (savedId != null &&
         savedId != selfWorkspaceId &&
-        user.workspaceMemberships.any((m) => m.workspaceId == savedId)) {
+        memberships.any((m) => m.workspaceId == savedId)) {
       return savedId;
     }
-    for (final membership in user.workspaceMemberships) {
+    for (final membership in memberships) {
       if (membership.workspaceId != selfWorkspaceId) {
         return membership.workspaceId;
       }
     }
     // Only self-study exists; preserve a valid saved self-study selection.
     if (savedId == selfWorkspaceId &&
-        user.workspaceMemberships.any((m) => m.workspaceId == savedId)) {
+        memberships.any((m) => m.workspaceId == savedId)) {
       return savedId;
     }
-    return user.workspaceMemberships.first.workspaceId;
+    return memberships.first.workspaceId;
   }
 
   void setWorkspaceId(String workspaceId) {
