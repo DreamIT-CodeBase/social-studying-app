@@ -58,6 +58,8 @@ class NotificationService {
 
   StreamSubscription<RemoteMessage>? _foregroundSubscription;
   StreamSubscription<RemoteMessage>? _openedSubscription;
+  StreamSubscription<String>? _tokenRefreshSubscription;
+  Future<void>? _registrationRetry;
   bool _localReady = false;
   bool _initialized = false;
   String? _lastLocalTitle;
@@ -92,18 +94,41 @@ class NotificationService {
       return false;
     }
 
+    final recoveryInstallationId = await _installationId();
+    final recoveryPlatform = _detectPlatform();
+    if (recoveryPlatform == null) return false;
+
+    // Install recovery before the APNs wait. The previous flow returned after
+    // ten seconds and never heard Firebase's eventual token callback.
+    _tokenRefreshSubscription ??=
+        _messaging!.onTokenRefresh.listen((freshToken) async {
+      await _registerRemoteToken(
+        installationId: recoveryInstallationId,
+        token: freshToken,
+        platform: recoveryPlatform,
+      );
+    });
+
     // Firebase Messaging on Apple platforms cannot issue a usable FCM token
     // until APNs registration has completed. The APNs callback is asynchronous,
     // so give it a short bounded window instead of racing getToken() on launch.
     if (Platform.isIOS && !await _waitForApnsToken()) {
       debugPrint(
           'NotificationService: APNs token unavailable; skipping register');
+      _startRegistrationRetry(
+        installationId: recoveryInstallationId,
+        platform: recoveryPlatform,
+      );
       return false;
     }
 
     final token = await _safeGetToken();
     if (token == null) {
       debugPrint('NotificationService: no FCM token; skipping register');
+      _startRegistrationRetry(
+        installationId: recoveryInstallationId,
+        platform: recoveryPlatform,
+      );
       return false;
     }
 
@@ -128,25 +153,6 @@ class NotificationService {
       debugPrint('NotificationService: backend register failed — $error');
       return false;
     }
-
-    // Hot-rotation hook: when FCM cycles the token (rarely), re-
-    // register so the backend keeps the right value for this
-    // installation. The tokenRefresh stream survives for the lifetime
-    // of the FirebaseMessaging singleton; we don't hold the
-    // subscription because there's nothing to cancel on sign-out (the
-    // delete-token endpoint handles that).
-    _messaging!.onTokenRefresh.listen((freshToken) async {
-      try {
-        await tokenRepository.register(
-          installationId: installationId,
-          token: freshToken,
-          platform: platform,
-        );
-      } catch (error) {
-        debugPrint(
-            'NotificationService: token-refresh register failed — $error');
-      }
-    });
 
     // Foreground messages are rendered through the local plugin on both
     // platforms, avoiding iOS-version-specific presentation differences.
@@ -268,8 +274,10 @@ class NotificationService {
   Future<void> dispose() async {
     await _foregroundSubscription?.cancel();
     await _openedSubscription?.cancel();
+    await _tokenRefreshSubscription?.cancel();
     _foregroundSubscription = null;
     _openedSubscription = null;
+    _tokenRefreshSubscription = null;
   }
 
   /// Delete the token from the backend on explicit sign-out so the
@@ -307,8 +315,54 @@ class NotificationService {
     }
   }
 
-  Future<bool> _waitForApnsToken() async {
-    for (var attempt = 0; attempt < 20; attempt++) {
+  Future<bool> _registerRemoteToken({
+    required String installationId,
+    required String token,
+    required DevicePlatform platform,
+  }) async {
+    try {
+      await tokenRepository.register(
+        installationId: installationId,
+        token: token,
+        platform: platform,
+      );
+      debugPrint('NotificationService: backend device registration complete');
+      return true;
+    } catch (error) {
+      debugPrint('NotificationService: backend registration failed: $error');
+      return false;
+    }
+  }
+
+  void _startRegistrationRetry({
+    required String installationId,
+    required DevicePlatform platform,
+  }) {
+    if (_registrationRetry != null) return;
+    _registrationRetry = () async {
+      // Continue for five minutes. App-resume also invokes initialize again,
+      // while Firebase token refresh remains subscribed for the app lifetime.
+      for (var attempt = 0; attempt < 60; attempt++) {
+        await Future<void>.delayed(const Duration(seconds: 5));
+        if (Platform.isIOS && !await _waitForApnsToken(maxAttempts: 2)) {
+          continue;
+        }
+        final token = await _safeGetToken();
+        if (token != null &&
+            await _registerRemoteToken(
+              installationId: installationId,
+              token: token,
+              platform: platform,
+            )) {
+          break;
+        }
+      }
+      _registrationRetry = null;
+    }();
+  }
+
+  Future<bool> _waitForApnsToken({int maxAttempts = 20}) async {
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         if (await _messaging!.getAPNSToken() != null) return true;
       } catch (error) {

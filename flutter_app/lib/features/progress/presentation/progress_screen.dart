@@ -147,8 +147,7 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
       final gamKey = (workspaceId: widget.workspaceId, userId: userId);
       final profileAsync = ref.watch(gamificationProfileProvider(gamKey));
       streakDays = profileAsync.valueOrNull?.streakDays ?? 0;
-      sessionsCompleted =
-          profileAsync.valueOrNull?.totalSessionsCompleted ?? 0;
+      sessionsCompleted = profileAsync.valueOrNull?.totalSessionsCompleted ?? 0;
     }
 
     final overallMasteryPercent =
@@ -316,7 +315,9 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
               clipBehavior: Clip.antiAlias,
               child: Column(
                 children: [
-                  for (var index = 0; index < displayedTopics.length; index++) ...[
+                  for (var index = 0;
+                      index < displayedTopics.length;
+                      index++) ...[
                     _TopicMasteryCard(
                       topic: displayedTopics[index],
                       isDark: isDark,
@@ -335,7 +336,8 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
               const SizedBox(height: 16),
               _ShowMoreButton(
                 onTap: () => setState(() {
-                  _displayedTopicCount = _displayedTopicCount > 10 ? 10 : allTopics.length;
+                  _displayedTopicCount =
+                      _displayedTopicCount > 10 ? 10 : allTopics.length;
                 }),
                 isDark: isDark,
                 expanded: _displayedTopicCount > 10,
@@ -361,8 +363,8 @@ class _LevelCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final span = progress.xpForNextLevel <= 0 ? 1 : progress.xpForNextLevel;
     final fraction = (progress.xpIntoLevel / span).clamp(0.0, 1.0);
-    final xpNeeded =
-        (progress.xpForNextLevel - progress.xpIntoLevel).clamp(0, progress.xpForNextLevel);
+    final xpNeeded = (progress.xpForNextLevel - progress.xpIntoLevel)
+        .clamp(0, progress.xpForNextLevel);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -459,8 +461,8 @@ class _LevelCard extends StatelessWidget {
                         child: LinearProgressIndicator(
                           value: value,
                           backgroundColor: Colors.white.withValues(alpha: 0.18),
-                          valueColor: const AlwaysStoppedAnimation<Color>(
-                              Colors.white),
+                          valueColor:
+                              const AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
                       ),
                     );
@@ -536,12 +538,14 @@ class _HexagonBadge extends StatelessWidget {
         Positioned(
           top: -6,
           right: -4,
-          child: Icon(Icons.auto_awesome, size: 12, color: Colors.white.withValues(alpha: 0.7)),
+          child: Icon(Icons.auto_awesome,
+              size: 12, color: Colors.white.withValues(alpha: 0.7)),
         ),
         Positioned(
           bottom: -4,
           left: -6,
-          child: Icon(Icons.auto_awesome, size: 9, color: const Color(0xFFFBBF24).withValues(alpha: 0.6)),
+          child: Icon(Icons.auto_awesome,
+              size: 9, color: const Color(0xFFFBBF24).withValues(alpha: 0.6)),
         ),
         // Outer Hexagon (Border)
         ClipPath(
@@ -651,9 +655,8 @@ class _LearningOverviewCard extends StatelessWidget {
               Icon(
                 Icons.show_chart_rounded,
                 size: 18,
-                color: isDark
-                    ? const Color(0xFFA78BFA)
-                    : const Color(0xFF7C5CFC),
+                color:
+                    isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C5CFC),
               ),
               const SizedBox(width: 8),
               Text(
@@ -690,27 +693,10 @@ class _LearningOverviewCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: _OverviewChip(
-                  icon: Icons.track_changes_rounded,
-                  iconColor: const Color(0xFFEF4444),
-                  bgColor: isDark
-                      ? const Color(0xFF263449)
-                      : const Color(0xFFFEF2F2),
-                  value: '$overallMasteryPercent%',
-                  label: 'Mastery',
-                  trend: '↑ 6%',
-                  trendColor: const Color(0xFF16A34A),
-                  isDark: isDark,
-                  textColor: textColor,
-                  subColor: subColor,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _OverviewChip(
                   icon: Icons.local_fire_department_rounded,
                   iconColor: const Color(0xFFF97316),
                   bgColor: isDark
-                      ? const Color(0xFF263449)
+                      ? const Color(0xFF2B3248)
                       : const Color(0xFFFFF7ED),
                   value: '$streakDays',
                   label: 'Day Streak',
@@ -728,7 +714,7 @@ class _LearningOverviewCard extends StatelessWidget {
                   icon: Icons.auto_stories_rounded,
                   iconColor: const Color(0xFF8B5CF6),
                   bgColor: isDark
-                      ? const Color(0xFF263449)
+                      ? const Color(0xFF29384A)
                       : const Color(0xFFF5F3FF),
                   value: '$sessionsCompleted',
                   label: 'Sessions',
@@ -865,7 +851,8 @@ class _OverallMasteryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final overallPercent = (progress.overallMastery.clamp(0.0, 1.0) * 100).round();
+    final overallPercent =
+        (progress.overallMastery.clamp(0.0, 1.0) * 100).round();
     final topTopics = progress.topics.take(3).toList();
 
     return Container(
@@ -925,7 +912,8 @@ class _OverallMasteryCard extends StatelessWidget {
                     Positioned.fill(
                       child: CustomPaint(
                         painter: _DonutChartPainter(
-                          overallPercent: progress.overallMastery.clamp(0.0, 1.0),
+                          overallPercent:
+                              progress.overallMastery.clamp(0.0, 1.0),
                           topics: topTopics,
                           isDark: isDark,
                           entranceProgress: 1.0,
@@ -1033,7 +1021,8 @@ class _OverallMasteryCard extends StatelessWidget {
                                 backgroundColor: isDark
                                     ? const Color(0xFF1E293B)
                                     : const Color(0xFFF1F5F9),
-                                valueColor: AlwaysStoppedAnimation<Color>(color),
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(color),
                               ),
                             ),
                           ],
@@ -1107,8 +1096,8 @@ class _DonutChartPainter extends CustomPainter {
           ..strokeWidth = 14.0;
 
         if (sweepAngle > 0.05) {
-          canvas.drawArc(
-              rect, currentAngle + 0.015, sweepAngle - 0.03, false, segmentPaint);
+          canvas.drawArc(rect, currentAngle + 0.015, sweepAngle - 0.03, false,
+              segmentPaint);
         }
         currentAngle += sweepAngle;
       }
@@ -1318,9 +1307,7 @@ class _SocialStatChip extends StatelessWidget {
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: isDark
-                  ? const Color(0xFF8888AA)
-                  : const Color(0xFF64748B),
+              color: isDark ? const Color(0xFF8888AA) : const Color(0xFF64748B),
             ),
           ),
           const SizedBox(height: 4),
@@ -1359,9 +1346,9 @@ class _TopicMasteryCard extends StatelessWidget {
   final Color subColor;
 
   static Color _masteryColor(double mastery) {
-    if (mastery < 0.3) return const Color(0xFFEF4444);   // red
-    if (mastery < 0.6) return const Color(0xFFF59E0B);   // amber
-    return const Color(0xFF22C55E);                        // green
+    if (mastery < 0.3) return const Color(0xFFEF4444); // red
+    if (mastery < 0.6) return const Color(0xFFF59E0B); // amber
+    return const Color(0xFF22C55E); // green
   }
 
   @override
@@ -1369,8 +1356,9 @@ class _TopicMasteryCard extends StatelessWidget {
     final mastery = topic.mastery.clamp(0.0, 1.0);
     final percent = (mastery * 100).round();
     final color = _masteryColor(mastery);
-    final successPct =
-        topic.attempts > 0 ? (topic.successRate.clamp(0.0, 1.0) * 100).round() : 0;
+    final successPct = topic.attempts > 0
+        ? (topic.successRate.clamp(0.0, 1.0) * 100).round()
+        : 0;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1507,9 +1495,12 @@ class _ShowMoreButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color buttonBgColor = isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF5F3FF);
-    final Color borderColor = isDark ? const Color(0xFF3A2A6A) : const Color(0xFFDDD6FE);
-    final Color textColor = isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C5CFC);
+    final Color buttonBgColor =
+        isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF5F3FF);
+    final Color borderColor =
+        isDark ? const Color(0xFF3A2A6A) : const Color(0xFFDDD6FE);
+    final Color textColor =
+        isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C5CFC);
 
     return Center(
       child: Container(
@@ -1584,4 +1575,3 @@ class _ZeroStatePlaceholder extends StatelessWidget {
     );
   }
 }
-

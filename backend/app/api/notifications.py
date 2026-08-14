@@ -241,6 +241,12 @@ async def send_activity_push(
             },
         ),
     )
+    logger.info(
+        "Activity push user=%s devices=%d outcomes=%s",
+        current_user.id,
+        len(results),
+        [result.outcome.value for result in results],
+    )
     return TestPushResponse(
         devices_found=len(results),
         results=[
