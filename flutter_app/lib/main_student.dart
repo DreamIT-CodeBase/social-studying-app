@@ -58,6 +58,7 @@ class _StudentAppState extends ConsumerState<_StudentApp>
       orElse: () => null,
     );
     if (user == null) return;
+    _initNotifications(ref.read(routerProvider));
     unawaited(
       ref.read(screenTimeNotifierProvider.notifier).refreshWallet(),
     );

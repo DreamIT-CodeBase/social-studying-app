@@ -21,6 +21,7 @@ import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 import 'package:social_study_app/features/taxonomy/presentation/taxonomy_notifier.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 import 'package:social_study_app/features/notifications/data/notification_token_repository.dart';
+import 'package:social_study_app/features/notifications/presentation/notification_service.dart';
 
 /// Flashcard review interface — Sprint 4.9 (MCQ redesign).
 ///
@@ -140,14 +141,24 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
       flashcardSessionNotifierProvider(widget.workspaceId),
       (prev, next) {
         next.whenOrNull(
-          completed: (_, __, ___) => _sessionTimer?.cancel(),
-          rated: (_, response) {
-            _playCelebrations(context, response);
+          completed: (_, __, ___) {
+            _sessionTimer?.cancel();
+            ref.read(notificationServiceProvider).showCompletionNotification(
+                  title: 'Flashcard session complete',
+                  body: 'Great work! Your flashcard progress has been saved.',
+                  payload: {
+                    'type': 'study_reminder',
+                    'workspace_id': widget.workspaceId,
+                  },
+                ).ignore();
             ref.read(notificationTokenRepositoryProvider).sendActivityPush(
-                  title: 'Flashcard reviewed',
-                  body: 'Your flashcard progress was saved successfully.',
+                  title: 'Flashcard session complete',
+                  body: 'Your flashcard progress and XP have been saved.',
                   workspaceId: widget.workspaceId,
                 ).ignore();
+          },
+          rated: (_, response) {
+            _playCelebrations(context, response);
             Future.delayed(const Duration(milliseconds: 400), () {
               if (context.mounted) {
                 ref

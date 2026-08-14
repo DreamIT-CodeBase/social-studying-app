@@ -58,6 +58,10 @@ class NotificationService {
 
   StreamSubscription<RemoteMessage>? _foregroundSubscription;
   StreamSubscription<RemoteMessage>? _openedSubscription;
+  bool _localReady = false;
+  bool _initialized = false;
+  String? _lastLocalTitle;
+  DateTime? _lastLocalAt;
 
   /// Initialize Firebase, request permission, register the token.
   /// Returns true on full success, false on any failure path (the
@@ -65,6 +69,8 @@ class NotificationService {
   Future<bool> initialize({
     required void Function(RemoteMessage message) onTap,
   }) async {
+    if (_initialized) return true;
+    await _initializeLocalNotifications(onTap);
     try {
       await Firebase.initializeApp();
       _messaging ??= FirebaseMessaging.instance;
@@ -140,60 +146,24 @@ class NotificationService {
       }
     });
 
-    // Initialize local notifications
-    const androidInitSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosInitSettings = DarwinInitializationSettings();
-    const initSettings = InitializationSettings(
-      android: androidInitSettings,
-      iOS: iosInitSettings,
-    );
-
-    await _localNotifications.initialize(
-      settings: initSettings,
-      onDidReceiveNotificationResponse: (details) {
-        if (details.payload != null) {
-          try {
-            final data = jsonDecode(details.payload!) as Map<String, dynamic>;
-            onTap(RemoteMessage(data: data));
-          } catch (_) {}
-        }
-      },
-    );
-
-    // Allow iOS to show notifications in the foreground natively
+    // Foreground messages are rendered through the local plugin on both
+    // platforms, avoiding iOS-version-specific presentation differences.
     await _messaging!.setForegroundNotificationPresentationOptions(
-      alert: true,
+      alert: false,
       badge: true,
-      sound: true,
+      sound: false,
     );
 
     // Foreground messages. FCM doesn't render a system notification
     // when the app is in the foreground on Android — we use local notifications.
     _foregroundSubscription = FirebaseMessaging.onMessage.listen((message) {
       final notification = message.notification;
-      if (notification != null && !Platform.isIOS) {
-        _localNotifications.show(
-          id: notification.hashCode,
-          title: notification.title,
-          body: notification.body,
-          notificationDetails: NotificationDetails(
-            android: AndroidNotificationDetails(
-              'social_study_channel',
-              'Social Study Notifications',
-              importance: Importance.max,
-              priority: Priority.high,
-              styleInformation: BigTextStyleInformation(
-                notification.body ?? '',
-                contentTitle: notification.title,
-              ),
-            ),
-          ),
-          payload: jsonEncode(message.data),
+      if (notification != null) {
+        showCompletionNotification(
+          title: notification.title ?? 'Social Studying',
+          body: notification.body ?? '',
+          payload: message.data,
         );
-        // Play in-app notification chime (foreground only — the system
-        // handles sound when the app is backgrounded).
-        SoundService.instance.playNotification();
       }
     });
 
@@ -206,7 +176,77 @@ class NotificationService {
       WidgetsBinding.instance.addPostFrameCallback((_) => onTap(initial));
     }
 
+    _initialized = true;
     return true;
+  }
+
+  Future<void> _initializeLocalNotifications(
+    void Function(RemoteMessage message) onTap,
+  ) async {
+    if (_localReady) return;
+    const settings = InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      iOS: DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      ),
+    );
+    await _localNotifications.initialize(
+      settings: settings,
+      onDidReceiveNotificationResponse: (details) {
+        final rawPayload = details.payload;
+        if (rawPayload == null) return;
+        try {
+          onTap(RemoteMessage(
+            data: jsonDecode(rawPayload) as Map<String, dynamic>,
+          ));
+        } catch (_) {}
+      },
+    );
+    _localReady = true;
+  }
+
+  /// Immediately display completion feedback with sound while the app is open.
+  /// The backend push covers background and terminated app states.
+  Future<void> showCompletionNotification({
+    required String title,
+    required String body,
+    Map<String, dynamic> payload = const {},
+  }) async {
+    if (!_localReady) return;
+    final now = DateTime.now();
+    if (_lastLocalTitle == title &&
+        _lastLocalAt != null &&
+        now.difference(_lastLocalAt!) < const Duration(seconds: 5)) {
+      return;
+    }
+    _lastLocalTitle = title;
+    _lastLocalAt = now;
+    await _localNotifications.show(
+      id: now.millisecondsSinceEpoch.remainder(1 << 31),
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          'social_study_channel',
+          'Social Study Notifications',
+          channelDescription: 'Study and flashcard completion notifications',
+          importance: Importance.max,
+          priority: Priority.high,
+          playSound: true,
+          styleInformation: BigTextStyleInformation(body, contentTitle: title),
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          sound: 'default',
+        ),
+      ),
+      payload: jsonEncode(payload),
+    );
+    SoundService.instance.playNotification();
   }
 
   /// Clean up subscriptions. Tests use this; production tears down on
