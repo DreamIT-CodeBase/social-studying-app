@@ -163,16 +163,16 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
         padding: const EdgeInsets.only(
           left: 16,
           right: 16,
-          top: 12,
+          top: 0,
           bottom: 110,
         ),
         children: [
           // ── Status bar safe spacing ──────────────────────────────────────
-          SizedBox(height: MediaQuery.of(context).padding.top + 6),
+          SizedBox(height: MediaQuery.of(context).padding.top),
 
           // ── Header ──────────────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.only(bottom: 20),
+            padding: const EdgeInsets.only(bottom: 12),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -244,7 +244,7 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
 
           // ── 1. Level Card ────────────────────────────────────────────────
           _LevelCard(progress: widget.progress, isDark: isDark),
-          const SizedBox(height: 24),
+          const SizedBox(height: 18),
 
           // ── 2. Learning Overview Card ────────────────────────────────────
           _LearningOverviewCard(

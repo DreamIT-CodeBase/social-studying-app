@@ -694,6 +694,7 @@ async def _prepare_flashcards(
     target: int,
     level: AdaptiveLevel = AdaptiveLevel.beginner,
 ) -> list[PreparedFlashcard]:
+    is_personal_workspace = workspace_id.startswith("wsp_self_")
     _, weak_topics = await _history(
         tenant_id=user.tenant_id,
         workspace_id=workspace_id,
@@ -766,9 +767,12 @@ async def _prepare_flashcards(
     cards = _unique_flashcards(
         card
         for card in available_cards
-        if card.id not in seen_ids
+        if (is_personal_workspace or card.id not in seen_ids)
         and card.id not in reserved_ids
-        and _flashcard_fingerprint(card.front, card.back) not in seen_fingerprints
+        and (
+            is_personal_workspace
+            or _flashcard_fingerprint(card.front, card.back) not in seen_fingerprints
+        )
         and _flashcard_fingerprint(card.front, card.back) not in reserved_fingerprints
     )[:target]
     if len(cards) >= target:
@@ -799,12 +803,17 @@ async def _prepare_flashcards(
         if question.document_id not in current_sources.document_ids:
             continue
         derived_id = f"derived_{question.id}"
-        fingerprint = _flashcard_fingerprint(question.body, question.answer)
+        answer = question.answer
+        for option in question.options:
+            if option.key.casefold() == answer.casefold():
+                answer = option.text
+                break
+        fingerprint = _flashcard_fingerprint(question.body, answer)
         if (
             derived_id in existing_ids
-            or derived_id in seen_ids
+            or (not is_personal_workspace and derived_id in seen_ids)
             or derived_id in reserved_ids
-            or fingerprint in seen_fingerprints
+            or (not is_personal_workspace and fingerprint in seen_fingerprints)
             or fingerprint in reserved_fingerprints
         ):
             continue
@@ -812,7 +821,7 @@ async def _prepare_flashcards(
             id=derived_id,
             topic=question.topic,
             front=question.body,
-            back=question.answer,
+            back=answer,
             explanation=question.explanation,
         )
         # Protect against duplicate content among native and derived cards.
@@ -822,6 +831,17 @@ async def _prepare_flashcards(
         existing_ids.add(derived_id)
         if len(cards) >= target:
             break
+
+    # Personal flashcards are a spaced-review surface. Reusing approved cards
+    # is correct and must remain fast; never hold the iPhone loader open while
+    # attempting to AI-generate extra cards merely to fill the tier target.
+    if is_personal_workspace:
+        if cards:
+            return cards
+        raise ConflictError(
+            "No approved questions are ready for flashcards yet. Complete a "
+            "study question first, then try again."
+        )
 
     missing = target - len(cards)
     if missing > 0:
