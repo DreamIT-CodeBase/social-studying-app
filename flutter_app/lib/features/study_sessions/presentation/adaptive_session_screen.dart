@@ -9,6 +9,7 @@ import 'package:social_study_app/core/services/sound_service.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
+import 'package:social_study_app/features/notifications/data/notification_token_repository.dart';
 import 'package:social_study_app/features/gamification/presentation/widgets/celebration_overlay.dart'
     show CorrectAnswerCelebration;
 import 'package:social_study_app/features/study_sessions/data/adaptive_session_repository.dart';
@@ -183,6 +184,11 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
         _summary = summary;
         _phase = _SessionPhase.complete;
       });
+      ref.read(notificationTokenRepositoryProvider).sendActivityPush(
+            title: 'Study session saved',
+            body: 'Your session is complete and your progress is updated.',
+            workspaceId: widget.workspaceId,
+          ).ignore();
     } on AdaptiveSessionException catch (error) {
       if (!mounted) return;
       setState(() {

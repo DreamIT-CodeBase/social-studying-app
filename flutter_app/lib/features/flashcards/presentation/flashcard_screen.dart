@@ -19,6 +19,7 @@ import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 import 'package:social_study_app/features/taxonomy/presentation/taxonomy_notifier.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
+import 'package:social_study_app/features/notifications/data/notification_token_repository.dart';
 
 /// Flashcard review interface — Sprint 4.9 (MCQ redesign).
 ///
@@ -116,6 +117,11 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
         next.whenOrNull(
           rated: (_, response) {
             _playCelebrations(context, response);
+            ref.read(notificationTokenRepositoryProvider).sendActivityPush(
+                  title: 'Flashcard reviewed',
+                  body: 'Your flashcard progress was saved successfully.',
+                  workspaceId: widget.workspaceId,
+                ).ignore();
             Future.delayed(const Duration(milliseconds: 400), () {
               if (context.mounted) {
                 ref

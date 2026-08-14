@@ -29,6 +29,13 @@ abstract class NotificationTokenRepository {
   /// or not the row existed, and the repo surfaces that as
   /// ``Future<void>``.
   Future<void> delete({required String installationId});
+
+  /// Send a real push through the backend to this user's registered devices.
+  Future<void> sendActivityPush({
+    required String title,
+    required String body,
+    required String workspaceId,
+  });
 }
 
 /// Dio-backed implementation. Hits the Sprint 5.7 endpoints.
@@ -60,6 +67,22 @@ class RealNotificationTokenRepository implements NotificationTokenRepository {
   Future<void> delete({required String installationId}) async {
     await dio.delete<void>('$_apiPrefix/$installationId');
   }
+
+  @override
+  Future<void> sendActivityPush({
+    required String title,
+    required String body,
+    required String workspaceId,
+  }) async {
+    await dio.post<void>(
+      '$_apiPrefix/activity-push',
+      data: {
+        'title': title,
+        'body': body,
+        'workspace_id': workspaceId,
+      },
+    );
+  }
 }
 
 /// Demo / dev impl. The demo user has no live backend to register
@@ -87,6 +110,13 @@ class DemoNotificationTokenRepository implements NotificationTokenRepository {
 
   @override
   Future<void> delete({required String installationId}) async {}
+
+  @override
+  Future<void> sendActivityPush({
+    required String title,
+    required String body,
+    required String workspaceId,
+  }) async {}
 }
 
 /// Routes between real (Dio → backend) and demo (no-op) based on the

@@ -112,7 +112,6 @@ class _ProgressBody extends ConsumerStatefulWidget {
 
 class _ProgressBodyState extends ConsumerState<_ProgressBody> {
   /// Number of topics currently shown — starts at 10, increases by 20 each tap.
-  int _displayedTopicCount = 10;
 
   @override
   Widget build(BuildContext context) {
@@ -156,8 +155,7 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
 
     // ── Pagination ──────────────────────────────────────────────────────────
     final allTopics = widget.progress.topics;
-    final displayedTopics = allTopics.take(_displayedTopicCount).toList();
-    final hasMoreTopics = allTopics.length > _displayedTopicCount;
+    final displayedTopics = allTopics;
 
     return Container(
       color: bgColor,
@@ -301,26 +299,37 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
                 ),
               ),
             ),
-            for (final topic in displayedTopics) ...[
-              _TopicMasteryCard(
-                topic: topic,
-                isDark: isDark,
-                cardBg: cardBgColor,
-                border: cardBorderColor,
-                textColor: primaryTextColor,
-                subColor: secondaryTextColor,
+            Container(
+              decoration: BoxDecoration(
+                color: cardBgColor,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: cardBorderColor),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.03),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
-            ],
-            if (hasMoreTopics) ...[
-              const SizedBox(height: 8),
-              _ShowMoreButton(
-                onTap: () {
-                  setState(() => _displayedTopicCount += 20);
-                },
-                isDark: isDark,
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  for (var index = 0; index < displayedTopics.length; index++) ...[
+                    _TopicMasteryCard(
+                      topic: displayedTopics[index],
+                      isDark: isDark,
+                      cardBg: cardBgColor,
+                      border: Colors.transparent,
+                      textColor: primaryTextColor,
+                      subColor: secondaryTextColor,
+                    ),
+                    if (index < displayedTopics.length - 1)
+                      Divider(height: 1, color: cardBorderColor),
+                  ],
+                ],
               ),
-            ],
+            ),
             const SizedBox(height: 32),
           ],
         ],
@@ -1386,15 +1395,8 @@ class _TopicMasteryCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: cardBg,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.zero,
         border: Border.all(color: border, width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.1 : 0.02),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

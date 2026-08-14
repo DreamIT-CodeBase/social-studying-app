@@ -204,6 +204,54 @@ class TestPushResponse(BaseModel):
     sender_type: str
 
 
+class ActivityPushRequest(BaseModel):
+    title: str
+    body: str
+    workspace_id: str
+
+
+@users_router.post(
+    "/notification-tokens/activity-push",
+    response_model=TestPushResponse,
+    summary="Send a learning-activity push to the current user",
+)
+async def send_activity_push(
+    body: ActivityPushRequest,
+    current_user: User = Depends(get_current_user),
+) -> TestPushResponse:
+    """Confirm flashcard/session activity over the real push channel."""
+    from app.services.notifications import (
+        NotificationPayload,
+        NotificationType,
+        dispatch_to_user,
+        get_sender,
+    )
+
+    sender = get_sender()
+    results = await dispatch_to_user(
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.id,
+        payload=NotificationPayload(
+            notification_type=NotificationType.study_reminder,
+            title=body.title,
+            body=body.body,
+            data={
+                "type": NotificationType.study_reminder.value,
+                "workspace_id": body.workspace_id,
+            },
+        ),
+    )
+    return TestPushResponse(
+        devices_found=len(results),
+        results=[
+            f"device {index + 1}: {result.outcome.value}"
+            + (f" ({result.failure_reason})" if result.failure_reason else "")
+            for index, result in enumerate(results)
+        ] or ["No registered devices found"],
+        sender_type=type(sender).__name__,
+    )
+
+
 @users_router.post(
     "/notification-tokens/test-push",
     response_model=TestPushResponse,

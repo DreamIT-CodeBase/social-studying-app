@@ -170,7 +170,13 @@ async def _lookup_or_create_user(b2c_object_id: str, tenant_id: str, claims: dic
 
     given_name = claims.get("given_name") or claims.get("givenName")
     family_name = claims.get("family_name") or claims.get("surname")
-    if given_name and family_name:
+    is_google_identity = "accounts.google.com" in str(claims.get("iss", ""))
+    # The student UI greets people by their given name. Google reliably sends
+    # that value separately, so retain it instead of persisting an email-style
+    # account label (for example ``tarunjuneja471``) or a full legal name.
+    if is_google_identity and given_name:
+        real_display_name = str(given_name).strip()
+    elif given_name and family_name:
         real_display_name = f"{given_name} {family_name}".strip()
     elif given_name:
         real_display_name = given_name
