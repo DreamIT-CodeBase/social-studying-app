@@ -112,6 +112,7 @@ class _ProgressBody extends ConsumerStatefulWidget {
 
 class _ProgressBodyState extends ConsumerState<_ProgressBody> {
   /// Number of topics currently shown — starts at 10, increases by 20 each tap.
+  int _displayedTopicCount = 10;
 
   @override
   Widget build(BuildContext context) {
@@ -155,7 +156,8 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
 
     // ── Pagination ──────────────────────────────────────────────────────────
     final allTopics = widget.progress.topics;
-    final displayedTopics = allTopics;
+    final displayedTopics = allTopics.take(_displayedTopicCount).toList();
+    final hasMoreTopics = allTopics.length > _displayedTopicCount;
 
     return Container(
       color: bgColor,
@@ -330,6 +332,13 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
                 ],
               ),
             ),
+            if (hasMoreTopics) ...[
+              const SizedBox(height: 16),
+              _ShowMoreButton(
+                onTap: () => setState(() => _displayedTopicCount += 20),
+                isDark: isDark,
+              ),
+            ],
             const SizedBox(height: 32),
           ],
         ],
@@ -874,9 +883,8 @@ class _OverallMasteryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header: Topic Mastery + View all link
+          // Header
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
                 children: [
@@ -897,35 +905,6 @@ class _OverallMasteryCard extends StatelessWidget {
                     ),
                   ),
                 ],
-              ),
-              GestureDetector(
-                onTap: () {
-                  // If it's embedded or we can trigger tab switch or navigation, navigate
-                  // Currently falls back to standard print or pop
-                },
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'View all',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: isDark
-                            ? const Color(0xFF60A5FA)
-                            : const Color(0xFF2563EB),
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    Icon(
-                      Icons.arrow_forward_rounded,
-                      size: 14,
-                      color: isDark
-                          ? const Color(0xFF60A5FA)
-                          : const Color(0xFF2563EB),
-                    ),
-                  ],
-                ),
               ),
             ],
           ),

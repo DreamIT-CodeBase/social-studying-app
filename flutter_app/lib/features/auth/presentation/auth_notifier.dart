@@ -29,9 +29,31 @@ class AuthNotifier extends _$AuthNotifier {
     if (Platform.environment.containsKey('FLUTTER_TEST')) {
       return;
     }
-    try {
-      await refresh();
-    } catch (_) {}
+    // Secure storage becomes available before startup networking and the Dio
+    // interceptor are always ready on iOS. Retry the authoritative profile so
+    // a transient launch race cannot leave a stale name/workspace list in the
+    // UI for the whole session.
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await Future<void>.delayed(Duration(seconds: attempt * 2));
+      }
+      try {
+        await refresh();
+        final user = state.valueOrNull?.maybeWhen(
+          authenticated: (value) => value,
+          orElse: () => null,
+        );
+        if (user != null &&
+            user.workspaceMemberships.any(
+              (membership) =>
+                  membership.workspaceId == 'wsp_self_${user.id}',
+            )) {
+          return;
+        }
+      } catch (_) {
+        // The next bounded attempt retries with the cached session intact.
+      }
+    }
   }
 
   Future<void> signInWithMicrosoft() async {
