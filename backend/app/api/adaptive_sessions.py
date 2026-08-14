@@ -75,11 +75,7 @@ _FLASHCARD_RANGES = {
     AdaptiveLevel.intermediate: (10, 13),
     AdaptiveLevel.expert: (18, 25),
 }
-_DURATION_MINUTES = {
-    AdaptiveLevel.beginner: 15,
-    AdaptiveLevel.intermediate: 25,
-    AdaptiveLevel.expert: 30,
-}
+_MINUTES_PER_ITEM = 2
 _COMPLETION_BONUSES = {
     AdaptiveSessionMode.study: 8,
     AdaptiveSessionMode.revision: 5,
@@ -902,7 +898,9 @@ async def prepare_adaptive_session(
         mode=request.mode,
         level=level,
         mastery_score=mastery,
-        duration_minutes=_DURATION_MINUTES[level],
+        # Session time follows the actual prepared content, not the mastery
+        # tier. Four questions/cards therefore always receive eight minutes.
+        duration_minutes=max(1, item_count * _MINUTES_PER_ITEM),
         item_count=item_count,
         estimated_xp_min=xp_min,
         estimated_xp_max=xp_max,

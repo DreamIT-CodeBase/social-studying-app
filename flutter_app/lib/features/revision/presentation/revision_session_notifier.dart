@@ -58,6 +58,7 @@ class RevisionSessionNotifier extends _$RevisionSessionNotifier {
   DateTime? _questionStartTime;
 
   int get xpEarned => _xpEarned;
+  int get itemCount => _plan.length;
 
   @override
   RevisionSession build(String workspaceId) {

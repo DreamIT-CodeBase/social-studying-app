@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -49,6 +50,9 @@ class FlashcardScreen extends ConsumerStatefulWidget {
 }
 
 class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
+  Timer? _sessionTimer;
+  int _remainingSeconds = 0;
+
   FlashcardSessionNotifier get _notifier =>
       ref.read(flashcardSessionNotifierProvider(widget.workspaceId).notifier);
 
@@ -61,8 +65,31 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
       final progressVal = ref
           .read(studentProgressNotifierProvider(widget.workspaceId))
           .valueOrNull;
-      _notifier.start(mastery: progressVal?.overallMastery);
+      _startSession(progressVal?.overallMastery);
     });
+  }
+
+  Future<void> _startSession(double? mastery) async {
+    await _notifier.start(mastery: mastery);
+    if (!mounted) return;
+    _sessionTimer?.cancel();
+    setState(() => _remainingSeconds = _notifier.sessionTargetLength * 2 * 60);
+    _sessionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      if (_remainingSeconds <= 1) {
+        timer.cancel();
+        setState(() => _remainingSeconds = 0);
+        _notifier.completeDueToTimeout();
+      } else {
+        setState(() => _remainingSeconds--);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _sessionTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -103,9 +130,7 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
     final progressVal = ref
         .read(studentProgressNotifierProvider(widget.workspaceId))
         .valueOrNull;
-    ref
-        .read(flashcardSessionNotifierProvider(widget.workspaceId).notifier)
-        .start(mastery: progressVal?.overallMastery);
+    _startSession(progressVal?.overallMastery);
   }
 
   @override
@@ -115,6 +140,7 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
       flashcardSessionNotifierProvider(widget.workspaceId),
       (prev, next) {
         next.whenOrNull(
+          completed: (_, __, ___) => _sessionTimer?.cancel(),
           rated: (_, response) {
             _playCelebrations(context, response);
             ref.read(notificationTokenRepositoryProvider).sendActivityPush(
@@ -167,6 +193,7 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
         card: card,
         phase: _Phase.front,
         currentIndex: currentIndex,
+        remainingSeconds: _remainingSeconds,
       ),
       revealed: (card) => _CardView(
         key: ValueKey(card.id),
@@ -174,6 +201,7 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
         card: card,
         phase: _Phase.revealed,
         currentIndex: currentIndex,
+        remainingSeconds: _remainingSeconds,
       ),
       rating: (card, _) => _CardView(
         key: ValueKey(card.id),
@@ -181,6 +209,7 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
         card: card,
         phase: _Phase.rating,
         currentIndex: currentIndex,
+        remainingSeconds: _remainingSeconds,
       ),
       rated: (card, _) => _CardView(
         key: ValueKey(card.id),
@@ -188,6 +217,7 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
         card: card,
         phase: _Phase.rated,
         currentIndex: currentIndex,
+        remainingSeconds: _remainingSeconds,
       ),
       completed: (easyCount, mediumCount, hardCount) => _SessionCompletedView(
         correctCount: easyCount,
@@ -276,12 +306,14 @@ class _CardView extends ConsumerStatefulWidget {
     required this.card,
     required this.phase,
     required this.currentIndex,
+    required this.remainingSeconds,
   });
 
   final String workspaceId;
   final Flashcard card;
   final _Phase phase;
   final int currentIndex;
+  final int remainingSeconds;
 
   bool get _showBack => phase != _Phase.front;
 
@@ -450,13 +482,20 @@ class _CardViewState extends ConsumerState<_CardView>
                           letterSpacing: 0.2,
                         ),
                       ),
-                      Text(
-                        '${widget.currentIndex} of $targetLength',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: _kPurpleLight,
-                        ),
+                      Row(
+                        children: [
+                          const Icon(Icons.timer_outlined,
+                              size: 13, color: _kPurpleLight),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${(widget.remainingSeconds ~/ 60).toString().padLeft(2, '0')}:${(widget.remainingSeconds % 60).toString().padLeft(2, '0')}  ·  ${widget.currentIndex} of $targetLength',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: _kPurpleLight,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

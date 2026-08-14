@@ -61,22 +61,15 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
   RevisionSessionNotifier get _notifier =>
       ref.read(revisionSessionNotifierProvider(widget.workspaceId).notifier);
 
-  int _limitForMastery(double? mastery) {
-    final value = mastery ?? 0;
-    if (value < 0.40) return 15 * 60;
-    if (value < 0.75) return 25 * 60;
-    return 30 * 60;
-  }
-
   String get _timerText {
     final minutes = (_secondsRemaining ~/ 60).toString().padLeft(2, '0');
     final seconds = (_secondsRemaining % 60).toString().padLeft(2, '0');
     return '$minutes:$seconds';
   }
 
-  void _startTimer(double? mastery) {
+  void _startTimer(int itemCount) {
     _timer?.cancel();
-    setState(() => _secondsRemaining = _limitForMastery(mastery));
+    setState(() => _secondsRemaining = itemCount * 2 * 60);
     // Widget tests use a shortened debug session and should not keep a
     // periodic timer alive between pumpAndSettle calls.
     if (RevisionScreen.debugItemCount != null) return;
@@ -92,15 +85,15 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
     });
   }
 
-  void _startSession({int? itemCount}) {
+  Future<void> _startSession({int? itemCount}) async {
     final mastery = ref
         .read(studentProgressNotifierProvider(widget.workspaceId))
         .valueOrNull
         ?.overallMastery;
-    _startTimer(mastery);
-    itemCount == null
+    await (itemCount == null
         ? _notifier.start(mastery: mastery)
-        : _notifier.start(itemCount: itemCount, mastery: mastery);
+        : _notifier.start(itemCount: itemCount, mastery: mastery));
+    if (mounted) _startTimer(_notifier.itemCount);
   }
 
   @override
@@ -131,11 +124,13 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
     final progressVal = ref
         .read(studentProgressNotifierProvider(widget.workspaceId))
         .valueOrNull;
-    _startTimer(progressVal?.overallMastery);
-    count == null
+    final start = count == null
         ? notifier.start(mastery: progressVal?.overallMastery)
         : notifier.start(
             itemCount: count, mastery: progressVal?.overallMastery);
+    start.then((_) {
+      if (mounted) _startTimer(notifier.itemCount);
+    });
   }
 
   @override

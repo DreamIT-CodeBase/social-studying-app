@@ -137,6 +137,14 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
     );
   }
 
+  /// Finish with the ratings already recorded when the item-based timer ends.
+  void completeDueToTimeout() {
+    if (state is FlashcardSessionCompleted || state is FlashcardSessionIdle) {
+      return;
+    }
+    _transitionToCompleted();
+  }
+
   /// Reveal the back of the card.
   ///
   /// Only valid from [FlashcardSession.viewingFront]. From any other
