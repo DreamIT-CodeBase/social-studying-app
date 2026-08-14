@@ -52,11 +52,11 @@ class RealAuthRepository implements AuthRepository {
               // Require Entra to return the authorization code in the callback
               // URL so AppAuth can resume the authorization flow.
               responseMode: 'query',
-              // On iOS, use AppAuth's dedicated authentication-session
-              // implementation. It completes inside ASWebAuthenticationSession
-              // rather than relying on a UIApplication/UIScene URL callback.
-              externalUserAgent:
-                  ExternalUserAgent.ephemeralAsWebAuthenticationSession,
+              // Let AppAuth select its standard platform user agent. On iOS
+              // this uses ASWebAuthenticationSession and keeps callback/session
+              // ownership inside AppAuth. The plugin's optional ephemeral
+              // agent uses a legacy key-window lookup that is unreliable with
+              // Flutter's UIScene lifecycle.
               scopes: [
                 'openid',
                 'profile',
