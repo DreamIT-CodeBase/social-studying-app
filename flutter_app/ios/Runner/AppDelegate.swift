@@ -39,20 +39,5 @@ import UIKit
       }
     }
 
-    let channel = FlutterMethodChannel(
-      name: "com.socialstudyapp.app/screen_time",
-      binaryMessenger: engineBridge.applicationRegistrar.messenger()
-    )
-    channel.setMethodCallHandler { call, result in
-      guard #available(iOS 16.0, *) else {
-        result(FlutterError(
-          code: "ios_version_unsupported",
-          message: "Social app blocking requires iOS 16 or later.",
-          details: nil
-        ))
-        return
-      }
-      ScreenTimeCoordinator.shared.handle(call, result: result)
-    }
   }
 }
