@@ -677,7 +677,10 @@ def _anh_format_for(platform: DevicePlatform) -> str:
     FCM v1 credentials. See
     https://learn.microsoft.com/azure/notification-hubs/firebase-migration-rest
     """
-    return "fcmV1" if platform == DevicePlatform.android else "apple"
+    # Both mobile clients register Firebase registration tokens. On Apple
+    # devices FCM maps that token to APNs, so the direct send must still use
+    # the FCM v1 transport; ``apple`` would require a raw APNs device token.
+    return "fcmV1"
 
 
 def _platform_payload(
@@ -697,29 +700,31 @@ def _platform_payload(
     here means the sender doesn't bloat with platform conditionals at the
     call site.
     """
-    if platform == DevicePlatform.android:
-        body: dict[str, Any] = {
-            "message": {
-                "notification": {
-                    "title": payload.title,
-                    "body": payload.body,
-                },
-                "data": payload.data,
-                "android": {
-                    "priority": "HIGH",
-                    "notification": {
-                        "channel_id": "social_study_channel",
-                    },
-                },
-            }
-        }
-    else:  # APNs
-        body = {
-            "aps": {
-                "alert": {"title": payload.title, "body": payload.body},
-                "sound": "default",
+    body: dict[str, Any] = {
+        "message": {
+            "notification": {
+                "title": payload.title,
+                "body": payload.body,
             },
-            **payload.data,
+            "data": payload.data,
+        }
+    }
+    if platform == DevicePlatform.android:
+        body["message"]["android"] = {
+            "priority": "HIGH",
+            "notification": {
+                "channel_id": "social_study_channel",
+            },
+        }
+    else:
+        body["message"]["apns"] = {
+            "headers": {"apns-priority": "10"},
+            "payload": {
+                "aps": {
+                    "sound": "default",
+                    "content-available": 1,
+                }
+            },
         }
     return json.dumps(body).encode("utf-8")
 

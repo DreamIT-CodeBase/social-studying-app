@@ -128,11 +128,11 @@ def test_parse_connection_string_tolerates_missing_trailing_slash():
     assert parsed["endpoint"].endswith("/")
 
 
-def test_anh_format_for_maps_android_to_fcmv1_ios_to_apple():
+def test_anh_format_for_uses_fcmv1_for_both_mobile_clients():
     # FCM v1 format header — exact casing matters (ANH rejects ``fcmv1``
     # / ``gcm``). Legacy ``gcm`` was retired 2024-06-20.
     assert _anh_format_for(DevicePlatform.android) == "fcmV1"
-    assert _anh_format_for(DevicePlatform.ios) == "apple"
+    assert _anh_format_for(DevicePlatform.ios) == "fcmV1"
 
 
 def test_platform_payload_android_uses_fcmv1_message_envelope():
@@ -156,7 +156,7 @@ def test_platform_payload_android_uses_fcmv1_message_envelope():
     assert "topic" not in parsed["message"]
 
 
-def test_platform_payload_ios_uses_aps_envelope():
+def test_platform_payload_ios_uses_fcmv1_apns_envelope():
     payload = NotificationPayload(
         notification_type=NotificationType.milestone,
         title="hi",
@@ -167,8 +167,10 @@ def test_platform_payload_ios_uses_aps_envelope():
     import json
 
     parsed = json.loads(body)
-    assert parsed["aps"]["alert"]["title"] == "hi"
-    assert parsed["badge_id"] == "first_steps"
+    assert parsed["message"]["notification"]["title"] == "hi"
+    assert parsed["message"]["data"]["badge_id"] == "first_steps"
+    assert parsed["message"]["apns"]["headers"]["apns-priority"] == "10"
+    assert parsed["message"]["apns"]["payload"]["aps"]["sound"] == "default"
 
 
 # ── ANH sender (mocked transport) ────────────────────────────────────────

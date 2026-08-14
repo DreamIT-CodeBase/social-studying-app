@@ -93,9 +93,14 @@ jobs:
           profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$profile_plist")
           profile_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$profile_plist")
           profile_app_id=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$profile_plist")
+          profile_aps_environment=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' "$profile_plist" 2>/dev/null || true)
 
           if [[ "$profile_app_id" != "$APPLE_TEAM_ID.$APP_BUNDLE_ID" ]]; then
             echo "Provisioning profile is for '$profile_app_id', expected '$APPLE_TEAM_ID.$APP_BUNDLE_ID'." >&2
+            exit 1
+          fi
+          if [[ "$APP_FLAVOR" == "student" && "$profile_aps_environment" != "production" ]]; then
+            echo "Provisioning profile '$profile_name' does not include production APNs. Enable Push Notifications for $APP_BUNDLE_ID and replace the profile secret." >&2
             exit 1
           fi
 
@@ -121,6 +126,9 @@ jobs:
             printf 'CODE_SIGN_IDENTITY=Apple Distribution\n'
             printf 'DEVELOPMENT_TEAM=%s\n' "$APPLE_TEAM_ID"
             printf 'PROVISIONING_PROFILE_SPECIFIER=%s\n' "$IOS_PROFILE_NAME"
+            if [[ "$APP_FLAVOR" == "student" ]]; then
+              printf 'CODE_SIGN_ENTITLEMENTS=Runner/Runner.entitlements\n'
+            fi
           } > "$signing_config"
           printf '\n#include "CI-signing.xcconfig"\n' >> "ios/Flutter/Release-$APP_FLAVOR.xcconfig"
 

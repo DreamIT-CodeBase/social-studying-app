@@ -5,9 +5,7 @@ import 'dart:io' show Platform;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show
-    WidgetsBinding,
-    debugPrint;
+import 'package:flutter/material.dart' show WidgetsBinding, debugPrint;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -86,6 +84,15 @@ class NotificationService {
       return false;
     }
 
+    // Firebase Messaging on Apple platforms cannot issue a usable FCM token
+    // until APNs registration has completed. The APNs callback is asynchronous,
+    // so give it a short bounded window instead of racing getToken() on launch.
+    if (Platform.isIOS && !await _waitForApnsToken()) {
+      debugPrint(
+          'NotificationService: APNs token unavailable; skipping register');
+      return false;
+    }
+
     final token = await _safeGetToken();
     if (token == null) {
       debugPrint('NotificationService: no FCM token; skipping register');
@@ -98,7 +105,8 @@ class NotificationService {
     final installationId = await _installationId();
     final platform = _detectPlatform();
     if (platform == null) {
-      debugPrint('NotificationService: unsupported platform; skipping register');
+      debugPrint(
+          'NotificationService: unsupported platform; skipping register');
       return false;
     }
 
@@ -127,18 +135,20 @@ class NotificationService {
           platform: platform,
         );
       } catch (error) {
-        debugPrint('NotificationService: token-refresh register failed — $error');
+        debugPrint(
+            'NotificationService: token-refresh register failed — $error');
       }
     });
 
     // Initialize local notifications
-    const androidInitSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidInitSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosInitSettings = DarwinInitializationSettings();
     const initSettings = InitializationSettings(
       android: androidInitSettings,
       iOS: iosInitSettings,
     );
-    
+
     await _localNotifications.initialize(
       settings: initSettings,
       onDidReceiveNotificationResponse: (details) {
@@ -162,7 +172,7 @@ class NotificationService {
     // when the app is in the foreground on Android — we use local notifications.
     _foregroundSubscription = FirebaseMessaging.onMessage.listen((message) {
       final notification = message.notification;
-      if (notification != null) {
+      if (notification != null && !Platform.isIOS) {
         _localNotifications.show(
           id: notification.hashCode,
           title: notification.title,
@@ -189,8 +199,7 @@ class NotificationService {
 
     // Background → tap path. ``getInitialMessage`` covers the
     // cold-start tap (app was terminated, tap launched it).
-    _openedSubscription =
-        FirebaseMessaging.onMessageOpenedApp.listen(onTap);
+    _openedSubscription = FirebaseMessaging.onMessageOpenedApp.listen(onTap);
     final initial = await _messaging!.getInitialMessage();
     if (initial != null) {
       // Deferred so the GoRouter is mounted by the time we navigate.
@@ -214,8 +223,7 @@ class NotificationService {
   /// installation.
   Future<void> deregister() async {
     try {
-      final installationId =
-          await secureStorage.read(key: _installationIdKey);
+      final installationId = await secureStorage.read(key: _installationIdKey);
       if (installationId == null) return;
       await tokenRepository.delete(installationId: installationId);
     } catch (error) {
@@ -243,6 +251,18 @@ class NotificationService {
       debugPrint('NotificationService: getToken failed — $error');
       return null;
     }
+  }
+
+  Future<bool> _waitForApnsToken() async {
+    for (var attempt = 0; attempt < 20; attempt++) {
+      try {
+        if (await _messaging!.getAPNSToken() != null) return true;
+      } catch (error) {
+        debugPrint('NotificationService: APNs token check failed — $error');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    return false;
   }
 
   /// Read the per-install UUID from secure storage, minting one on
@@ -293,11 +313,9 @@ class NotificationService {
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────
 // Tap routing
 // ─────────────────────────────────────────────────────────────────────────
-
 
 /// Maps a notification payload to a deep-link path. Centralised so the
 /// tap handler in the app's startup wiring and the cold-start handler
@@ -337,11 +355,9 @@ String? deepLinkFor(Map<String, dynamic> data) {
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────
 // Riverpod provider
 // ─────────────────────────────────────────────────────────────────────────
-
 
 /// Singleton ``NotificationService`` keyed off the auth-driven token
 /// repository. Held for the app lifetime so the FCM subscriptions
@@ -353,6 +369,3 @@ NotificationService notificationService(NotificationServiceRef ref) {
     secureStorage: const FlutterSecureStorage(),
   );
 }
-
-
-
