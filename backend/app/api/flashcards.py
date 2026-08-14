@@ -463,6 +463,40 @@ async def _try_candidate(
             for_student=FlashcardForStudent.from_doc(Flashcard.model_validate(existing_fc))
         )
 
+    # Personal workspaces should open immediately on mobile. The source
+    # question has already passed generation, moderation, and answer grading,
+    # so it is safe to turn it directly into a grounded recall card instead of
+    # blocking the request on another AI generation + safety-review cycle.
+    if workspace_id.startswith("wsp_self_"):
+        answer = question_doc.answer
+        for option in question_doc.options:
+            if option.key.casefold() == answer.casefold():
+                answer = option.text
+                break
+        generated = GeneratedFlashcard(
+            front=question_doc.body,
+            back=answer,
+            explanation=question_doc.explanation,
+            prompt_version="question-derived-v1",
+        )
+        persisted = await _persist_flashcard(
+            current_user=current_user,
+            workspace_id=workspace_id,
+            topic_name=topic_name,
+            question_doc=question_doc,
+            generated=generated,
+            verdict=_FlashcardVerdict(
+                status=FlashcardStatus.approved,
+                reason="Derived from an approved answered question.",
+            ),
+        )
+        logger.info(
+            "Served fast question-derived flashcard topic=%s workspace=%s",
+            topic_name,
+            workspace_id,
+        )
+        return _Persisted(for_student=FlashcardForStudent.from_doc(persisted))
+
     seen_card_fronts = await _get_seen_card_fronts(
         tenant_id=current_user.tenant_id,
         workspace_id=workspace_id,
