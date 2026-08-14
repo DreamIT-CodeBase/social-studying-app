@@ -17,6 +17,10 @@
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		E02BC826C72DC088F2BEC23B /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 17004F284465C62091B29654 /* Pods_RunnerTests.framework */; };
 		F145D0A9ED4FE52A7EBB1D59 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4C52EBEC4B316431E7729335 /* Pods_Runner.framework */; };
+		FC1000000000000000000001 /* ScreenTimeCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC2000000000000000000001 /* ScreenTimeCoordinator.swift */; };
+		FC1000000000000000000002 /* DeviceActivityMonitorExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC2000000000000000000002 /* DeviceActivityMonitorExtension.swift */; };
+		FC1000000000000000000003 /* ScreenTimeMonitorExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = FC2000000000000000000005 /* ScreenTimeMonitorExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		EA1000000000000000000001 /* NativeEntraAuthCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA2000000000000000000001 /* NativeEntraAuthCoordinator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -26,6 +30,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
 			remoteInfo = Runner;
+		};
+		FC3000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FC7000000000000000000001;
+			remoteInfo = ScreenTimeMonitorExtension;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -38,6 +49,17 @@
 			files = (
 			);
 			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FC4000000000000000000001 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				FC1000000000000000000003 /* ScreenTimeMonitorExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -85,6 +107,13 @@
 		F85A402DD14062DC27A64970 /* Pods-Runner.debug-student.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug-student.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug-student.xcconfig"; sourceTree = "<group>"; };
 		F9424BFC611C746D9D7F3AD2 /* Pods-RunnerTests.release-admin.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release-admin.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release-admin.xcconfig"; sourceTree = "<group>"; };
 		FAE6836AABD476299B608B93 /* Pods-RunnerTests.release-student.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release-student.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release-student.xcconfig"; sourceTree = "<group>"; };
+		FC2000000000000000000001 /* ScreenTimeCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenTimeCoordinator.swift; sourceTree = "<group>"; };
+		FC2000000000000000000002 /* DeviceActivityMonitorExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceActivityMonitorExtension.swift; sourceTree = "<group>"; };
+		FC2000000000000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		FC2000000000000000000004 /* ScreenTimeMonitorExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ScreenTimeMonitorExtension.entitlements; sourceTree = "<group>"; };
+		FC2000000000000000000005 /* ScreenTimeMonitorExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ScreenTimeMonitorExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		FC2000000000000000000006 /* RunnerStudent.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RunnerStudent.entitlements; sourceTree = "<group>"; };
+		EA2000000000000000000001 /* NativeEntraAuthCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeEntraAuthCoordinator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -101,6 +130,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				F145D0A9ED4FE52A7EBB1D59 /* Pods_Runner.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FC5000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -173,6 +209,7 @@
 				97C146F01CF9000F007C117D /* Runner */,
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
+				FC6000000000000000000001 /* ScreenTimeMonitorExtension */,
 				4C551010189F807FE7492BD8 /* Pods */,
 				82DC8ED591EA2C149E668425 /* Frameworks */,
 			);
@@ -183,6 +220,7 @@
 			children = (
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
+				FC2000000000000000000005 /* ScreenTimeMonitorExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -198,9 +236,22 @@
 				1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
+				FC2000000000000000000001 /* ScreenTimeCoordinator.swift */,
+				EA2000000000000000000001 /* NativeEntraAuthCoordinator.swift */,
+				FC2000000000000000000006 /* RunnerStudent.entitlements */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		FC6000000000000000000001 /* ScreenTimeMonitorExtension */ = {
+			isa = PBXGroup;
+			children = (
+				FC2000000000000000000002 /* DeviceActivityMonitorExtension.swift */,
+				FC2000000000000000000003 /* Info.plist */,
+				FC2000000000000000000004 /* ScreenTimeMonitorExtension.entitlements */,
+			);
+			path = ScreenTimeMonitorExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -235,6 +286,7 @@
 				97C146EB1CF9000F007C117D /* Frameworks */,
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
+				FC4000000000000000000001 /* Embed App Extensions */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				6CA181777855B53932F6F5A5 /* [CP] Embed Pods Frameworks */,
 				DB3C2FC0A2CA1B7897A4384F /* [CP] Copy Pods Resources */,
@@ -242,11 +294,29 @@
 			buildRules = (
 			);
 			dependencies = (
+				FC9000000000000000000001 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			productName = Runner;
 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
 			productType = "com.apple.product-type.application";
+		};
+		FC7000000000000000000001 /* ScreenTimeMonitorExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FC8000000000000000000010 /* Build configuration list for PBXNativeTarget "ScreenTimeMonitorExtension" */;
+			buildPhases = (
+				FC8100000000000000000001 /* Sources */,
+				FC5000000000000000000001 /* Frameworks */,
+				FC8200000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ScreenTimeMonitorExtension;
+			productName = ScreenTimeMonitorExtension;
+			productReference = FC2000000000000000000005 /* ScreenTimeMonitorExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -266,6 +336,9 @@
 						CreatedOnToolsVersion = 7.3.1;
 						LastSwiftMigration = 1100;
 					};
+					FC7000000000000000000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
 				};
 			};
 			buildConfigurationList = 97C146E91CF9000F007C117D /* Build configuration list for PBXProject "Runner" */;
@@ -283,6 +356,7 @@
 			targets = (
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
+				FC7000000000000000000001 /* ScreenTimeMonitorExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -303,6 +377,13 @@
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FC8200000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -436,6 +517,16 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
+				FC1000000000000000000001 /* ScreenTimeCoordinator.swift in Sources */,
+				EA1000000000000000000001 /* NativeEntraAuthCoordinator.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FC8100000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FC1000000000000000000002 /* DeviceActivityMonitorExtension.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -446,6 +537,11 @@
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
+		};
+		FC9000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FC7000000000000000000001 /* ScreenTimeMonitorExtension */;
+			targetProxy = FC3000000000000000000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1039,6 +1135,15 @@
 			};
 			name = "Profile-admin";
 		};
+		FC8300000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ScreenTimeMonitorExtension/ScreenTimeMonitorExtension.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"; DEVELOPMENT_TEAM = B7BJ5HC53B; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = ScreenTimeMonitorExtension/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.0; MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = ai.socialstudying.app.admin.screentime; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
+		FC8300000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ScreenTimeMonitorExtension/ScreenTimeMonitorExtension.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"; DEVELOPMENT_TEAM = B7BJ5HC53B; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = ScreenTimeMonitorExtension/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.0; MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = ai.socialstudying.app.admin.screentime; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Release; };
+		FC8300000000000000000003 /* Profile */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ScreenTimeMonitorExtension/ScreenTimeMonitorExtension.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"; DEVELOPMENT_TEAM = B7BJ5HC53B; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = ScreenTimeMonitorExtension/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.0; MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = ai.socialstudying.app.admin.screentime; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Profile; };
+		FC8300000000000000000004 /* Debug-student */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ScreenTimeMonitorExtension/ScreenTimeMonitorExtension.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"; DEVELOPMENT_TEAM = B7BJ5HC53B; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = ScreenTimeMonitorExtension/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.0; MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = ai.socialstudying.app.screentime; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = "Debug-student"; };
+		FC8300000000000000000005 /* Release-student */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ScreenTimeMonitorExtension/ScreenTimeMonitorExtension.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"; DEVELOPMENT_TEAM = B7BJ5HC53B; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = ScreenTimeMonitorExtension/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.0; MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = ai.socialstudying.app.screentime; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = "Release-student"; };
+		FC8300000000000000000006 /* Profile-student */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ScreenTimeMonitorExtension/ScreenTimeMonitorExtension.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"; DEVELOPMENT_TEAM = B7BJ5HC53B; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = ScreenTimeMonitorExtension/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.0; MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = ai.socialstudying.app.screentime; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = "Profile-student"; };
+		FC8300000000000000000007 /* Debug-admin */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ScreenTimeMonitorExtension/ScreenTimeMonitorExtension.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"; DEVELOPMENT_TEAM = B7BJ5HC53B; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = ScreenTimeMonitorExtension/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.0; MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = ai.socialstudying.app.admin.screentime; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = "Debug-admin"; };
+		FC8300000000000000000008 /* Release-admin */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ScreenTimeMonitorExtension/ScreenTimeMonitorExtension.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"; DEVELOPMENT_TEAM = B7BJ5HC53B; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = ScreenTimeMonitorExtension/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.0; MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = ai.socialstudying.app.admin.screentime; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = "Release-admin"; };
+		FC8300000000000000000009 /* Profile-admin */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = ScreenTimeMonitorExtension/ScreenTimeMonitorExtension.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"; DEVELOPMENT_TEAM = B7BJ5HC53B; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = ScreenTimeMonitorExtension/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.0; MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = ai.socialstudying.app.admin.screentime; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = "Profile-admin"; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1086,6 +1191,22 @@
 				A20200000000000000000001 /* Debug-admin */,
 				A20200000000000000000002 /* Release-admin */,
 				A20200000000000000000003 /* Profile-admin */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FC8000000000000000000010 /* Build configuration list for PBXNativeTarget "ScreenTimeMonitorExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FC8300000000000000000001 /* Debug */,
+				FC8300000000000000000002 /* Release */,
+				FC8300000000000000000003 /* Profile */,
+				FC8300000000000000000004 /* Debug-student */,
+				FC8300000000000000000005 /* Release-student */,
+				FC8300000000000000000006 /* Profile-student */,
+				FC8300000000000000000007 /* Debug-admin */,
+				FC8300000000000000000008 /* Release-admin */,
+				FC8300000000000000000009 /* Profile-admin */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

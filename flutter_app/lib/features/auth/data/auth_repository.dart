@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/core/config/environment.dart';
@@ -28,6 +30,8 @@ class RealAuthRepository implements AuthRepository {
 
   final AuthRepositoryRef _ref;
   static const _userKey = AuthSessionService.userKey;
+  static const _nativeEntraChannel =
+      MethodChannel('com.socialstudyapp.app/entra_auth');
   final _appAuth = const FlutterAppAuth();
 
   @override
@@ -41,37 +45,33 @@ class RealAuthRepository implements AuthRepository {
         'Microsoft sign-in: opening Entra with redirect URI '
         '${Environment.b2cRedirectUri}',
       );
-      final result = await _appAuth
-          .authorizeAndExchangeCode(
-            AuthorizationTokenRequest(
-              Environment.b2cClientId,
-              Environment.b2cRedirectUri,
-              discoveryUrl: discoveryUrl,
-              promptValues: ['login'],
-              // A custom iOS URI callback cannot receive a browser form POST.
-              // Require Entra to return the authorization code in the callback
-              // URL so AppAuth can resume the authorization flow.
-              responseMode: 'query',
-              // Let AppAuth select its standard platform user agent. On iOS
-              // this uses ASWebAuthenticationSession and keeps callback/session
-              // ownership inside AppAuth. The plugin's optional ephemeral
-              // agent uses a legacy key-window lookup that is unreliable with
-              // Flutter's UIScene lifecycle.
-              scopes: [
-                'openid',
-                'profile',
-                'offline_access',
-                'api://${Environment.b2cClientId}/access_as_user',
-              ],
-            ),
-          )
-          .timeout(
-            const Duration(seconds: 75),
-            onTimeout: () => throw TimeoutException(
-              'Microsoft sign-in did not finish after returning from Safari. '
-              'Check the Entra iOS redirect URI and the device connection.',
-            ),
-          );
+      final AuthorizationTokenResponse result;
+      if (!kIsWeb && Platform.isIOS) {
+        result = await _signInWithMicrosoftIos();
+      } else {
+        result = await _appAuth
+            .authorizeAndExchangeCode(
+              AuthorizationTokenRequest(
+                Environment.b2cClientId,
+                Environment.b2cRedirectUri,
+                discoveryUrl: discoveryUrl,
+                promptValues: ['login'],
+                responseMode: 'query',
+                scopes: [
+                  'openid',
+                  'profile',
+                  'offline_access',
+                  'api://${Environment.b2cClientId}/access_as_user',
+                ],
+              ),
+            )
+            .timeout(
+              const Duration(seconds: 75),
+              onTimeout: () => throw TimeoutException(
+                'Microsoft sign-in did not finish after returning from the browser.',
+              ),
+            );
+      }
 
       if (result.idToken == null) {
         throw Exception('Authentication returned empty result');
@@ -93,6 +93,61 @@ class RealAuthRepository implements AuthRepository {
       return backendUser;
     } catch (e) {
       throw Exception('Sign in failed: $e');
+    }
+  }
+
+  Future<AuthorizationTokenResponse> _signInWithMicrosoftIos() async {
+    final scopes = <String>[
+      'openid',
+      'profile',
+      'offline_access',
+      'api://${Environment.b2cClientId}/access_as_user',
+    ];
+    try {
+      final payload = await _nativeEntraChannel
+          .invokeMapMethod<String, dynamic>('signInWithMicrosoft', {
+        'clientId': Environment.b2cClientId,
+        'tenantId': Environment.b2cTenantId,
+        'tenantSubdomain': Environment.b2cTenantSubdomain,
+        'redirectUri': Environment.b2cIosRedirectUri,
+        'scopes': scopes,
+      }).timeout(
+        const Duration(seconds: 120),
+        onTimeout: () => throw TimeoutException(
+          'Microsoft sign-in did not return to the app within two minutes.',
+        ),
+      );
+      if (payload == null) {
+        throw StateError('Microsoft returned no token data.');
+      }
+      final idToken = payload['idToken'] as String?;
+      if (idToken == null || idToken.isEmpty) {
+        throw StateError('Microsoft returned no ID token.');
+      }
+      final expiresAtMilliseconds = payload['expiresAtMilliseconds'] as int?;
+      final returnedScopes = (payload['scopes'] as List<dynamic>?)
+          ?.map((scope) => scope.toString())
+          .toList();
+      return AuthorizationTokenResponse(
+        payload['accessToken'] as String?,
+        (payload['refreshToken'] as String?)?.nullIfEmpty,
+        expiresAtMilliseconds == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(
+                expiresAtMilliseconds,
+                isUtc: true,
+              ),
+        idToken,
+        payload['tokenType'] as String?,
+        returnedScopes ?? scopes,
+        const <String, dynamic>{},
+        const <String, dynamic>{},
+      );
+    } on PlatformException catch (error) {
+      if (error.code == 'entra_sign_in_cancelled') {
+        throw Exception('Microsoft sign-in was cancelled. Please try again.');
+      }
+      throw Exception(error.message ?? 'Microsoft sign-in failed on iPhone.');
     }
   }
 
@@ -169,4 +224,8 @@ class RealAuthRepository implements AuthRepository {
       throw Exception('Delete account failed: $e');
     }
   }
+}
+
+extension on String {
+  String? get nullIfEmpty => isEmpty ? null : this;
 }

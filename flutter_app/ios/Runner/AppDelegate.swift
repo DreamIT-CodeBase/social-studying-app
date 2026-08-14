@@ -16,10 +16,43 @@ import UIKit
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
     NSLog("Entra iOS callback delivered to AppDelegate: %@", url.absoluteString)
+    if NativeEntraAuthCoordinator.shared.handleRedirectURL(url) {
+      return true
+    }
     return super.application(app, open: url, options: options)
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+
+    let authChannel = FlutterMethodChannel(
+      name: "com.socialstudyapp.app/entra_auth",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    authChannel.setMethodCallHandler { call, result in
+      guard call.method == "signInWithMicrosoft" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      DispatchQueue.main.async {
+        NativeEntraAuthCoordinator.shared.signIn(arguments: call.arguments, result: result)
+      }
+    }
+
+    let channel = FlutterMethodChannel(
+      name: "com.socialstudyapp.app/screen_time",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    channel.setMethodCallHandler { call, result in
+      guard #available(iOS 16.0, *) else {
+        result(FlutterError(
+          code: "ios_version_unsupported",
+          message: "Social app blocking requires iOS 16 or later.",
+          details: nil
+        ))
+        return
+      }
+      ScreenTimeCoordinator.shared.handle(call, result: result)
+    }
   }
 }

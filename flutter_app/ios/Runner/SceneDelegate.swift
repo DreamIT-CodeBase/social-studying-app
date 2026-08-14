@@ -25,6 +25,9 @@ class SceneDelegate: FlutterSceneDelegate {
   ) {
     for context in URLContexts {
       NSLog("Entra iOS callback delivered to SceneDelegate: %@", context.url.absoluteString)
+      if NativeEntraAuthCoordinator.shared.handleRedirectURL(context.url) {
+        return
+      }
     }
     super.scene(scene, openURLContexts: URLContexts)
   }
