@@ -7,7 +7,7 @@
 	<key>REVERSED_CLIENT_ID</key>
 	<string>com.googleusercontent.apps.140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb</string>
 	<key>ANDROID_CLIENT_ID</key>
-	<string>140186450317-k8bpisr2bp3o1gva3l865gau9enu8r6j.apps.googleusercontent.com</string>
+	<string>140186450317-div65anbb1b9rbr85nv2tevq2pmhdvri.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
 	<string>AIzaSyALnnX5dNwxkanQkrN6XJPuJSlFhuoh6vg</string>
 	<key>GCM_SENDER_ID</key>
@@ -32,36 +32,5 @@
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
 	<string>1:140186450317:ios:fb1dcecf2f009566b825c4</string>
-    <key>GIDClientID</key>
-<string>140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb.apps.googleusercontent.com</string>
-
-<key>GIDServerClientID</key>
-<string>140186450317-6d8qopjlvvmlad2847o3i8nru0saclv9.apps.googleusercontent.com</string>
-<key>CFBundleURLTypes</key>
-<array>
-    <!-- Microsoft Entra callback -->
-    <dict>
-        <key>CFBundleTypeRole</key>
-        <string>Editor</string>
-        <key>CFBundleURLName</key>
-        <string>ai.socialstudying.app</string>
-        <key>CFBundleURLSchemes</key>
-        <array>
-            <string>msauth.ai.socialstudying.app</string>
-        </array>
-    </dict>
-
-    <!-- Google Sign-In callback -->
-    <dict>
-        <key>CFBundleTypeRole</key>
-        <string>Editor</string>
-        <key>CFBundleURLName</key>
-        <string>GoogleSignIn</string>
-        <key>CFBundleURLSchemes</key>
-        <array>
-            <string>com.googleusercontent.apps.140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb</string>
-        </array>
-    </dict>
-</array>
 </dict>
 </plist>
