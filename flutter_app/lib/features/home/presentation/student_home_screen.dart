@@ -3166,22 +3166,32 @@ class _ActivityEntryItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isCorrect = entry.isCorrect ?? false;
+    final isReviewedOnly = entry.isCorrect == null;
+    final isCorrect = entry.isCorrect == true;
 
     // Pick icon style by topic hash for consistent per-topic look
     final styleIdx = entry.topic.hashCode.abs() % _iconStyles.length;
     final style = _iconStyles[styleIdx];
     final subjectTag = subjectForTopic(entry.topic);
 
-    final statusText = isCorrect ? 'Correct' : 'Incorrect';
-    final statusColor = isCorrect
-        ? (isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A))
-        : (isDark ? const Color(0xFFFB923C) : const Color(0xFFEF4444));
-    final xpText =
-        isCorrect ? '+${entry.xpEarned} XP' : '-${entry.xpEarned.abs()} XP';
-    final xpColor = isCorrect
-        ? (isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A))
-        : (isDark ? const Color(0xFFF87171) : const Color(0xFFEF4444));
+    final statusText = isReviewedOnly
+        ? 'Reviewed'
+        : isCorrect
+            ? 'Correct'
+            : 'Incorrect';
+    final statusColor = isReviewedOnly
+        ? (isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED))
+        : isCorrect
+            ? (isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A))
+            : (isDark ? const Color(0xFFFB923C) : const Color(0xFFEF4444));
+    final xpText = isReviewedOnly || isCorrect
+        ? '+${entry.xpEarned.abs()} XP'
+        : '-${entry.xpEarned.abs()} XP';
+    final xpColor = isReviewedOnly
+        ? (isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED))
+        : isCorrect
+            ? (isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A))
+            : (isDark ? const Color(0xFFF87171) : const Color(0xFFEF4444));
 
     final date =
         DateTime.tryParse(entry.occurredAt)?.toLocal() ?? DateTime.now();

@@ -793,7 +793,9 @@ async def _recent_activity(
             {
                 "kind": "flashcard",
                 "topic": doc.get("topic", ""),
-                "is_correct": None,
+                # Current flashcards use an MCQ response and persist the real
+                # verdict. Older self-rated events legitimately remain null.
+                "is_correct": doc.get("is_correct"),
                 "xp_earned": FLASHCARD_XP,
                 "occurred_at": doc.get("rated_at", ""),
             }

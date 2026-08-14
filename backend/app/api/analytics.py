@@ -59,8 +59,8 @@ class TopicMasteryView(BaseModel):
 class ActivityEntryView(BaseModel):
     """One row in the recent-activity timeline.
 
-    ``is_correct`` is ``None`` for flashcards (self-rated, no graded
-    verdict).
+    ``is_correct`` is populated for current graded flashcards and remains
+    ``None`` only for legacy self-rated events.
     """
 
     kind: str  # "question" or "flashcard"
