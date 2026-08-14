@@ -40,7 +40,8 @@ class StudentHomeScreen extends ConsumerStatefulWidget {
   ConsumerState<StudentHomeScreen> createState() => _StudentHomeScreenState();
 }
 
-class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
+class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
+    with WidgetsBindingObserver {
   bool _restoring = true;
 
   static const _tabs = [
@@ -53,12 +54,29 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         TelemetryService.instance.initialize(ref);
         _restoreSession();
+        ref.read(authNotifierProvider.notifier).refresh();
       }
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Admins can add this student while the app is backgrounded. Refresh the
+      // server profile so the switcher merges that membership with Self Study.
+      ref.read(authNotifierProvider.notifier).refresh();
+    }
   }
 
   Future<void> _restoreSession() async {
@@ -73,7 +91,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen> {
         orElse: () => null,
       );
       final validSavedWorkspace = savedWorkspaceId != null &&
-          (user?.workspaceMemberships.any(
+          (effectiveStudentMemberships(user).any(
                 (membership) => membership.workspaceId == savedWorkspaceId,
               ) ??
               false);

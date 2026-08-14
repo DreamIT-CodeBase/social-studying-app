@@ -157,7 +157,6 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
     // ── Pagination ──────────────────────────────────────────────────────────
     final allTopics = widget.progress.topics;
     final displayedTopics = allTopics.take(_displayedTopicCount).toList();
-    final hasMoreTopics = allTopics.length > _displayedTopicCount;
 
     return Container(
       color: bgColor,
@@ -332,11 +331,14 @@ class _ProgressBodyState extends ConsumerState<_ProgressBody> {
                 ],
               ),
             ),
-            if (hasMoreTopics) ...[
+            if (allTopics.length > 10) ...[
               const SizedBox(height: 16),
               _ShowMoreButton(
-                onTap: () => setState(() => _displayedTopicCount += 20),
+                onTap: () => setState(() {
+                  _displayedTopicCount = _displayedTopicCount > 10 ? 10 : allTopics.length;
+                }),
                 isDark: isDark,
+                expanded: _displayedTopicCount > 10,
               ),
             ],
             const SizedBox(height: 32),
@@ -674,7 +676,7 @@ class _LearningOverviewCard extends StatelessWidget {
                   icon: Icons.star_rounded,
                   iconColor: const Color(0xFFF59E0B),
                   bgColor: isDark
-                      ? const Color(0xFF281E0A)
+                      ? const Color(0xFF263449)
                       : const Color(0xFFFFFBEB),
                   value: '$totalXp',
                   label: 'Total XP',
@@ -691,7 +693,7 @@ class _LearningOverviewCard extends StatelessWidget {
                   icon: Icons.track_changes_rounded,
                   iconColor: const Color(0xFFEF4444),
                   bgColor: isDark
-                      ? const Color(0xFF281010)
+                      ? const Color(0xFF263449)
                       : const Color(0xFFFEF2F2),
                   value: '$overallMasteryPercent%',
                   label: 'Mastery',
@@ -708,7 +710,7 @@ class _LearningOverviewCard extends StatelessWidget {
                   icon: Icons.local_fire_department_rounded,
                   iconColor: const Color(0xFFF97316),
                   bgColor: isDark
-                      ? const Color(0xFF28180A)
+                      ? const Color(0xFF263449)
                       : const Color(0xFFFFF7ED),
                   value: '$streakDays',
                   label: 'Day Streak',
@@ -726,7 +728,7 @@ class _LearningOverviewCard extends StatelessWidget {
                   icon: Icons.auto_stories_rounded,
                   iconColor: const Color(0xFF8B5CF6),
                   bgColor: isDark
-                      ? const Color(0xFF1D102F)
+                      ? const Color(0xFF263449)
                       : const Color(0xFFF5F3FF),
                   value: '$sessionsCompleted',
                   label: 'Sessions',
@@ -1305,7 +1307,7 @@ class _SocialStatChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF8FAFC),
+        color: isDark ? const Color(0xFF263449) : const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -1494,9 +1496,14 @@ class _TopicStatPill extends StatelessWidget {
 }
 
 class _ShowMoreButton extends StatelessWidget {
-  const _ShowMoreButton({required this.onTap, required this.isDark});
+  const _ShowMoreButton({
+    required this.onTap,
+    required this.isDark,
+    required this.expanded,
+  });
   final VoidCallback onTap;
   final bool isDark;
+  final bool expanded;
 
   @override
   Widget build(BuildContext context) {
@@ -1532,13 +1539,15 @@ class _ShowMoreButton extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    Icons.expand_more_rounded,
+                    expanded
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
                     size: 20,
                     color: textColor,
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Show More',
+                    expanded ? 'View Less' : 'View More',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,

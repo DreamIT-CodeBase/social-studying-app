@@ -62,6 +62,7 @@ class NotificationService {
   bool _initialized = false;
   String? _lastLocalTitle;
   DateTime? _lastLocalAt;
+  void Function(RemoteMessage message)? _onTap;
 
   /// Initialize Firebase, request permission, register the token.
   /// Returns true on full success, false on any failure path (the
@@ -69,6 +70,7 @@ class NotificationService {
   Future<bool> initialize({
     required void Function(RemoteMessage message) onTap,
   }) async {
+    _onTap = onTap;
     if (_initialized) return true;
     await _initializeLocalNotifications(onTap);
     try {
@@ -214,7 +216,19 @@ class NotificationService {
     required String body,
     Map<String, dynamic> payload = const {},
   }) async {
-    if (!_localReady) return;
+    // Local completion alerts do not depend on APNs/FCM registration. Ensure
+    // the notification plugin is ready here so a slow or failed remote-token
+    // registration cannot suppress the iPhone Notification Centre entry.
+    if (!_localReady) {
+      try {
+        await _initializeLocalNotifications(_onTap ?? (_) {});
+      } catch (error) {
+        debugPrint(
+          'NotificationService: local notification init failed: $error',
+        );
+        return;
+      }
+    }
     final now = DateTime.now();
     if (_lastLocalTitle == title &&
         _lastLocalAt != null &&

@@ -14,8 +14,11 @@ part 'workspace_providers.g.dart';
 List<WorkspaceMembership> effectiveStudentMemberships(User? user) {
   if (user == null) return const [];
   final memberships = List<WorkspaceMembership>.of(user.workspaceMemberships);
-  if (user.role != UserRole.student) return memberships;
 
+  // This provider is consumed only by the student application. Do not key the
+  // personal workspace off the account's legacy/global role: Google accounts
+  // created before workspace roles were separated can legitimately carry a
+  // workspace-admin role and still need their personal study space here.
   final selfWorkspaceId = 'wsp_self_${user.id}';
   if (!memberships.any((item) => item.workspaceId == selfWorkspaceId)) {
     memberships.insert(
@@ -85,7 +88,7 @@ WorkspaceMembership? activeWorkspaceMembership(ActiveWorkspaceMembershipRef ref)
   final activeId = ref.watch(activeWorkspaceIdProvider);
   if (activeId == null) return null;
   
-  for (final membership in user.workspaceMemberships) {
+  for (final membership in effectiveStudentMemberships(user)) {
     if (membership.workspaceId == activeId) {
       return membership;
     }
