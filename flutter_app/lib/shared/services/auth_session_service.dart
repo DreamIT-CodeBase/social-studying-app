@@ -25,9 +25,9 @@ class AuthSessionService {
   static const _storage = FlutterSecureStorage();
   static const _appAuth = FlutterAppAuth();
 
-  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
-  late final Future<void> _googleInitialization = _googleSignIn.initialize(
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
     serverClientId: Environment.googleWebClientId,
+    scopes: const ['email', 'profile', 'openid'],
   );
 
   bool _loaded = false;
@@ -93,31 +93,17 @@ class AuthSessionService {
 
   /// Authenticates with Google and returns the ID token used by Entra / Backend.
   Future<String> authenticateWithGoogle() async {
-    await _googleInitialization;
-    if (!_googleSignIn.supportsAuthenticate()) {
-      throw UnsupportedError(
-        'Interactive Google sign-in is not supported on this platform.',
-      );
-    }
-
-    // Calling authenticate() without scopeHint prevents Android Credential Manager
-    // from triggering a secondary OAuth re-auth flow that causes "code 16: account reauth failed".
-    GoogleSignInAccount? account;
     try {
-      account = await _googleSignIn.authenticate();
-    } catch (e) {
-      final message = e.toString().toLowerCase();
-      if (message.contains('reauth') || message.contains('canceled') || message.contains('16')) {
-        // Retry with explicit openid scope if Play Services requires explicit hints
-        account = await _googleSignIn.authenticate(
-          scopeHint: const ['openid'],
-        );
-      } else {
-        rethrow;
-      }
+      await _googleSignIn.signOut();
+    } catch (_) {}
+
+    final account = await _googleSignIn.signIn();
+    if (account == null) {
+      throw StateError('Google sign in was cancelled.');
     }
 
-    final idToken = account.authentication.idToken;
+    final auth = await account.authentication;
+    final idToken = auth.idToken;
     if (idToken == null || idToken.isEmpty) {
       throw StateError('Google sign in failed: no ID token returned');
     }
@@ -194,7 +180,6 @@ class AuthSessionService {
     ]);
 
     try {
-      await _googleInitialization;
       await _googleSignIn.signOut();
     } catch (_) {
       // Local secure state is already cleared; provider cleanup is best effort.
@@ -271,14 +256,13 @@ class AuthSessionService {
   }
 
   Future<String?> _refreshGoogle(String oldToken, int generation) async {
-    await _googleInitialization;
-    final authentication = _googleSignIn.attemptLightweightAuthentication();
-    final account = authentication == null ? null : await authentication;
+    final account = _googleSignIn.currentUser ?? await _googleSignIn.signInSilently();
     if (account == null) {
       return generation == _sessionGeneration ? oldToken : null;
     }
 
-    final refreshedIdToken = account.authentication.idToken;
+    final auth = await account.authentication;
+    final refreshedIdToken = auth.idToken;
     if (refreshedIdToken == null || refreshedIdToken.isEmpty) {
       return generation == _sessionGeneration ? oldToken : null;
     }

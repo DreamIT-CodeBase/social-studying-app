@@ -255,15 +255,19 @@ class _GoogleSignInButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Container(
       width: double.infinity,
       height: 52,
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        color: const Color(0xFF1E40AF),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isDark ? const Color(0xFF475569) : const Color(0xFFD1D5DB)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x331E40AF),
+            blurRadius: 8,
+            offset: Offset(0, 3),
+          ),
+        ],
       ),
       child: Material(
         color: Colors.transparent,
@@ -274,20 +278,29 @@ class _GoogleSignInButton extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                const _GoogleLogoIcon(),
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: const _GoogleLogoIcon(),
+                ),
                 const SizedBox(width: 14),
-                Expanded(
+                const Expanded(
                   child: Text(
                     'Sign in with Google',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                      color: Colors.white,
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
-                const SizedBox(width: 20),
+                const SizedBox(width: 28),
               ],
             ),
           ),
