@@ -91,7 +91,7 @@ class AuthSessionService {
     );
   }
 
-  /// Authenticates with Google and returns the ID token used by Entra.
+  /// Authenticates with Google and returns the ID token used by Entra / Backend.
   Future<String> authenticateWithGoogle() async {
     await _googleInitialization;
     if (!_googleSignIn.supportsAuthenticate()) {
@@ -100,9 +100,23 @@ class AuthSessionService {
       );
     }
 
-    final account = await _googleSignIn.authenticate(
-      scopeHint: const ['email', 'profile'],
-    );
+    // Calling authenticate() without scopeHint prevents Android Credential Manager
+    // from triggering a secondary OAuth re-auth flow that causes "code 16: account reauth failed".
+    GoogleSignInAccount? account;
+    try {
+      account = await _googleSignIn.authenticate();
+    } catch (e) {
+      final message = e.toString().toLowerCase();
+      if (message.contains('reauth') || message.contains('canceled') || message.contains('16')) {
+        // Retry with explicit openid scope if Play Services requires explicit hints
+        account = await _googleSignIn.authenticate(
+          scopeHint: const ['openid'],
+        );
+      } else {
+        rethrow;
+      }
+    }
+
     final idToken = account.authentication.idToken;
     if (idToken == null || idToken.isEmpty) {
       throw StateError('Google sign in failed: no ID token returned');
