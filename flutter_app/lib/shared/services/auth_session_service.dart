@@ -100,23 +100,15 @@ class AuthSessionService {
       );
     }
 
-    // Calling authenticate() without scopeHint prevents Android Credential Manager
-    // from triggering a secondary OAuth re-auth flow that causes "code 16: account reauth failed".
-    GoogleSignInAccount? account;
     try {
-      account = await _googleSignIn.authenticate();
-    } catch (e) {
-      final message = e.toString().toLowerCase();
-      if (message.contains('reauth') || message.contains('canceled') || message.contains('16')) {
-        // Retry with explicit openid scope if Play Services requires explicit hints
-        account = await _googleSignIn.authenticate(
-          scopeHint: const ['openid'],
-        );
-      } else {
-        rethrow;
+      final silent = await _googleSignIn.attemptLightweightAuthentication();
+      final silentToken = silent?.authentication.idToken;
+      if (silentToken != null && silentToken.isNotEmpty) {
+        return silentToken;
       }
-    }
+    } catch (_) {}
 
+    final account = await _googleSignIn.authenticate();
     final idToken = account.authentication.idToken;
     if (idToken == null || idToken.isEmpty) {
       throw StateError('Google sign in failed: no ID token returned');
