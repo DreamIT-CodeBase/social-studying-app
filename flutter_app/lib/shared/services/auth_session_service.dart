@@ -34,10 +34,13 @@ class AuthSessionService {
   );
 
   // Google OAuth redirect URI used by flutter_appauth on Android.
-  // Must be registered as an Authorized Redirect URI in Google Cloud Console.
-  // Format: reverse DNS of the Web Client ID followed by :/oauth2redirect
+  // Uses the ANDROID OAuth client ID (registered with Play Store SHA-1: 99:D7:...).
+  // Android OAuth clients natively support the reverse-DNS custom scheme — no registration needed.
+  // The backend has verify_aud=False so it accepts tokens from any Google client ID.
+  static const _googleAndroidClientId =
+      '140186450317-u63kqvmkkde99rvgck1u8ckqce7lrq5t.apps.googleusercontent.com';
   static const _googleAndroidRedirectUri =
-      'com.googleusercontent.apps.140186450317-6d8qopjlvvmlad2847o3i8nru0saclv9:/oauth2redirect';
+      'com.googleusercontent.apps.140186450317-u63kqvmkkde99rvgck1u8ckqce7lrq5t:/oauth2redirect';
   static const _googleAuthEndpoint = 'https://accounts.google.com/o/oauth2/v2/auth';
   static const _googleTokenEndpoint = 'https://oauth2.googleapis.com/token';
 
@@ -123,7 +126,7 @@ class AuthSessionService {
   Future<String> _authenticateWithGoogleAndroid() async {
     final result = await _appAuth.authorizeAndExchangeCode(
       AuthorizationTokenRequest(
-        Environment.googleWebClientId,
+        _googleAndroidClientId,
         _googleAndroidRedirectUri,
         serviceConfiguration: const AuthorizationServiceConfiguration(
           authorizationEndpoint: _googleAuthEndpoint,

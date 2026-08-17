@@ -68,14 +68,13 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="msauth"/>
             </intent-filter>
-            <!-- Google OAuth redirect: reverse DNS of Web Client ID -->
-            <!-- This lets the browser return to the app after Google login -->
-            <!-- No Credential Manager involved = no code 10 or code 16 errors -->
+            <!-- Google OAuth redirect: reverse DNS of Android OAuth Client ID (Play Store SHA-1) -->
+            <!-- Android OAuth clients natively support this scheme - no Google Cloud registration needed -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="com.googleusercontent.apps.140186450317-6d8qopjlvvmlad2847o3i8nru0saclv9"/>
+                <data android:scheme="com.googleusercontent.apps.140186450317-u63kqvmkkde99rvgck1u8ckqce7lrq5t"/>
             </intent-filter>
         </activity>
 
