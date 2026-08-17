@@ -18,6 +18,8 @@ import 'package:social_study_app/shared/models/question.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
+import 'package:social_study_app/features/notifications/data/notification_token_repository.dart';
+import 'package:social_study_app/features/notifications/presentation/notification_service.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 import 'package:social_study_app/features/home/presentation/student_home_screen.dart'
     show studentHomeTabProvider;
@@ -135,6 +137,28 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(
+      revisionSessionNotifierProvider(widget.workspaceId),
+      (prev, next) {
+        if (next is RevisionSessionComplete && prev is! RevisionSessionComplete) {
+          _timer?.cancel();
+          ref.read(notificationServiceProvider).showCompletionNotification(
+                title: 'Revision session complete',
+                body: 'Great job! Your revision progress has been saved.',
+                payload: {
+                  'type': 'study_reminder',
+                  'workspace_id': widget.workspaceId,
+                },
+              ).ignore();
+          ref.read(notificationTokenRepositoryProvider).sendActivityPush(
+                title: 'Revision session complete',
+                body: 'Great job! Your revision progress has been saved.',
+                workspaceId: widget.workspaceId,
+              ).ignore();
+        }
+      },
+    );
+
     final session =
         ref.watch(revisionSessionNotifierProvider(widget.workspaceId));
 

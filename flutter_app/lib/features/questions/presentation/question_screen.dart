@@ -14,6 +14,8 @@ import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
+import 'package:social_study_app/features/notifications/data/notification_token_repository.dart';
+import 'package:social_study_app/features/notifications/presentation/notification_service.dart';
 import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/core/utils/subject_classifier.dart';
 
@@ -121,6 +123,30 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(
+      questionSessionNotifierProvider(widget.workspaceId),
+      (prev, next) {
+        next.whenOrNull(
+          completed: (correctCount, totalCount) {
+            _sessionTimer?.cancel();
+            ref.read(notificationServiceProvider).showCompletionNotification(
+                  title: 'Question session complete',
+                  body: 'Session finished! You answered $correctCount of $totalCount correctly.',
+                  payload: {
+                    'type': 'study_reminder',
+                    'workspace_id': widget.workspaceId,
+                  },
+                ).ignore();
+            ref.read(notificationTokenRepositoryProvider).sendActivityPush(
+                  title: 'Question session complete',
+                  body: 'Session finished! You answered $correctCount of $totalCount correctly.',
+                  workspaceId: widget.workspaceId,
+                ).ignore();
+          },
+        );
+      },
+    );
+
     final session =
         ref.watch(questionSessionNotifierProvider(widget.workspaceId));
     final isAdmin = ref.watch(isActiveWorkspaceAdminProvider);
