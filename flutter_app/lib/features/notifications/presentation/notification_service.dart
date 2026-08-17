@@ -74,7 +74,11 @@ class NotificationService {
   }) async {
     _onTap = onTap;
     if (_initialized) return true;
-    await _initializeLocalNotifications(onTap);
+    try {
+      await _initializeLocalNotifications(onTap);
+    } catch (error) {
+      debugPrint('NotificationService: Local notification init failed: $error');
+    }
     try {
       await Firebase.initializeApp();
       _messaging ??= FirebaseMessaging.instance;
