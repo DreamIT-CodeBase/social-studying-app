@@ -65,7 +65,7 @@ jobs:
           storePassword=$STORE_PASSWORD
           keyPassword=$KEY_PASSWORD
           keyAlias=$KEY_ALIAS
-          storeFile=app/play-upload-keystore.jks
+          storeFile=play-upload-keystore.jks
           EOF
 
       - name: Build signed App Bundle (${{ matrix.flavor }})
