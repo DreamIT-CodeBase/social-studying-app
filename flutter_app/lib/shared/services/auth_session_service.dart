@@ -25,9 +25,12 @@ class AuthSessionService {
   static const _storage = FlutterSecureStorage();
   static const _appAuth = FlutterAppAuth();
 
-  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
-  late final Future<void> _googleInitialization = _googleSignIn.initialize(
+  // google_sign_in v6: uses classic Google Play Services (signIn/signInSilently),
+  // NOT the new Credential Manager. This is the only reliable API for AAB Play Store
+  // builds — v7's Credential Manager consistently returns code 10/16 in production.
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
     serverClientId: Environment.googleWebClientId,
+    scopes: const ['email', 'profile', 'openid'],
   );
 
   bool _loaded = false;
@@ -91,40 +94,24 @@ class AuthSessionService {
     );
   }
 
-  /// Authenticates with Google and returns the ID token used by Entra / Backend.
+  /// Authenticates with Google using the stable v6 Play Services API.
+  /// Calls signOut first to force a fresh account picker (avoids stale token issues).
   Future<String> authenticateWithGoogle() async {
-    await _googleInitialization;
-    if (!_googleSignIn.supportsAuthenticate()) {
-      throw UnsupportedError(
-        'Interactive Google sign-in is not supported on this platform.',
-      );
-    }
-
+    // Always sign out first to force a clean account picker and avoid stale
+    // cached credentials that cause code 16 on subsequent sign-ins.
     try {
-      final silent = await _googleSignIn.attemptLightweightAuthentication();
-      final silentToken = silent?.authentication.idToken;
-      if (silentToken != null && silentToken.isNotEmpty) {
-        return silentToken;
-      }
+      await _googleSignIn.signOut();
     } catch (_) {}
 
-    GoogleSignInAccount account;
-    try {
-      account = await _googleSignIn.authenticate();
-    } catch (e) {
-      final message = e.toString().toLowerCase();
-      if (message.contains('16') || message.contains('reauth') || message.contains('canceled')) {
-        // Fallback: re-initialize natively without serverClientId to bypass cross-client grant errors
-        await _googleSignIn.initialize();
-        account = await _googleSignIn.authenticate();
-      } else {
-        rethrow;
-      }
+    final account = await _googleSignIn.signIn();
+    if (account == null) {
+      throw StateError('Google sign in was cancelled by user.');
     }
 
-    final idToken = account.authentication.idToken;
+    final auth = await account.authentication;
+    final idToken = auth.idToken;
     if (idToken == null || idToken.isEmpty) {
-      throw StateError('Google sign in failed: no ID token returned');
+      throw StateError('Google sign in failed: no ID token returned.');
     }
     return idToken;
   }
@@ -199,7 +186,6 @@ class AuthSessionService {
     ]);
 
     try {
-      await _googleInitialization;
       await _googleSignIn.signOut();
     } catch (_) {
       // Local secure state is already cleared; provider cleanup is best effort.
@@ -276,14 +262,14 @@ class AuthSessionService {
   }
 
   Future<String?> _refreshGoogle(String oldToken, int generation) async {
-    await _googleInitialization;
-    final authentication = _googleSignIn.attemptLightweightAuthentication();
-    final account = authentication == null ? null : await authentication;
+    // v6: use currentUser or signInSilently (no Credential Manager involved)
+    final account = _googleSignIn.currentUser ?? await _googleSignIn.signInSilently();
     if (account == null) {
       return generation == _sessionGeneration ? oldToken : null;
     }
 
-    final refreshedIdToken = account.authentication.idToken;
+    final auth = await account.authentication;
+    final refreshedIdToken = auth.idToken;
     if (refreshedIdToken == null || refreshedIdToken.isEmpty) {
       return generation == _sessionGeneration ? oldToken : null;
     }
