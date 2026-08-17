@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -25,13 +26,20 @@ class AuthSessionService {
   static const _storage = FlutterSecureStorage();
   static const _appAuth = FlutterAppAuth();
 
-  // google_sign_in v6: uses classic Google Play Services (signIn/signInSilently),
-  // NOT the new Credential Manager. This is the only reliable API for AAB Play Store
-  // builds — v7's Credential Manager consistently returns code 10/16 in production.
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
+  // iOS: google_sign_in v7 with Credential Manager (works perfectly on iOS)
+  // Android: uses flutter_appauth PKCE browser flow instead (see authenticateWithGoogle)
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
+  late final Future<void> _googleInitialization = _googleSignIn.initialize(
     serverClientId: Environment.googleWebClientId,
-    scopes: const ['email', 'profile', 'openid'],
   );
+
+  // Google OAuth redirect URI used by flutter_appauth on Android.
+  // Must be registered as an Authorized Redirect URI in Google Cloud Console.
+  // Format: reverse DNS of the Web Client ID followed by :/oauth2redirect
+  static const _googleAndroidRedirectUri =
+      'com.googleusercontent.apps.140186450317-6d8qopjlvvmlad2847o3i8nru0saclv9:/oauth2redirect';
+  static const _googleAuthEndpoint = 'https://accounts.google.com/o/oauth2/v2/auth';
+  static const _googleTokenEndpoint = 'https://oauth2.googleapis.com/token';
 
   bool _loaded = false;
   Map<String, String> _storedValues = {};
@@ -94,22 +102,53 @@ class AuthSessionService {
     );
   }
 
-  /// Authenticates with Google using the stable v6 Play Services API.
-  /// Calls signOut first to force a fresh account picker (avoids stale token issues).
+  /// Authenticates with Google and returns the ID token.
+  ///
+  /// - Android: Uses flutter_appauth PKCE browser flow. This is a pure
+  ///   OAuth 2.0 authorization code exchange via the system browser.
+  ///   No Credential Manager is involved, so code 10 and code 16 errors
+  ///   are structurally impossible.
+  /// - iOS: Uses google_sign_in v7 Credential Manager, which works perfectly
+  ///   on iOS and keeps the smooth native account-picker UX.
   Future<String> authenticateWithGoogle() async {
-    // Always sign out first to force a clean account picker and avoid stale
-    // cached credentials that cause code 16 on subsequent sign-ins.
-    try {
-      await _googleSignIn.signOut();
-    } catch (_) {}
-
-    final account = await _googleSignIn.signIn();
-    if (account == null) {
-      throw StateError('Google sign in was cancelled by user.');
+    if (Platform.isAndroid) {
+      return _authenticateWithGoogleAndroid();
+    } else {
+      return _authenticateWithGoogleIOS();
     }
+  }
 
-    final auth = await account.authentication;
-    final idToken = auth.idToken;
+  /// Android-only: flutter_appauth PKCE flow for Google OAuth.
+  /// Opens the system browser for account selection — no Credential Manager.
+  Future<String> _authenticateWithGoogleAndroid() async {
+    final result = await _appAuth.authorizeAndExchangeCode(
+      AuthorizationTokenRequest(
+        Environment.googleWebClientId,
+        _googleAndroidRedirectUri,
+        serviceConfiguration: const AuthorizationServiceConfiguration(
+          authorizationEndpoint: _googleAuthEndpoint,
+          tokenEndpoint: _googleTokenEndpoint,
+        ),
+        scopes: const ['openid', 'email', 'profile'],
+        promptValues: const ['select_account'],
+      ),
+    );
+
+    final idToken = result?.idToken;
+    if (idToken == null || idToken.isEmpty) {
+      throw StateError('Google sign in failed: no ID token returned.');
+    }
+    return idToken;
+  }
+
+  /// iOS-only: google_sign_in v7 Credential Manager flow.
+  Future<String> _authenticateWithGoogleIOS() async {
+    await _googleInitialization;
+    if (!_googleSignIn.supportsAuthenticate()) {
+      throw UnsupportedError('Google sign-in not supported on this platform.');
+    }
+    final account = await _googleSignIn.authenticate();
+    final idToken = account.authentication.idToken;
     if (idToken == null || idToken.isEmpty) {
       throw StateError('Google sign in failed: no ID token returned.');
     }
@@ -262,12 +301,19 @@ class AuthSessionService {
   }
 
   Future<String?> _refreshGoogle(String oldToken, int generation) async {
-    // v6: use currentUser or signInSilently (no Credential Manager involved)
-    final account = _googleSignIn.currentUser ?? await _googleSignIn.signInSilently();
-    if (account == null) {
+    // Android: we can't silently refresh via AppAuth without user interaction.
+    // Return the existing token and let the next explicit sign-in refresh it.
+    if (Platform.isAndroid) {
       return generation == _sessionGeneration ? oldToken : null;
     }
 
+    // iOS: use google_sign_in v7 lightweight (silent) authentication.
+    await _googleInitialization;
+    final lightweight = _googleSignIn.attemptLightweightAuthentication();
+    final account = lightweight == null ? null : await lightweight;
+    if (account == null) {
+      return generation == _sessionGeneration ? oldToken : null;
+    }
     final auth = await account.authentication;
     final refreshedIdToken = auth.idToken;
     if (refreshedIdToken == null || refreshedIdToken.isEmpty) {
