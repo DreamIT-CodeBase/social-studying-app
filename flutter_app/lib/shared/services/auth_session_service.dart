@@ -108,7 +108,20 @@ class AuthSessionService {
       }
     } catch (_) {}
 
-    final account = await _googleSignIn.authenticate();
+    GoogleSignInAccount account;
+    try {
+      account = await _googleSignIn.authenticate();
+    } catch (e) {
+      final message = e.toString().toLowerCase();
+      if (message.contains('16') || message.contains('reauth') || message.contains('canceled')) {
+        // Fallback: re-initialize natively without serverClientId to bypass cross-client grant errors
+        await _googleSignIn.initialize();
+        account = await _googleSignIn.authenticate();
+      } else {
+        rethrow;
+      }
+    }
+
     final idToken = account.authentication.idToken;
     if (idToken == null || idToken.isEmpty) {
       throw StateError('Google sign in failed: no ID token returned');
