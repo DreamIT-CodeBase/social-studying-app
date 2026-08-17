@@ -25,16 +25,14 @@ class LoginScreen extends ConsumerWidget {
               .signInWithGoogle(),
         ),
         loading: () => const LoadingIndicator(message: 'Signing you in…'),
-        error: (error, _) => Scaffold(
-          body: SafeArea(
-            child: ErrorView(
-              message: error.toString(),
-              onRetry: () => ref
-                  .read(authNotifierProvider.notifier)
-                  .signInWithMicrosoft(),
-              retryLabel: 'Try Again',
-            ),
-          ),
+        error: (error, _) => _LoginBody(
+          errorMessage: error.toString().replaceFirst('Exception: ', ''),
+          onMicrosoftSignIn: () => ref
+              .read(authNotifierProvider.notifier)
+              .signInWithMicrosoft(),
+          onGoogleSignIn: () => ref
+              .read(authNotifierProvider.notifier)
+              .signInWithGoogle(),
         ),
       ),
     );
@@ -45,10 +43,12 @@ class _LoginBody extends StatelessWidget {
   const _LoginBody({
     required this.onMicrosoftSignIn,
     required this.onGoogleSignIn,
+    this.errorMessage,
   });
 
   final VoidCallback onMicrosoftSignIn;
   final VoidCallback onGoogleSignIn;
+  final String? errorMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -98,7 +98,34 @@ class _LoginBody extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 15, color: subtitleColor),
                   ),
-                  const SizedBox(height: 40),
+                  if (errorMessage != null && errorMessage!.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline, color: Colors.red, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              errorMessage!,
+                              style: const TextStyle(
+                                color: Colors.red,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 32),
                   _MicrosoftSignInButton(onPressed: onMicrosoftSignIn),
                   const SizedBox(height: 12),
                   _GoogleSignInButton(onPressed: onGoogleSignIn),
