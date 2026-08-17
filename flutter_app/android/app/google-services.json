@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "140186450317-u63kqvmkkde99rvgck1u8ckqce7lrq5t.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.socialstudyapp.social_study_app",
+            "certificate_hash": "99d71d32e434530343c1300dde3deeb42628aeb2"
+          }
+        },
+        {
           "client_id": "140186450317-uiase0o24r2p7jdu8ru2scm9arq676d0.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -55,10 +63,10 @@
               "client_type": 3
             },
             {
-              "client_id": "140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb.apps.googleusercontent.com",
+              "client_id": "140186450317-p3pn2vglpse458q6m9biooitmvgvdbtu.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "ai.socialstudying.app"
+                "bundle_id": "ai.socialstudying.app.admin"
               }
             }
           ]
@@ -123,10 +131,10 @@
               "client_type": 3
             },
             {
-              "client_id": "140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb.apps.googleusercontent.com",
+              "client_id": "140186450317-p3pn2vglpse458q6m9biooitmvgvdbtu.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "ai.socialstudying.app"
+                "bundle_id": "ai.socialstudying.app.admin"
               }
             }
           ]
