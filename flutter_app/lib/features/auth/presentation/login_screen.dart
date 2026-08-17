@@ -202,64 +202,47 @@ class _MicrosoftSignInButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: double.infinity,
       height: 52,
       decoration: BoxDecoration(
-        color: const Color(0xFF1D4ED8),
+        color: const Color(0xFF2563EB),
         borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x332563EB),
+            blurRadius: 8,
+            offset: Offset(0, 3),
+          ),
+        ],
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onPressed,
           borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                const _MicrosoftLogoIcon(),
-                const SizedBox(width: 14),
-                const Expanded(child: Text(
-                  'Sign in with Microsoft',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
+                Icon(Icons.email_outlined, color: Colors.white, size: 22),
+                SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    'Sign in / Sign up with Email',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                )),
-                const SizedBox(width: 20),
+                ),
+                SizedBox(width: 22),
               ],
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _MicrosoftLogoIcon extends StatelessWidget {
-  const _MicrosoftLogoIcon();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 20,
-      height: 20,
-      child: GridView.count(
-        crossAxisCount: 2,
-        padding: EdgeInsets.zero,
-        mainAxisSpacing: 2,
-        crossAxisSpacing: 2,
-        physics: const NeverScrollableScrollPhysics(),
-        children: const [
-          ColoredBox(color: Color(0xFFF25022)),
-          ColoredBox(color: Color(0xFF7FBA00)),
-          ColoredBox(color: Color(0xFF00A4EF)),
-          ColoredBox(color: Color(0xFFFFB900)),
-        ],
       ),
     );
   }
