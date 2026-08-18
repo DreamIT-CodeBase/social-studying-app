@@ -21,7 +21,6 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val SCREEN_TIME_CHANNEL = "com.socialstudyapp.app/screen_time"
     private var pendingNotificationResult: MethodChannel.Result? = null
-    private lateinit var googleSignInHelper: LegacyGoogleSignInHelper
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Protect every Flutter route from screenshots, screen recording,
@@ -33,28 +32,6 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-
-        // ── Native Google Sign-In ────────────────────────────────────────────
-        // Uses the classic Play Services GoogleSignInClient API, completely
-        // bypassing the Credential Manager used by google_sign_in_android 7.x.
-        // This eliminates code 10 (DEVELOPER_ERROR) and code 16 (reauth failed)
-        // permanently on Play Store AAB builds.
-        googleSignInHelper = LegacyGoogleSignInHelper(
-            activity = this,
-            defaultServerClientId = getString(R.string.default_web_client_id),
-        )
-        MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            LegacyGoogleSignInHelper.CHANNEL,
-        ).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "signIn" -> {
-                    val serverClientId = call.argument<String>("serverClientId")
-                    googleSignInHelper.signIn(serverClientId, result)
-                }
-                else -> result.notImplemented()
-            }
-        }
 
         // ── Screen time / permissions channel ───────────────────────────────
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SCREEN_TIME_CHANNEL)
@@ -156,12 +133,6 @@ class MainActivity : FlutterActivity() {
                     }
                 }
             }
-    }
-
-    /** Forward activity results so the Google Sign-In helper can receive the account. */
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        googleSignInHelper.onActivityResult(requestCode, resultCode, data)
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
