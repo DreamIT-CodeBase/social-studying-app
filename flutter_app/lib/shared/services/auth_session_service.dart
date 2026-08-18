@@ -33,13 +33,11 @@ class AuthSessionService {
     serverClientId: Environment.googleWebClientId,
   );
 
-  // Google OAuth for Android: use flutter_appauth PKCE browser flow.
-  // Uses the Web client ID + http://localhost loopback redirect.
-  // AppAuth-Android handles the loopback via a temporary local server — no intent filter needed.
-  // The backend has verify_aud=False so it accepts any valid Google-issued token.
-  static const _googleAndroidRedirectUri = 'http://localhost';
-  static const _googleAuthEndpoint = 'https://accounts.google.com/o/oauth2/v2/auth';
-  static const _googleTokenEndpoint = 'https://oauth2.googleapis.com/token';
+  // No AppAuth needed for Google on Android — we use google_sign_in v7 natively.
+  // The trick: always call disconnect() before authenticate() to clear stale
+  // cached OAuth grants on the device. Code 16 'reauth failed' only happens
+  // when Credential Manager tries to REFRESH an existing grant. A fresh grant
+  // (after disconnect) succeeds without reauth.
 
   bool _loaded = false;
   Map<String, String> _storedValues = {};
@@ -104,49 +102,31 @@ class AuthSessionService {
 
   /// Authenticates with Google and returns the ID token.
   ///
-  /// - Android: Uses flutter_appauth PKCE browser flow. This is a pure
-  ///   OAuth 2.0 authorization code exchange via the system browser.
-  ///   No Credential Manager is involved, so code 10 and code 16 errors
-  ///   are structurally impossible.
-  /// - iOS: Uses google_sign_in v7 Credential Manager, which works perfectly
-  ///   on iOS and keeps the smooth native account-picker UX.
+  /// On Android, `disconnect()` is called first to wipe all stale cached OAuth
+  /// grants on the device. Code 16 "account reauth failed" from Credential Manager
+  /// only occurs when attempting to REFRESH a stale existing grant. After a full
+  /// disconnect, the next `authenticate()` starts a brand-new grant flow which
+  /// succeeds without any reauth step.
+  ///
+  /// On iOS, `authenticate()` already works reliably so no disconnect is needed.
   Future<String> authenticateWithGoogle() async {
-    if (Platform.isAndroid) {
-      return _authenticateWithGoogleAndroid();
-    } else {
-      return _authenticateWithGoogleIOS();
-    }
-  }
-
-  /// Android-only: flutter_appauth PKCE flow for Google OAuth.
-  /// Opens the system browser for account selection — no Credential Manager.
-  Future<String> _authenticateWithGoogleAndroid() async {
-    final result = await _appAuth.authorizeAndExchangeCode(
-      AuthorizationTokenRequest(
-        Environment.googleWebClientId,   // Web client ID: supports browser PKCE flow
-        _googleAndroidRedirectUri,       // http://localhost: handled by AppAuth loopback server
-        serviceConfiguration: const AuthorizationServiceConfiguration(
-          authorizationEndpoint: _googleAuthEndpoint,
-          tokenEndpoint: _googleTokenEndpoint,
-        ),
-        scopes: const ['openid', 'email', 'profile'],
-        promptValues: const ['select_account'],
-      ),
-    );
-
-    final idToken = result?.idToken;
-    if (idToken == null || idToken.isEmpty) {
-      throw StateError('Google sign in failed: no ID token returned.');
-    }
-    return idToken;
-  }
-
-  /// iOS-only: google_sign_in v7 Credential Manager flow.
-  Future<String> _authenticateWithGoogleIOS() async {
     await _googleInitialization;
     if (!_googleSignIn.supportsAuthenticate()) {
       throw UnsupportedError('Google sign-in not supported on this platform.');
     }
+
+    if (Platform.isAndroid) {
+      // Disconnect clears stale Credential Manager grants on the device.
+      // This is the root cause of code 16: a cached grant requiring reauth.
+      // After disconnect, authenticate() always starts a fresh grant = no code 16.
+      try {
+        await _googleSignIn.disconnect();
+      } catch (_) {
+        // Ignore — disconnect may fail if there was no prior session.
+        // authenticate() still proceeds with a fresh flow.
+      }
+    }
+
     final account = await _googleSignIn.authenticate();
     final idToken = account.authentication.idToken;
     if (idToken == null || idToken.isEmpty) {
