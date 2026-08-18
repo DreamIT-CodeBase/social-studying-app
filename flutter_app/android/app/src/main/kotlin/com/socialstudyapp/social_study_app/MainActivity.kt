@@ -43,7 +43,6 @@ class MainActivity : FlutterActivity() {
             activity = this,
             serverClientId = getString(R.string.default_web_client_id),
         )
-        flutterEngine.activityControlSurface.addActivityResultListener(googleSignInHelper)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             LegacyGoogleSignInHelper.CHANNEL,

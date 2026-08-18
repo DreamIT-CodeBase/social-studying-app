@@ -7,7 +7,6 @@ import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import io.flutter.plugin.common.MethodChannel
-import io.flutter.plugin.common.PluginRegistry
 
 /**
  * Native Google Sign-In using the classic Play Services API
@@ -23,8 +22,7 @@ import io.flutter.plugin.common.PluginRegistry
 class LegacyGoogleSignInHelper(
     private val activity: Activity,
     private val serverClientId: String,
-) : PluginRegistry.ActivityResultListener {
-
+) {
     companion object {
         const val GOOGLE_SIGN_IN_REQUEST_CODE = 9001
         const val CHANNEL = "com.socialstudyapp.app/google_sign_in"
@@ -34,7 +32,7 @@ class LegacyGoogleSignInHelper(
 
     private val gso: GoogleSignInOptions by lazy {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(serverClientId)   // Gets id_token for the backend
+            .requestIdToken(serverClientId)  // Gets id_token for the backend
             .requestEmail()
             .requestProfile()
             .build()
@@ -51,15 +49,14 @@ class LegacyGoogleSignInHelper(
         pendingResult = result
 
         // Always sign out first to force a fresh account picker and fresh token.
-        // This avoids any stale-session issues that mimic code 16 in the plugin.
         client.signOut().addOnCompleteListener {
             val signInIntent = client.signInIntent
             activity.startActivityForResult(signInIntent, GOOGLE_SIGN_IN_REQUEST_CODE)
         }
     }
 
-    /** Wired to onActivityResult in MainActivity. */
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+    /** Called directly from MainActivity.onActivityResult(). */
+    fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
         if (requestCode != GOOGLE_SIGN_IN_REQUEST_CODE) return false
 
         val pending = pendingResult ?: return false

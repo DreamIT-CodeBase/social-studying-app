@@ -81,4 +81,7 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Required for LegacyGoogleSignInHelper: classic Play Services Google Sign-In API.
+    // This bypasses google_sign_in_android 7.x's Credential Manager that causes code 10/16.
+    implementation("com.google.android.gms:play-services-auth:21.3.0")
 }
