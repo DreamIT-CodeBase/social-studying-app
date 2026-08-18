@@ -154,21 +154,27 @@ class RealAuthRepository implements AuthRepository {
   @override
   Future<User> signInWithGoogle() async {
     try {
+      debugPrint('Google Sign-in: starting authentication...');
       final idToken =
           await AuthSessionService.instance.authenticateWithGoogle();
+      debugPrint('Google Sign-in: received ID token, persisting session...');
 
       await AuthSessionService.instance.persistGoogleSession(idToken);
+      debugPrint('Google Sign-in: session persisted, fetching profile...');
 
       // Fetch the real user profile from the backend
       final dio = _ref.read(dioClientProvider).dio;
       final response = await dio.get('/api/v1/users/me');
       final backendUser = User.fromJson(response.data as Map<String, dynamic>);
+      debugPrint('Google Sign-in: user profile loaded (${backendUser.email})');
 
       await AuthSessionService.instance
           .writeUser(jsonEncode(backendUser.toJson()));
+      debugPrint('Google Sign-in: complete, returning user');
 
       return backendUser;
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('Google Sign-in failed with error: $e\n$st');
       throw Exception('Google Sign in failed: $e');
     }
   }

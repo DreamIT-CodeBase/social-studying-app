@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/routing/routes.dart';
+import 'package:social_study_app/features/auth/domain/auth_state.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/shared/services/session_persistence_service.dart';
 import 'package:social_study_app/shared/widgets/app_logo.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
@@ -12,6 +15,26 @@ class LoginScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen<AsyncValue<AuthState>>(authNotifierProvider, (_, next) {
+      next.whenData((state) {
+        state.whenOrNull(
+          authenticated: (user) {
+            if (currentFlavor == AppFlavor.student) {
+              final permissionComplete = SessionPersistenceService.instance
+                  .isPermissionSetupCompleteSync(user.id);
+              if (!permissionComplete) {
+                context.go(AppRoutes.studentOnboarding);
+              } else {
+                context.go(AppRoutes.studentHome);
+              }
+            } else {
+              context.go(AppRoutes.adminDashboard);
+            }
+          },
+        );
+      });
+    });
+
     final authAsync = ref.watch(authNotifierProvider);
 
     return Scaffold(
