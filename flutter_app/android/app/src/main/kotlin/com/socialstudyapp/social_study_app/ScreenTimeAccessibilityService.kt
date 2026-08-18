@@ -50,94 +50,107 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        startForegroundVerification()
+        try {
+            startForegroundVerification()
+        } catch (_: Throwable) {}
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        if (
-            event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-            event.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED
-        ) {
-            return
-        }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null) return
+        try {
+            if (
+                event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+                event.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED
+            ) {
+                return
+            }
 
-        val foregroundPackage = event.packageName?.toString() ?: return
-        handleForegroundPackage(foregroundPackage, event.className?.toString().orEmpty())
+            val foregroundPackage = event.packageName?.toString() ?: return
+            handleForegroundPackage(foregroundPackage, event.className?.toString().orEmpty())
+        } catch (_: Throwable) {}
     }
 
     override fun onInterrupt() {
-        stopUsageTracking()
-        hideOverlay()
+        try {
+            stopUsageTracking()
+            hideOverlay()
+        } catch (_: Throwable) {}
     }
 
     override fun onDestroy() {
-        foregroundVerificationRunnable?.let(handler::removeCallbacks)
-        foregroundVerificationRunnable = null
-        stopUsageTracking()
-        hideOverlay()
+        try {
+            foregroundVerificationRunnable?.let(handler::removeCallbacks)
+            foregroundVerificationRunnable = null
+            stopUsageTracking()
+            hideOverlay()
+        } catch (_: Throwable) {}
         super.onDestroy()
     }
 
     private fun handleForegroundPackage(foregroundPackage: String, className: String = "") {
-        if (foregroundPackage == packageName) {
-            if (className.contains("MainActivity")) {
-                leaveBlockedApp()
+        try {
+            if (foregroundPackage == packageName) {
+                if (className.contains("MainActivity")) {
+                    leaveBlockedApp()
+                }
+                return
             }
-            return
-        }
 
-        val prefs = getSharedPreferences(FLUTTER_PREFS, Context.MODE_PRIVATE)
-        val userId = prefs.getString(KEY_CURRENT_USER_ID, "").orEmpty()
-        val enforcementReady = prefs.getBoolean(KEY_ENFORCEMENT_READY, false)
-        val enableBlocking = prefs.getBoolean(KEY_ENABLE_BLOCKING, true)
+            val prefs = getSharedPreferences(FLUTTER_PREFS, Context.MODE_PRIVATE) ?: return
+            val userId = prefs.getString(KEY_CURRENT_USER_ID, "").orEmpty()
+            val enforcementReady = prefs.getBoolean(KEY_ENFORCEMENT_READY, false)
+            val enableBlocking = prefs.getBoolean(KEY_ENABLE_BLOCKING, true)
 
-        if (userId.isEmpty() || !enforcementReady || !enableBlocking) {
-            leaveBlockedApp()
-            return
-        }
+            if (userId.isEmpty() || !enforcementReady || !enableBlocking) {
+                leaveBlockedApp()
+                return
+            }
 
-        resetExpiredWeeklyBalance(prefs, userId)
+            resetExpiredWeeklyBalance(prefs, userId)
 
-        if (!getBlockedPackages(prefs).contains(foregroundPackage)) {
-            leaveBlockedApp()
-            return
-        }
+            if (!getBlockedPackages(prefs).contains(foregroundPackage)) {
+                leaveBlockedApp()
+                return
+            }
 
-        currentForegroundPackage = foregroundPackage
-        val breakUntilKey = "$KEY_BREAK_UNTIL_MILLIS$userId"
-        val now = System.currentTimeMillis()
-        val breakUntil = getSafeLongPref(prefs, breakUntilKey, 0L)
-        if (breakUntil > now) {
-            breakForegroundPackage = foregroundPackage
-            stopUsageTracking()
-            showBreakOverlay(userId, breakUntil)
-            return
-        }
-        if (breakUntil > 0L) {
-            prefs.edit()
-                .remove(breakUntilKey)
-                .putLong("$KEY_CONTINUOUS_USAGE_MILLIS$userId", 0L)
-                .apply()
-        }
+            currentForegroundPackage = foregroundPackage
+            val breakUntilKey = "$KEY_BREAK_UNTIL_MILLIS$userId"
+            val now = System.currentTimeMillis()
+            val breakUntil = getSafeLongPref(prefs, breakUntilKey, 0L)
+            if (breakUntil > now) {
+                breakForegroundPackage = foregroundPackage
+                stopUsageTracking()
+                showBreakOverlay(userId, breakUntil)
+                return
+            }
+            if (breakUntil > 0L) {
+                prefs.edit()
+                    .remove(breakUntilKey)
+                    .putLong("$KEY_CONTINUOUS_USAGE_MILLIS$userId", 0L)
+                    .apply()
+            }
 
-        val availableMinutes = getSafeLongPref(
-            prefs,
-            "$KEY_AVAILABLE_MINUTES$userId",
-            0L,
-        )
-        if (availableMinutes <= 0L) {
-            stopUsageTracking()
-            showExhaustedOverlay()
-            return
-        }
+            val availableMinutes = getSafeLongPref(
+                prefs,
+                "$KEY_AVAILABLE_MINUTES$userId",
+                0L,
+            )
+            if (availableMinutes <= 0L) {
+                stopUsageTracking()
+                showExhaustedOverlay()
+                return
+            }
 
-        hideOverlay()
-        startUsageTracking()
+            hideOverlay()
+            startUsageTracking()
+        } catch (_: Throwable) {}
     }
 
     private fun leaveBlockedApp() {
-        stopUsageTracking()
-        hideOverlay()
+        try {
+            stopUsageTracking()
+            hideOverlay()
+        } catch (_: Throwable) {}
     }
 
     /**
@@ -150,95 +163,103 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
         lastUsageTickElapsedRealtime = SystemClock.elapsedRealtime()
         usageTickRunnable = object : Runnable {
             override fun run() {
-                val foregroundPackage = currentForegroundPackage
-                if (foregroundPackage == null) {
-                    stopUsageTracking()
-                    return
-                }
+                try {
+                    val foregroundPackage = currentForegroundPackage
+                    if (foregroundPackage == null) {
+                        stopUsageTracking()
+                        return
+                    }
 
-                val prefs = getSharedPreferences(FLUTTER_PREFS, Context.MODE_PRIVATE)
-                val userId = prefs.getString(KEY_CURRENT_USER_ID, "").orEmpty()
-                val stillEnforced = userId.isNotEmpty() &&
-                    prefs.getBoolean(KEY_ENFORCEMENT_READY, false) &&
-                    prefs.getBoolean(KEY_ENABLE_BLOCKING, true) &&
-                    getBlockedPackages(prefs).contains(foregroundPackage)
-                if (!stillEnforced) {
-                    leaveBlockedApp()
-                    return
-                }
+                    val prefs = getSharedPreferences(FLUTTER_PREFS, Context.MODE_PRIVATE)
+                    if (prefs == null) {
+                        stopUsageTracking()
+                        return
+                    }
+                    val userId = prefs.getString(KEY_CURRENT_USER_ID, "").orEmpty()
+                    val stillEnforced = userId.isNotEmpty() &&
+                        prefs.getBoolean(KEY_ENFORCEMENT_READY, false) &&
+                        prefs.getBoolean(KEY_ENABLE_BLOCKING, true) &&
+                        getBlockedPackages(prefs).contains(foregroundPackage)
+                    if (!stillEnforced) {
+                        leaveBlockedApp()
+                        return
+                    }
 
-                if (resetExpiredWeeklyBalance(prefs, userId)) {
-                    stopUsageTracking()
-                    showExhaustedOverlay()
-                    return
-                }
-
-                val nowElapsed = SystemClock.elapsedRealtime()
-                val elapsedMillis = (nowElapsed - lastUsageTickElapsedRealtime).coerceAtLeast(0L)
-                lastUsageTickElapsedRealtime = nowElapsed
-
-                val pendingKey = "$KEY_PENDING_USAGE_MILLIS$userId"
-                val pendingMillis = getSafeLongPref(prefs, pendingKey, 0L) + elapsedMillis
-                val continuousKey = "$KEY_CONTINUOUS_USAGE_MILLIS$userId"
-                val continuousMillis = getSafeLongPref(prefs, continuousKey, 0L) + elapsedMillis
-                val wholeMinutes = pendingMillis / MILLIS_PER_MINUTE
-                val availableKey = "$KEY_AVAILABLE_MINUTES$userId"
-                val availableMinutes = getSafeLongPref(prefs, availableKey, 0L)
-
-                if (availableMinutes <= 0L) {
-                    stopUsageTracking()
-                    showExhaustedOverlay()
-                    return
-                }
-
-                if (wholeMinutes > 0L) {
-                    val minutesToConsume = wholeMinutes.coerceAtMost(availableMinutes)
-                    val remainingMinutes = availableMinutes - minutesToConsume
-                    val consumedKey = "$KEY_CONSUMED_MINUTES$userId"
-                    val consumedTodayKey = "$KEY_CONSUMED_TODAY$userId"
-
-                    prefs.edit()
-                        .putLong(availableKey, remainingMinutes)
-                        .putLong(
-                            consumedKey,
-                            getSafeLongPref(prefs, consumedKey, 0L) + minutesToConsume,
-                        )
-                        .putLong(
-                            consumedTodayKey,
-                            getSafeLongPref(prefs, consumedTodayKey, 0L) + minutesToConsume,
-                        )
-                        .putLong(
-                            pendingKey,
-                            pendingMillis - (minutesToConsume * MILLIS_PER_MINUTE),
-                        )
-                        .putLong(continuousKey, continuousMillis)
-                        .putLong("$KEY_LAST_SYNC_TIME$userId", System.currentTimeMillis())
-                        .apply()
-
-                    if (remainingMinutes <= 0L) {
+                    if (resetExpiredWeeklyBalance(prefs, userId)) {
                         stopUsageTracking()
                         showExhaustedOverlay()
                         return
                     }
-                } else {
-                    prefs.edit()
-                        .putLong(pendingKey, pendingMillis)
-                        .putLong(continuousKey, continuousMillis)
-                        .apply()
-                }
 
-                if (continuousMillis >= CONTINUOUS_USAGE_LIMIT_MILLIS) {
-                    val breakUntil = System.currentTimeMillis() + BREAK_DURATION_MILLIS
-                    prefs.edit()
-                        .putLong("$KEY_BREAK_UNTIL_MILLIS$userId", breakUntil)
-                        .apply()
-                    breakForegroundPackage = foregroundPackage
+                    val nowElapsed = SystemClock.elapsedRealtime()
+                    val elapsedMillis = (nowElapsed - lastUsageTickElapsedRealtime).coerceAtLeast(0L)
+                    lastUsageTickElapsedRealtime = nowElapsed
+
+                    val pendingKey = "$KEY_PENDING_USAGE_MILLIS$userId"
+                    val pendingMillis = getSafeLongPref(prefs, pendingKey, 0L) + elapsedMillis
+                    val continuousKey = "$KEY_CONTINUOUS_USAGE_MILLIS$userId"
+                    val continuousMillis = getSafeLongPref(prefs, continuousKey, 0L) + elapsedMillis
+                    val wholeMinutes = pendingMillis / MILLIS_PER_MINUTE
+                    val availableKey = "$KEY_AVAILABLE_MINUTES$userId"
+                    val availableMinutes = getSafeLongPref(prefs, availableKey, 0L)
+
+                    if (availableMinutes <= 0L) {
+                        stopUsageTracking()
+                        showExhaustedOverlay()
+                        return
+                    }
+
+                    if (wholeMinutes > 0L) {
+                        val minutesToConsume = wholeMinutes.coerceAtMost(availableMinutes)
+                        val remainingMinutes = availableMinutes - minutesToConsume
+                        val consumedKey = "$KEY_CONSUMED_MINUTES$userId"
+                        val consumedTodayKey = "$KEY_CONSUMED_TODAY$userId"
+
+                        prefs.edit()
+                            .putLong(availableKey, remainingMinutes)
+                            .putLong(
+                                consumedKey,
+                                getSafeLongPref(prefs, consumedKey, 0L) + minutesToConsume,
+                            )
+                            .putLong(
+                                consumedTodayKey,
+                                getSafeLongPref(prefs, consumedTodayKey, 0L) + minutesToConsume,
+                            )
+                            .putLong(
+                                pendingKey,
+                                pendingMillis - (minutesToConsume * MILLIS_PER_MINUTE),
+                            )
+                            .putLong(continuousKey, continuousMillis)
+                            .putLong("$KEY_LAST_SYNC_TIME$userId", System.currentTimeMillis())
+                            .apply()
+
+                        if (remainingMinutes <= 0L) {
+                            stopUsageTracking()
+                            showExhaustedOverlay()
+                            return
+                        }
+                    } else {
+                        prefs.edit()
+                            .putLong(pendingKey, pendingMillis)
+                            .putLong(continuousKey, continuousMillis)
+                            .apply()
+                    }
+
+                    if (continuousMillis >= CONTINUOUS_USAGE_LIMIT_MILLIS) {
+                        val breakUntil = System.currentTimeMillis() + BREAK_DURATION_MILLIS
+                        prefs.edit()
+                            .putLong("$KEY_BREAK_UNTIL_MILLIS$userId", breakUntil)
+                            .apply()
+                        breakForegroundPackage = foregroundPackage
+                        stopUsageTracking()
+                        showBreakOverlay(userId, breakUntil)
+                        return
+                    }
+
+                    handler.postDelayed(this, USAGE_TICK_MILLIS)
+                } catch (_: Throwable) {
                     stopUsageTracking()
-                    showBreakOverlay(userId, breakUntil)
-                    return
                 }
-
-                handler.postDelayed(this, USAGE_TICK_MILLIS)
             }
         }
 
@@ -246,10 +267,12 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
     }
 
     private fun stopUsageTracking() {
-        usageTickRunnable?.let(handler::removeCallbacks)
-        usageTickRunnable = null
-        lastUsageTickElapsedRealtime = 0L
-        currentForegroundPackage = null
+        try {
+            usageTickRunnable?.let(handler::removeCallbacks)
+            usageTickRunnable = null
+            lastUsageTickElapsedRealtime = 0L
+            currentForegroundPackage = null
+        } catch (_: Throwable) {}
     }
 
     /**
@@ -262,117 +285,131 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
 
         foregroundVerificationRunnable = object : Runnable {
             override fun run() {
-                latestForegroundPackageFromUsageStats()?.let { foregroundPackage ->
-                    handleForegroundPackage(foregroundPackage)
+                try {
+                    latestForegroundPackageFromUsageStats()?.let { foregroundPackage ->
+                        handleForegroundPackage(foregroundPackage)
+                    }
+                } catch (_: Throwable) {
+                } finally {
+                    handler.postDelayed(this, FOREGROUND_VERIFY_MILLIS)
                 }
-                handler.postDelayed(this, FOREGROUND_VERIFY_MILLIS)
             }
         }
         handler.post(foregroundVerificationRunnable!!)
     }
 
     private fun latestForegroundPackageFromUsageStats(): String? {
-        val usageStatsManager = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
-        val endTime = System.currentTimeMillis()
-        val events = usageStatsManager.queryEvents(endTime - USAGE_LOOKBACK_MILLIS, endTime)
-        val event = UsageEvents.Event()
-        var latestTimestamp = Long.MIN_VALUE
-        var latestPackage: String? = null
+        return try {
+            val usageStatsManager = getSystemService(USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null
+            val endTime = System.currentTimeMillis()
+            val events = usageStatsManager.queryEvents(endTime - USAGE_LOOKBACK_MILLIS, endTime) ?: return null
+            val event = UsageEvents.Event()
+            var latestTimestamp = Long.MIN_VALUE
+            var latestPackage: String? = null
 
-        while (events.hasNextEvent()) {
-            events.getNextEvent(event)
-            val isForegroundEvent = event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND ||
-                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-                    event.eventType == UsageEvents.Event.ACTIVITY_RESUMED)
-            if (isForegroundEvent && event.timeStamp >= latestTimestamp) {
-                latestTimestamp = event.timeStamp
-                latestPackage = event.packageName
+            while (events.hasNextEvent()) {
+                if (!events.getNextEvent(event)) break
+                val isForegroundEvent = event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND ||
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                        event.eventType == UsageEvents.Event.ACTIVITY_RESUMED)
+                if (isForegroundEvent && event.timeStamp >= latestTimestamp) {
+                    latestTimestamp = event.timeStamp
+                    latestPackage = event.packageName
+                }
             }
+            latestPackage
+        } catch (_: Throwable) {
+            null
         }
-        return latestPackage
     }
 
     private fun showExhaustedOverlay() {
-        showOverlay(OverlayMode.EXHAUSTED) { createOverlayView() }
+        try {
+            showOverlay(OverlayMode.EXHAUSTED) { createOverlayView() }
+        } catch (_: Throwable) {}
     }
 
     private fun showBreakOverlay(userId: String, breakUntil: Long) {
-        if (overlayMode == OverlayMode.BREAK && overlayView != null) {
-            updateBreakCountdown(breakUntil)
-            return
-        }
-        showOverlay(OverlayMode.BREAK) { createBreakOverlayView(breakUntil) }
-        startBreakCountdown(userId, breakUntil)
+        try {
+            if (overlayMode == OverlayMode.BREAK && overlayView != null) {
+                updateBreakCountdown(breakUntil)
+                return
+            }
+            showOverlay(OverlayMode.BREAK) { createBreakOverlayView(breakUntil) }
+            startBreakCountdown(userId, breakUntil)
+        } catch (_: Throwable) {}
     }
 
     private fun showOverlay(mode: OverlayMode, createView: () -> View) {
-        if (overlayMode != null && overlayMode != mode) hideOverlay()
-        if (isOverlayShowing || overlayView != null) return
-        isOverlayShowing = true
-        overlayMode = mode
+        try {
+            if (overlayMode != null && overlayMode != mode) hideOverlay()
+            if (isOverlayShowing || overlayView != null) return
+            isOverlayShowing = true
+            overlayMode = mode
 
-        handler.post {
-            if (!isOverlayShowing || overlayView != null || overlayMode != mode) return@post
-            try {
-                val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-                val layoutParams = WindowManager.LayoutParams().apply {
-                    type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-                    format = PixelFormat.TRANSLUCENT
-                    flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                        WindowManager.LayoutParams.FLAG_FULLSCREEN
-                    width = WindowManager.LayoutParams.MATCH_PARENT
-                    height = WindowManager.LayoutParams.MATCH_PARENT
-                }
-
-                val view = createView()
-                overlayView = view
+            handler.post {
+                if (!isOverlayShowing || overlayView != null || overlayMode != mode) return@post
                 try {
-                    windowManager.addView(view, layoutParams)
-                } catch (accessibilityOverlayError: Exception) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
-                        layoutParams.type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                        } else {
-                            @Suppress("DEPRECATION")
-                            WindowManager.LayoutParams.TYPE_PHONE
-                        }
-                        windowManager.addView(view, layoutParams)
-                    } else {
-                        throw accessibilityOverlayError
+                    val windowManager = getSystemService(WINDOW_SERVICE) as? WindowManager ?: return@post
+                    val layoutParams = WindowManager.LayoutParams().apply {
+                        type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                        format = PixelFormat.TRANSLUCENT
+                        flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                            WindowManager.LayoutParams.FLAG_FULLSCREEN
+                        width = WindowManager.LayoutParams.MATCH_PARENT
+                        height = WindowManager.LayoutParams.MATCH_PARENT
                     }
-                }
-            } catch (_: Exception) {
-                overlayView = null
-                isOverlayShowing = false
-                overlayMode = null
-            }
-        }
-    }
 
-    private fun hideOverlay() {
-        breakCountdownRunnable?.let(handler::removeCallbacks)
-        breakCountdownRunnable = null
-        breakCountdownText = null
-        val view = overlayView ?: run {
-            isOverlayShowing = false
-            overlayMode = null
-            return
-        }
-
-        handler.post {
-            try {
-                val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-                windowManager.removeView(view)
-            } catch (_: Exception) {
-                // The OS may already have detached the accessibility overlay.
-            } finally {
-                if (overlayView === view) {
+                    val view = createView()
+                    overlayView = view
+                    try {
+                        windowManager.addView(view, layoutParams)
+                    } catch (accessibilityOverlayError: Throwable) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
+                            layoutParams.type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                            } else {
+                                @Suppress("DEPRECATION")
+                                WindowManager.LayoutParams.TYPE_PHONE
+                            }
+                            windowManager.addView(view, layoutParams)
+                        }
+                    }
+                } catch (_: Throwable) {
                     overlayView = null
                     isOverlayShowing = false
                     overlayMode = null
                 }
             }
-        }
+        } catch (_: Throwable) {}
+    }
+
+    private fun hideOverlay() {
+        try {
+            breakCountdownRunnable?.let(handler::removeCallbacks)
+            breakCountdownRunnable = null
+            breakCountdownText = null
+            val view = overlayView ?: run {
+                isOverlayShowing = false
+                overlayMode = null
+                return
+            }
+
+            handler.post {
+                try {
+                    val windowManager = getSystemService(WINDOW_SERVICE) as? WindowManager
+                    windowManager?.removeView(view)
+                } catch (_: Throwable) {
+                    // The OS may already have detached the accessibility overlay.
+                } finally {
+                    if (overlayView === view) {
+                        overlayView = null
+                        isOverlayShowing = false
+                        overlayMode = null
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
     }
 
     private fun createOverlayView(): View {
@@ -427,15 +464,19 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
             LinearLayout.LayoutParams.WRAP_CONTENT,
         )
         container.addView(createActionButton("Study Now", "#1D4ED8") {
-            packageManager.getLaunchIntentForPackage(packageName)?.let { intent ->
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                startActivity(intent)
-            }
+            try {
+                packageManager.getLaunchIntentForPackage(packageName)?.let { intent ->
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    startActivity(intent)
+                }
+            } catch (_: Throwable) {}
             hideOverlay()
         }, buttonParams)
         container.addView(Space(this), LinearLayout.LayoutParams(1, dpToPx(12)))
         container.addView(createActionButton("Close App", "#1E293B") {
-            performGlobalAction(GLOBAL_ACTION_HOME)
+            try {
+                performGlobalAction(GLOBAL_ACTION_HOME)
+            } catch (_: Throwable) {}
             hideOverlay()
         }, buttonParams)
         return root
@@ -490,38 +531,46 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
     }
 
     private fun startBreakCountdown(userId: String, breakUntil: Long) {
-        breakCountdownRunnable?.let(handler::removeCallbacks)
-        breakCountdownRunnable = object : Runnable {
-            override fun run() {
-                if (breakUntil <= System.currentTimeMillis()) {
-                    val prefs = getSharedPreferences(FLUTTER_PREFS, Context.MODE_PRIVATE)
-                    prefs.edit()
-                        .remove("$KEY_BREAK_UNTIL_MILLIS$userId")
-                        .putLong("$KEY_CONTINUOUS_USAGE_MILLIS$userId", 0L)
-                        .apply()
-                    val foregroundPackage = breakForegroundPackage
-                    breakForegroundPackage = null
-                    hideOverlay()
-                    if (foregroundPackage != null) {
-                        handler.post { handleForegroundPackage(foregroundPackage) }
+        try {
+            breakCountdownRunnable?.let(handler::removeCallbacks)
+            breakCountdownRunnable = object : Runnable {
+                override fun run() {
+                    try {
+                        if (breakUntil <= System.currentTimeMillis()) {
+                            val prefs = getSharedPreferences(FLUTTER_PREFS, Context.MODE_PRIVATE)
+                            prefs?.edit()
+                                ?.remove("$KEY_BREAK_UNTIL_MILLIS$userId")
+                                ?.putLong("$KEY_CONTINUOUS_USAGE_MILLIS$userId", 0L)
+                                ?.apply()
+                            val foregroundPackage = breakForegroundPackage
+                            breakForegroundPackage = null
+                            hideOverlay()
+                            if (foregroundPackage != null) {
+                                handler.post { handleForegroundPackage(foregroundPackage) }
+                            }
+                            return
+                        }
+                        updateBreakCountdown(breakUntil)
+                        handler.postDelayed(this, USAGE_TICK_MILLIS)
+                    } catch (_: Throwable) {
+                        hideOverlay()
                     }
-                    return
                 }
-                updateBreakCountdown(breakUntil)
-                handler.postDelayed(this, USAGE_TICK_MILLIS)
             }
-        }
-        handler.post(breakCountdownRunnable!!)
+            handler.post(breakCountdownRunnable!!)
+        } catch (_: Throwable) {}
     }
 
     private fun updateBreakCountdown(breakUntil: Long) {
-        val remainingSeconds =
-            ((breakUntil - System.currentTimeMillis()).coerceAtLeast(0L) + 999L) / 1_000L
-        breakCountdownText?.text = String.format(
-            "%02d:%02d",
-            remainingSeconds / 60L,
-            remainingSeconds % 60L,
-        )
+        try {
+            val remainingSeconds =
+                ((breakUntil - System.currentTimeMillis()).coerceAtLeast(0L) + 999L) / 1_000L
+            breakCountdownText?.text = String.format(
+                "%02d:%02d",
+                remainingSeconds / 60L,
+                remainingSeconds % 60L,
+            )
+        } catch (_: Throwable) {}
     }
 
     private fun createActionButton(label: String, backgroundColor: String, onClick: () -> Unit): TextView {
@@ -564,9 +613,11 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
         } catch (_: ClassCastException) {
             try {
                 prefs.getInt(key, defaultValue.toInt()).toLong()
-            } catch (_: Exception) {
+            } catch (_: Throwable) {
                 defaultValue
             }
+        } catch (_: Throwable) {
+            defaultValue
         }
     }
 
@@ -579,36 +630,40 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
         prefs: android.content.SharedPreferences,
         userId: String,
     ): Boolean {
-        val weekStartKey = "$KEY_WEEK_START_DATE$userId"
-        val weekStart = Instant.ofEpochMilli(System.currentTimeMillis())
-            .atZone(ZoneOffset.UTC)
-            .toLocalDate()
-            .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-            .toString()
-        val savedWeekStart = prefs.getString(weekStartKey, null)
-        if (savedWeekStart == null) {
-            prefs.edit().putString(weekStartKey, weekStart).apply()
-            return false
-        }
-        if (savedWeekStart == weekStart) return false
+        return try {
+            val weekStartKey = "$KEY_WEEK_START_DATE$userId"
+            val weekStart = Instant.ofEpochMilli(System.currentTimeMillis())
+                .atZone(ZoneOffset.UTC)
+                .toLocalDate()
+                .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                .toString()
+            val savedWeekStart = prefs.getString(weekStartKey, null)
+            if (savedWeekStart == null) {
+                prefs.edit().putString(weekStartKey, weekStart).apply()
+                return false
+            }
+            if (savedWeekStart == weekStart) return false
 
-        prefs.edit()
-            .putLong("$KEY_AVAILABLE_MINUTES$userId", 0L)
-            .putLong("$KEY_TOTAL_EARNED_MINUTES$userId", 0L)
-            .putLong("$KEY_CONSUMED_TODAY$userId", 0L)
-            .putLong("$KEY_PENDING_USAGE_MILLIS$userId", 0L)
-            .putLong("$KEY_CONTINUOUS_USAGE_MILLIS$userId", 0L)
-            .remove("$KEY_BREAK_UNTIL_MILLIS$userId")
-            .putString(weekStartKey, weekStart)
-            .apply()
-        return true
+            prefs.edit()
+                .putLong("$KEY_AVAILABLE_MINUTES$userId", 0L)
+                .putLong("$KEY_TOTAL_EARNED_MINUTES$userId", 0L)
+                .putLong("$KEY_CONSUMED_TODAY$userId", 0L)
+                .putLong("$KEY_PENDING_USAGE_MILLIS$userId", 0L)
+                .putLong("$KEY_CONTINUOUS_USAGE_MILLIS$userId", 0L)
+                .remove("$KEY_BREAK_UNTIL_MILLIS$userId")
+                .putString(weekStartKey, weekStart)
+                .apply()
+            true
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun parseJsonArray(jsonString: String): List<String> {
         return try {
             val jsonArray = JSONArray(jsonString)
             List(jsonArray.length()) { index -> jsonArray.getString(index) }
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
             emptyList()
         }
     }

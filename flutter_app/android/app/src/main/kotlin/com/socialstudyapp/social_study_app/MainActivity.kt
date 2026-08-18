@@ -23,10 +23,9 @@ class MainActivity : FlutterActivity() {
     private var pendingNotificationResult: MethodChannel.Result? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Protect every Flutter route from screenshots, screen recording,
-        // recent-app previews, and non-secure external displays. Applying the
-        // flag before Flutter renders prevents a sensitive first-frame leak.
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        try {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } catch (_: Throwable) {}
         super.onCreate(savedInstanceState)
     }
 
@@ -36,126 +35,154 @@ class MainActivity : FlutterActivity() {
         // ── Screen time / permissions channel ───────────────────────────────
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SCREEN_TIME_CHANNEL)
             .setMethodCallHandler { call, result ->
-                when (call.method) {
-                    "isAccessibilityEnabled" -> {
-                        result.success(isAccessibilityServiceEnabled())
-                    }
-                    "openAccessibilitySettings" -> {
-                        val serviceComponent =
-                            ComponentName(this, ScreenTimeAccessibilityService::class.java)
-                        val detailIntent = Intent(ACTION_ACCESSIBILITY_DETAILS_SETTINGS).apply {
-                            putExtra(Intent.EXTRA_COMPONENT_NAME, serviceComponent.flattenToString())
+                try {
+                    when (call.method) {
+                        "isAccessibilityEnabled" -> {
+                            result.success(isAccessibilityServiceEnabled())
                         }
-                        if (!openSettings(detailIntent)) {
-                            openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                        }
-                        result.success(null)
-                    }
-                    "isUsageAccessGranted" -> {
-                        result.success(isUsageAccessGranted())
-                    }
-                    "openUsageAccessSettings" -> {
-                        val appSpecificIntent = Intent(
-                            Settings.ACTION_USAGE_ACCESS_SETTINGS,
-                            Uri.parse("package:$packageName"),
-                        )
-                        if (!openSettings(appSpecificIntent)) {
-                            openSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                        }
-                        result.success(null)
-                    }
-                    "isOverlayGranted" -> {
-                        result.success(isOverlayGranted())
-                    }
-                    "openOverlaySettings" -> {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                            openSettings(
-                                Intent(
-                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                    Uri.parse("package:$packageName"),
-                                ),
-                            )
-                        } else {
-                            openSettings(Intent(Settings.ACTION_SETTINGS))
-                        }
-                        result.success(null)
-                    }
-                    "isNotificationGranted" -> {
-                        result.success(isNotificationGranted())
-                    }
-                    "requestNotificationPermission" -> {
-                        if (
-                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
-                                PackageManager.PERMISSION_GRANTED
-                        ) {
-                            if (pendingNotificationResult != null) {
-                                result.error(
-                                    "permission_request_active",
-                                    "A notification permission request is already active.",
-                                    null,
-                                )
-                                return@setMethodCallHandler
+                        "openAccessibilitySettings" -> {
+                            try {
+                                val serviceComponent =
+                                    ComponentName(this, ScreenTimeAccessibilityService::class.java)
+                                val detailIntent = Intent(ACTION_ACCESSIBILITY_DETAILS_SETTINGS).apply {
+                                    putExtra(Intent.EXTRA_COMPONENT_NAME, serviceComponent.flattenToString())
+                                }
+                                if (!openSettings(detailIntent)) {
+                                    openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                                }
+                            } catch (_: Throwable) {
+                                openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                             }
-                            pendingNotificationResult = result
-                            requestPermissions(
-                                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                                NOTIFICATION_PERMISSION_REQUEST,
-                            )
-                        } else {
+                            result.success(null)
+                        }
+                        "isUsageAccessGranted" -> {
+                            result.success(isUsageAccessGranted())
+                        }
+                        "openUsageAccessSettings" -> {
+                            try {
+                                val appSpecificIntent = Intent(
+                                    Settings.ACTION_USAGE_ACCESS_SETTINGS,
+                                    Uri.parse("package:$packageName"),
+                                )
+                                if (!openSettings(appSpecificIntent)) {
+                                    openSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                                }
+                            } catch (_: Throwable) {
+                                openSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                            }
+                            result.success(null)
+                        }
+                        "isOverlayGranted" -> {
+                            result.success(isOverlayGranted())
+                        }
+                        "openOverlaySettings" -> {
+                            try {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                    val overlayIntent = Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:$packageName"),
+                                    )
+                                    if (!openSettings(overlayIntent)) {
+                                        openSettings(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+                                    }
+                                } else {
+                                    openSettings(Intent(Settings.ACTION_SETTINGS))
+                                }
+                            } catch (_: Throwable) {
+                                openSettings(Intent(Settings.ACTION_SETTINGS))
+                            }
+                            result.success(null)
+                        }
+                        "isNotificationGranted" -> {
                             result.success(isNotificationGranted())
                         }
-                    }
-                    "openNotificationSettings" -> {
-                        openSettings(
-                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-                            },
-                        )
-                        result.success(null)
-                    }
-                    "isBatteryOptimizationExempt" -> {
-                        result.success(isBatteryOptimizationExempt())
-                    }
-                    "openBatteryOptimizationSettings" -> {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                            openSettings(
-                                Intent(
-                                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                    Uri.parse("package:$packageName"),
-                                ),
-                            )
+                        "requestNotificationPermission" -> {
+                            if (
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                                    PackageManager.PERMISSION_GRANTED
+                            ) {
+                                if (pendingNotificationResult != null) {
+                                    result.error(
+                                        "permission_request_active",
+                                        "A notification permission request is already active.",
+                                        null,
+                                    )
+                                    return@setMethodCallHandler
+                                }
+                                pendingNotificationResult = result
+                                requestPermissions(
+                                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                                    NOTIFICATION_PERMISSION_REQUEST,
+                                )
+                            } else {
+                                result.success(isNotificationGranted())
+                            }
                         }
-                        result.success(null)
+                        "openNotificationSettings" -> {
+                            try {
+                                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                                }
+                                if (!openSettings(intent)) {
+                                    openSettings(Intent(Settings.ACTION_SETTINGS))
+                                }
+                            } catch (_: Throwable) {
+                                openSettings(Intent(Settings.ACTION_SETTINGS))
+                            }
+                            result.success(null)
+                        }
+                        "isBatteryOptimizationExempt" -> {
+                            result.success(isBatteryOptimizationExempt())
+                        }
+                        "openBatteryOptimizationSettings" -> {
+                            try {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                    val intent = Intent(
+                                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                        Uri.parse("package:$packageName"),
+                                    )
+                                    if (!openSettings(intent)) {
+                                        openSettings(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                                    }
+                                }
+                            } catch (_: Throwable) {
+                                openSettings(Intent(Settings.ACTION_SETTINGS))
+                            }
+                            result.success(null)
+                        }
+                        else -> {
+                            result.notImplemented()
+                        }
                     }
-                    else -> {
-                        result.notImplemented()
-                    }
+                } catch (t: Throwable) {
+                    result.error("method_channel_error", t.message, null)
                 }
             }
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val expectedComponent = ComponentName(this, ScreenTimeAccessibilityService::class.java)
-        val enabledServices = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: return false
+        return try {
+            val expectedComponent = ComponentName(this, ScreenTimeAccessibilityService::class.java)
+            val enabledServices = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: return false
 
-        return enabledServices.split(":").any { flattened ->
-            ComponentName.unflattenFromString(flattened) == expectedComponent
+            enabledServices.split(":").any { flattened ->
+                ComponentName.unflattenFromString(flattened) == expectedComponent
+            }
+        } catch (_: Throwable) {
+            false
         }
     }
 
     private fun openSettings(intent: Intent): Boolean {
         return try {
-            if (intent.resolveActivity(packageManager) == null) {
-                false
-            } else {
-                startActivity(intent)
-                true
-            }
-        } catch (_: Exception) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+            true
+        } catch (_: Throwable) {
             false
         }
     }
@@ -166,55 +193,75 @@ class MainActivity : FlutterActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != NOTIFICATION_PERMISSION_REQUEST) return
+        try {
+            if (requestCode != NOTIFICATION_PERMISSION_REQUEST) return
 
-        val granted = grantResults.isNotEmpty() &&
-            grantResults[0] == PackageManager.PERMISSION_GRANTED
-        pendingNotificationResult?.success(granted)
-        pendingNotificationResult = null
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            pendingNotificationResult?.success(granted)
+            pendingNotificationResult = null
+        } catch (_: Throwable) {
+            pendingNotificationResult = null
+        }
     }
 
     private fun isUsageAccessGranted(): Boolean {
-        val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            appOps.unsafeCheckOpNoThrow(
-                AppOpsManager.OPSTR_GET_USAGE_STATS,
-                Process.myUid(),
-                packageName
-            )
-        } else {
-            appOps.checkOpNoThrow(
-                AppOpsManager.OPSTR_GET_USAGE_STATS,
-                Process.myUid(),
-                packageName
-            )
+        return try {
+            val appOps = getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager ?: return false
+            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                appOps.unsafeCheckOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    Process.myUid(),
+                    packageName
+                )
+            } else {
+                appOps.checkOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    Process.myUid(),
+                    packageName
+                )
+            }
+            mode == AppOpsManager.MODE_ALLOWED
+        } catch (_: Throwable) {
+            false
         }
-        return mode == AppOpsManager.MODE_ALLOWED
     }
 
     private fun isOverlayGranted(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Settings.canDrawOverlays(this)
-        } else {
-            true
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                Settings.canDrawOverlays(this)
+            } else {
+                true
+            }
+        } catch (_: Throwable) {
+            false
         }
     }
 
     private fun isNotificationGranted(): Boolean {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            manager.areNotificationsEnabled()
-        } else {
-            true
+        return try {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                manager.areNotificationsEnabled()
+            } else {
+                true
+            }
+        } catch (_: Throwable) {
+            false
         }
     }
 
     private fun isBatteryOptimizationExempt(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-            powerManager.isIgnoringBatteryOptimizations(packageName)
-        } else {
-            true
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
+                powerManager.isIgnoringBatteryOptimizations(packageName)
+            } else {
+                true
+            }
+        } catch (_: Throwable) {
+            false
         }
     }
 

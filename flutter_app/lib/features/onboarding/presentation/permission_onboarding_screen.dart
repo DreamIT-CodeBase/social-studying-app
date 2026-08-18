@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
+import 'package:social_study_app/features/auth/data/auth_repository.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/screen_time/data/screen_time_repository.dart';
 import 'package:social_study_app/features/screen_time/services/screen_time_service.dart';
@@ -250,43 +251,33 @@ class _PermissionOnboardingScreenState
     };
   }
 
-  Future<void> _finishOnboarding() async {
+  Future<void> _finishOnboarding({bool force = false}) async {
     if (_isSubmitting) return;
     await _refreshStatus();
     if (!mounted) return;
-    if (!_status.requiredPermissionsGranted) {
+    if (!force && !_status.requiredPermissionsGranted) {
       _restartSequence();
       return;
     }
 
-    final authState = ref.read(authNotifierProvider).valueOrNull;
-    final user = authState?.maybeWhen(
+    var authState = ref.read(authNotifierProvider).valueOrNull;
+    var user = authState?.maybeWhen(
       authenticated: (authenticatedUser) => authenticatedUser,
       orElse: () => null,
     );
-    if (user == null) {
-      context.go(AppRoutes.login);
-      return;
+    user ??= await ref.read(authRepositoryProvider).getStoredUser();
+
+    if (user != null) {
+      setState(() => _isSubmitting = true);
+      try {
+        await SessionPersistenceService.instance.setPermissionSetupComplete(
+          user.id,
+          complete: true,
+        );
+      } catch (_) {}
+      unawaited(_reportPermissionStatus());
     }
 
-    setState(() => _isSubmitting = true);
-    try {
-      await SessionPersistenceService.instance.setPermissionSetupComplete(
-        user.id,
-        complete: true,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _isSubmitting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not save permission setup. Please try again.'),
-        ),
-      );
-      return;
-    }
-
-    unawaited(_reportPermissionStatus());
     if (mounted) {
       context.go(AppRoutes.studentHome);
     }
@@ -311,7 +302,15 @@ class _PermissionOnboardingScreenState
   Widget build(BuildContext context) {
     final requiredReady = _status.requiredPermissionsGranted;
     return Scaffold(
-      appBar: AppBar(title: const Text('App permissions')),
+      appBar: AppBar(
+        title: const Text('App permissions'),
+        actions: [
+          TextButton(
+            onPressed: _isSubmitting ? null : () => _finishOnboarding(force: true),
+            child: const Text('Skip'),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -373,32 +372,41 @@ class _PermissionOnboardingScreenState
             ),
             Padding(
               padding: const EdgeInsets.all(Spacing.lg),
-              child: FilledButton.icon(
-                onPressed: _isChecking || _isSubmitting || _sequenceActive
-                    ? null
-                    : requiredReady
-                        ? _finishOnboarding
-                        : _restartSequence,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 52),
-                ),
-                icon: _isChecking || _isSubmitting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.arrow_forward_rounded),
-                label: Text(
-                  _sequenceActive
-                      ? 'Complete the Android prompt'
-                      : requiredReady
-                          ? 'Finish setup'
-                          : 'Continue permission setup',
-                ),
+              child: Column(
+                children: [
+                  FilledButton.icon(
+                    onPressed: _isChecking || _isSubmitting || _sequenceActive
+                        ? null
+                        : requiredReady
+                            ? _finishOnboarding
+                            : _restartSequence,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 52),
+                    ),
+                    icon: _isChecking || _isSubmitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.arrow_forward_rounded),
+                    label: Text(
+                      _sequenceActive
+                          ? 'Complete the Android prompt'
+                          : requiredReady
+                              ? 'Finish setup'
+                              : 'Continue permission setup',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: _isSubmitting ? null : () => _finishOnboarding(force: true),
+                    child: const Text('Skip for now and continue to app'),
+                  ),
+                ],
               ),
             ),
           ],
