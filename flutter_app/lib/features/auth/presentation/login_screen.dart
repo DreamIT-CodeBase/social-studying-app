@@ -35,13 +35,29 @@ class LoginScreen extends ConsumerWidget {
 
     return Scaffold(
       body: authAsync.when(
-        data: (_) => _LoginBody(
-          onMicrosoftSignIn: () => ref
-              .read(authNotifierProvider.notifier)
-              .signInWithMicrosoft(),
-          onGoogleSignIn: () => ref
-              .read(authNotifierProvider.notifier)
-              .signInWithGoogle(),
+        data: (authState) => authState.maybeWhen(
+          authenticated: (user) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) {
+                try {
+                  if (currentFlavor == AppFlavor.student) {
+                    context.go(AppRoutes.studentHome);
+                  } else {
+                    context.go(AppRoutes.adminDashboard);
+                  }
+                } catch (_) {}
+              }
+            });
+            return const LoadingIndicator(message: 'Entering dashboard…');
+          },
+          orElse: () => _LoginBody(
+            onMicrosoftSignIn: () => ref
+                .read(authNotifierProvider.notifier)
+                .signInWithMicrosoft(),
+            onGoogleSignIn: () => ref
+                .read(authNotifierProvider.notifier)
+                .signInWithGoogle(),
+          ),
         ),
         loading: () => const LoadingIndicator(message: 'Signing you in…'),
         error: (error, _) => _LoginBody(
