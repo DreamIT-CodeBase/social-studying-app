@@ -69,8 +69,6 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
         final isOnLogin = state.matchedLocation == AppRoutes.login;
         final isOnAdminOnboarding =
             state.matchedLocation == AppRoutes.adminOnboarding;
-        final isOnStudentPermissionSetup =
-            state.matchedLocation == AppRoutes.studentOnboarding;
         // Legal pages are publicly accessible — no auth required.
         final isOnLegal = state.matchedLocation == AppRoutes.terms ||
             state.matchedLocation == AppRoutes.privacy;
