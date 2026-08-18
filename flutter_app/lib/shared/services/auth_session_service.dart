@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -102,31 +103,46 @@ class AuthSessionService {
 
   /// Authenticates with Google and returns the ID token.
   ///
-  /// On Android, `disconnect()` is called first to wipe all stale cached OAuth
-  /// grants on the device. Code 16 "account reauth failed" from Credential Manager
-  /// only occurs when attempting to REFRESH a stale existing grant. After a full
-  /// disconnect, the next `authenticate()` starts a brand-new grant flow which
-  /// succeeds without any reauth step.
-  ///
-  /// On iOS, `authenticate()` already works reliably so no disconnect is needed.
+  /// - Android: Calls a native Kotlin MethodChannel that uses the classic
+  ///   Play Services `GoogleSignInClient.signIn()` API. This completely bypasses
+  ///   the Credential Manager used by google_sign_in_android 7.x, making
+  ///   code 10 and code 16 structurally impossible.
+  /// - iOS: Uses google_sign_in v7's native Credential Manager flow, which
+  ///   works perfectly on iOS. iOS is untouched.
+  static const _googleNativeChannel =
+      MethodChannel('com.socialstudyapp.app/google_sign_in');
+
   Future<String> authenticateWithGoogle() async {
+    if (Platform.isAndroid) {
+      return _authenticateWithGoogleAndroid();
+    } else {
+      return _authenticateWithGoogleIOS();
+    }
+  }
+
+  /// Android: native Play Services sign-in via MethodChannel.
+  /// Zero Credential Manager, zero code 10, zero code 16.
+  Future<String> _authenticateWithGoogleAndroid() async {
+    try {
+      final idToken = await _googleNativeChannel.invokeMethod<String>('signIn');
+      if (idToken == null || idToken.isEmpty) {
+        throw StateError('Google sign in failed: no ID token returned from native layer.');
+      }
+      return idToken;
+    } on PlatformException catch (e) {
+      if (e.code == 'CANCELED') {
+        throw StateError('Google sign in was cancelled by the user.');
+      }
+      rethrow;
+    }
+  }
+
+  /// iOS: google_sign_in v7 — unchanged, works perfectly.
+  Future<String> _authenticateWithGoogleIOS() async {
     await _googleInitialization;
     if (!_googleSignIn.supportsAuthenticate()) {
       throw UnsupportedError('Google sign-in not supported on this platform.');
     }
-
-    if (Platform.isAndroid) {
-      // Disconnect clears stale Credential Manager grants on the device.
-      // This is the root cause of code 16: a cached grant requiring reauth.
-      // After disconnect, authenticate() always starts a fresh grant = no code 16.
-      try {
-        await _googleSignIn.disconnect();
-      } catch (_) {
-        // Ignore — disconnect may fail if there was no prior session.
-        // authenticate() still proceeds with a fresh flow.
-      }
-    }
-
     final account = await _googleSignIn.authenticate();
     final idToken = account.authentication.idToken;
     if (idToken == null || idToken.isEmpty) {

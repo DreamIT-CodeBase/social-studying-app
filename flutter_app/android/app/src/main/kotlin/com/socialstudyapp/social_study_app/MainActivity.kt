@@ -1,26 +1,27 @@
 package com.socialstudyapp.social_study_app
 
 import android.Manifest
+import android.app.AppOpsManager
+import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.provider.Settings
-import android.app.AppOpsManager
-import android.app.NotificationManager
-import android.os.Process
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
-import android.net.Uri
+import android.os.Process
+import android.provider.Settings
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "com.socialstudyapp.app/screen_time"
+    private val SCREEN_TIME_CHANNEL = "com.socialstudyapp.app/screen_time"
     private var pendingNotificationResult: MethodChannel.Result? = null
+    private lateinit var googleSignInHelper: LegacyGoogleSignInHelper
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Protect every Flutter route from screenshots, screen recording,
@@ -32,104 +33,133 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+
+        // ── Native Google Sign-In ────────────────────────────────────────────
+        // Uses the classic Play Services GoogleSignInClient API, completely
+        // bypassing the Credential Manager used by google_sign_in_android 7.x.
+        // This eliminates code 10 (DEVELOPER_ERROR) and code 16 (reauth failed)
+        // permanently on Play Store AAB builds.
+        googleSignInHelper = LegacyGoogleSignInHelper(
+            activity = this,
+            serverClientId = getString(R.string.default_web_client_id),
+        )
+        flutterEngine.activityControlSurface.addActivityResultListener(googleSignInHelper)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            LegacyGoogleSignInHelper.CHANNEL,
+        ).setMethodCallHandler { call, result ->
             when (call.method) {
-                "isAccessibilityEnabled" -> {
-                    result.success(isAccessibilityServiceEnabled())
-                }
-                "openAccessibilitySettings" -> {
-                    val serviceComponent =
-                        ComponentName(this, ScreenTimeAccessibilityService::class.java)
-                    val detailIntent = Intent(ACTION_ACCESSIBILITY_DETAILS_SETTINGS).apply {
-                        putExtra(Intent.EXTRA_COMPONENT_NAME, serviceComponent.flattenToString())
-                    }
-                    if (!openSettings(detailIntent)) {
-                        openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                    }
-                    result.success(null)
-                }
-                "isUsageAccessGranted" -> {
-                    result.success(isUsageAccessGranted())
-                }
-                "openUsageAccessSettings" -> {
-                    val appSpecificIntent = Intent(
-                        Settings.ACTION_USAGE_ACCESS_SETTINGS,
-                        Uri.parse("package:$packageName"),
-                    )
-                    if (!openSettings(appSpecificIntent)) {
-                        openSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                    }
-                    result.success(null)
-                }
-                "isOverlayGranted" -> {
-                    result.success(isOverlayGranted())
-                }
-                "openOverlaySettings" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        openSettings(
-                            Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:$packageName"),
-                            ),
-                        )
-                    } else {
-                        openSettings(Intent(Settings.ACTION_SETTINGS))
-                    }
-                    result.success(null)
-                }
-                "isNotificationGranted" -> {
-                    result.success(isNotificationGranted())
-                }
-                "requestNotificationPermission" -> {
-                    if (
-                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
-                            PackageManager.PERMISSION_GRANTED
-                    ) {
-                        if (pendingNotificationResult != null) {
-                            result.error(
-                                "permission_request_active",
-                                "A notification permission request is already active.",
-                                null,
-                            )
-                            return@setMethodCallHandler
-                        }
-                        pendingNotificationResult = result
-                        requestPermissions(
-                            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                            NOTIFICATION_PERMISSION_REQUEST,
-                        )
-                    } else {
-                        result.success(isNotificationGranted())
-                    }
-                }
-                "openNotificationSettings" -> {
-                    openSettings(
-                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-                        },
-                    )
-                    result.success(null)
-                }
-                "isBatteryOptimizationExempt" -> {
-                    result.success(isBatteryOptimizationExempt())
-                }
-                "openBatteryOptimizationSettings" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        openSettings(
-                            Intent(
-                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                Uri.parse("package:$packageName"),
-                            ),
-                        )
-                    }
-                    result.success(null)
-                }
-                else -> {
-                    result.notImplemented()
-                }
+                "signIn" -> googleSignInHelper.signIn(result)
+                else -> result.notImplemented()
             }
         }
+
+        // ── Screen time / permissions channel ───────────────────────────────
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SCREEN_TIME_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "isAccessibilityEnabled" -> {
+                        result.success(isAccessibilityServiceEnabled())
+                    }
+                    "openAccessibilitySettings" -> {
+                        val serviceComponent =
+                            ComponentName(this, ScreenTimeAccessibilityService::class.java)
+                        val detailIntent = Intent(ACTION_ACCESSIBILITY_DETAILS_SETTINGS).apply {
+                            putExtra(Intent.EXTRA_COMPONENT_NAME, serviceComponent.flattenToString())
+                        }
+                        if (!openSettings(detailIntent)) {
+                            openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        }
+                        result.success(null)
+                    }
+                    "isUsageAccessGranted" -> {
+                        result.success(isUsageAccessGranted())
+                    }
+                    "openUsageAccessSettings" -> {
+                        val appSpecificIntent = Intent(
+                            Settings.ACTION_USAGE_ACCESS_SETTINGS,
+                            Uri.parse("package:$packageName"),
+                        )
+                        if (!openSettings(appSpecificIntent)) {
+                            openSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                        }
+                        result.success(null)
+                    }
+                    "isOverlayGranted" -> {
+                        result.success(isOverlayGranted())
+                    }
+                    "openOverlaySettings" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            openSettings(
+                                Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:$packageName"),
+                                ),
+                            )
+                        } else {
+                            openSettings(Intent(Settings.ACTION_SETTINGS))
+                        }
+                        result.success(null)
+                    }
+                    "isNotificationGranted" -> {
+                        result.success(isNotificationGranted())
+                    }
+                    "requestNotificationPermission" -> {
+                        if (
+                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                                PackageManager.PERMISSION_GRANTED
+                        ) {
+                            if (pendingNotificationResult != null) {
+                                result.error(
+                                    "permission_request_active",
+                                    "A notification permission request is already active.",
+                                    null,
+                                )
+                                return@setMethodCallHandler
+                            }
+                            pendingNotificationResult = result
+                            requestPermissions(
+                                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                                NOTIFICATION_PERMISSION_REQUEST,
+                            )
+                        } else {
+                            result.success(isNotificationGranted())
+                        }
+                    }
+                    "openNotificationSettings" -> {
+                        openSettings(
+                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                            },
+                        )
+                        result.success(null)
+                    }
+                    "isBatteryOptimizationExempt" -> {
+                        result.success(isBatteryOptimizationExempt())
+                    }
+                    "openBatteryOptimizationSettings" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            openSettings(
+                                Intent(
+                                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                    Uri.parse("package:$packageName"),
+                                ),
+                            )
+                        }
+                        result.success(null)
+                    }
+                    else -> {
+                        result.notImplemented()
+                    }
+                }
+            }
+    }
+
+    /** Forward activity results so the Google Sign-In helper can receive the account. */
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        googleSignInHelper.onActivityResult(requestCode, resultCode, data)
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
