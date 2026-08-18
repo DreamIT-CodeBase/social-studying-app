@@ -41,7 +41,7 @@ class MainActivity : FlutterActivity() {
         // permanently on Play Store AAB builds.
         googleSignInHelper = LegacyGoogleSignInHelper(
             activity = this,
-            serverClientId = getString(R.string.default_web_client_id),
+            defaultServerClientId = getString(R.string.default_web_client_id),
         )
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
