@@ -19,17 +19,13 @@ class LoginScreen extends ConsumerWidget {
       next.whenData((state) {
         state.whenOrNull(
           authenticated: (user) {
-            if (currentFlavor == AppFlavor.student) {
-              final permissionComplete = SessionPersistenceService.instance
-                  .isPermissionSetupCompleteSync(user.id);
-              if (!permissionComplete) {
-                context.go(AppRoutes.studentOnboarding);
-              } else {
+            try {
+              if (currentFlavor == AppFlavor.student) {
                 context.go(AppRoutes.studentHome);
+              } else {
+                context.go(AppRoutes.adminDashboard);
               }
-            } else {
-              context.go(AppRoutes.adminDashboard);
-            }
+            } catch (_) {}
           },
         );
       });

@@ -67,7 +67,7 @@ void main() {
       expect(find.text('Sign in / Sign up with Email'), findsNothing);
 
       completer.complete(_fakeUser); // clean up pending future
-      await tester.pumpAndSettle();
+      await tester.pump();
     });
 
     testWidgets('shows loading indicator while Google sign-in is in progress',
@@ -86,7 +86,7 @@ void main() {
       expect(find.text('Sign in with Google'), findsNothing);
 
       completer.complete(_fakeUser); // clean up pending future
-      await tester.pumpAndSettle();
+      await tester.pump();
     });
 
     testWidgets('shows error view when Microsoft sign-in fails',

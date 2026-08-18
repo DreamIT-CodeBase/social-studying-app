@@ -6,6 +6,7 @@ import 'package:social_study_app/features/auth/data/auth_repository.dart';
 import 'package:social_study_app/features/auth/domain/auth_state.dart';
 import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/services/dio_client.dart';
+import 'package:social_study_app/shared/services/session_persistence_service.dart';
 
 part 'auth_notifier.g.dart';
 
@@ -29,10 +30,6 @@ class AuthNotifier extends _$AuthNotifier {
     if (Platform.environment.containsKey('FLUTTER_TEST')) {
       return;
     }
-    // Secure storage becomes available before startup networking and the Dio
-    // interceptor are always ready on iOS. Retry the authoritative profile so
-    // a transient launch race cannot leave a stale name/workspace list in the
-    // UI for the whole session.
     for (var attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) {
         await Future<void>.delayed(Duration(seconds: attempt * 2));
@@ -61,11 +58,11 @@ class AuthNotifier extends _$AuthNotifier {
     state = const AsyncLoading();
     try {
       final user = await ref.read(authRepositoryProvider).signInWithMicrosoft();
+      await SessionPersistenceService.instance.setPermissionSetupComplete(
+        user.id,
+        complete: true,
+      );
       state = AsyncData(AuthState.authenticated(user: user));
-      // Authentication must complete as soon as the account profile arrives.
-      // A daily-login reward is best effort and may involve a slow backend;
-      // keeping it off the critical path prevents iOS from remaining on the
-      // sign-in spinner after Entra redirects back to the app.
       unawaited(_claimDailyLogin(user));
     } catch (error, stackTrace) {
       state = AsyncError(error, stackTrace);
@@ -77,6 +74,10 @@ class AuthNotifier extends _$AuthNotifier {
     state = const AsyncLoading();
     try {
       final user = await ref.read(authRepositoryProvider).signInWithGoogle();
+      await SessionPersistenceService.instance.setPermissionSetupComplete(
+        user.id,
+        complete: true,
+      );
       state = AsyncData(AuthState.authenticated(user: user));
       unawaited(_claimDailyLogin(user));
     } catch (error, stackTrace) {

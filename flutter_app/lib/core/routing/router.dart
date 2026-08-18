@@ -79,16 +79,10 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
               (isOnLogin || isOnLegal) ? null : AppRoutes.login,
           authenticated: (user) {
             if (currentFlavor == AppFlavor.student) {
-              final permissionSetupComplete = SessionPersistenceService.instance
-                  .isPermissionSetupCompleteSync(user.id);
-              if (!permissionSetupComplete) {
-                return isOnStudentPermissionSetup
-                    ? null
-                    : AppRoutes.studentOnboarding;
-              }
-              if (isOnStudentPermissionSetup) {
+              if (isOnLogin) {
                 return AppRoutes.studentHome;
               }
+              return null;
             }
 
             // Sprint 6.9 — admin with zero workspaces lands on the

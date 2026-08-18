@@ -145,36 +145,14 @@ class _StudentAppState extends ConsumerState<_StudentApp>
     String userId,
     GoRouter router,
   ) async {
-    final isAlreadyComplete =
-        SessionPersistenceService.instance.isPermissionSetupCompleteSync(userId);
-    if (isAlreadyComplete) {
-      try {
-        final service = ScreenTimeService();
-        final status = await service.getPermissionStatus();
-        await ref.read(screenTimeRepositoryProvider).reportPermissionStatus(
-              overlayPermission: status.overlay,
-              usageAccessPermission: status.usageAccess,
-              notificationAccess: status.notifications,
-              accessibilityService: status.accessibility,
-              batteryOptimizationExempt: status.batteryExempt,
-              deviceAdministrator: false,
-            );
-      } catch (_) {}
-      return;
-    }
-
-    final service = ScreenTimeService();
-    final status = await service.getPermissionStatus();
-    if (status.requiredPermissionsGranted) {
+    try {
+      final service = ScreenTimeService();
+      final status = await service.getPermissionStatus();
       await SessionPersistenceService.instance.setPermissionSetupComplete(
         userId,
         complete: true,
       );
-    } else {
-      router.go(AppRoutes.studentOnboarding);
-    }
 
-    try {
       await ref.read(screenTimeRepositoryProvider).reportPermissionStatus(
             overlayPermission: status.overlay,
             usageAccessPermission: status.usageAccess,
