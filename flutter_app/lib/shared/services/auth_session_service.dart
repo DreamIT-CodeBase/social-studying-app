@@ -121,10 +121,13 @@ class AuthSessionService {
   }
 
   /// Android: native Play Services sign-in via MethodChannel.
-  /// Zero Credential Manager, zero code 10, zero code 16.
+  /// Zero Credential Manager, zero code 10/16 cross-client caching bugs.
   Future<String> _authenticateWithGoogleAndroid() async {
     try {
-      final idToken = await _googleNativeChannel.invokeMethod<String>('signIn');
+      final idToken = await _googleNativeChannel.invokeMethod<String>(
+        'signIn',
+        {'serverClientId': Environment.googleWebClientId},
+      );
       if (idToken == null || idToken.isEmpty) {
         throw StateError('Google sign in failed: no ID token returned from native layer.');
       }

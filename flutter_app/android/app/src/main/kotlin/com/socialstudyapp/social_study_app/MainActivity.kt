@@ -48,7 +48,10 @@ class MainActivity : FlutterActivity() {
             LegacyGoogleSignInHelper.CHANNEL,
         ).setMethodCallHandler { call, result ->
             when (call.method) {
-                "signIn" -> googleSignInHelper.signIn(result)
+                "signIn" -> {
+                    val serverClientId = call.argument<String>("serverClientId")
+                    googleSignInHelper.signIn(serverClientId, result)
+                }
                 else -> result.notImplemented()
             }
         }

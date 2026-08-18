@@ -6,6 +6,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.CommonStatusCodes
 import io.flutter.plugin.common.MethodChannel
 
 /**
@@ -13,15 +14,13 @@ import io.flutter.plugin.common.MethodChannel
  * (com.google.android.gms.auth.api.signin.GoogleSignIn).
  *
  * This completely bypasses the Credential Manager used by google_sign_in_android 7.x,
- * which causes code 10 (DEVELOPER_ERROR) and code 16 (account reauth failed) on
- * AAB Play Store builds with cross-client OAuth.
+ * which causes code 16 (account reauth failed) on Android.
  *
- * The classic API uses GoogleSignInClient.startActivityForResult() — a proven,
- * stable mechanism that has worked since Android 5.0.
+ * Uses GoogleSignInClient.startActivityForResult() with explicit Web Client ID.
  */
 class LegacyGoogleSignInHelper(
     private val activity: Activity,
-    private val serverClientId: String,
+    private val defaultServerClientId: String,
 ) {
     companion object {
         const val GOOGLE_SIGN_IN_REQUEST_CODE = 9001
@@ -30,28 +29,33 @@ class LegacyGoogleSignInHelper(
 
     private var pendingResult: MethodChannel.Result? = null
 
-    private val gso: GoogleSignInOptions by lazy {
-        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(serverClientId)  // Gets id_token for the backend
-            .requestEmail()
-            .requestProfile()
-            .build()
-    }
-
-    private val client by lazy { GoogleSignIn.getClient(activity, gso) }
-
     /** Called from MainActivity's MethodChannel handler. */
-    fun signIn(result: MethodChannel.Result) {
+    fun signIn(serverClientIdOverride: String?, result: MethodChannel.Result) {
         if (pendingResult != null) {
             result.error("SIGN_IN_ACTIVE", "A sign-in is already in progress.", null)
             return
         }
         pendingResult = result
 
-        // Always sign out first to force a fresh account picker and fresh token.
+        val clientId = serverClientIdOverride?.takeIf { it.isNotBlank() } ?: defaultServerClientId
+
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(clientId)  // Gets id_token for the backend
+            .requestEmail()
+            .requestProfile()
+            .build()
+
+        val client = GoogleSignIn.getClient(activity, gso)
+
+        // Sign out first to ensure the account picker shows and a fresh token is minted
         client.signOut().addOnCompleteListener {
-            val signInIntent = client.signInIntent
-            activity.startActivityForResult(signInIntent, GOOGLE_SIGN_IN_REQUEST_CODE)
+            try {
+                val signInIntent = client.signInIntent
+                activity.startActivityForResult(signInIntent, GOOGLE_SIGN_IN_REQUEST_CODE)
+            } catch (e: Exception) {
+                pendingResult = null
+                result.error("INTENT_FAILED", "Failed to start Google sign in intent: ${e.message}", null)
+            }
         }
     }
 
@@ -72,10 +76,15 @@ class LegacyGoogleSignInHelper(
                 pending.success(idToken)
             }
         } catch (e: ApiException) {
-            if (e.statusCode == com.google.android.gms.common.api.CommonStatusCodes.CANCELED) {
+            val statusString = CommonStatusCodes.getStatusCodeString(e.statusCode)
+            if (e.statusCode == CommonStatusCodes.CANCELED) {
                 pending.error("CANCELED", "Google sign in was cancelled by the user.", null)
             } else {
-                pending.error("SIGN_IN_FAILED", "Google sign in failed with status code: ${e.statusCode}", null)
+                pending.error(
+                    "SIGN_IN_FAILED",
+                    "Google sign in failed with status code: ${e.statusCode} ($statusString). Package: ${activity.packageName}",
+                    null,
+                )
             }
         }
         return true
