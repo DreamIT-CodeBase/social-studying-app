@@ -162,11 +162,29 @@ class RealAuthRepository implements AuthRepository {
       await AuthSessionService.instance.persistGoogleSession(idToken);
       debugPrint('Google Sign-in: session persisted, fetching profile...');
 
-      // Fetch the real user profile from the backend
+      // Fetch the real user profile from the backend.
+      // Retry once on transient failure — the token is already persisted,
+      // so losing the profile fetch shouldn't strand the user on login.
       final dio = _ref.read(dioClientProvider).dio;
-      final response = await dio.get('/api/v1/users/me');
-      final backendUser = User.fromJson(response.data as Map<String, dynamic>);
-      debugPrint('Google Sign-in: user profile loaded (${backendUser.email})');
+      User? backendUser;
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          if (attempt > 0) {
+            await Future<void>.delayed(const Duration(seconds: 1));
+          }
+          final response = await dio.get('/api/v1/users/me');
+          backendUser =
+              User.fromJson(response.data as Map<String, dynamic>);
+          break;
+        } catch (e) {
+          debugPrint(
+            'Google Sign-in: profile fetch attempt ${attempt + 1} failed: $e',
+          );
+          if (attempt == 1) rethrow;
+        }
+      }
+
+      debugPrint('Google Sign-in: user profile loaded (${backendUser!.email})');
 
       await AuthSessionService.instance
           .writeUser(jsonEncode(backendUser.toJson()));

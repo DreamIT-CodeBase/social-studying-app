@@ -58,10 +58,6 @@ class AuthNotifier extends _$AuthNotifier {
     state = const AsyncLoading();
     try {
       final user = await ref.read(authRepositoryProvider).signInWithMicrosoft();
-      await SessionPersistenceService.instance.setPermissionSetupComplete(
-        user.id,
-        complete: true,
-      );
       state = AsyncData(AuthState.authenticated(user: user));
       unawaited(_claimDailyLogin(user));
     } catch (error, stackTrace) {
@@ -74,10 +70,6 @@ class AuthNotifier extends _$AuthNotifier {
     state = const AsyncLoading();
     try {
       final user = await ref.read(authRepositoryProvider).signInWithGoogle();
-      await SessionPersistenceService.instance.setPermissionSetupComplete(
-        user.id,
-        complete: true,
-      );
       state = AsyncData(AuthState.authenticated(user: user));
       unawaited(_claimDailyLogin(user));
     } catch (error, stackTrace) {

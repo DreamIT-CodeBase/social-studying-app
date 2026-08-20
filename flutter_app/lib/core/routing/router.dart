@@ -77,7 +77,18 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
               (isOnLogin || isOnLegal) ? null : AppRoutes.login,
           authenticated: (user) {
             if (currentFlavor == AppFlavor.student) {
-              if (isOnLogin) {
+              final isOnOnboarding =
+                  state.matchedLocation == AppRoutes.studentOnboarding;
+              final permissionsDone = SessionPersistenceService
+                  .instance
+                  .isPermissionSetupCompleteSync(user.id);
+
+              if (!permissionsDone) {
+                // First-time sign-in: send to permission onboarding.
+                return isOnOnboarding ? null : AppRoutes.studentOnboarding;
+              }
+              // Permissions already granted — go to dashboard.
+              if (isOnLogin || isOnOnboarding) {
                 return AppRoutes.studentHome;
               }
               return null;

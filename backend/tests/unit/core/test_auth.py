@@ -21,7 +21,7 @@ from tests.unit.conftest import make_user
 
 @pytest.mark.asyncio
 async def test_self_learning_workspace_is_not_created_for_admins():
-    admin = make_user(role=UserRole.workspace_admin)
+    admin = make_user(role=UserRole.tenant_admin)
 
     with patch("app.core.auth.get_collection") as get_collection:
         result = await _ensure_self_learning_workspace(admin)

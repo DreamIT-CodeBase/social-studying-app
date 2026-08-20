@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -123,20 +124,27 @@ class AuthSessionService {
 
   /// Android: Standard RFC 7636 OAuth 2.0 PKCE flow via Chrome Custom Tabs.
   Future<String> _authenticateWithGoogleAndroid() async {
-    final result = await _appAuth.authorizeAndExchangeCode(
-      AuthorizationTokenRequest(
-        _googlePkceClientId,
-        _googlePkceRedirectUri,
-        serviceConfiguration: const AuthorizationServiceConfiguration(
-          authorizationEndpoint: _googleAuthEndpoint,
-          tokenEndpoint: _googleTokenEndpoint,
-        ),
-        scopes: const ['openid', 'email', 'profile'],
-        promptValues: const ['select_account'],
-      ),
-    );
+    final result = await _appAuth
+        .authorizeAndExchangeCode(
+          AuthorizationTokenRequest(
+            _googlePkceClientId,
+            _googlePkceRedirectUri,
+            serviceConfiguration: const AuthorizationServiceConfiguration(
+              authorizationEndpoint: _googleAuthEndpoint,
+              tokenEndpoint: _googleTokenEndpoint,
+            ),
+            scopes: const ['openid', 'email', 'profile'],
+            promptValues: const ['select_account'],
+          ),
+        )
+        .timeout(
+          const Duration(seconds: 75),
+          onTimeout: () => throw TimeoutException(
+            'Google sign-in did not finish after returning from the browser.',
+          ),
+        );
 
-    final idToken = result?.idToken;
+    final idToken = result.idToken;
     if (idToken == null || idToken.isEmpty) {
       throw StateError('Google sign in failed: no ID token returned.');
     }

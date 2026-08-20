@@ -2,14 +2,19 @@ import 'package:flutter/foundation.dart';
 import 'package:social_study_app/core/config/app_flavor.dart';
 
 abstract final class Environment {
-  // Default points at the host machine from the Android emulator (10.0.2.2).
-  // Override for production deploys:
-  //   --dart-define=API_BASE_URL=https://ca-api-dev.ambitiouswave-1e406ff3.centralus.azurecontainerapps.io
-  static const String apiBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue:
-        'https://ca-api-dev.ambitiouswave-1e406ff3.centralus.azurecontainerapps.io',
-  );
+  static String get apiBaseUrl {
+    const fromEnv = String.fromEnvironment('API_BASE_URL');
+    if (fromEnv.isNotEmpty) return fromEnv;
+    if (kReleaseMode) {
+      return 'https://ca-api-dev.ambitiouswave-1e406ff3.centralus.azurecontainerapps.io';
+    }
+    // Dynamic local testing: connect to localhost (or 10.0.2.2 on Android emulator)
+    if (kIsWeb) return 'http://localhost:8000';
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      return 'http://10.0.2.2:8000';
+    }
+    return 'http://localhost:8000';
+  }
 
   // When true, all repository providers route through Dio → real backend.
   // When false, demo/offline repositories are used for users matching the
