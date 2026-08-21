@@ -37,6 +37,20 @@ class AdaptiveSessionScreen extends ConsumerStatefulWidget {
 enum _SessionPhase { preparing, ready, active, completing, complete, error }
 
 class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
+  static const _preparationRetryDelays = <Duration>[
+    Duration(seconds: 2),
+    Duration(seconds: 3),
+    Duration(seconds: 5),
+    Duration(seconds: 5),
+    Duration(seconds: 5),
+    Duration(seconds: 5),
+    Duration(seconds: 5),
+    Duration(seconds: 5),
+    Duration(seconds: 5),
+    Duration(seconds: 5),
+    Duration(seconds: 5),
+    Duration(seconds: 5),
+  ];
   final TextEditingController _answerController = TextEditingController();
   final List<SessionQuestionAttempt> _questionAttempts = [];
   final List<SessionFlashcardAttempt> _flashcardAttempts = [];
@@ -66,6 +80,8 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
   int _remainingSeconds = 0;
   Timer? _ticker;
   Timer? _xpIndicatorTimer;
+  int _prepareGeneration = 0;
+  int _preparationAttempt = 0;
 
   AdaptiveSessionRepository get _repository =>
       AdaptiveSessionRepository(ref.read(dioClientProvider).dio);
@@ -78,6 +94,7 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
 
   @override
   void dispose() {
+    _prepareGeneration += 1;
     _ticker?.cancel();
     _xpIndicatorTimer?.cancel();
     _answerController.dispose();
@@ -85,6 +102,7 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
   }
 
   Future<void> _prepare() async {
+    final generation = ++_prepareGeneration;
     _ticker?.cancel();
     setState(() {
       _phase = _SessionPhase.preparing;
@@ -97,24 +115,37 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
       _answerSubmitting = false;
       _questionAttempts.clear();
       _flashcardAttempts.clear();
+      _preparationAttempt = 0;
     });
-    try {
-      final plan = await _repository.prepare(
-        workspaceId: widget.workspaceId,
-        mode: widget.mode,
-      );
-      if (!mounted) return;
-      setState(() {
-        _plan = plan;
-        _remainingSeconds = plan.durationMinutes * 60;
-        _phase = _SessionPhase.ready;
-      });
-    } on AdaptiveSessionException catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _error = error.message;
-        _phase = _SessionPhase.error;
-      });
+    for (var attempt = 0;; attempt++) {
+      try {
+        final plan = await _repository.prepare(
+          workspaceId: widget.workspaceId,
+          mode: widget.mode,
+        );
+        if (!mounted || generation != _prepareGeneration) return;
+        setState(() {
+          _plan = plan;
+          _remainingSeconds = plan.durationMinutes * 60;
+          _phase = _SessionPhase.ready;
+        });
+        return;
+      } on AdaptiveSessionException catch (error) {
+        if (!mounted || generation != _prepareGeneration) return;
+        if (error.retryable && attempt < _preparationRetryDelays.length) {
+          setState(() => _preparationAttempt = attempt + 1);
+          await Future<void>.delayed(_preparationRetryDelays[attempt]);
+          if (!mounted || generation != _prepareGeneration) return;
+          continue;
+        }
+        setState(() {
+          _error = error.retryable
+              ? 'Your study material is taking longer than expected to become ready. Please check that processing completed, then try once more.'
+              : error.message;
+          _phase = _SessionPhase.error;
+        });
+        return;
+      }
     }
   }
 
@@ -185,19 +216,22 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
         _summary = summary;
         _phase = _SessionPhase.complete;
       });
-      ref.read(notificationTokenRepositoryProvider).sendActivityPush(
+      ref
+          .read(notificationTokenRepositoryProvider)
+          .sendActivityPush(
             title: 'Study session complete',
             body: 'Great work! Your progress and XP have been saved.',
             workspaceId: widget.workspaceId,
-          ).ignore();
+          )
+          .ignore();
       ref.read(notificationServiceProvider).showCompletionNotification(
-            title: 'Study session complete',
-            body: 'Great work! Your progress and XP have been saved.',
-            payload: {
-              'type': 'study_reminder',
-              'workspace_id': widget.workspaceId,
-            },
-          ).ignore();
+        title: 'Study session complete',
+        body: 'Great work! Your progress and XP have been saved.',
+        payload: {
+          'type': 'study_reminder',
+          'workspace_id': widget.workspaceId,
+        },
+      ).ignore();
     } on AdaptiveSessionException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -441,6 +475,7 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
   Widget _buildBody() => switch (_phase) {
         _SessionPhase.preparing => _PreparingView(
             mode: widget.mode,
+            retrying: _preparationAttempt > 0,
             onClose: () => context.pop(),
           ),
         _SessionPhase.ready => _ReadyView(
@@ -804,9 +839,14 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
 }
 
 class _PreparingView extends StatelessWidget {
-  const _PreparingView({required this.mode, required this.onClose});
+  const _PreparingView({
+    required this.mode,
+    required this.retrying,
+    required this.onClose,
+  });
 
   final AdaptiveSessionMode mode;
+  final bool retrying;
   final VoidCallback onClose;
 
   @override
@@ -814,9 +854,12 @@ class _PreparingView extends StatelessWidget {
         children: [
           Positioned.fill(
             child: LoadingIndicator(
-              message: 'Preparing your adaptive session…',
-              subMessage:
-                  'Loading every ${mode == AdaptiveSessionMode.flashcard ? 'card' : 'question'}, answer, and explanation before you begin.',
+              message: retrying
+                  ? 'Your material is still being prepared…'
+                  : 'Preparing your adaptive session…',
+              subMessage: retrying
+                  ? 'Please stay here. Your session will open automatically as soon as it is ready.'
+                  : 'Loading every ${mode == AdaptiveSessionMode.flashcard ? 'card' : 'question'}, answer, and explanation before you begin.',
             ),
           ),
           Positioned(

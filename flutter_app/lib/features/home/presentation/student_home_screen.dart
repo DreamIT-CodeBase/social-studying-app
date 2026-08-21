@@ -913,8 +913,11 @@ class _HomeTab extends ConsumerWidget {
                             child: CircularProgressIndicator(),
                           ),
                         ),
-                        error: (err, stack) => Center(
-                          child: Text('Failed to load activity: $err'),
+                        error: (err, stack) => const EmptyStateView(
+                          icon: Icons.history_rounded,
+                          title: 'No activity yet',
+                          subtitle:
+                              'Complete your first study session and your recent activity will appear here.',
                         ),
                       ),
               ],

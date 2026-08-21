@@ -17,7 +17,10 @@ class AdaptiveSessionRepository {
       );
       return AdaptiveSessionPlan.fromJson(response.data!);
     } on DioException catch (error) {
-      throw AdaptiveSessionException(_message(error));
+      throw AdaptiveSessionException(
+        _message(error),
+        retryable: _isRetryablePreparationError(error),
+      );
     }
   }
 
@@ -74,12 +77,34 @@ class AdaptiveSessionRepository {
     }
     return error.message ?? 'Could not connect to the study service.';
   }
+
+  bool _isRetryablePreparationError(DioException error) {
+    final statusCode = error.response?.statusCode;
+    if (statusCode == 429 || statusCode == 503) {
+      return true;
+    }
+    final body = error.response?.data;
+    final detail = body is Map<String, dynamic>
+        ? body['detail']?.toString().toLowerCase() ?? ''
+        : '';
+    if (statusCode == 409 &&
+        (detail.contains('finish processing') ||
+            detail.contains('try again shortly') ||
+            detail.contains('not ready'))) {
+      return true;
+    }
+    return error.type == DioExceptionType.connectionError ||
+        error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.receiveTimeout ||
+        error.type == DioExceptionType.sendTimeout;
+  }
 }
 
 class AdaptiveSessionException implements Exception {
-  const AdaptiveSessionException(this.message);
+  const AdaptiveSessionException(this.message, {this.retryable = false});
 
   final String message;
+  final bool retryable;
 
   @override
   String toString() => message;

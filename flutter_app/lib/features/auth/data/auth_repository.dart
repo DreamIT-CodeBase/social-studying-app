@@ -91,9 +91,28 @@ class RealAuthRepository implements AuthRepository {
       debugPrint('Microsoft sign-in: account loaded.');
 
       return backendUser;
-    } catch (e) {
-      throw Exception('Sign in failed: $e');
+    } catch (e, stackTrace) {
+      debugPrint('Microsoft sign-in failed: $e\n$stackTrace');
+      throw Exception(_friendlyMicrosoftSignInMessage(e));
     }
+  }
+
+  String _friendlyMicrosoftSignInMessage(Object error) {
+    final details = error.toString().toLowerCase();
+    final cancelled = details.contains('cancel') ||
+        details.contains('user_cancelled') ||
+        details.contains('code: -3') ||
+        details.contains('code=-3');
+    if (cancelled) {
+      return 'Sign-in was not completed. Tap Microsoft sign-in again and keep the browser open until it returns to Social Studying.';
+    }
+    if (error is TimeoutException) {
+      return 'Sign-in took too long. Check your internet connection, close the sign-in browser, then try again.';
+    }
+    if (!kIsWeb && Platform.isIOS) {
+      return 'Microsoft sign-in could not finish on this iPhone. Close the sign-in browser, make sure Safari allows cookies, return to Social Studying, and try again. If it continues, restart the app and try on a stable connection.';
+    }
+    return 'Microsoft sign-in could not finish. Check your connection, close any open sign-in window, and try again.';
   }
 
   Future<AuthorizationTokenResponse> _signInWithMicrosoftIos() async {
@@ -173,8 +192,7 @@ class RealAuthRepository implements AuthRepository {
             await Future<void>.delayed(const Duration(seconds: 1));
           }
           final response = await dio.get('/api/v1/users/me');
-          backendUser =
-              User.fromJson(response.data as Map<String, dynamic>);
+          backendUser = User.fromJson(response.data as Map<String, dynamic>);
           break;
         } catch (e) {
           debugPrint(
