@@ -29,7 +29,6 @@ import 'package:social_study_app/features/taxonomy/presentation/taxonomy_viewer_
 import 'package:social_study_app/features/screen_time/screens/screen_time_settings_screen.dart';
 import 'package:social_study_app/features/study_sessions/domain/adaptive_session_models.dart';
 import 'package:social_study_app/features/study_sessions/presentation/adaptive_session_screen.dart';
-import 'package:social_study_app/shared/services/session_persistence_service.dart';
 
 part 'router.g.dart';
 
@@ -77,18 +76,7 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
               (isOnLogin || isOnLegal) ? null : AppRoutes.login,
           authenticated: (user) {
             if (currentFlavor == AppFlavor.student) {
-              final isOnOnboarding =
-                  state.matchedLocation == AppRoutes.studentOnboarding;
-              final permissionsDone = SessionPersistenceService
-                  .instance
-                  .isPermissionSetupCompleteSync(user.id);
-
-              if (!permissionsDone) {
-                // First-time sign-in: send to permission onboarding.
-                return isOnOnboarding ? null : AppRoutes.studentOnboarding;
-              }
-              // Permissions already granted — go to dashboard.
-              if (isOnLogin || isOnOnboarding) {
+              if (isOnLogin) {
                 return AppRoutes.studentHome;
               }
               return null;

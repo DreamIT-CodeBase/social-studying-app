@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -35,17 +35,8 @@ class AuthSessionService {
     serverClientId: Environment.googleWebClientId,
   );
 
-  // Google OAuth PKCE parameters for Android (flutter_appauth).
-  // Uses standard iOS Client ID which supports reverse-DNS custom schemes
-  // natively with zero Google Play Services SHA-1 or Credential Manager checks.
-  static const _googlePkceClientId =
-      '140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb.apps.googleusercontent.com';
-  static const _googlePkceRedirectUri =
-      'com.googleusercontent.apps.140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb:/oauth2redirect';
-  static const _googleAuthEndpoint =
-      'https://accounts.google.com/o/oauth2/v2/auth';
-  static const _googleTokenEndpoint =
-      'https://oauth2.googleapis.com/token';
+  static const _googleNativeChannel =
+      MethodChannel('com.socialstudyapp.app/google_sign_in');
 
   bool _loaded = false;
   Map<String, String> _storedValues = {};
@@ -110,9 +101,9 @@ class AuthSessionService {
 
   /// Authenticates with Google and returns the ID token.
   ///
-  /// - Android: Uses standard RFC 7636 OAuth 2.0 PKCE via flutter_appauth
-  ///   in Chrome Custom Tabs. Bypasses Google Play Services / Credential Manager
-  ///   entirely — zero SHA-1 checks, zero code 10, zero code 16.
+  /// - Android: Uses the classic Play Services API through a native channel.
+  ///   This avoids the Credential Manager re-authentication regression while
+  ///   using the web client ID configured for the backend ID token.
   /// - iOS: Uses native google_sign_in v7 (unchanged, working 100% on iPhone).
   Future<String> authenticateWithGoogle() async {
     if (Platform.isAndroid) {
@@ -122,33 +113,30 @@ class AuthSessionService {
     }
   }
 
-  /// Android: Standard RFC 7636 OAuth 2.0 PKCE flow via Chrome Custom Tabs.
+  /// Android: native Play Services sign-in via MethodChannel.
   Future<String> _authenticateWithGoogleAndroid() async {
-    final result = await _appAuth
-        .authorizeAndExchangeCode(
-          AuthorizationTokenRequest(
-            _googlePkceClientId,
-            _googlePkceRedirectUri,
-            serviceConfiguration: const AuthorizationServiceConfiguration(
-              authorizationEndpoint: _googleAuthEndpoint,
-              tokenEndpoint: _googleTokenEndpoint,
-            ),
-            scopes: const ['openid', 'email', 'profile'],
-            promptValues: const ['select_account'],
-          ),
-        )
-        .timeout(
-          const Duration(seconds: 75),
-          onTimeout: () => throw TimeoutException(
-            'Google sign-in did not finish after returning from the browser.',
-          ),
+    try {
+      final idToken = await _googleNativeChannel.invokeMethod<String>(
+        'signIn',
+        {'serverClientId': Environment.googleWebClientId},
+      ).timeout(
+        const Duration(seconds: 75),
+        onTimeout: () => throw TimeoutException(
+          'Google sign-in did not finish after choosing an account.',
+        ),
+      );
+      if (idToken == null || idToken.isEmpty) {
+        throw StateError(
+          'Google sign in failed: no ID token returned from Android.',
         );
-
-    final idToken = result.idToken;
-    if (idToken == null || idToken.isEmpty) {
-      throw StateError('Google sign in failed: no ID token returned.');
+      }
+      return idToken;
+    } on PlatformException catch (error) {
+      if (error.code == 'CANCELED') {
+        throw StateError('Google sign in was cancelled.');
+      }
+      rethrow;
     }
-    return idToken;
   }
 
   /// iOS: google_sign_in v7 — unchanged, works perfectly on iPhone.
