@@ -35,8 +35,18 @@ class AuthSessionService {
     serverClientId: Environment.googleWebClientId,
   );
 
-  static const _googleNativeChannel =
-      MethodChannel('com.socialstudyapp.app/google_sign_in');
+  // Android uses AppAuth with the registered Google iOS OAuth client. Google
+  // permits this public-client PKCE flow with the client's reverse-domain
+  // redirect URI. It does not involve Play Services, so Play signing-key
+  // mismatches cannot produce status 10 (DEVELOPER_ERROR).
+  static const _googlePkceClientId =
+      '140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb.apps.googleusercontent.com';
+  static const _googlePkceRedirectUri =
+      'com.googleusercontent.apps.140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb:/oauth2redirect';
+  static const _googleAuthEndpoint =
+      'https://accounts.google.com/o/oauth2/v2/auth';
+  static const _googleTokenEndpoint =
+      'https://oauth2.googleapis.com/token';
 
   bool _loaded = false;
   Map<String, String> _storedValues = {};
@@ -101,9 +111,8 @@ class AuthSessionService {
 
   /// Authenticates with Google and returns the ID token.
   ///
-  /// - Android: Uses the classic Play Services API through a native channel.
-  ///   This avoids the Credential Manager re-authentication regression while
-  ///   using the web client ID configured for the backend ID token.
+  /// - Android: Uses OAuth 2.0 Authorization Code + PKCE in a browser tab.
+  ///   This bypasses Play Services and Credential Manager certificate checks.
   /// - iOS: Uses native google_sign_in v7 (unchanged, working 100% on iPhone).
   Future<String> authenticateWithGoogle() async {
     if (Platform.isAndroid) {
@@ -113,34 +122,33 @@ class AuthSessionService {
     }
   }
 
-  /// Android: native Play Services sign-in via MethodChannel.
+  /// Android: OAuth 2.0 PKCE via Chrome Custom Tabs.
   Future<String> _authenticateWithGoogleAndroid() async {
-    try {
-      final idToken = await _googleNativeChannel.invokeMethod<String>(
-        'signIn',
-        {'serverClientId': Environment.googleWebClientId},
-      ).timeout(
-        const Duration(seconds: 75),
-        onTimeout: () => throw TimeoutException(
-          'Google sign-in did not finish after choosing an account.',
-        ),
-      );
-      if (idToken == null || idToken.isEmpty) {
-        throw StateError(
-          'Google sign in failed: no ID token returned from Android.',
+    final result = await _appAuth
+        .authorizeAndExchangeCode(
+          AuthorizationTokenRequest(
+            _googlePkceClientId,
+            _googlePkceRedirectUri,
+            serviceConfiguration: const AuthorizationServiceConfiguration(
+              authorizationEndpoint: _googleAuthEndpoint,
+              tokenEndpoint: _googleTokenEndpoint,
+            ),
+            scopes: const ['openid', 'email', 'profile'],
+            promptValues: const ['select_account'],
+          ),
+        )
+        .timeout(
+          const Duration(seconds: 75),
+          onTimeout: () => throw TimeoutException(
+            'Google sign-in did not finish after returning from the browser.',
+          ),
         );
-      }
-      return idToken;
-    } on PlatformException catch (error) {
-      if (error.code == 'CANCELED') {
-        throw StateError('Google sign in was cancelled.');
-      }
-      // Some Play-delivered builds return DEVELOPER_ERROR from the deprecated
-      // GoogleSignInClient API even when the package, Play signing SHA-1, and
-      // web client ID all match. Fall back to google_sign_in 7.x, which uses
-      // Android's current Credential Manager implementation.
-      return _authenticateWithGooglePlugin();
+
+    final idToken = result.idToken;
+    if (idToken == null || idToken.isEmpty) {
+      throw StateError('Google sign in failed: no ID token returned.');
     }
+    return idToken;
   }
 
   /// iOS: google_sign_in v7 — unchanged, works perfectly on iPhone.
