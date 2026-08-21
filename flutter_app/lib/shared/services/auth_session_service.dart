@@ -135,12 +135,19 @@ class AuthSessionService {
       if (error.code == 'CANCELED') {
         throw StateError('Google sign in was cancelled.');
       }
-      rethrow;
+      // Some Play-delivered builds return DEVELOPER_ERROR from the deprecated
+      // GoogleSignInClient API even when the package, Play signing SHA-1, and
+      // web client ID all match. Fall back to google_sign_in 7.x, which uses
+      // Android's current Credential Manager implementation.
+      return _authenticateWithGooglePlugin();
     }
   }
 
   /// iOS: google_sign_in v7 — unchanged, works perfectly on iPhone.
-  Future<String> _authenticateWithGoogleIOS() async {
+  Future<String> _authenticateWithGoogleIOS() =>
+      _authenticateWithGooglePlugin();
+
+  Future<String> _authenticateWithGooglePlugin() async {
     await _googleInitialization;
     if (!_googleSignIn.supportsAuthenticate()) {
       throw UnsupportedError('Google sign-in not supported on this platform.');
