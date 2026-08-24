@@ -5,21 +5,28 @@ in the path, making access checks straightforward.
 """
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import html
 import ipaddress
+import json
 import logging
 import mimetypes
 import re
 import socket
+import time
 from typing import Annotated
 from urllib.parse import urljoin, urlsplit
 from uuid import uuid4
 
 import httpx
+from azure.core.exceptions import ResourceNotFoundError
 from fastapi import APIRouter, Depends, File, UploadFile, status
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, ValidationError as PydanticValidationError
 
 from app.core.auth import get_current_user
+from app.core.config import settings
 from app.core.database import DOCUMENTS, WORKSPACES, get_collection
 from app.core.exceptions import (
     ForbiddenError,
@@ -47,7 +54,10 @@ _ALLOWED_MIME_TO_TYPE: dict[str, DocumentType] = {
     "text/plain": DocumentType.text,
 }
 
-_MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB
+# Compatibility ceiling for already-released mobile builds, which still send
+# the entire multipart body through Container Apps.  New clients use the
+# direct Blob flow below and can use the full Document Intelligence S0 limit.
+_MAX_FILE_BYTES = 100 * 1024 * 1024  # 100 MB
 _MAX_SCRAPE_BYTES = 5 * 1024 * 1024  # 5 MB
 _MAX_SCRAPE_REDIRECTS = 5
 _SCRAPE_TIMEOUT_SECONDS = 20
@@ -60,6 +70,38 @@ _ALLOWED_SCRAPE_CONTENT_TYPES = {
 
 class ScrapeRequest(BaseModel):
     url: HttpUrl
+
+
+class DirectUploadRequest(BaseModel):
+    """Metadata that is safe to send before the file body reaches Blob Storage."""
+
+    filename: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=255)
+    file_size_bytes: int = Field(gt=0)
+
+
+class DirectUploadResponse(BaseModel):
+    document_id: str
+    upload_url: str
+    upload_token: str
+    block_size_bytes: int
+    expires_at: str
+    max_file_size_bytes: int
+
+
+class DirectUploadCompleteRequest(BaseModel):
+    upload_token: str = Field(min_length=1)
+
+
+class _DirectUploadSession(BaseModel):
+    document_id: str
+    tenant_id: str
+    workspace_id: str
+    uploaded_by: str
+    filename: str
+    content_type: str
+    file_size_bytes: int
+    expires_at: int
 
 
 @router.post("/scrape", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
@@ -291,6 +333,173 @@ def _html_to_plain(html_text: str) -> str:
     return readable.strip()
 
 
+@router.post(
+    "/uploads",
+    response_model=DirectUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_direct_upload(
+    workspace_id: str,
+    body: DirectUploadRequest,
+    current_user: User = Depends(get_current_user),
+) -> DirectUploadResponse:
+    """Authorize a resumable, direct-to-Blob document upload.
+
+    File bytes deliberately never pass through FastAPI or Container Apps.  The
+    returned SAS can create/write exactly one blob and expires quickly; the
+    follow-up ``/complete`` call verifies the committed blob before it is
+    queued for ingestion.
+    """
+    await _assert_admin(current_user, workspace_id)
+    filename = _safe_filename(body.filename)
+    content_type, _ = _validate_upload_metadata(
+        filename=filename,
+        content_type=body.content_type,
+        file_size_bytes=body.file_size_bytes,
+        maximum_size_bytes=settings.max_document_upload_bytes,
+    )
+    document_id = f"doc_{uuid4().hex}"
+
+    try:
+        target = blob_storage.create_direct_upload_target(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            user_id=current_user.id,
+            document_id=document_id,
+            filename=filename,
+        )
+    except Exception as exc:
+        logger.exception("Could not create direct upload target for %s", document_id)
+        raise ServiceUnavailableError("Document storage is temporarily unavailable.") from exc
+
+    upload_token = _sign_direct_upload_session(
+        _DirectUploadSession(
+            document_id=document_id,
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            uploaded_by=current_user.id,
+            filename=filename,
+            content_type=content_type,
+            file_size_bytes=body.file_size_bytes,
+            expires_at=int(target.expires_at.timestamp()),
+        )
+    )
+    return DirectUploadResponse(
+        document_id=document_id,
+        upload_url=target.upload_url,
+        upload_token=upload_token,
+        block_size_bytes=settings.direct_upload_block_size_bytes,
+        expires_at=target.expires_at.isoformat(),
+        max_file_size_bytes=settings.max_document_upload_bytes,
+    )
+
+
+@router.post(
+    "/uploads/{document_id}/complete",
+    response_model=DocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def complete_direct_upload(
+    workspace_id: str,
+    document_id: str,
+    body: DirectUploadCompleteRequest,
+    current_user: User = Depends(get_current_user),
+) -> DocumentResponse:
+    """Verify a direct Blob upload, create its record, and queue processing."""
+    await _assert_admin(current_user, workspace_id)
+    session = _verify_direct_upload_session(body.upload_token)
+    if (
+        session.document_id != document_id
+        or session.tenant_id != current_user.tenant_id
+        or session.workspace_id != workspace_id
+        or session.uploaded_by != current_user.id
+    ):
+        raise ForbiddenError("This upload authorization does not belong to your account.")
+
+    blob_path = blob_storage.document_blob_path(
+        tenant_id=session.tenant_id,
+        workspace_id=session.workspace_id,
+        user_id=session.uploaded_by,
+        document_id=session.document_id,
+        filename=session.filename,
+    )
+    col = get_collection(current_user.tenant_id, DOCUMENTS)
+
+    # A lost response after a successful finalization is a normal mobile
+    # network failure.  Returning the existing record makes the completion
+    # call idempotent and prevents duplicate queue messages/count increments.
+    existing = await col.find_one({"_id": document_id, "workspace_id": workspace_id})
+    if existing is not None:
+        return DocumentResponse.from_doc(Document.model_validate(existing))
+
+    try:
+        properties = await blob_storage.get_document_properties(blob_path)
+    except ResourceNotFoundError as exc:
+        raise ValidationError("Upload was not completed. Please upload the file again.") from exc
+    except Exception as exc:
+        logger.exception("Could not verify direct upload %s", document_id)
+        raise ServiceUnavailableError(
+            "Could not verify the uploaded file. Please try again."
+        ) from exc
+
+    if properties.size_bytes != session.file_size_bytes:
+        raise ValidationError("Uploaded file size did not match the selected file. Please retry.")
+    actual_content_type = _normalized_content_type(properties.content_type or "")
+    if actual_content_type != session.content_type:
+        raise ValidationError("Uploaded file type did not match the selected file. Please retry.")
+
+    _, doc_type = _validate_upload_metadata(
+        filename=session.filename,
+        content_type=session.content_type,
+        file_size_bytes=properties.size_bytes,
+        maximum_size_bytes=settings.max_document_upload_bytes,
+    )
+    doc = Document(
+        **{"_id": document_id},
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        uploaded_by=current_user.id,
+        filename=session.filename,
+        blob_url=blob_storage.document_blob_url(blob_path),
+        file_size_bytes=properties.size_bytes,
+        doc_type=doc_type,
+    )
+    await col.insert_one(doc.model_dump(by_alias=True))
+
+    wsp_col = get_collection(current_user.tenant_id, WORKSPACES)
+    await wsp_col.update_one({"_id": workspace_id}, {"$inc": {"document_count": 1}})
+
+    try:
+        await document_queue.publish_extraction_message(
+            ExtractionMessage(
+                document_id=document_id,
+                tenant_id=current_user.tenant_id,
+                workspace_id=workspace_id,
+                blob_path=blob_path,
+                content_type=session.content_type,
+                uploaded_by=current_user.id,
+                uploaded_at=doc.created_at,
+            )
+        )
+    except Exception as exc:
+        logger.exception("Failed to publish extraction message for %s", document_id)
+        await col.update_one(
+            {"_id": document_id, "workspace_id": workspace_id},
+            {
+                "$set": {
+                    "status": DocumentStatus.failed.value,
+                    "processing_error": f"Failed to enqueue for processing: {exc}",
+                    "updated_at": utc_now(),
+                }
+            },
+        )
+        raise ServiceUnavailableError(
+            "Document was uploaded but could not be queued for processing. Please try again."
+        ) from exc
+
+    return DocumentResponse.from_doc(doc)
+
+
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     workspace_id: str,
@@ -300,22 +509,15 @@ async def upload_document(
     """Upload a study material file to blob storage and create a document record."""
     await _assert_admin(current_user, workspace_id)
 
-    content_type = file.content_type or mimetypes.guess_type(file.filename or "")[0] or ""
-    doc_type = _ALLOWED_MIME_TO_TYPE.get(content_type)
-    if doc_type is None:
-        raise ValidationError(
-            f"Unsupported file type '{content_type}'. "
-            "Accepted: PDF, DOCX, JPEG, PNG, WEBP, plain text."
-        )
-
     content = await file.read()
-    if len(content) == 0:
-        raise ValidationError("Uploaded file is empty.")
-    if len(content) > _MAX_FILE_BYTES:
-        raise ValidationError("File exceeds the 50 MB size limit.")
-
     document_id = f"doc_{uuid4().hex}"
-    filename = file.filename or f"{document_id}.bin"
+    filename = _safe_filename(file.filename or f"{document_id}.bin")
+    content_type, doc_type = _validate_upload_metadata(
+        filename=filename,
+        content_type=file.content_type or mimetypes.guess_type(filename)[0] or "",
+        file_size_bytes=len(content),
+        maximum_size_bytes=_MAX_FILE_BYTES,
+    )
 
     # Blob path matches the layout in app/services/blob_storage._blob_path.
     # Recomputed here (not extracted from the URL) so the queue payload stays
@@ -505,6 +707,96 @@ def _assert_workspace_access(user: User, workspace_id: str) -> None:
     ids = {m.workspace_id for m in user.workspace_memberships}
     if workspace_id not in ids:
         raise ForbiddenError("You are not a member of this workspace")
+
+
+def _safe_filename(filename: str) -> str:
+    """Keep user filenames in one blob path segment and reject controls."""
+    basename = filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    if not basename or basename in {".", ".."}:
+        raise ValidationError("Uploaded file must have a valid filename.")
+    if any(ord(char) < 32 for char in basename):
+        raise ValidationError("Uploaded filename contains unsupported characters.")
+    if len(basename) > 255:
+        raise ValidationError("Uploaded filename is too long.")
+    return basename
+
+
+def _normalized_content_type(content_type: str) -> str:
+    return content_type.split(";", 1)[0].strip().lower()
+
+
+def _validate_upload_metadata(
+    *,
+    filename: str,
+    content_type: str,
+    file_size_bytes: int,
+    maximum_size_bytes: int,
+) -> tuple[str, DocumentType]:
+    """Validate the same contract for legacy and direct upload paths."""
+    normalized_content_type = _normalized_content_type(content_type)
+    doc_type = _ALLOWED_MIME_TO_TYPE.get(normalized_content_type)
+    if doc_type is None:
+        guessed_type = _normalized_content_type(mimetypes.guess_type(filename)[0] or "")
+        doc_type = _ALLOWED_MIME_TO_TYPE.get(guessed_type)
+        if doc_type is not None:
+            normalized_content_type = guessed_type
+    if doc_type is None:
+        raise ValidationError(
+            f"Unsupported file type '{content_type}'. "
+            "Accepted: PDF, DOCX, JPEG, PNG, WEBP, plain text."
+        )
+    if file_size_bytes <= 0:
+        raise ValidationError("Uploaded file is empty.")
+    if file_size_bytes > maximum_size_bytes:
+        maximum_mb = maximum_size_bytes // (1024 * 1024)
+        file_size_mb = round(file_size_bytes / (1024 * 1024), 1)
+        raise ValidationError(
+            f"File size ({file_size_mb} MB) exceeds the {maximum_mb} MB document size limit. "
+            "Please split large documents into individual chapters or compress the PDF before uploading."
+        )
+    return normalized_content_type, doc_type
+
+
+def _upload_session_key() -> bytes:
+    """Use the server-only storage connection string as the token signing key."""
+    if not settings.storage_connection_string:
+        raise ServiceUnavailableError("Document storage is temporarily unavailable.")
+    return settings.storage_connection_string.encode("utf-8")
+
+
+def _url_safe_b64_decode(value: str) -> bytes:
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def _sign_direct_upload_session(session: _DirectUploadSession) -> str:
+    payload = json.dumps(
+        session.model_dump(),
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    payload_b64 = base64.urlsafe_b64encode(payload).rstrip(b"=")
+    signature = hmac.new(_upload_session_key(), payload_b64, hashlib.sha256).digest()
+    signature_b64 = base64.urlsafe_b64encode(signature).rstrip(b"=")
+    return f"{payload_b64.decode('ascii')}.{signature_b64.decode('ascii')}"
+
+
+def _verify_direct_upload_session(token: str) -> _DirectUploadSession:
+    try:
+        payload_b64, signature_b64 = token.split(".", 1)
+        payload = payload_b64.encode("ascii")
+        expected_signature = hmac.new(_upload_session_key(), payload, hashlib.sha256).digest()
+        provided_signature = _url_safe_b64_decode(signature_b64)
+        if not hmac.compare_digest(expected_signature, provided_signature):
+            raise ValueError("signature mismatch")
+        session = _DirectUploadSession.model_validate_json(_url_safe_b64_decode(payload_b64))
+    except (UnicodeEncodeError, ValueError, PydanticValidationError) as exc:
+        raise ValidationError(
+            "Upload authorization is invalid. Please start the upload again."
+        ) from exc
+
+    if session.expires_at < int(time.time()):
+        raise ValidationError("Upload authorization expired. Please start the upload again.")
+    return session
 
 
 async def _assert_admin(user: User, workspace_id: str) -> None:

@@ -182,6 +182,7 @@ class DocumentsListScreen extends ConsumerWidget {
   void _showUploadError(BuildContext context, Object error) {
     final message = switch (error) {
       EmptyUploadException() => 'That file is empty.',
+      UploadTooLargeException() => error.message,
       UnsupportedFileTypeException() =>
         'That file type isn\'t supported. '
             'Try a PDF, DOCX, image, or plain text file.',

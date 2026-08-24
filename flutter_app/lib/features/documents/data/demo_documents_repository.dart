@@ -67,11 +67,13 @@ class DemoDocumentsRepository implements DocumentsRepository {
   Future<Document> upload({
     required String workspaceId,
     required String filename,
-    required Uint8List bytes,
     required String contentType,
+    DocumentUpload? upload,
+    Uint8List? bytes,
   }) async {
     await _simulateNetwork();
-    if (bytes.isEmpty) {
+    final file = resolveDocumentUpload(upload: upload, bytes: bytes);
+    if (file.sizeBytes == 0) {
       throw const EmptyUploadException();
     }
     final docType = _docTypeFor(contentType, filename);
@@ -262,6 +264,17 @@ class EmptyUploadException implements Exception {
   const EmptyUploadException();
   @override
   String toString() => 'Uploaded file is empty';
+}
+
+class UploadTooLargeException implements Exception {
+  const UploadTooLargeException([
+    this.message = 'This document is larger than the supported processing limit.',
+  ]);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 class UnsupportedFileTypeException implements Exception {

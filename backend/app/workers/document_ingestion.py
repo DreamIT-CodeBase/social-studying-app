@@ -43,6 +43,7 @@ import logging
 import os
 import signal
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 
@@ -154,20 +155,18 @@ async def _handle(msg: ReceivedExtractionMessage) -> None:
         extra={"processing_started_at": utc_now()},
     )
 
-    # 1. Pull bytes from blob.
-    try:
-        content = await blob_storage.download_document(payload.blob_path)
-    except ResourceNotFoundError as exc:
-        # Blob is gone for good — no point retrying. DLQ + mark failed.
-        await _mark_failed(payload, f"Source blob not found: {payload.blob_path}")
-        await msg.dead_letter("BlobNotFound", str(exc))
-        return False
-
-    # 2. Extract text. Scrape jobs already contain normalized UTF-8 text;
+    # 1. Extract text. Scrape jobs already contain normalized UTF-8 text;
     #    sending that text through Document Intelligence is unsupported and
     #    can leave the UI stuck at "Reading text" while the queue retries.
     #    Keep DI for binary uploads, but handle plain text locally.
     if payload.content_type.lower().split(";", 1)[0].strip() == "text/plain":
+        try:
+            content = await blob_storage.download_document(payload.blob_path)
+        except ResourceNotFoundError as exc:
+            # Blob is gone for good — no point retrying. DLQ + mark failed.
+            await _mark_failed(payload, f"Source blob not found: {payload.blob_path}")
+            await msg.dead_letter("BlobNotFound", str(exc))
+            return False
         extracted = ExtractedDocument(
             text=content.decode("utf-8", errors="replace").strip(),
             page_count=1,
@@ -179,9 +178,8 @@ async def _handle(msg: ReceivedExtractionMessage) -> None:
             return False
     else:
         try:
-            extracted = await document_intelligence.extract_text(
-                content, content_type=payload.content_type
-            )
+            source_url = blob_storage.create_blob_read_url(payload.blob_path)
+            extracted = await document_intelligence.extract_text_from_url(source_url)
         except HttpResponseError as exc:
             if _is_permanent(exc):
                 await _mark_failed(payload, f"Document Intelligence rejected file: {exc.message}")
@@ -397,11 +395,8 @@ def _install_shutdown_handlers(task: asyncio.Task[None]) -> None:
     """
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
-        try:
+        with suppress(NotImplementedError):
             loop.add_signal_handler(sig, task.cancel)
-        except NotImplementedError:
-            # Windows doesn't support add_signal_handler; rely on KeyboardInterrupt.
-            pass
 
 
 async def _amain() -> int:

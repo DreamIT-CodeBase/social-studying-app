@@ -27,9 +27,41 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
+// Native apps do not use CORS, but this enables the same short-lived,
+// blob-scoped SAS upload path for Flutter Web.  The browser never receives an
+// account key and Blob access is still constrained by the per-file SAS.
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: storageAccount
+  name: 'default'
+  properties: {
+    cors: {
+      corsRules: [
+        {
+          allowedOrigins: [
+            '*'
+          ]
+          allowedMethods: [
+            'PUT'
+            'OPTIONS'
+          ]
+          allowedHeaders: [
+            '*'
+          ]
+          exposedHeaders: [
+            'ETag'
+            'x-ms-request-id'
+            'x-ms-version'
+          ]
+          maxAgeInSeconds: 3600
+        }
+      ]
+    }
+  }
+}
+
 resource documentsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
   name: '${storageAccountName}/default/documents'
-  dependsOn: [storageAccount]
+  dependsOn: [blobService]
   properties: {
     publicAccess: 'None'
   }

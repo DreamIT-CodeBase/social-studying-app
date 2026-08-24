@@ -26,17 +26,31 @@ class Settings(BaseSettings):
     # replaced by Azure connection string in prod
     cosmos_connection_string: str = "mongodb://localhost:27017"
 
+    # All dynamically-created tenants share one database-level throughput
+    # pool. Tenant isolation is retained by giving every tenant its own
+    # namespaced collections inside this database (see core/database.py).
+    # This prevents each signup from provisioning another dedicated 400 RU/s.
+    tenant_data_database: str = "tenant_data_shared"
+
     db_name_smoke: str = "ten_smoke001_shared"
     db_name_demo: str = "ten_demo_001_shared"
     db_name_uuid: str = "93e3ce50-a29e-462b-8956-85674a34d167_shared"
 
     def get_db_name(self, tenant_id: str) -> str:
-        """Map tenant ID to configured database name, or return tenant ID if not mapped."""
-        return {
+        """Map logical tenant IDs to their physical Cosmos database."""
+        configured_database = {
+            # Legacy smoke database contains diagnostic documents and must not
+            # be redirected into the dynamic tenant pool.
+            "ten_smoke": "ten_smoke",
             "ten_smoke001": self.db_name_smoke,
             "ten_demo_001": self.db_name_demo,
             "93e3ce50-a29e-462b-8956-85674a34d167": self.db_name_uuid,
-        }.get(tenant_id, tenant_id)
+        }.get(tenant_id)
+        if configured_database:
+            return configured_database
+        if tenant_id.startswith("ten_"):
+            return self.tenant_data_database
+        return tenant_id
 
     # Azure AI Search
     search_endpoint: str = ""
@@ -92,6 +106,12 @@ class Settings(BaseSettings):
     # Azure Blob Storage
     storage_connection_string: str = ""
     storage_container: str = "documents"
+    # Admin apps upload straight to a short-lived, blob-scoped SAS URL.  This
+    # keeps large file bodies off the API ingress and out of API memory.
+    direct_upload_sas_ttl_minutes: int = 60
+    direct_upload_block_size_bytes: int = 8 * 1024 * 1024
+    # Maximum allowed document upload limit (100 MB).
+    max_document_upload_bytes: int = 100 * 1024 * 1024
 
     # Azure AI Document Intelligence (formerly Form Recognizer)
     document_intelligence_endpoint: str = ""

@@ -91,6 +91,8 @@ from app.services import (
     answer_evaluation,
     question_generation,
     question_safety,
+    rag_evaluation,
+    study_sources,
 )
 from app.services import (
     gamification as gamification_service,
@@ -551,6 +553,32 @@ async def _persist_question(
 
     col = get_collection(current_user.tenant_id, QUESTION_QUEUE)
     await col.insert_one(question.model_dump(by_alias=True))
+
+    # Trigger End-to-End RAG evaluation trace & metric persistence
+    try:
+        current_sources = await study_sources.current_study_sources(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+        )
+        source_chunk_ids = [c.chunk_id for c in retrieved.chunks]
+        await rag_evaluation.evaluate_and_persist_rag(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            student_id=current_user.id,
+            selected_topic_id=candidate.topic_id,
+            selected_topic_name=candidate.topic_name,
+            active_document_ids=current_sources.document_ids,
+            retrieved_chunks=retrieved.chunks,
+            generation_chunk_ids=source_chunk_ids,
+            question_id=question_id,
+            question_type=generated.question_type.value,
+            question_body=generated.body,
+            reference_answer=generated.answer,
+            explanation=generated.explanation,
+            known_source_chunk_ids=source_chunk_ids,
+        )
+    except Exception as eval_exc:
+        logger.warning("RAG evaluation failed in _persist_question %s: %s", question_id, eval_exc)
 
     if review.verdict == ReviewVerdict.flagged:
         await _write_moderation_log(

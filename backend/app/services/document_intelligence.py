@@ -18,7 +18,7 @@ import logging
 from dataclasses import dataclass
 
 from azure.ai.documentintelligence import DocumentIntelligenceClient
-from azure.ai.documentintelligence.models import AnalyzeResult
+from azure.ai.documentintelligence.models import AnalyzeDocumentRequest, AnalyzeResult
 from azure.core.credentials import AzureKeyCredential
 
 from app.core.config import settings
@@ -105,6 +105,43 @@ async def extract_text(
     extracted = _to_extracted(result)
     logger.info(
         "Document Intelligence extracted %d chars across %d pages (langs=%s)",
+        len(extracted.text),
+        extracted.page_count,
+        extracted.languages or ["unknown"],
+    )
+    return extracted
+
+
+async def extract_text_from_url(document_url: str) -> ExtractedDocument:
+    """Extract text from a private, time-limited Blob URL.
+
+    The worker no longer has to download a large PDF into its Container Apps
+    memory before it can call Document Intelligence.  Azure reads the source
+    directly from Blob Storage, which is both faster and avoids OOM failures
+    for documents near the supported 500 MB processing limit.
+    """
+    if not document_url:
+        raise ValueError("extract_text_from_url() requires a document URL")
+
+    def _sync() -> AnalyzeResult:
+        with _client() as client:
+            poller = client.begin_analyze_document(
+                model_id=_PREBUILT_READ,
+                body=AnalyzeDocumentRequest(url_source=document_url),
+            )
+            return poller.result()
+
+    try:
+        result = await asyncio.to_thread(_sync)
+    except Exception as exc:
+        logger.exception("Document Intelligence URL analysis failed")
+        raise ServiceUnavailableError(
+            f"Document Intelligence extraction failed: {exc}"
+        ) from exc
+
+    extracted = _to_extracted(result)
+    logger.info(
+        "Document Intelligence URL extraction produced %d chars across %d pages (langs=%s)",
         len(extracted.text),
         extracted.page_count,
         extracted.languages or ["unknown"],

@@ -10,13 +10,37 @@ battle-tested and the async client requires an extra aiohttp dependency.
 
 import asyncio
 import logging
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 from azure.core.exceptions import ResourceNotFoundError
-from azure.storage.blob import BlobServiceClient, ContentSettings
+from azure.storage.blob import (
+    BlobSasPermissions,
+    BlobServiceClient,
+    ContentSettings,
+    generate_blob_sas,
+)
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class DirectUploadTarget:
+    """A short-lived, write-only URL for one exact document blob."""
+
+    blob_url: str
+    upload_url: str
+    expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentBlobProperties:
+    """The committed source blob facts needed before queueing extraction."""
+
+    size_bytes: int
+    content_type: str | None
 
 
 def _blob_path(
@@ -29,12 +53,122 @@ def _blob_path(
     return f"{tenant_id}/{workspace_id}/{user_id}/{document_id}/{filename}"
 
 
+def document_blob_path(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    user_id: str,
+    document_id: str,
+    filename: str,
+) -> str:
+    """Return the canonical raw-upload path shared by API and workers."""
+    return _blob_path(tenant_id, workspace_id, user_id, document_id, filename)
+
+
+def document_blob_url(blob_path: str) -> str:
+    """Return the non-SAS URL for a stored raw document."""
+    return _client().get_blob_client(
+        container=settings.storage_container,
+        blob=blob_path,
+    ).url
+
+
 def _extracted_text_path(tenant_id: str, workspace_id: str, document_id: str) -> str:
     return f"{tenant_id}/{workspace_id}/extracted-text/{document_id}.txt"
 
 
 def _client() -> BlobServiceClient:
+    if not settings.storage_connection_string:
+        raise RuntimeError("STORAGE_CONNECTION_STRING is not configured.")
     return BlobServiceClient.from_connection_string(settings.storage_connection_string)
+
+
+def _connection_string_value(name: str) -> str:
+    """Read one connection-string component without logging its secret value."""
+    for component in settings.storage_connection_string.split(";"):
+        key, separator, value = component.partition("=")
+        if separator and key.strip().lower() == name.lower() and value:
+            return value
+    raise RuntimeError(f"Storage connection string is missing {name}.")
+
+
+def _blob_sas_url(
+    *,
+    path: str,
+    permissions: BlobSasPermissions,
+    expires_at: datetime,
+) -> str:
+    """Create an HTTPS-only service SAS scoped to one blob path."""
+    client = _client()
+    sas = generate_blob_sas(
+        account_name=_connection_string_value("AccountName"),
+        container_name=settings.storage_container,
+        blob_name=path,
+        account_key=_connection_string_value("AccountKey"),
+        permission=permissions,
+        # Allow a small clock-skew window for devices whose time is behind.
+        start=datetime.now(UTC) - timedelta(minutes=5),
+        expiry=expires_at,
+        protocol="https",
+    )
+    blob = client.get_blob_client(container=settings.storage_container, blob=path)
+    return f"{blob.url}?{sas}"
+
+
+def create_direct_upload_target(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    user_id: str,
+    document_id: str,
+    filename: str,
+    expires_in_minutes: int | None = None,
+) -> DirectUploadTarget:
+    """Authorize chunked upload of one new blob without exposing account keys.
+
+    The client receives only ``create`` and ``write`` permissions for the
+    generated path.  It cannot list, read, or delete any document blob.
+    """
+    path = _blob_path(tenant_id, workspace_id, user_id, document_id, filename)
+    expires_at = datetime.now(UTC) + timedelta(
+        minutes=expires_in_minutes or settings.direct_upload_sas_ttl_minutes
+    )
+    client = _client()
+    blob = client.get_blob_client(container=settings.storage_container, blob=path)
+    return DirectUploadTarget(
+        blob_url=blob.url,
+        upload_url=_blob_sas_url(
+            path=path,
+            permissions=BlobSasPermissions(create=True, write=True),
+            expires_at=expires_at,
+        ),
+        expires_at=expires_at,
+    )
+
+
+async def get_document_properties(blob_path: str) -> DocumentBlobProperties:
+    """Read committed blob facts before creating a document database record."""
+
+    def _sync() -> DocumentBlobProperties:
+        client = _client()
+        blob = client.get_blob_client(container=settings.storage_container, blob=blob_path)
+        properties = blob.get_blob_properties()
+        content_settings = properties.content_settings
+        return DocumentBlobProperties(
+            size_bytes=properties.size,
+            content_type=content_settings.content_type if content_settings else None,
+        )
+
+    return await asyncio.to_thread(_sync)
+
+
+def create_blob_read_url(blob_path: str, *, expires_in_minutes: int = 30) -> str:
+    """Issue a short-lived read URL for Document Intelligence ingestion."""
+    return _blob_sas_url(
+        path=blob_path,
+        permissions=BlobSasPermissions(read=True),
+        expires_at=datetime.now(UTC) + timedelta(minutes=expires_in_minutes),
+    )
 
 
 async def upload_document(

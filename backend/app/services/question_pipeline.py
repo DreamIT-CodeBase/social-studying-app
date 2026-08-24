@@ -19,7 +19,7 @@ from app.mcp_tools.retrieve_student_context import (
 )
 from app.models.question import Question, QuestionStatus
 from app.models.user import User
-from app.services import question_generation, question_safety, study_sources
+from app.services import question_generation, question_safety, rag_evaluation, study_sources
 from app.services.difficulty import calibrate_difficulty
 from app.services.learning_path import NoTopicsAvailable, WorkspaceNotFound, select_next_topic
 
@@ -237,7 +237,7 @@ async def _generate_and_persist_batch(
             logger.warning("Batch generation task encountered error: %s", batch)
             continue
 
-        for gq, topic_name, document_id, source_chunk_ids in batch:
+        for gq, candidate_obj, document_id, source_chunk_ids, all_retrieved_chunks in batch:
             # 1. Duplicate check: Question text stem similarity & exact normalization match
             norm_body = gq.body.strip().lower().rstrip("?.!")
             if norm_body in combined_seen:
@@ -252,12 +252,13 @@ async def _generate_and_persist_batch(
                 continue
 
             # 3. Create model and save to db
+            question_id = f"qst_{uuid4().hex}"
             question_obj = Question(
-                **{"_id": f"qst_{uuid4().hex}"},
+                **{"_id": question_id},
                 tenant_id=tenant_id,
                 workspace_id=workspace_id,
                 document_id=document_id,
-                topic=topic_name,
+                topic=candidate_obj.topic_name,
                 question_type=gq.question_type,
                 difficulty=gq.difficulty,
                 body=gq.body,
@@ -272,6 +273,27 @@ async def _generate_and_persist_batch(
             await col.insert_one(question_obj.model_dump(by_alias=True))
             persisted_questions.append(question_obj)
 
+            # 4. End-to-end RAG Evaluation (Scope, Groundedness, Facts, Provenance)
+            try:
+                await rag_evaluation.evaluate_and_persist_rag(
+                    tenant_id=tenant_id,
+                    workspace_id=workspace_id,
+                    student_id=student_id,
+                    selected_topic_id=candidate_obj.topic_id,
+                    selected_topic_name=candidate_obj.topic_name,
+                    active_document_ids=current_sources.document_ids,
+                    retrieved_chunks=all_retrieved_chunks,
+                    generation_chunk_ids=source_chunk_ids,
+                    question_id=question_id,
+                    question_type=gq.question_type.value,
+                    question_body=gq.body,
+                    reference_answer=gq.answer,
+                    explanation=gq.explanation,
+                    known_source_chunk_ids=source_chunk_ids,
+                )
+            except Exception as eval_exc:
+                logger.warning("RAG evaluation failed for batch question %s: %s", question_id, eval_exc)
+
     return persisted_questions
 
 
@@ -283,7 +305,7 @@ async def _generate_topic_batch(
     seen_bodies: list[str],
     count: int,
     current_document_ids: frozenset[str],
-) -> list[tuple[Any, str, str, list[str]]]:
+) -> list[tuple[Any, Any, str, list[str], list[Any]]]:
     """Retrieve chunks for topic and trigger batch question generator."""
     mastery = 0.5
     for topic_view in context.topic_mastery:
@@ -325,7 +347,10 @@ async def _generate_topic_batch(
             seen_question_bodies=seen_bodies[:30],
         )
         source_chunk_ids = [chunk.chunk_id for chunk in grounding_chunks]
-        return [(gq, candidate.topic_name, document_id, source_chunk_ids) for gq in gqs]
+        return [
+            (gq, candidate, document_id, source_chunk_ids, retrieved.chunks)
+            for gq in gqs
+        ]
     except Exception as e:
         logger.warning("Topic batch generation failed for %s: %s", candidate.topic_name, e)
         return []

@@ -98,11 +98,11 @@ async def test_handle_happy_path_transitions_pending_to_text_extracted():
     with (
         patch("app.workers.document_ingestion.get_collection", side_effect=route),
         patch(
-            "app.workers.document_ingestion.blob_storage.download_document",
-            AsyncMock(return_value=b"%PDF-1.4 fake"),
-        ) as mock_download,
+            "app.workers.document_ingestion.blob_storage.create_blob_read_url",
+            return_value="https://example.com/blob.pdf",
+        ) as mock_url,
         patch(
-            "app.workers.document_ingestion.document_intelligence.extract_text",
+            "app.workers.document_ingestion.document_intelligence.extract_text_from_url",
             AsyncMock(return_value=extracted),
         ) as mock_extract,
         patch(
@@ -120,8 +120,8 @@ async def test_handle_happy_path_transitions_pending_to_text_extracted():
     ):
         await document_ingestion._handle(msg)
 
-    mock_download.assert_awaited_once_with(msg.payload.blob_path)
-    mock_extract.assert_awaited_once_with(b"%PDF-1.4 fake", content_type="application/pdf")
+    mock_url.assert_called_once_with(msg.payload.blob_path)
+    mock_extract.assert_awaited_once_with("https://example.com/blob.pdf")
     mock_upload_text.assert_awaited_once()
     mock_scan.assert_awaited_once_with("hello world")
 
@@ -216,11 +216,11 @@ async def test_handle_unsupported_content_marks_failed_and_dead_letters():
     with (
         patch("app.workers.document_ingestion.get_collection", return_value=col),
         patch(
-            "app.workers.document_ingestion.blob_storage.download_document",
-            AsyncMock(return_value=b"corrupt"),
+            "app.workers.document_ingestion.blob_storage.create_blob_read_url",
+            return_value="https://example.com/blob.pdf",
         ),
         patch(
-            "app.workers.document_ingestion.document_intelligence.extract_text",
+            "app.workers.document_ingestion.document_intelligence.extract_text_from_url",
             AsyncMock(side_effect=error),
         ),
     ):
@@ -242,7 +242,7 @@ async def test_handle_unsupported_content_marks_failed_and_dead_letters():
 
 @pytest.mark.asyncio
 async def test_handle_blob_not_found_marks_failed_and_dead_letters():
-    msg = _msg()
+    msg = _msg(_payload(content_type="text/plain"))
     msg._receiver.dead_letter_message = AsyncMock()
     col = _mock_collection_with_match()
 
@@ -279,13 +279,14 @@ async def test_handle_transient_di_error_propagates():
     with (
         patch("app.workers.document_ingestion.get_collection", return_value=col),
         patch(
-            "app.workers.document_ingestion.blob_storage.download_document",
-            AsyncMock(return_value=b"ok"),
+            "app.workers.document_ingestion.blob_storage.create_blob_read_url",
+            return_value="https://example.com/blob.pdf",
         ),
         patch(
-            "app.workers.document_ingestion.document_intelligence.extract_text",
+            "app.workers.document_ingestion.document_intelligence.extract_text_from_url",
             AsyncMock(side_effect=error),
-        ),pytest.raises(HttpResponseError)
+        ),
+        pytest.raises(HttpResponseError),
     ):
         await document_ingestion._handle(msg)
 
@@ -341,7 +342,7 @@ async def test_handle_content_safety_flagged_sets_status_flagged_and_logs():
             AsyncMock(return_value=b"%PDF-1.4 fake"),
         ),
         patch(
-            "app.workers.document_ingestion.document_intelligence.extract_text",
+            "app.workers.document_ingestion.document_intelligence.extract_text_from_url",
             AsyncMock(return_value=extracted),
         ),
         patch(
@@ -402,7 +403,7 @@ async def test_handle_content_safety_transient_error_propagates():
             AsyncMock(return_value=b"%PDF-1.4 fake"),
         ),
         patch(
-            "app.workers.document_ingestion.document_intelligence.extract_text",
+            "app.workers.document_ingestion.document_intelligence.extract_text_from_url",
             AsyncMock(return_value=extracted),
         ),
         patch(
@@ -442,7 +443,7 @@ async def test_handle_moderation_log_write_failure_does_not_crash():
             AsyncMock(return_value=b"%PDF-1.4 fake"),
         ),
         patch(
-            "app.workers.document_ingestion.document_intelligence.extract_text",
+            "app.workers.document_ingestion.document_intelligence.extract_text_from_url",
             AsyncMock(return_value=extracted),
         ),
         patch(

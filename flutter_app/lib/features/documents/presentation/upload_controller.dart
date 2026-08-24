@@ -40,8 +40,8 @@ class UploadController extends _$UploadController {
       final doc = await ref.read(documentsRepositoryProvider).upload(
             workspaceId: workspaceId,
             filename: selection.filename,
-            bytes: selection.bytes,
             contentType: selection.contentType,
+            upload: selection.upload,
           );
       ref.read(workspacesListProvider.notifier).refresh();
       state = AsyncData<Document?>(doc);
@@ -66,8 +66,8 @@ class UploadController extends _$UploadController {
       final doc = await ref.read(documentsRepositoryProvider).upload(
             workspaceId: workspaceId,
             filename: selection.filename,
-            bytes: selection.bytes,
             contentType: selection.contentType,
+            upload: selection.upload,
           );
       ref.read(workspacesListProvider.notifier).refresh();
       state = AsyncData<Document?>(doc);
@@ -92,8 +92,8 @@ class UploadController extends _$UploadController {
       final doc = await ref.read(documentsRepositoryProvider).upload(
             workspaceId: workspaceId,
             filename: selection.filename,
-            bytes: selection.bytes,
             contentType: selection.contentType,
+            upload: selection.upload,
           );
       ref.read(workspacesListProvider.notifier).refresh();
       state = AsyncData<Document?>(doc);
@@ -144,12 +144,12 @@ class UploadController extends _$UploadController {
       maxHeight: 2048,
     );
     if (image == null) return null;
-    final bytes = await image.readAsBytes();
     final extension = image.name.split('.').last.toLowerCase();
-    return FileSelection(
+    return FileSelection.fromXFile(
       filename: image.name,
-      bytes: bytes,
       contentType: _contentTypeFor(extension),
+      file: image,
+      sizeBytes: await image.length(),
     );
   }
 }
@@ -158,15 +158,31 @@ class UploadController extends _$UploadController {
 /// Public so test adapters can construct synthetic selections without
 /// going through the file_picker plugin.
 class FileSelection {
-  const FileSelection({
+  FileSelection({
     required this.filename,
-    required this.bytes,
     required this.contentType,
-  });
+    required Uint8List bytes,
+  }) : upload = DocumentUpload.fromBytes(bytes);
+
+  FileSelection.fromXFile({
+    required this.filename,
+    required this.contentType,
+    required XFile file,
+    required int sizeBytes,
+  }) : upload = DocumentUpload(
+          sizeBytes: sizeBytes,
+          readRange: (start, end) async {
+            final builder = BytesBuilder(copy: false);
+            await for (final part in file.openRead(start, end)) {
+              builder.add(part);
+            }
+            return builder.takeBytes();
+          },
+        );
 
   final String filename;
-  final Uint8List bytes;
   final String contentType;
+  final DocumentUpload upload;
 }
 
 typedef FilePickerAdapter = Future<FileSelection?> Function();
@@ -178,16 +194,30 @@ Future<FileSelection?> _filePickerAdapter() async {
   final result = await FilePicker.platform.pickFiles(
     type: FileType.custom,
     allowedExtensions: const ['pdf', 'docx', 'jpg', 'jpeg', 'png', 'webp', 'txt'],
-    withData: true,
+    // Native paths let us read one upload block at a time. Flutter Web does
+    // not expose a local path, so it retains the current in-memory fallback
+    // while still sending blocks directly to Blob Storage.
+    withData: kIsWeb,
   );
   if (result == null || result.files.isEmpty) return null;
   final picked = result.files.single;
-  final bytes = picked.bytes;
-  if (bytes == null) return null;
-  return FileSelection(
+  final contentType = _contentTypeFor(picked.extension ?? '');
+  if (kIsWeb) {
+    final bytes = picked.bytes;
+    if (bytes == null) return null;
+    return FileSelection(
+      filename: picked.name,
+      bytes: bytes,
+      contentType: contentType,
+    );
+  }
+  final path = picked.path;
+  if (path == null) return null;
+  return FileSelection.fromXFile(
     filename: picked.name,
-    bytes: bytes,
-    contentType: _contentTypeFor(picked.extension ?? ''),
+    contentType: contentType,
+    file: XFile(path),
+    sizeBytes: picked.size,
   );
 }
 
