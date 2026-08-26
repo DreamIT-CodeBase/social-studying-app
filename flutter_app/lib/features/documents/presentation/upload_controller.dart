@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -231,4 +232,3 @@ String _contentTypeFor(String extension) => switch (extension.toLowerCase()) {
       'txt' => 'text/plain',
       _ => 'application/octet-stream',
     };
-

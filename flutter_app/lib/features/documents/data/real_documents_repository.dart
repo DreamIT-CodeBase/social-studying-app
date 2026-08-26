@@ -7,7 +7,8 @@ import 'package:social_study_app/features/documents/data/demo_documents_reposito
     show
         DocumentNotFoundException,
         EmptyUploadException,
-        UnsupportedFileTypeException;
+        UnsupportedFileTypeException,
+        UploadTooLargeException;
 import 'package:social_study_app/features/documents/data/documents_repository.dart';
 import 'package:social_study_app/shared/models/document.dart';
 
