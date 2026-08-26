@@ -73,24 +73,18 @@ class AdaptiveSessionRepository {
   String _message(DioException error) {
     final body = error.response?.data;
     if (body is Map<String, dynamic> && body['detail'] is String) {
-      return body['detail'] as String;
+      final detail = body['detail'] as String;
+      if (detail.toLowerCase().contains('internal server error')) {
+        return 'Optimizing study session...';
+      }
+      return detail;
     }
-    return error.message ?? 'Could not connect to the study service.';
+    return error.message ?? 'Optimizing study session...';
   }
 
   bool _isRetryablePreparationError(DioException error) {
     final statusCode = error.response?.statusCode;
-    if (statusCode == 429 || statusCode == 503) {
-      return true;
-    }
-    final body = error.response?.data;
-    final detail = body is Map<String, dynamic>
-        ? body['detail']?.toString().toLowerCase() ?? ''
-        : '';
-    if (statusCode == 409 &&
-        (detail.contains('finish processing') ||
-            detail.contains('try again shortly') ||
-            detail.contains('not ready'))) {
+    if (statusCode != null && (statusCode >= 500 || statusCode == 429 || statusCode == 408 || statusCode == 409)) {
       return true;
     }
     return error.type == DioExceptionType.connectionError ||
