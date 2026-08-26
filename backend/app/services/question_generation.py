@@ -286,9 +286,7 @@ def _parse_mcq(raw: dict[str, Any]) -> tuple[str, str, list[McqOption], list[str
     raw_options = raw.get("options")
     if not isinstance(raw_options, list) or len(raw_options) != 4:
         got = len(raw_options) if isinstance(raw_options, list) else "non-list"
-        raise QuestionShapeError(
-            f"MCQ requires exactly 4 options; got {got}."
-        )
+        raise QuestionShapeError(f"MCQ requires exactly 4 options; got {got}.")
 
     options: list[McqOption] = []
     correct_keys: list[str] = []
@@ -348,14 +346,8 @@ def _parse_long_answer(
     key_points_raw = raw.get("key_points") or []
     if not isinstance(key_points_raw, list) or len(key_points_raw) < 3:
         got = len(key_points_raw) if isinstance(key_points_raw, list) else "non-list"
-        raise QuestionShapeError(
-            f"long_answer requires at least 3 key_points; got {got}."
-        )
-    key_points = [
-        str(p).strip()
-        for p in key_points_raw
-        if isinstance(p, str) and p.strip()
-    ]
+        raise QuestionShapeError(f"long_answer requires at least 3 key_points; got {got}.")
+    key_points = [str(p).strip() for p in key_points_raw if isinstance(p, str) and p.strip()]
     if len(key_points) < 3:
         raise QuestionShapeError(
             f"long_answer key_points must each be a non-empty string; "
@@ -384,23 +376,17 @@ def _parse_mathematical(
     steps_raw = raw.get("solution_steps") or []
     if not isinstance(steps_raw, list) or len(steps_raw) < 2:
         got = len(steps_raw) if isinstance(steps_raw, list) else "non-list"
-        raise QuestionShapeError(
-            f"mathematical requires at least 2 solution_steps; got {got}."
-        )
+        raise QuestionShapeError(f"mathematical requires at least 2 solution_steps; got {got}.")
     steps = [str(s).strip() for s in steps_raw if isinstance(s, str) and s.strip()]
     if len(steps) < 2:
-        raise QuestionShapeError(
-            "mathematical solution_steps must each be a non-empty string."
-        )
+        raise QuestionShapeError("mathematical solution_steps must each be a non-empty string.")
     return answer, explanation, [], steps
 
 
 def _require_string(raw: dict[str, Any], field_name: str) -> str:
     value = raw.get(field_name)
     if not isinstance(value, str) or not value.strip():
-        raise QuestionShapeError(
-            f"Required field {field_name!r} is missing or empty."
-        )
+        raise QuestionShapeError(f"Required field {field_name!r} is missing or empty.")
     return value.strip()
 
 
@@ -471,9 +457,7 @@ async def generate_batch_questions(
     )
 
     if response.get("insufficient_source") is True:
-        raise InsufficientSource(
-            f"Model returned insufficient_source for batch topic={topic!r}"
-        )
+        raise InsufficientSource(f"Model returned insufficient_source for batch topic={topic!r}")
 
     raw_questions = response.get("questions")
     if not isinstance(raw_questions, list):
@@ -484,10 +468,10 @@ async def generate_batch_questions(
         try:
             q_type_str = raw.get("question_type")
             q_type = QuestionType(q_type_str)
-            
+
             spec = _PROMPT_REGISTRY[q_type]
             answer, explanation, options, grading_hints = spec.parser(raw)
-            
+
             body = raw.get("body")
             if not isinstance(body, str) or not body.strip():
                 continue

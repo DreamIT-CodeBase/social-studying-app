@@ -58,11 +58,11 @@ class VectorizeOutcome:
     """Result handed back to the worker for logging + status writes."""
 
     chunks_read: int
-    chunks_indexed: int          # how many made it into AI Search
-    deleted_stale: int           # how many old chunks the upfront delete cleaned
+    chunks_indexed: int  # how many made it into AI Search
+    deleted_stale: int  # how many old chunks the upfront delete cleaned
     embedding_model: str
-    topic_ids_resolved: int      # canonical ids resolved for this document
-    workspace_missing: bool      # taxonomy lookup found no workspace
+    topic_ids_resolved: int  # canonical ids resolved for this document
+    workspace_missing: bool  # taxonomy lookup found no workspace
 
 
 class DocumentNotFound(LookupError):
@@ -89,13 +89,9 @@ async def vectorize_document(
         tenant_id=tenant_id, workspace_id=workspace_id, document_id=document_id
     )
     if document is None:
-        raise DocumentNotFound(
-            f"Document {document_id} not found in workspace {workspace_id}"
-        )
+        raise DocumentNotFound(f"Document {document_id} not found in workspace {workspace_id}")
 
-    chunks = await chunk_storage.find_for_document(
-        tenant_id=tenant_id, document_id=document_id
-    )
+    chunks = await chunk_storage.find_for_document(tenant_id=tenant_id, document_id=document_id)
 
     workspace = await _read_workspace(tenant_id=tenant_id, workspace_id=workspace_id)
     workspace_missing = workspace is None
@@ -139,13 +135,10 @@ async def vectorize_document(
         topic_ids=topic_ids,
         embedding_model=embedding_model,
     )
-    indexed = await azure_ai_search.upsert_chunks(
-        tenant_id=tenant_id, documents=documents
-    )
+    indexed = await azure_ai_search.upsert_chunks(tenant_id=tenant_id, documents=documents)
 
     logger.info(
-        "Vectorize doc=%s: read=%d indexed=%d deleted_stale=%d topics=%d "
-        "workspace_missing=%s",
+        "Vectorize doc=%s: read=%d indexed=%d deleted_stale=%d topics=%d workspace_missing=%s",
         document_id,
         len(chunks),
         indexed,
@@ -231,8 +224,7 @@ def _resolve_topic_ids(
         canonical_id = name_to_id.get(tag.name.casefold())
         if canonical_id is None:
             logger.debug(
-                "Vectorize: topic name %r did not match any canonical "
-                "topic/alias for doc=%s",
+                "Vectorize: topic name %r did not match any canonical topic/alias for doc=%s",
                 tag.name,
                 document.id,
             )
@@ -261,9 +253,7 @@ def _build_index_docs(
     be the worst kind of bug (wrong vector for wrong chunk).
     """
     if len(chunks) != len(vectors):
-        raise RuntimeError(
-            f"Vector count {len(vectors)} does not match chunk count {len(chunks)}"
-        )
+        raise RuntimeError(f"Vector count {len(vectors)} does not match chunk count {len(chunks)}")
 
     out: list[dict] = []
     for chunk, vector in zip(chunks, vectors, strict=True):

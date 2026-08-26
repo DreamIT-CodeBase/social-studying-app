@@ -13,6 +13,7 @@ _MAX_THROTTLE_RETRIES = 8
 _THROTTLE_CODES = frozenset({429, 16500})
 _RETRY_AFTER_PATTERN = re.compile(r"RetryAfterMs=(\d+)")
 
+
 def is_throttle_error(exc: Exception) -> bool:
     """Return whether a Motor/PyMongo exception represents Cosmos throttling."""
     if getattr(exc, "code", None) in _THROTTLE_CODES:

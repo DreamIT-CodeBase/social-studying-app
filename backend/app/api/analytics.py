@@ -221,9 +221,7 @@ async def get_student_progress(
 )
 async def get_workspace_analytics(
     workspace_id: str,
-    current_user: User = Depends(
-        require_role(UserRole.tenant_admin, UserRole.workspace_admin)
-    ),
+    current_user: User = Depends(require_role(UserRole.tenant_admin, UserRole.workspace_admin)),
 ) -> WorkspaceAnalyticsView:
     """Aggregate analytics across every student in the workspace.
 
@@ -254,9 +252,7 @@ async def get_learning_progress_trend(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     compare_workspace: bool = False,
-    current_user: User = Depends(
-        require_role(UserRole.tenant_admin, UserRole.workspace_admin)
-    ),
+    current_user: User = Depends(require_role(UserRole.tenant_admin, UserRole.workspace_admin)),
 ) -> LearningProgressTrendView:
     """Return event-derived learning trends and intervention KPIs."""
     if current_user.role == UserRole.workspace_admin:
@@ -325,6 +321,4 @@ def _assert_can_view(
     if user.role == UserRole.workspace_admin:
         return
     if user.id != target_user_id:
-        raise ForbiddenError(
-            "Students can only view their own progress"
-        )
+        raise ForbiddenError("Students can only view their own progress")

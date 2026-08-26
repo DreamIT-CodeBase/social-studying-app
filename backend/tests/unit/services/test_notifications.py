@@ -33,7 +33,6 @@ from app.models.notification import (
 from app.services import notifications as notification_service
 from app.services.notifications import (
     AzureNotificationHubSender,
-    DispatchResult,
     LoggingSender,
     NotificationPayload,
     _anh_format_for,
@@ -49,16 +48,14 @@ from app.services.notifications import (
     set_sender_for_tests,
 )
 
-
 # ── Sender factory ────────────────────────────────────────────────────────
 
 
 def test_get_sender_returns_logging_sender_when_creds_missing():
     set_sender_for_tests(None)
-    with patch.object(
-        notification_service.settings, "notification_hub_connection_string", ""
-    ), patch.object(
-        notification_service.settings, "notification_hub_name", ""
+    with (
+        patch.object(notification_service.settings, "notification_hub_connection_string", ""),
+        patch.object(notification_service.settings, "notification_hub_name", ""),
     ):
         sender = get_sender()
     assert isinstance(sender, LoggingSender)
@@ -67,13 +64,14 @@ def test_get_sender_returns_logging_sender_when_creds_missing():
 
 def test_get_sender_returns_anh_sender_when_creds_present():
     set_sender_for_tests(None)
-    with patch.object(
-        notification_service.settings,
-        "notification_hub_connection_string",
-        "Endpoint=sb://ns.servicebus.windows.net/;"
-        "SharedAccessKeyName=key;SharedAccessKey=value",
-    ), patch.object(
-        notification_service.settings, "notification_hub_name", "study-app-dev"
+    with (
+        patch.object(
+            notification_service.settings,
+            "notification_hub_connection_string",
+            "Endpoint=sb://ns.servicebus.windows.net/;"
+            "SharedAccessKeyName=key;SharedAccessKey=value",
+        ),
+        patch.object(notification_service.settings, "notification_hub_name", "study-app-dev"),
     ):
         sender = get_sender()
     assert isinstance(sender, AzureNotificationHubSender)
@@ -122,8 +120,7 @@ def test_parse_connection_string_normalises_endpoint_to_https():
 
 def test_parse_connection_string_tolerates_missing_trailing_slash():
     parsed = _parse_connection_string(
-        "Endpoint=sb://ns.servicebus.windows.net;"
-        "SharedAccessKeyName=k;SharedAccessKey=v"
+        "Endpoint=sb://ns.servicebus.windows.net;SharedAccessKeyName=k;SharedAccessKey=v"
     )
     assert parsed["endpoint"].endswith("/")
 
@@ -207,9 +204,7 @@ async def test_anh_sender_returns_sent_on_2xx():
     _, kwargs = client.post.call_args
     assert kwargs["headers"]["Authorization"].startswith("SharedAccessSignature")
     # Device handle = device token.
-    assert (
-        kwargs["headers"]["ServiceBusNotification-DeviceHandle"] == "tok_a"
-    )
+    assert kwargs["headers"]["ServiceBusNotification-DeviceHandle"] == "tok_a"
 
 
 @pytest.mark.asyncio
@@ -398,9 +393,7 @@ async def test_dispatch_to_user_fans_out_to_every_active_token():
     dispatches_col = MagicMock()
     captured: list[dict] = []
     dispatches_col.insert_one = AsyncMock(
-        side_effect=lambda d: (
-            captured.append(d) or MagicMock(inserted_id=d["_id"])
-        )
+        side_effect=lambda d: captured.append(d) or MagicMock(inserted_id=d["_id"])
     )
 
     def _factory(_tid, collection):

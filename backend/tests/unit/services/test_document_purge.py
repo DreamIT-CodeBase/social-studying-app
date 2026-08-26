@@ -100,9 +100,7 @@ async def test_purge_document_erases_all_material_content_and_source_references(
             WORKSPACES,
         )
     }
-    collections[QUESTION_QUEUE].find.return_value = _Cursor(
-        [{"_id": "que_1"}, {"_id": "que_2"}]
-    )
+    collections[QUESTION_QUEUE].find.return_value = _Cursor([{"_id": "que_1"}, {"_id": "que_2"}])
     collections[FLASHCARDS].find.return_value = _Cursor([{"_id": "flc_1"}])
     collections[WORKSPACES].find_one.return_value = _workspace().model_dump(by_alias=True)
 

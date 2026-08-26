@@ -39,9 +39,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from uuid import uuid4
-
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Response, status
 
@@ -79,7 +78,6 @@ from app.models.question import (
     AnswerFeedback,
     AnswerSubmission,
     BadgeUnlock,
-    DifficultyLevel,
     Question,
     QuestionForStudent,
     QuestionStatus,
@@ -90,6 +88,7 @@ from app.models.workspace import Workspace
 from app.services import (
     answer_evaluation,
     question_generation,
+    question_pipeline,
     question_safety,
     rag_evaluation,
     study_sources,
@@ -100,7 +99,6 @@ from app.services import (
 from app.services import (
     knowledge_state as knowledge_state_service,
 )
-from app.services import question_pipeline
 from app.services import notifications as notification_service
 from app.services.difficulty import calibrate_difficulty
 from app.services.learning_path import (

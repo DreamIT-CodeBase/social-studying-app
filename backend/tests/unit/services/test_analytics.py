@@ -225,9 +225,7 @@ async def test_student_progress_full_snapshot():
         )
     )
     knowledge_col = MagicMock()
-    knowledge_col.find_one = AsyncMock(
-        return_value=knowledge.model_dump(by_alias=True)
-    )
+    knowledge_col.find_one = AsyncMock(return_value=knowledge.model_dump(by_alias=True))
 
     def _factory(_tid, collection):
         from app.core.database import (
@@ -458,9 +456,7 @@ async def test_workspace_analytics_aggregates_across_students():
         raise AssertionError(collection)
 
     with patch("app.services.analytics.get_collection", side_effect=_factory):
-        result = await build_workspace_analytics(
-            tenant_id="ten_a", workspace_id="wsp_a"
-        )
+        result = await build_workspace_analytics(tenant_id="ten_a", workspace_id="wsp_a")
 
     assert result["total_students"] == 2
     # Mean of 0.6 and 0.4.
@@ -515,9 +511,7 @@ async def test_workspace_analytics_engagement_heatmap_has_full_window():
         raise AssertionError(collection)
 
     with patch("app.services.analytics.get_collection", side_effect=_factory):
-        result = await build_workspace_analytics(
-            tenant_id="ten_a", workspace_id="wsp_a"
-        )
+        result = await build_workspace_analytics(tenant_id="ten_a", workspace_id="wsp_a")
     heatmap = result["engagement_heatmap"]
     assert len(heatmap) == ENGAGEMENT_HEATMAP_DAYS
     # Sum of events should match what we fed in.
@@ -630,8 +624,7 @@ def _list_returning_col(items):
     """
     col = MagicMock()
     docs = [
-        item.model_dump(by_alias=True) if hasattr(item, "model_dump") else item
-        for item in items
+        item.model_dump(by_alias=True) if hasattr(item, "model_dump") else item for item in items
     ]
     col.find = MagicMock(return_value=_async_iter(docs))
     return col

@@ -23,7 +23,8 @@ from uuid import uuid4
 import httpx
 from azure.core.exceptions import ResourceNotFoundError
 from fastapi import APIRouter, Depends, File, UploadFile, status
-from pydantic import BaseModel, Field, HttpUrl, ValidationError as PydanticValidationError
+from pydantic import BaseModel, Field, HttpUrl
+from pydantic import ValidationError as PydanticValidationError
 
 from app.core.auth import get_current_user
 from app.core.config import settings

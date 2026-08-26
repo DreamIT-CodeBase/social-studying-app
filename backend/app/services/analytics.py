@@ -57,9 +57,11 @@ from app.models.knowledge_state import KnowledgeState
 from app.models.workspace import Workspace
 from app.services.gamification import (
     FLASHCARD_XP,
-    get_state as get_gamification_state,
     xp_for_next_level,
     xp_into_level,
+)
+from app.services.gamification import (
+    get_state as get_gamification_state,
 )
 
 logger = logging.getLogger(__name__)
@@ -134,9 +136,7 @@ async def build_student_progress(
     if knowledge is not None:
         for row in knowledge.topics:
             attempts = row.questions_attempted
-            success_rate = (
-                (row.questions_correct / attempts) if attempts > 0 else 0.0
-            )
+            success_rate = (row.questions_correct / attempts) if attempts > 0 else 0.0
             topics.append(
                 {
                     # No canonical topic_id on KnowledgeState — display name
@@ -185,9 +185,7 @@ async def build_workspace_analytics(
     - ``engagement_heatmap``: last :data:`ENGAGEMENT_HEATMAP_DAYS` UTC days,
       each {date, total_events} across questions + flashcards
     """
-    states = await _read_workspace_states(
-        tenant_id=tenant_id, workspace_id=workspace_id
-    )
+    states = await _read_workspace_states(tenant_id=tenant_id, workspace_id=workspace_id)
     interactions = await _read_workspace_interactions(
         tenant_id=tenant_id, workspace_id=workspace_id
     )
@@ -197,18 +195,12 @@ async def build_workspace_analytics(
 
     total_students = len(states)
     overall_scores = [s.overall_mastery for s in states if s.topics]
-    avg_overall = (
-        sum(overall_scores) / len(overall_scores) if overall_scores else 0.0
-    )
+    avg_overall = sum(overall_scores) / len(overall_scores) if overall_scores else 0.0
 
     total_questions = len(interactions)
     correct_questions = sum(1 for i in interactions if i.get("is_correct"))
-    avg_questions_per_student = (
-        total_questions / total_students if total_students > 0 else 0.0
-    )
-    avg_correct_rate = (
-        correct_questions / total_questions if total_questions > 0 else 0.0
-    )
+    avg_questions_per_student = total_questions / total_students if total_students > 0 else 0.0
+    avg_correct_rate = correct_questions / total_questions if total_questions > 0 else 0.0
 
     # Active = any event (question or flashcard) in the last N days.
     cutoff = _utc_now() - timedelta(days=ACTIVE_WINDOW_DAYS)
@@ -251,9 +243,7 @@ async def build_tenant_analytics(*, tenant_id: str) -> dict[str, Any]:
     total_active = 0
 
     for workspace in workspaces:
-        states = await _read_workspace_states(
-            tenant_id=tenant_id, workspace_id=workspace.id
-        )
+        states = await _read_workspace_states(tenant_id=tenant_id, workspace_id=workspace.id)
         interactions = await _read_workspace_interactions(
             tenant_id=tenant_id, workspace_id=workspace.id
         )
@@ -264,9 +254,7 @@ async def build_tenant_analytics(*, tenant_id: str) -> dict[str, Any]:
         ws_students = len(states)
         ws_overall_scores = [s.overall_mastery for s in states if s.topics]
         ws_avg_mastery = (
-            sum(ws_overall_scores) / len(ws_overall_scores)
-            if ws_overall_scores
-            else 0.0
+            sum(ws_overall_scores) / len(ws_overall_scores) if ws_overall_scores else 0.0
         )
 
         cutoff = _utc_now() - timedelta(days=ACTIVE_WINDOW_DAYS)
@@ -320,37 +308,27 @@ async def build_learning_progress_trend(
     latest measured value is carried forward and ``activity_count`` remains
     zero for that date.
     """
-    states = await _read_workspace_states(
-        tenant_id=tenant_id, workspace_id=workspace_id
-    )
+    states = await _read_workspace_states(tenant_id=tenant_id, workspace_id=workspace_id)
     interactions = await _read_workspace_interactions(
         tenant_id=tenant_id, workspace_id=workspace_id
     )
     ratings = await _read_workspace_flashcard_ratings(
         tenant_id=tenant_id, workspace_id=workspace_id
     )
-    workspace = await _read_workspace(
-        tenant_id=tenant_id, workspace_id=workspace_id
-    )
-    users = await _read_workspace_users(
-        tenant_id=tenant_id, workspace_id=workspace_id
-    )
+    workspace = await _read_workspace(tenant_id=tenant_id, workspace_id=workspace_id)
+    users = await _read_workspace_users(tenant_id=tenant_id, workspace_id=workspace_id)
 
     known_student_ids = set(workspace.student_ids if workspace is not None else [])
     known_student_ids.update(state.student_id for state in states)
     known_student_ids.update(
-        str(event["student_id"])
-        for event in (*interactions, *ratings)
-        if event.get("student_id")
+        str(event["student_id"]) for event in (*interactions, *ratings) if event.get("student_id")
     )
     user_names = {user["id"]: user["display_name"] for user in users}
     for user in users:
         if user.get("role") == "student":
             known_student_ids.add(user["id"])
 
-    selected_student_ids = (
-        {student_id} if student_id is not None else known_student_ids
-    )
+    selected_student_ids = {student_id} if student_id is not None else known_student_ids
     points = _aggregate_learning_trend(
         interactions=interactions,
         ratings=ratings,
@@ -393,9 +371,7 @@ async def build_learning_progress_trend(
                 "mastery_change": change,
                 "quiz_accuracy": last["quiz_accuracy"],
                 "flashcard_recall": last["flashcard_recall"],
-                "activity_count": sum(
-                    point["activity_count"] for point in student_points
-                ),
+                "activity_count": sum(point["activity_count"] for point in student_points),
                 "needs_attention": has_activity
                 and (
                     last["overall_mastery"] < ATTENTION_MASTERY_THRESHOLD
@@ -407,11 +383,7 @@ async def build_learning_progress_trend(
     first_point = points[0] if points else _empty_trend_point(start_date)
     last_point = points[-1] if points else first_point
     topics = sorted(
-        {
-            str(event["topic"])
-            for event in (*interactions, *ratings)
-            if event.get("topic")
-        },
+        {str(event["topic"]) for event in (*interactions, *ratings) if event.get("topic")},
         key=str.casefold,
     )
     return {
@@ -425,13 +397,9 @@ async def build_learning_progress_trend(
         "available_topics": topics,
         "kpis": {
             "overall_mastery": last_point["overall_mastery"],
-            "mastery_change": (
-                last_point["overall_mastery"] - first_point["overall_mastery"]
-            ),
+            "mastery_change": (last_point["overall_mastery"] - first_point["overall_mastery"]),
             "quiz_accuracy": last_point["quiz_accuracy"],
-            "students_needing_attention": sum(
-                1 for row in student_rows if row["needs_attention"]
-            ),
+            "students_needing_attention": sum(1 for row in student_rows if row["needs_attention"]),
         },
         "points": points,
         "workspace_comparison": comparison_points,
@@ -600,12 +568,8 @@ def _aggregate_learning_trend(
             {
                 "date": day.isoformat(),
                 "overall_mastery": _overall_mastery(mastery),
-                "quiz_accuracy": (
-                    quiz_correct / quiz_attempts if quiz_attempts else 0.0
-                ),
-                "flashcard_recall": (
-                    recall_total / recall_attempts if recall_attempts else 0.0
-                ),
+                "quiz_accuracy": (quiz_correct / quiz_attempts if quiz_attempts else 0.0),
+                "flashcard_recall": (recall_total / recall_attempts if recall_attempts else 0.0),
                 "activity_count": len(day_events),
             }
         )
@@ -618,14 +582,8 @@ def _overall_mastery(mastery: dict[tuple[str, str], float]) -> float:
     by_student: dict[str, list[float]] = defaultdict(list)
     for (student_id, _), score in mastery.items():
         by_student[student_id].append(score)
-    student_averages = [
-        sum(scores) / len(scores) for scores in by_student.values() if scores
-    ]
-    return (
-        sum(student_averages) / len(student_averages)
-        if student_averages
-        else 0.0
-    )
+    student_averages = [sum(scores) / len(scores) for scores in by_student.values() if scores]
+    return sum(student_averages) / len(student_averages) if student_averages else 0.0
 
 
 def _apply_mastery_event(
@@ -679,13 +637,9 @@ async def _read_knowledge_state(
     return KnowledgeState.model_validate(raw) if raw is not None else None
 
 
-async def _read_workspace_states(
-    *, tenant_id: str, workspace_id: str
-) -> list[KnowledgeState]:
+async def _read_workspace_states(*, tenant_id: str, workspace_id: str) -> list[KnowledgeState]:
     col = get_collection(tenant_id, KNOWLEDGE_STATES)
-    cursor = col.find(
-        {"workspace_id": workspace_id, "deleted_at": None}
-    )
+    cursor = col.find({"workspace_id": workspace_id, "deleted_at": None})
     return [KnowledgeState.model_validate(raw) async for raw in cursor]
 
 
@@ -705,24 +659,18 @@ async def _read_workspace_flashcard_ratings(
     return [doc async for doc in cursor]
 
 
-async def _read_workspace(
-    *, tenant_id: str, workspace_id: str
-) -> Workspace | None:
+async def _read_workspace(*, tenant_id: str, workspace_id: str) -> Workspace | None:
     col = get_collection(tenant_id, WORKSPACES)
     raw = await col.find_one({"_id": workspace_id, "deleted_at": None})
     return Workspace.model_validate(raw) if raw is not None else None
 
 
-async def _read_workspace_users(
-    *, tenant_id: str, workspace_id: str
-) -> list[dict[str, Any]]:
+async def _read_workspace_users(*, tenant_id: str, workspace_id: str) -> list[dict[str, Any]]:
     col = get_collection(tenant_id, USERS)
     cursor = col.find(
         {
             "deleted_at": None,
-            "workspace_memberships": {
-                "$elemMatch": {"workspace_id": workspace_id}
-            },
+            "workspace_memberships": {"$elemMatch": {"workspace_id": workspace_id}},
         }
     )
     return [

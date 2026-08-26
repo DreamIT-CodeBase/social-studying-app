@@ -48,7 +48,7 @@ def test_report_db_stats_happy_path(client, student):
             {
                 "event_type": "tab_switch",
                 "details": {"from_tab": "Home", "to_tab": "Study"},
-                "occurred_at": "2026-07-07T10:00:00Z"
+                "occurred_at": "2026-07-07T10:00:00Z",
             }
         ]
     }
@@ -69,7 +69,7 @@ def test_get_student_db_stats_happy_path(client, workspace_admin):
     mock_cursor = MagicMock()
     mock_cursor.sort = MagicMock(return_value=mock_cursor)
     mock_cursor.limit = MagicMock(return_value=mock_cursor)
-    
+
     mock_docs = [
         {
             "_id": "ev_abc123",
@@ -78,14 +78,14 @@ def test_get_student_db_stats_happy_path(client, workspace_admin):
             "event_type": "tab_switch",
             "details": {"from_tab": "Home", "to_tab": "Study"},
             "occurred_at": "2026-07-07T10:00:00Z",
-            "deleted_at": None
+            "deleted_at": None,
         }
     ]
-    
+
     async def mock_async_iterator(*args, **kwargs):
         for doc in mock_docs:
             yield doc
-            
+
     mock_cursor.__aiter__ = mock_async_iterator
 
     mock_collection = MagicMock()

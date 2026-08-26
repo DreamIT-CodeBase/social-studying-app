@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-
-import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,9 +39,11 @@ _startup_logger = logging.getLogger("app.main")
 # Container Apps, even when their API environment is "development" for the
 # dev-auth bypass.
 
+
 async def _run_worker_loop(name: str) -> None:
     """Import and run a worker's run_forever(), restarting when it exits."""
     import importlib
+
     while True:
         try:
             mod = importlib.import_module(f"app.workers.{name}")
@@ -70,23 +71,19 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     startup_logger.info("MongoDB databases configured on startup:")
     startup_logger.info(f"  - Tenant 'ten_smoke001' maps to database: {settings.db_name_smoke}")
     startup_logger.info(f"  - Tenant 'ten_demo_001' maps to database: {settings.db_name_demo}")
-    startup_logger.info(f"  - Tenant '93e3ce50-a29e-462b-8956-85674a34d167' maps to database: {settings.db_name_uuid}")
+    startup_logger.info(
+        f"  - Tenant '93e3ce50-a29e-462b-8956-85674a34d167' maps to database: {settings.db_name_uuid}"
+    )
 
     # Start inline workers only when explicitly enabled for local development.
     worker_tasks: list[asyncio.Task] = []
     if settings.inline_workers_enabled and settings.service_bus_connection:
         for worker_name in _INLINE_WORKERS:
-            task = asyncio.create_task(
-                _run_worker_loop(worker_name), name=f"worker-{worker_name}"
-            )
+            task = asyncio.create_task(_run_worker_loop(worker_name), name=f"worker-{worker_name}")
             worker_tasks.append(task)
-        startup_logger.info(
-            "Inline workers started: %s", ", ".join(_INLINE_WORKERS)
-        )
+        startup_logger.info("Inline workers started: %s", ", ".join(_INLINE_WORKERS))
     else:
-        startup_logger.info(
-            "Inline workers skipped (disabled or SERVICE_BUS_CONNECTION not set)."
-        )
+        startup_logger.info("Inline workers skipped (disabled or SERVICE_BUS_CONNECTION not set).")
 
     yield
 
@@ -194,8 +191,7 @@ _OPENAPI_TAGS = [
     {
         "name": "analytics",
         "description": (
-            "Student progress + workspace dashboard + tenant "
-            "roll-up. Read-only aggregation."
+            "Student progress + workspace dashboard + tenant roll-up. Read-only aggregation."
         ),
     },
     {
@@ -211,10 +207,7 @@ _OPENAPI_TAGS = [
     },
     {
         "name": "meta",
-        "description": (
-            "Discovery + version metadata. Stable across API "
-            "versions."
-        ),
+        "description": ("Discovery + version metadata. Stable across API versions."),
     },
 ]
 
@@ -243,16 +236,12 @@ _logger = logging.getLogger(__name__)
 
 
 @app.exception_handler(Exception)
-async def _unhandled_exception_handler(
-    request: Request, exc: Exception
-) -> JSONResponse:
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Catch-all for unhandled exceptions — logs the full traceback and
     returns a clean 500 JSON body so clients always see structured errors.
     FastAPI/Starlette's default is a plain-text 500; this replaces it.
     """
-    _logger.exception(
-        "Unhandled exception: %s %s", request.method, request.url, exc_info=exc
-    )
+    _logger.exception("Unhandled exception: %s %s", request.method, request.url, exc_info=exc)
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error. Check server logs."},
@@ -266,9 +255,7 @@ app.add_middleware(
     # (random port per run) aren't CORS-blocked. None in prod → explicit
     # allowed_origins is the sole allowlist. See settings.allowed_origin_regex.
     allow_origin_regex=(
-        settings.allowed_origin_regex
-        if settings.environment != "production"
-        else None
+        settings.allowed_origin_regex if settings.environment != "production" else None
     ),
     allow_credentials=True,
     allow_methods=["*"],
@@ -317,6 +304,7 @@ async def list_api_versions() -> ApiVersionsResponse:
             for v in API_VERSIONS
         ]
     )
+
 
 app.include_router(tenants.router, prefix="/api/v1")
 app.include_router(workspaces.router, prefix="/api/v1")

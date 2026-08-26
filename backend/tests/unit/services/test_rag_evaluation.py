@@ -1,6 +1,7 @@
 """Unit tests for the master RAG Evaluation Orchestrator."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from app.models.rag_evaluation import RAGFailureStage
@@ -8,7 +9,9 @@ from app.services import rag_evaluation
 
 
 class DummyChunk:
-    def __init__(self, chunk_id, document_id, topic_ids, text, score=0.9, chunk_index=0, workspace_id="wsp_1"):
+    def __init__(
+        self, chunk_id, document_id, topic_ids, text, score=0.9, chunk_index=0, workspace_id="wsp_1"
+    ):
         self.chunk_id = chunk_id
         self.document_id = document_id
         self.topic_ids = topic_ids
@@ -21,7 +24,9 @@ class DummyChunk:
 @pytest.mark.asyncio
 async def test_deterministic_fast_path():
     chunks = [
-        DummyChunk("chk_1", "doc_1", ["tpc_1"], "Mitochondria are known as the powerhouse of the cell."),
+        DummyChunk(
+            "chk_1", "doc_1", ["tpc_1"], "Mitochondria are known as the powerhouse of the cell."
+        ),
         DummyChunk("chk_2", "doc_1", ["tpc_1"], "They generate most of the cell's supply of ATP."),
     ]
 
@@ -59,7 +64,13 @@ async def test_deterministic_fast_path():
 @pytest.mark.asyncio
 async def test_out_of_scope_retrieval_failure():
     chunks = [
-        DummyChunk("chk_alien", "doc_foreign", ["tpc_alien"], "Ancient Rome was founded in 753 BC.", workspace_id="wsp_other"),
+        DummyChunk(
+            "chk_alien",
+            "doc_foreign",
+            ["tpc_alien"],
+            "Ancient Rome was founded in 753 BC.",
+            workspace_id="wsp_other",
+        ),
     ]
 
     mock_col = MagicMock()
@@ -90,7 +101,12 @@ async def test_out_of_scope_retrieval_failure():
 @pytest.mark.asyncio
 async def test_semantic_fallback_for_long_answer():
     chunks = [
-        DummyChunk("chk_1", "doc_1", ["tpc_1"], "Photosynthesis transforms water and carbon dioxide into glucose and oxygen using light."),
+        DummyChunk(
+            "chk_1",
+            "doc_1",
+            ["tpc_1"],
+            "Photosynthesis transforms water and carbon dioxide into glucose and oxygen using light.",
+        ),
     ]
 
     mock_sem_res = MagicMock(
@@ -105,8 +121,16 @@ async def test_semantic_fallback_for_long_answer():
         raw_response={},
     )
 
-    with patch("app.services.rag_evaluator.evaluate_rag_semantics", new=AsyncMock(return_value=mock_sem_res)), \
-         patch("app.services.rag_evaluation.get_collection", return_value=MagicMock(insert_one=AsyncMock())):
+    with (
+        patch(
+            "app.services.rag_evaluator.evaluate_rag_semantics",
+            new=AsyncMock(return_value=mock_sem_res),
+        ),
+        patch(
+            "app.services.rag_evaluation.get_collection",
+            return_value=MagicMock(insert_one=AsyncMock()),
+        ),
+    ):
         record = await rag_evaluation.evaluate_and_persist_rag(
             tenant_id="ten_1",
             workspace_id="wsp_1",
@@ -165,7 +189,10 @@ async def test_contradiction_causes_answer_generation_failure():
         raw_response={},
     )
 
-    with patch("app.services.rag_evaluator.evaluate_rag_semantics", new=AsyncMock(return_value=mock_sem_res)):
+    with patch(
+        "app.services.rag_evaluator.evaluate_rag_semantics",
+        new=AsyncMock(return_value=mock_sem_res),
+    ):
         record = await rag_evaluation.evaluate_and_persist_rag(
             tenant_id="ten_1",
             workspace_id="wsp_1",

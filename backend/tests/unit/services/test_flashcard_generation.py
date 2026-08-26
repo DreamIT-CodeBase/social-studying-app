@@ -41,9 +41,7 @@ def _chunk(text: str | None = None) -> RetrievedChunk:
 
 def _mock_chat(response: dict):
     mock = AsyncMock(return_value=response)
-    return patch.object(
-        flashcard_generation.azure_openai, "chat_json", mock
-    ), mock
+    return patch.object(flashcard_generation.azure_openai, "chat_json", mock), mock
 
 
 # ── Happy path ──────────────────────────────────────────────────────────────
@@ -113,9 +111,10 @@ async def test_empty_grounding_chunks_raises_immediately():
     training set otherwise, and we want every card anchored to the
     workspace's actual material.
     """
-    with patch.object(
-        flashcard_generation.azure_openai, "chat_json", AsyncMock()
-    ) as mock_call, pytest.raises(InsufficientFlashcardSource, match="No grounding chunks"):
+    with (
+        patch.object(flashcard_generation.azure_openai, "chat_json", AsyncMock()) as mock_call,
+        pytest.raises(InsufficientFlashcardSource, match="No grounding chunks"),
+    ):
         await generate_flashcard(
             topic="Anything",
             grounding_chunks=[],

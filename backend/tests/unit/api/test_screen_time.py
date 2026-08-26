@@ -217,8 +217,7 @@ def test_sync_xp_caps_weekly_earned_social_time_at_two_hours(
             total_earned_minutes=initial_earned,
             available_minutes=initial_available,
             week_start_date=(
-                datetime.now(UTC).date()
-                - timedelta(days=datetime.now(UTC).date().weekday())
+                datetime.now(UTC).date() - timedelta(days=datetime.now(UTC).date().weekday())
             ).isoformat(),
             weekly_xp_baseline=0,
             last_known_xp=initial_earned * 10,

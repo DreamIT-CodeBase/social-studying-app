@@ -292,7 +292,9 @@ async def _generate_and_persist_batch(
                     known_source_chunk_ids=source_chunk_ids,
                 )
             except Exception as eval_exc:
-                logger.warning("RAG evaluation failed for batch question %s: %s", question_id, eval_exc)
+                logger.warning(
+                    "RAG evaluation failed for batch question %s: %s", question_id, eval_exc
+                )
 
     return persisted_questions
 
@@ -347,10 +349,7 @@ async def _generate_topic_batch(
             seen_question_bodies=seen_bodies[:30],
         )
         source_chunk_ids = [chunk.chunk_id for chunk in grounding_chunks]
-        return [
-            (gq, candidate, document_id, source_chunk_ids, retrieved.chunks)
-            for gq in gqs
-        ]
+        return [(gq, candidate, document_id, source_chunk_ids, retrieved.chunks) for gq in gqs]
     except Exception as e:
         logger.warning("Topic batch generation failed for %s: %s", candidate.topic_name, e)
         return []

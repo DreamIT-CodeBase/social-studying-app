@@ -21,7 +21,6 @@ from app.models.workspace import Workspace, WorkspaceSettings
 from app.services.badges import BADGES
 from tests.unit.conftest import make_user
 
-
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
 
@@ -319,9 +318,7 @@ def test_leaderboard_visible_to_admins_even_when_setting_off(client, admin):
     workspaces_col = MagicMock()
     workspaces_col.find_one = AsyncMock(return_value=workspace)
     users_col = MagicMock()
-    users_col.find = MagicMock(
-        return_value=_async_iter([{"_id": "stu_a", "display_name": "Aki"}])
-    )
+    users_col.find = MagicMock(return_value=_async_iter([{"_id": "stu_a", "display_name": "Aki"}]))
 
     def _factory(_tid, collection):
         from app.core.database import USERS, WORKSPACES

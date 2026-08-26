@@ -445,9 +445,7 @@ resource workerApp 'Microsoft.App/containerApps@2024-03-01' = {
         }
       ]
       scale: {
-        // Scale-to-zero in dev keeps costs near zero between uploads.
-        // Prod keeps min=1 so the first message after idle isn't slow.
-        minReplicas: environment == 'prod' ? 1 : 0
+        minReplicas: 1
         maxReplicas: environment == 'prod' ? 10 : 3
         rules: [
           {
@@ -579,7 +577,7 @@ resource topicWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
       scale: {
         // Topic mining is slower per message — keep maxReplicas low to avoid
         // hammering the GPT-4o deployment's TPM budget in parallel.
-        minReplicas: environment == 'prod' ? 1 : 0
+        minReplicas: 1
         maxReplicas: environment == 'prod' ? 5 : 2
         rules: [
           {
@@ -693,7 +691,7 @@ resource chunkerApp 'Microsoft.App/containerApps@2024-03-01' = {
       scale: {
         // Chunking writes one document's full chunk set to the shared Cosmos
         // collection. Serialize dev jobs to stay within its RU budget.
-        minReplicas: environment == 'prod' ? 1 : 0
+        minReplicas: 1
         maxReplicas: environment == 'prod' ? 3 : 1
         rules: [
           {
@@ -832,7 +830,7 @@ resource vectorizerApp 'Microsoft.App/containerApps@2024-03-01' = {
         // OpenAI TPM under the embedding quota when multiple docs land in
         // sequence. Bumps cap is the right knob if throughput becomes an
         // issue rather than scaling replicas first.
-        minReplicas: environment == 'prod' ? 1 : 0
+        minReplicas: 1
         maxReplicas: environment == 'prod' ? 5 : 2
         rules: [
           {

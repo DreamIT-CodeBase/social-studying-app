@@ -67,10 +67,14 @@ def document_blob_path(
 
 def document_blob_url(blob_path: str) -> str:
     """Return the non-SAS URL for a stored raw document."""
-    return _client().get_blob_client(
-        container=settings.storage_container,
-        blob=blob_path,
-    ).url
+    return (
+        _client()
+        .get_blob_client(
+            container=settings.storage_container,
+            blob=blob_path,
+        )
+        .url
+    )
 
 
 def _extracted_text_path(tenant_id: str, workspace_id: str, document_id: str) -> str:

@@ -238,27 +238,17 @@ async def _handle(msg: ReceivedExtractionMessage) -> None:
     )
     await _write_moderation_log(payload, verdict, action=ModerationAction.auto_approved)
 
-    # 6. Hand off to the topic extraction worker (Sprint 2.5). Best-effort:
-    #    if enqueue fails we log loudly but don't re-raise, because the
-    #    document is already at status=text_extracted and re-running the DI
-    #    call + content safety scan from a Service Bus retry would waste
-    #    money. A separate sweep job can re-enqueue stuck text_extracted docs
-    #    if this becomes a real problem in production.
-    try:
-        await publish_topic_message(
-            TopicExtractionMessage(
-                document_id=payload.document_id,
-                tenant_id=payload.tenant_id,
-                workspace_id=payload.workspace_id,
-                extracted_text_blob_path=blob_path,
-            )
+    # 6. Hand off to the topic extraction worker (Sprint 2.5). A publish failure
+    # must propagate so Service Bus retries the message instead of leaving the
+    # document stuck at text_extracted indefinitely.
+    await publish_topic_message(
+        TopicExtractionMessage(
+            document_id=payload.document_id,
+            tenant_id=payload.tenant_id,
+            workspace_id=payload.workspace_id,
+            extracted_text_blob_path=blob_path,
         )
-    except Exception:
-        logger.exception(
-            "Failed to enqueue topic-extraction handoff for doc=%s — "
-            "document is stuck at text_extracted",
-            payload.document_id,
-        )
+    )
 
     logger.info(
         "Extracted doc=%s pages=%d chars=%d langs=%s severities=%s",

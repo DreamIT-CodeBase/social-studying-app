@@ -108,9 +108,7 @@ def _factory_for(question_doc: dict | None) -> tuple[MagicMock, list[dict]]:
 def test_skip_returns_204_and_persists_defer(client, student):
     factory, captured = _factory_for(_question())
     with patch("app.api.questions.get_collection", side_effect=factory):
-        response = client.post(
-            "/api/v1/workspaces/wsp_a/questions/qst_target/skip"
-        )
+        response = client.post("/api/v1/workspaces/wsp_a/questions/qst_target/skip")
     assert response.status_code == 204
     assert response.content == b""
     # Exactly one update with the defer payload.
@@ -151,18 +149,14 @@ def test_third_skip_marks_question_as_permanently_deferred(client, student):
 def test_skip_pending_review_returns_409(client, student):
     factory, _ = _factory_for(_question(status_=QuestionStatus.pending_review))
     with patch("app.api.questions.get_collection", side_effect=factory):
-        response = client.post(
-            "/api/v1/workspaces/wsp_a/questions/qst_target/skip"
-        )
+        response = client.post("/api/v1/workspaces/wsp_a/questions/qst_target/skip")
     assert response.status_code == 409
 
 
 def test_skip_rejected_returns_409(client, student):
     factory, _ = _factory_for(_question(status_=QuestionStatus.rejected))
     with patch("app.api.questions.get_collection", side_effect=factory):
-        response = client.post(
-            "/api/v1/workspaces/wsp_a/questions/qst_target/skip"
-        )
+        response = client.post("/api/v1/workspaces/wsp_a/questions/qst_target/skip")
     assert response.status_code == 409
 
 
@@ -172,9 +166,7 @@ def test_skip_rejected_returns_409(client, student):
 def test_skip_missing_question_returns_404(client, student):
     factory, _ = _factory_for(None)
     with patch("app.api.questions.get_collection", side_effect=factory):
-        response = client.post(
-            "/api/v1/workspaces/wsp_a/questions/qst_ghost/skip"
-        )
+        response = client.post("/api/v1/workspaces/wsp_a/questions/qst_ghost/skip")
     assert response.status_code == 404
 
 
@@ -183,9 +175,7 @@ def test_skip_question_from_other_workspace_returns_404(client, student):
     wsp_b can't be skipped from a wsp_a request — find_one returns None."""
     factory, _ = _factory_for(None)  # workspace mismatch ⇒ None
     with patch("app.api.questions.get_collection", side_effect=factory):
-        response = client.post(
-            "/api/v1/workspaces/wsp_a/questions/qst_in_b/skip"
-        )
+        response = client.post("/api/v1/workspaces/wsp_a/questions/qst_in_b/skip")
     assert response.status_code == 404
 
 
@@ -199,7 +189,5 @@ def test_non_member_student_gets_403(client):
         workspace_ids=["wsp_a"],
     )
     app.dependency_overrides[get_current_user] = lambda: user
-    response = client.post(
-        "/api/v1/workspaces/wsp_b/questions/qst_x/skip"
-    )
+    response = client.post("/api/v1/workspaces/wsp_b/questions/qst_x/skip")
     assert response.status_code == 403

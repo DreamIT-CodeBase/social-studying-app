@@ -13,7 +13,6 @@ import pytest
 
 from app.services import topic_extraction
 
-
 # ── Empty short-circuit ──────────────────────────────────────────────────────
 
 
@@ -197,23 +196,27 @@ async def test_missing_topics_key_raises_value_error():
     """Model returned valid JSON but wrong schema — surface as ValueError so
     the worker dead-letters rather than silently producing no topics."""
     response = {"things": []}
-    with patch(
-        "app.services.topic_extraction.azure_openai.chat_json",
-        AsyncMock(return_value=response),
+    with (
+        patch(
+            "app.services.topic_extraction.azure_openai.chat_json",
+            AsyncMock(return_value=response),
+        ),
+        pytest.raises(ValueError, match="missing 'topics'"),
     ):
-        with pytest.raises(ValueError, match="missing 'topics'"):
-            await topic_extraction.extract_topics("text")
+        await topic_extraction.extract_topics("text")
 
 
 @pytest.mark.asyncio
 async def test_topics_not_a_list_raises_value_error():
     response = {"topics": "Photosynthesis"}
-    with patch(
-        "app.services.topic_extraction.azure_openai.chat_json",
-        AsyncMock(return_value=response),
+    with (
+        patch(
+            "app.services.topic_extraction.azure_openai.chat_json",
+            AsyncMock(return_value=response),
+        ),
+        pytest.raises(ValueError),
     ):
-        with pytest.raises(ValueError):
-            await topic_extraction.extract_topics("text")
+        await topic_extraction.extract_topics("text")
 
 
 @pytest.mark.asyncio
@@ -232,9 +235,7 @@ async def test_non_dict_rows_are_skipped():
 
 @pytest.mark.asyncio
 async def test_long_text_is_truncated_to_settings_budget(monkeypatch):
-    monkeypatch.setattr(
-        topic_extraction.settings, "openai_topic_extraction_max_input_chars", 100
-    )
+    monkeypatch.setattr(topic_extraction.settings, "openai_topic_extraction_max_input_chars", 100)
     long_text = "X" * 5_000
 
     captured: dict[str, str] = {}

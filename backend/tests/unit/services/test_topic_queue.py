@@ -65,12 +65,8 @@ async def test_publish_sends_one_message_with_doc_id_as_message_id():
     sb_client.__aexit__ = AsyncMock(return_value=None)
 
     with (
-        patch.object(
-            topic_queue.settings, "service_bus_connection", "Endpoint=sb://test"
-        ),
-        patch.object(
-            topic_queue.settings, "service_bus_topics_queue", "topic-extraction"
-        ),
+        patch.object(topic_queue.settings, "service_bus_connection", "Endpoint=sb://test"),
+        patch.object(topic_queue.settings, "service_bus_topics_queue", "topic-extraction"),
         patch(
             "app.services.topic_queue.ServiceBusClient.from_connection_string",
             return_value=sb_client,
@@ -103,9 +99,7 @@ async def test_received_message_complete_calls_receiver():
     receiver = MagicMock()
     receiver.complete_message = AsyncMock()
     raw = MagicMock()
-    rec = ReceivedTopicMessage(
-        payload=_msg(), delivery_count=1, _receiver=receiver, _raw=raw
-    )
+    rec = ReceivedTopicMessage(payload=_msg(), delivery_count=1, _receiver=receiver, _raw=raw)
     await rec.complete()
     receiver.complete_message.assert_awaited_once_with(raw)
 
@@ -115,9 +109,7 @@ async def test_received_message_abandon_calls_receiver():
     receiver = MagicMock()
     receiver.abandon_message = AsyncMock()
     raw = MagicMock()
-    rec = ReceivedTopicMessage(
-        payload=_msg(), delivery_count=2, _receiver=receiver, _raw=raw
-    )
+    rec = ReceivedTopicMessage(payload=_msg(), delivery_count=2, _receiver=receiver, _raw=raw)
     await rec.abandon()
     receiver.abandon_message.assert_awaited_once_with(raw)
 
@@ -127,9 +119,7 @@ async def test_received_message_dead_letter_passes_reason():
     receiver = MagicMock()
     receiver.dead_letter_message = AsyncMock()
     raw = MagicMock()
-    rec = ReceivedTopicMessage(
-        payload=_msg(), delivery_count=3, _receiver=receiver, _raw=raw
-    )
+    rec = ReceivedTopicMessage(payload=_msg(), delivery_count=3, _receiver=receiver, _raw=raw)
     await rec.dead_letter("PromptFailure", "missing topics key")
     receiver.dead_letter_message.assert_awaited_once_with(
         raw, reason="PromptFailure", error_description="missing topics key"

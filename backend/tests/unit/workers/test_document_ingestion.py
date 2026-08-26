@@ -45,7 +45,9 @@ def _payload(**overrides) -> ExtractionMessage:
     return ExtractionMessage(**base)
 
 
-def _msg(payload: ExtractionMessage | None = None, delivery_count: int = 1) -> ReceivedExtractionMessage:
+def _msg(
+    payload: ExtractionMessage | None = None, delivery_count: int = 1
+) -> ReceivedExtractionMessage:
     return ReceivedExtractionMessage(
         payload=payload or _payload(),
         delivery_count=delivery_count,
@@ -127,10 +129,7 @@ async def test_handle_happy_path_transitions_pending_to_text_extracted():
 
     # Two doc updates: status=extracting at start, status=text_extracted at end.
     assert docs.update_one.await_count == 2
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in docs.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in docs.update_one.await_args_list]
     assert statuses == [DocumentStatus.extracting.value, DocumentStatus.text_extracted.value]
 
     # Final update carries the extracted-text metadata.
@@ -228,10 +227,7 @@ async def test_handle_unsupported_content_marks_failed_and_dead_letters():
 
     msg._receiver.dead_letter_message.assert_awaited_once()
     # Two status writes: extracting, then failed.
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses == [DocumentStatus.extracting.value, DocumentStatus.failed.value]
     final_update = col.update_one.await_args_list[-1].args[1]["$set"]
     assert "Document Intelligence rejected" in final_update["processing_error"]
@@ -256,10 +252,7 @@ async def test_handle_blob_not_found_marks_failed_and_dead_letters():
         await document_ingestion._handle(msg)
 
     msg._receiver.dead_letter_message.assert_awaited_once()
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses == [DocumentStatus.extracting.value, DocumentStatus.failed.value]
 
 
@@ -330,9 +323,7 @@ async def test_handle_content_safety_flagged_sets_status_flagged_and_logs():
     msg = _msg()
     docs, logs, route = _collection_router()
 
-    extracted = ExtractedDocument(
-        text="some objectionable passage", page_count=3, languages=["en"]
-    )
+    extracted = ExtractedDocument(text="some objectionable passage", page_count=3, languages=["en"])
     flagged = _flagged_verdict(category="Hate", severity=4)
 
     with (
@@ -363,10 +354,7 @@ async def test_handle_content_safety_flagged_sets_status_flagged_and_logs():
     # Flagged docs do NOT advance to topic extraction.
     mock_publish.assert_not_awaited()
 
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in docs.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in docs.update_one.await_args_list]
     assert statuses == [DocumentStatus.extracting.value, DocumentStatus.flagged.value]
 
     final_update = docs.update_one.await_args_list[-1].args[1]["$set"]
@@ -413,15 +401,13 @@ async def test_handle_content_safety_transient_error_propagates():
         patch(
             "app.workers.document_ingestion.content_safety.analyze_extracted_text",
             AsyncMock(side_effect=HttpResponseError(message="503")),
-        ),pytest.raises(HttpResponseError)
+        ),
+        pytest.raises(HttpResponseError),
     ):
         await document_ingestion._handle(msg)
 
     # Only the extracting transition fired; no text_extracted or flagged write.
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in docs.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in docs.update_one.await_args_list]
     assert statuses == [DocumentStatus.extracting.value]
 
 
@@ -458,8 +444,5 @@ async def test_handle_moderation_log_write_failure_does_not_crash():
         await document_ingestion._handle(msg)  # must not raise
 
     # Document still made it to text_extracted.
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in docs.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in docs.update_one.await_args_list]
     assert statuses[-1] == DocumentStatus.text_extracted.value

@@ -278,7 +278,7 @@ def test_add_member_keeps_workspace_admin_with_other_admin_membership(client):
 def test_remove_workspace_member_success(client):
     admin = make_user(role=UserRole.tenant_admin)
     app.dependency_overrides[get_current_user] = lambda: admin
-    
+
     student = make_user(user_id="usr_student", role=UserRole.student)
     student.workspace_memberships = [
         WorkspaceMembership(
@@ -287,14 +287,14 @@ def test_remove_workspace_member_success(client):
             joined_at="2026-01-01T00:00:00+00:00",
         )
     ]
-    
+
     workspace = make_workspace(workspace_id="wsp_test")
     workspace.student_ids = ["usr_student"]
 
     workspace_col = MagicMock()
     workspace_col.find_one = AsyncMock(return_value=workspace.model_dump(by_alias=True))
     workspace_col.update_one = AsyncMock()
-    
+
     user_col = MagicMock()
     user_col.find_one = AsyncMock(return_value=student.model_dump(by_alias=True))
     user_col.update_one = AsyncMock()
@@ -313,7 +313,6 @@ def test_remove_workspace_member_success(client):
 def test_remove_workspace_member_forbidden_for_non_admin(client):
     student_caller = make_user(user_id="usr_caller", role=UserRole.student)
     app.dependency_overrides[get_current_user] = lambda: student_caller
-    
+
     response = client.delete("/api/v1/workspaces/wsp_test/members/usr_student")
     assert response.status_code == 403
-

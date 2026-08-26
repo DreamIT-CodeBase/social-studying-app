@@ -142,9 +142,7 @@ def test_student_progress_workspace_admin_outside_workspace_gets_403(client):
     assert response.status_code == 403
 
 
-def test_student_progress_tenant_admin_bypasses_workspace_check(
-    client, tenant_admin
-):
+def test_student_progress_tenant_admin_bypasses_workspace_check(client, tenant_admin):
     with patch(
         "app.api.analytics.analytics_service.build_student_progress",
         AsyncMock(return_value=_progress_payload()),

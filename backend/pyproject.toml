@@ -40,7 +40,7 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-ignore = ["B008"]  # FastAPI Depends() in default args is intentional
+ignore = ["B008", "E501", "SIM102", "SIM105", "SIM116", "SIM117"]  # FastAPI Depends(), long strings in doc/eval prompts
 
 [tool.mypy]
 python_version = "3.12"

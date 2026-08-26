@@ -197,7 +197,7 @@ def _difficulty_instruction(tier: str) -> str:
             "DIFFICULTY LEVEL: EXPERT. "
             "Generate a card that requires deep analysis, evaluation, or synthesis. "
             "Front should ask about trade-offs, edge cases, mechanisms, or "
-            "multi-step reasoning (e.g. \"Why does X lead to Y under condition Z?\"). "
+            'multi-step reasoning (e.g. "Why does X lead to Y under condition Z?"). '
             "Back should be a precise, nuanced 1–2 sentence answer. "
             "Avoid simple recall of isolated facts."
         )
@@ -206,7 +206,7 @@ def _difficulty_instruction(tier: str) -> str:
             "DIFFICULTY LEVEL: INTERMEDIATE. "
             "Generate a card that tests application or analysis. "
             "Front should ask about a process, comparison, cause-effect relationship, "
-            "or how/why something works (e.g. \"How does X achieve Y?\"). "
+            'or how/why something works (e.g. "How does X achieve Y?"). '
             "Back should fully explain in 1–2 clear sentences."
         )
     # beginner (default)
@@ -221,7 +221,5 @@ def _difficulty_instruction(tier: str) -> str:
 def _require_string(raw: dict[str, Any], field_name: str) -> str:
     value = raw.get(field_name)
     if not isinstance(value, str) or not value.strip():
-        raise FlashcardShapeError(
-            f"Required field {field_name!r} is missing or empty."
-        )
+        raise FlashcardShapeError(f"Required field {field_name!r} is missing or empty.")
     return value.strip()

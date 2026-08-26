@@ -6,7 +6,7 @@ and pushes to AI Search. All three IO seams are mocked.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -349,13 +349,15 @@ async def test_vectorize_document_workspace_missing_still_indexes_without_topics
 
 @pytest.mark.asyncio
 async def test_vectorize_document_missing_doc_raises_documentnotfound():
-    with patch(
-        "app.services.vectorization._read_document",
-        AsyncMock(return_value=None),
+    with (
+        patch(
+            "app.services.vectorization._read_document",
+            AsyncMock(return_value=None),
+        ),
+        pytest.raises(DocumentNotFound),
     ):
-        with pytest.raises(DocumentNotFound):
-            await vectorization.vectorize_document(
-                tenant_id="ten_abc",
-                workspace_id="wsp_abc",
-                document_id="doc_gone",
-            )
+        await vectorization.vectorize_document(
+            tenant_id="ten_abc",
+            workspace_id="wsp_abc",
+            document_id="doc_gone",
+        )

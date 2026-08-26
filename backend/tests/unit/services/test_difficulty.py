@@ -55,9 +55,7 @@ def test_predict_success_is_monotonic_nonincreasing_across_difficulties(mastery)
     Otherwise 'advanced' isn't actually advanced.
     """
     pb = predict_success_probability(mastery=mastery, difficulty=DifficultyLevel.beginner)
-    pi = predict_success_probability(
-        mastery=mastery, difficulty=DifficultyLevel.intermediate
-    )
+    pi = predict_success_probability(mastery=mastery, difficulty=DifficultyLevel.intermediate)
     pa = predict_success_probability(mastery=mastery, difficulty=DifficultyLevel.advanced)
     assert pb >= pi >= pa
 
@@ -69,17 +67,13 @@ def test_predict_success_clamps_negative_mastery_to_floor():
     """
     assert predict_success_probability(
         mastery=-0.5, difficulty=DifficultyLevel.beginner
-    ) == predict_success_probability(
-        mastery=0.0, difficulty=DifficultyLevel.beginner
-    )
+    ) == predict_success_probability(mastery=0.0, difficulty=DifficultyLevel.beginner)
 
 
 def test_predict_success_clamps_above_one_mastery_to_ceiling():
     assert predict_success_probability(
         mastery=1.5, difficulty=DifficultyLevel.advanced
-    ) == predict_success_probability(
-        mastery=1.0, difficulty=DifficultyLevel.advanced
-    )
+    ) == predict_success_probability(mastery=1.0, difficulty=DifficultyLevel.advanced)
 
 
 def test_predict_success_pins_v1_calibration_endpoints():

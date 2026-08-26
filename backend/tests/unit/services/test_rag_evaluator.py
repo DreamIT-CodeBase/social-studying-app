@@ -1,6 +1,7 @@
 """Unit tests for the RAG Evaluator LLM service."""
 
 from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from app.services import rag_evaluator
@@ -16,7 +17,10 @@ async def test_rag_evaluator_success():
             "reason": "The question is directly grounded in photosynthesis definition.",
         },
         "answer": {
-            "supported_facts": ["Chloroplasts contain chlorophyll", "Light energy converted to glucose"],
+            "supported_facts": [
+                "Chloroplasts contain chlorophyll",
+                "Light energy converted to glucose",
+            ],
             "missing_facts": [],
             "contradicted_facts": [],
             "uncertain_facts": [],

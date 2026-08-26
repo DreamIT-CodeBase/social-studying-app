@@ -146,9 +146,7 @@ async def extract_topics(text: str) -> list[TopicTag]:
     system_prompt, user_template = _system_user()
     user_prompt = render(
         user_template,
-        source_content=_truncate(
-            text, max_chars=settings.openai_topic_extraction_max_input_chars
-        ),
+        source_content=_truncate(text, max_chars=settings.openai_topic_extraction_max_input_chars),
     )
 
     response = await azure_openai.chat_json(

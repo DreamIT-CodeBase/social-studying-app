@@ -291,9 +291,9 @@ async def test_handle_transient_openai_error_propagates():
             "app.workers.topic_extraction.topic_extraction.extract_topics",
             AsyncMock(side_effect=ServiceUnavailableError("OpenAI 503")),
         ),
+        pytest.raises(ServiceUnavailableError),
     ):
-        with pytest.raises(ServiceUnavailableError):
-            await worker._handle(msg)
+        await worker._handle(msg)
 
     # Status got set to extracting_topics, but no final write — the worker
     # is left "in flight" so Service Bus redelivers and we try again.

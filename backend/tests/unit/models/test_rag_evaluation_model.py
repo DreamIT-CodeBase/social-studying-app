@@ -4,7 +4,6 @@ from app.models.rag_evaluation import (
     AnswerEvaluation,
     QuestionEvaluation,
     RAGEvaluationRecord,
-    RAGFailureStage,
     RetrievalEvaluation,
     RetrievedChunkTrace,
 )
@@ -37,8 +36,16 @@ def test_rag_evaluation_model_validation():
         question_body="What is 2x = 6?",
         reference_answer="x = 3",
         retrieval=RetrievalEvaluation(scope_validity=1.0, passed=True),
-        question=QuestionEvaluation(groundedness=1.0, answerability=1.0, topic_relevance=1.0, passed=True),
-        answer=AnswerEvaluation(correctness=1.0, completeness=1.0, faithfulness=1.0, supported_facts=["x = 3"], passed=True),
+        question=QuestionEvaluation(
+            groundedness=1.0, answerability=1.0, topic_relevance=1.0, passed=True
+        ),
+        answer=AnswerEvaluation(
+            correctness=1.0,
+            completeness=1.0,
+            faithfulness=1.0,
+            supported_facts=["x = 3"],
+            passed=True,
+        ),
         overall_score=1.0,
         passed=True,
         failed_stage=None,

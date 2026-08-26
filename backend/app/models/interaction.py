@@ -22,4 +22,4 @@ class Interaction(CosmosDocument):
     answer_given: str
     time_spent_seconds: int = Field(ge=0, default=0)
     xp_earned: int = 0
-    answered_at: str          # ISO 8601 UTC
+    answered_at: str  # ISO 8601 UTC

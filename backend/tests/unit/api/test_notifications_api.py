@@ -205,9 +205,7 @@ def test_run_scheduler_returns_summary_to_tenant_admin(client, tenant_admin):
         "app.api.notifications.scheduler.run_tick_for_tenant",
         AsyncMock(return_value=summary),
     ):
-        response = client.post(
-            "/api/v1/admin/notifications/run-scheduler"
-        )
+        response = client.post("/api/v1/admin/notifications/run-scheduler")
     assert response.status_code == 200
     body = response.json()
     assert body == {
@@ -234,9 +232,7 @@ def test_run_scheduler_uses_callers_tenant_id(client, tenant_admin):
             failures=0,
         )
 
-    with patch(
-        "app.api.notifications.scheduler.run_tick_for_tenant", _capture
-    ):
+    with patch("app.api.notifications.scheduler.run_tick_for_tenant", _capture):
         client.post("/api/v1/admin/notifications/run-scheduler")
     assert captured["tenant_id"] == "ten_test001"
 

@@ -13,7 +13,6 @@ from app.core.versioning import (
     _extract_version,
 )
 
-
 # ── Path parsing ──────────────────────────────────────────────────────────
 
 

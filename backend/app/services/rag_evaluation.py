@@ -139,14 +139,23 @@ async def evaluate_and_persist_rag(
     )
     topic_norm = rag_metrics.normalize_text(topic_name)
     q_norm = rag_metrics.normalize_text(question_body)
-    topic_relevant_det = bool(topic_norm in q_norm or topic_norm in rag_metrics.normalize_text(context_text))
+    topic_relevant_det = bool(
+        topic_norm in q_norm or topic_norm in rag_metrics.normalize_text(context_text)
+    )
 
     # Fast check on answer facts
     import re
-    clean_ans = re.sub(r"^(?:option\s+)?[a-da-d][\)\:\.\-]\s*", "", reference_answer, flags=re.IGNORECASE).strip()
+
+    clean_ans = re.sub(
+        r"^(?:option\s+)?[a-da-d][\)\:\.\-]\s*", "", reference_answer, flags=re.IGNORECASE
+    ).strip()
     answer_norm = rag_metrics.normalize_text(clean_ans or reference_answer)
     is_tf = question_type in ("true_false", "boolean") or clean_ans.lower() in ("true", "false")
-    answer_in_context = (answer_norm in rag_metrics.normalize_text(context_text)) if (answer_norm and not is_tf) else is_tf
+    answer_in_context = (
+        (answer_norm in rag_metrics.normalize_text(context_text))
+        if (answer_norm and not is_tf)
+        else is_tf
+    )
 
     ans_numbers = rag_metrics.extract_numbers_and_measures(reference_answer)
     ctx_numbers = set(rag_metrics.extract_numbers_and_measures(context_text))
@@ -188,7 +197,9 @@ async def evaluate_and_persist_rag(
             groundedness=q_groundedness,
             answerability=q_answerability,
             topic_relevance=q_topic_relevance,
-            passed=(q_groundedness >= 0.70 and q_answerability >= 0.70 and q_topic_relevance >= 0.70),
+            passed=(
+                q_groundedness >= 0.70 and q_answerability >= 0.70 and q_topic_relevance >= 0.70
+            ),
             reason=sem_result.question_reason,
         )
 
@@ -200,7 +211,11 @@ async def evaluate_and_persist_rag(
             missing_facts=sem_result.missing_facts,
             contradicted_facts=sem_result.contradicted_facts,
             uncertain_facts=sem_result.uncertain_facts,
-            passed=(correctness >= 0.70 and faithfulness >= 0.70 and len(sem_result.contradicted_facts) == 0),
+            passed=(
+                correctness >= 0.70
+                and faithfulness >= 0.70
+                and len(sem_result.contradicted_facts) == 0
+            ),
         )
     else:
         # Deterministic-only path (Fast, zero extra LLM cost/latency)

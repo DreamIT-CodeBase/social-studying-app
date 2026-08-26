@@ -6,6 +6,7 @@ import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/features/admin/analytics/data/analytics_repository.dart';
 import 'package:social_study_app/features/admin/analytics/presentation/learning_progress_card.dart';
+import 'package:social_study_app/features/admin/notifications/admin_notifications_tab.dart';
 import 'package:social_study_app/features/admin/users/presentation/users_screen.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/documents/presentation/documents_list_screen.dart';
@@ -50,6 +51,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
     (icon: Icons.dashboard_rounded, label: 'Dashboard'),
     (icon: Icons.description_rounded, label: 'Documents'),
     (icon: Icons.people_rounded, label: 'Students'),
+    (icon: Icons.notifications_rounded, label: 'Notifications'),
     (icon: Icons.settings_rounded, label: 'Settings'),
   ];
 
@@ -165,6 +167,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
                   ),
                   _DocumentsTab(workspaceId: workspaceId),
                   _StudentsTab(workspaceId: workspaceId),
+                  const AdminNotificationsTab(),
                   _SettingsTab(workspaceId: workspaceId),
                 ],
               ),
@@ -188,17 +191,28 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
                   selectedIndex: _selectedIndex,
                   onDestinationSelected: (index) =>
                       setState(() => _selectedIndex = index),
-                  destinations: _tabs
-                      .map(
-                        (tab) => NavigationDestination(
-                          icon:
-                              Icon(tab.icon, color: _dashboardMuted, size: 22),
-                          selectedIcon:
-                              Icon(tab.icon, color: Colors.white, size: 22),
-                          label: tab.label,
-                        ),
-                      )
-                      .toList(),
+                  destinations: [
+                    ..._tabs.asMap().entries.map((entry) {
+                      final tab = entry.value;
+                      final isNotif = tab.label == 'Notifications';
+                      final badge = isNotif
+                          ? ref.watch(adminNotificationBadgeProvider)
+                          : 0;
+                      return NavigationDestination(
+                        icon: badge > 0 && isNotif
+                            ? Badge(
+                                label: Text('$badge'),
+                                child: Icon(tab.icon,
+                                    color: _dashboardMuted, size: 22),
+                              )
+                            : Icon(tab.icon,
+                                color: _dashboardMuted, size: 22),
+                        selectedIcon: Icon(tab.icon,
+                            color: Colors.white, size: 22),
+                        label: tab.label,
+                      );
+                    }),
+                  ],
                 ),
               ),
             ),

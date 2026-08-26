@@ -561,9 +561,7 @@ def test_delete_document_from_student_self_study_workspace_succeeds(client):
             AsyncMock(return_value=None),
         ) as purge,
     ):
-        response = client.delete(
-            f"/api/v1/workspaces/{workspace_id}/documents/doc_test001"
-        )
+        response = client.delete(f"/api/v1/workspaces/{workspace_id}/documents/doc_test001")
 
     assert response.status_code == 204
     purge.assert_awaited_once()

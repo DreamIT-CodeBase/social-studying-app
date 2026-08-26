@@ -115,10 +115,7 @@ async def run_tick_for_tenant(*, tenant_id: str) -> TickSummary:
             workspace_id=workspace_id,
             student_id=student.id,
         )
-        active_today = (
-            gamification is not None
-            and gamification.last_active_date == today_iso
-        )
+        active_today = gamification is not None and gamification.last_active_date == today_iso
         if active_today:
             # No reminder needed; the student has already studied today.
             continue
@@ -160,14 +157,11 @@ async def run_tick_for_tenant(*, tenant_id: str) -> TickSummary:
     # reminders so a student who hasn't studied today AND has a
     # ready-to-reprompt question gets both pushes — the reminder is the
     # general nudge and the reprompt names the specific question.
-    summary_reprompts, reprompt_failures = await _fire_unanswered_reprompts(
-        tenant_id=tenant_id
-    )
+    summary_reprompts, reprompt_failures = await _fire_unanswered_reprompts(tenant_id=tenant_id)
     summary_failures += reprompt_failures
 
     logger.info(
-        "Notification tick tenant=%s students=%d reminders=%d "
-        "warnings=%d reprompts=%d failures=%d",
+        "Notification tick tenant=%s students=%d reminders=%d warnings=%d reprompts=%d failures=%d",
         tenant_id,
         len(students),
         summary_reminders,
@@ -184,9 +178,7 @@ async def run_tick_for_tenant(*, tenant_id: str) -> TickSummary:
     )
 
 
-async def _fire_unanswered_reprompts(
-    *, tenant_id: str
-) -> tuple[int, int]:
+async def _fire_unanswered_reprompts(*, tenant_id: str) -> tuple[int, int]:
     """Find every question whose ``deferred_until`` is at or past now,
     fire a reprompt push for it, and clear ``deferred_until`` so the
     student is only nudged once per skip.
@@ -241,22 +233,16 @@ async def _read_students(*, tenant_id: str) -> list[User]:
     admins (who don't get reminders — they're operating the platform,
     not learning on it)."""
     col = get_collection(tenant_id, USERS)
-    cursor = col.find(
-        {"role": UserRole.student.value, "deleted_at": None}
-    )
+    cursor = col.find({"role": UserRole.student.value, "deleted_at": None})
     return [User.model_validate(raw) async for raw in cursor]
 
 
-async def _read_workspaces_by_id(
-    *, tenant_id: str
-) -> dict[str, Workspace]:
+async def _read_workspaces_by_id(*, tenant_id: str) -> dict[str, Workspace]:
     """Bulk-load workspaces so the per-student loop is O(1) lookups
     rather than N point reads."""
     col = get_collection(tenant_id, WORKSPACES)
     cursor = col.find({"deleted_at": None})
-    return {
-        raw["_id"]: Workspace.model_validate(raw) async for raw in cursor
-    }
+    return {raw["_id"]: Workspace.model_validate(raw) async for raw in cursor}
 
 
 async def _read_gamification(
@@ -326,9 +312,7 @@ def _count_successes(results: list) -> int:
     from app.models.notification import DispatchOutcome  # local to dodge import order
 
     return sum(
-        1
-        for r in results
-        if r.outcome in (DispatchOutcome.sent, DispatchOutcome.logged_only)
+        1 for r in results if r.outcome in (DispatchOutcome.sent, DispatchOutcome.logged_only)
     )
 
 

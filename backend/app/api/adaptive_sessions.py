@@ -75,13 +75,37 @@ _FLASHCARD_RANGES = {
     AdaptiveLevel.intermediate: (10, 13),
     AdaptiveLevel.expert: (18, 25),
 }
-_MINUTES_PER_ITEM = 2
+_MINUTES_PER_ITEM = 2  # kept for XP calculations only — not used for duration
+# Per-type time allocations (seconds). These drive the session clock.
+_SECONDS_PER_QUESTION_TYPE: dict[str, int] = {
+    "mcq": 60,  # 1 minute — answer from options, quick recall
+    "true_false": 50,  # 50 seconds — binary choice
+    "short_answer": 120,  # 2 minutes — brief written response
+    "long_answer": 240,  # 4 minutes — medium/long written answer
+    "mathematical": 120,  # 2 minutes — calculation, similar to short answer
+}
+_DEFAULT_QUESTION_SECONDS = 120  # fallback for unknown types
+_SECONDS_PER_FLASHCARD = 30  # 30 seconds per flashcard (flip + rate)
 _COMPLETION_BONUSES = {
     AdaptiveSessionMode.study: 8,
     AdaptiveSessionMode.revision: 5,
     AdaptiveSessionMode.flashcard: 5,
 }
 _MAX_GENERATED_FLASHCARDS_PER_PREPARE = 4
+
+
+def _session_duration_minutes(
+    questions: list[PreparedQuestion],
+    flashcards: list[PreparedFlashcard],
+) -> int:
+    """Compute the session time budget from the actual item types and count."""
+    total_seconds = sum(
+        _SECONDS_PER_QUESTION_TYPE.get(q.question_type, _DEFAULT_QUESTION_SECONDS)
+        for q in questions
+    )
+    total_seconds += len(flashcards) * _SECONDS_PER_FLASHCARD
+    # Ensure at least 1 minute and round up to nearest full minute.
+    return max(1, -(-total_seconds // 60))  # ceiling division
 
 
 def _assert_workspace_access(user: User, workspace_id: str) -> None:
@@ -366,6 +390,32 @@ async def _reserved_flashcards(
     return ids, fingerprints
 
 
+async def _question_session_history(
+    *, tenant_id: str, workspace_id: str, student_id: str
+) -> tuple[set[str], set[str]]:
+    """Return IDs and body fingerprints of every question already delivered
+    to this student in any past adaptive session (study or revision), regardless
+    of whether the student actually submitted an answer.
+
+    This supplements the INTERACTIONS collection (which only records answered
+    questions) to prevent questions from reappearing after a student exits or
+    times out without answering.
+    """
+    cursor = get_collection(tenant_id, ADAPTIVE_SESSIONS).find(
+        {
+            "workspace_id": workspace_id,
+            "student_id": student_id,
+            "mode": {"$in": [AdaptiveSessionMode.study.value, AdaptiveSessionMode.revision.value]},
+            "status": {"$ne": "prepared"},  # all completed / exited / timed_out sessions
+        }
+    )
+    rows = await cursor.to_list(length=500)
+    questions = [q for row in rows for q in (row.get("plan") or {}).get("questions", [])]
+    ids = {str(q["id"]) for q in questions if q.get("id")}
+    fingerprints = {_question_fingerprint(str(q["body"])) for q in questions if q.get("body")}
+    return ids, fingerprints
+
+
 async def _prepare_questions(
     *,
     user: User,
@@ -388,7 +438,16 @@ async def _prepare_questions(
         workspace_id=workspace_id,
         student_id=user.id,
     )
+    # seen_ids: questions recorded via answer submission (INTERACTIONS)
     seen_ids = {str(row.get("question_id")) for row in interactions}
+    # Also add IDs from past session plans that may not have been answered
+    # (e.g., student exited or timed out). Fixes Bug 6 — no cross-session repeats.
+    session_seen_ids, session_seen_fingerprints = await _question_session_history(
+        tenant_id=user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=user.id,
+    )
+    seen_ids |= session_seen_ids
     reserved_ids, reserved_fingerprints = await _reserved_questions(
         tenant_id=user.tenant_id,
         workspace_id=workspace_id,
@@ -447,14 +506,15 @@ async def _prepare_questions(
         except Exception:
             logger.warning("Skipping malformed queued question id=%s", raw.get("_id"))
 
-    seen_fingerprints = {
+    # Combine fingerprints from answer history AND session plan history (Bug 6 fix)
+    seen_fingerprints = session_seen_fingerprints | {
         _question_fingerprint(question.body) for question in available if question.id in seen_ids
     }
 
     # A normal study session is fresh-only. Previously answered questions and
-    # questions allocated to another unfinished session are not fallback
-    # candidates. Revision deliberately retains history so incorrect questions
-    # can be practised again.
+    # questions delivered in prior session plans (even unanswered) and questions
+    # allocated to another unfinished session are not eligible.
+    # Revision deliberately retains history so incorrect questions can be re-practiced.
     if revision:
         eligible = available
     else:
@@ -491,6 +551,7 @@ async def _prepare_questions(
                     and question.id not in reserved_ids
                     and _question_fingerprint(question.body) not in seen_fingerprints
                     and _question_fingerprint(question.body) not in reserved_fingerprints
+                    and _question_fingerprint(question.body) not in session_seen_fingerprints
                 ]
             selected = _unique_questions([*selected, *generated])[:target]
         except Exception:
@@ -764,17 +825,36 @@ async def _prepare_flashcards(
         if card.id in seen_ids
     }
     historical_fronts.extend(card.front for card in available_cards if card.id in seen_ids)
-    cards = _unique_flashcards(
+
+    # For all workspaces (including personal/self-study): prefer unseen cards first.
+    # Personal workspaces allow spaced-repetition cycling — once all cards have
+    # been shown at least once, the pool is reopened so cards repeat in order.
+    # This prevents the same few cards appearing every single session.
+    unseen_cards = _unique_flashcards(
         card
         for card in available_cards
-        if (is_personal_workspace or card.id not in seen_ids)
+        if card.id not in seen_ids
         and card.id not in reserved_ids
-        and (
-            is_personal_workspace
-            or _flashcard_fingerprint(card.front, card.back) not in seen_fingerprints
-        )
+        and _flashcard_fingerprint(card.front, card.back) not in seen_fingerprints
         and _flashcard_fingerprint(card.front, card.back) not in reserved_fingerprints
-    )[:target]
+    )
+    if len(unseen_cards) >= target:
+        return unseen_cards[:target]
+
+    # Fallback: not enough unseen cards — cycle through seen ones for personal
+    # workspaces (spaced repetition), or just return what we have for regular ones.
+    if is_personal_workspace and len(unseen_cards) < target:
+        seen_cards = _unique_flashcards(
+            card
+            for card in available_cards
+            if card.id not in reserved_ids
+            and _flashcard_fingerprint(card.front, card.back) not in reserved_fingerprints
+            and card not in unseen_cards
+        )
+        cards = _unique_flashcards([*unseen_cards, *seen_cards])[:target]
+    else:
+        cards = unseen_cards
+
     if len(cards) >= target:
         return cards
 
@@ -918,9 +998,10 @@ async def prepare_adaptive_session(
         mode=request.mode,
         level=level,
         mastery_score=mastery,
-        # Session time follows the actual prepared content, not the mastery
-        # tier. Four questions/cards therefore always receive eight minutes.
-        duration_minutes=max(1, item_count * _MINUTES_PER_ITEM),
+        # Session duration is computed from the actual question types served,
+        # giving MCQ (1 min), True/False (50 s), Short (2 min) and Long (4 min)
+        # questions their correct time budget rather than a flat 2 min each.
+        duration_minutes=_session_duration_minutes(questions, flashcards),
         item_count=item_count,
         estimated_xp_min=xp_min,
         estimated_xp_max=xp_max,

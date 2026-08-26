@@ -170,10 +170,14 @@ def test_answer_fact_metrics():
 
 def test_overall_score_and_stage_attribution():
     retrieval_pass = RetrievalEvaluation(scope_validity=1.0, passed=True)
-    question_pass = QuestionEvaluation(groundedness=1.0, answerability=1.0, topic_relevance=1.0, passed=True)
+    question_pass = QuestionEvaluation(
+        groundedness=1.0, answerability=1.0, topic_relevance=1.0, passed=True
+    )
     answer_pass = AnswerEvaluation(correctness=1.0, completeness=1.0, faithfulness=1.0, passed=True)
 
-    score, passed = rag_metrics.calculate_overall_rag_score(retrieval_pass, question_pass, answer_pass)
+    score, passed = rag_metrics.calculate_overall_rag_score(
+        retrieval_pass, question_pass, answer_pass
+    )
     assert score == 1.0
     assert passed is True
 
@@ -187,13 +191,17 @@ def test_overall_score_and_stage_attribution():
         invalid_scope_chunk_ids=["chk_bad"],
         passed=False,
     )
-    stage_r, reason_r = rag_metrics.attribute_failure_stage(retrieval_fail, question_pass, answer_pass)
+    stage_r, reason_r = rag_metrics.attribute_failure_stage(
+        retrieval_fail, question_pass, answer_pass
+    )
     assert stage_r == RAGFailureStage.retrieval
     assert "chk_bad" in reason_r
 
     # Question groundedness failure attribution
     question_ungrounded = QuestionEvaluation(groundedness=0.3, passed=False)
-    stage_g, reason_g = rag_metrics.attribute_failure_stage(retrieval_pass, question_ungrounded, answer_pass)
+    stage_g, reason_g = rag_metrics.attribute_failure_stage(
+        retrieval_pass, question_ungrounded, answer_pass
+    )
     assert stage_g == RAGFailureStage.grounding
 
     # Answer contradiction failure attribution
@@ -203,6 +211,8 @@ def test_overall_score_and_stage_attribution():
         faithfulness=0.0,
         passed=False,
     )
-    stage_a, reason_a = rag_metrics.attribute_failure_stage(retrieval_pass, question_pass, answer_contra)
+    stage_a, reason_a = rag_metrics.attribute_failure_stage(
+        retrieval_pass, question_pass, answer_contra
+    )
     assert stage_a == RAGFailureStage.answer_generation
     assert "contradictions" in reason_a

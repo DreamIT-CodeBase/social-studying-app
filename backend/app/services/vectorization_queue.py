@@ -80,16 +80,12 @@ async def publish_vectorization_message(message: VectorizationMessage) -> None:
             wrap in best-effort try/except).
     """
     if not settings.service_bus_connection:
-        raise RuntimeError(
-            "SERVICE_BUS_CONNECTION is not configured — cannot publish."
-        )
+        raise RuntimeError("SERVICE_BUS_CONNECTION is not configured — cannot publish.")
 
     body = message.to_json()
     sb = ServiceBusClient.from_connection_string(settings.service_bus_connection)
     async with sb:
-        sender = sb.get_queue_sender(
-            queue_name=settings.service_bus_vectorization_queue
-        )
+        sender = sb.get_queue_sender(queue_name=settings.service_bus_vectorization_queue)
         async with sender:
             sb_message = ServiceBusMessage(body, message_id=message.document_id)
             await sender.send_messages(sb_message)
@@ -134,9 +130,7 @@ async def consume_vectorization_messages(
     complete / abandon / dead_letter per message.
     """
     if not settings.service_bus_connection:
-        raise RuntimeError(
-            "SERVICE_BUS_CONNECTION is not configured — cannot consume."
-        )
+        raise RuntimeError("SERVICE_BUS_CONNECTION is not configured — cannot consume.")
 
     sb = ServiceBusClient.from_connection_string(settings.service_bus_connection)
     async with sb:
@@ -156,9 +150,7 @@ async def _iter_received(
         try:
             payload = VectorizationMessage.from_json(body_bytes)
         except (json.JSONDecodeError, KeyError) as exc:
-            logger.error(
-                "Malformed vectorization queue message; dead-lettering: %s", exc
-            )
+            logger.error("Malformed vectorization queue message; dead-lettering: %s", exc)
             await receiver.dead_letter_message(
                 raw,
                 reason="MalformedPayload",

@@ -128,7 +128,9 @@ async def register_notification_token(
         )
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={"detail": "Push registration temporarily unavailable. Will retry on next launch."},
+            content={
+                "detail": "Push registration temporarily unavailable. Will retry on next launch."
+            },
         )
     return NotificationTokenResponse(
         installation_id=token.installation_id,
@@ -253,7 +255,8 @@ async def send_activity_push(
             f"device {index + 1}: {result.outcome.value}"
             + (f" ({result.failure_reason})" if result.failure_reason else "")
             for index, result in enumerate(results)
-        ] or ["No registered devices found"],
+        ]
+        or ["No registered devices found"],
         sender_type=type(sender).__name__,
     )
 
@@ -292,7 +295,7 @@ async def send_test_push(
         user_id=current_user.id,
         payload=NotificationPayload(
             notification_type=NotificationType.study_reminder,
-            title="🔔 Test notification",
+            title="\U0001f514 Test notification",
             body=f"Push is working! Sent to {current_user.display_name}.",
             data={
                 "type": NotificationType.study_reminder.value,
@@ -313,3 +316,143 @@ async def send_test_push(
         sender_type=sender_type,
     )
 
+
+# ── Admin: activity feed (Bug 3 fix) ────────────────────────────────────────
+
+
+class AdminActivityItem(BaseModel):
+    """A single item in the admin activity notification feed."""
+
+    id: str
+    type: str  # "document_ready" | "session_completed" | "generation_error"
+    title: str
+    body: str
+    workspace_id: str | None = None
+    workspace_name: str | None = None
+    timestamp: str
+    read: bool = False
+
+
+class AdminActivityFeedResponse(BaseModel):
+    items: list[AdminActivityItem]
+    unread_count: int
+
+
+@admin_router.get(
+    "/activity-feed",
+    response_model=AdminActivityFeedResponse,
+    summary="Workspace activity feed for the admin notification inbox",
+)
+async def get_admin_activity_feed(
+    current_user: User = Depends(require_role(UserRole.tenant_admin)),
+) -> AdminActivityFeedResponse:
+    """Aggregate recent workspace events into a notification-style feed.
+
+    Combines two event streams into a unified, time-sorted activity list:
+    - Newly processed documents (status = 'ready' or 'error')
+    - Completed adaptive sessions (student activity signal)
+
+    Returns the 50 most recent items, newest first.
+    """
+    from app.core.database import (
+        ADAPTIVE_SESSIONS,
+        DOCUMENTS,
+        USERS,
+        WORKSPACES,
+        get_collection,
+    )
+
+    tenant_id = current_user.tenant_id
+    items: list[AdminActivityItem] = []
+
+    # Fetch workspace name map for context labels
+    ws_cursor = get_collection(tenant_id, WORKSPACES).find(
+        {"deleted_at": None}, {"_id": 1, "name": 1}
+    )
+    ws_rows = await ws_cursor.to_list(length=200)
+    ws_name_map: dict[str, str] = {str(row["_id"]): str(row.get("name", "")) for row in ws_rows}
+
+    # ── Stream 1: document processing events ─────────────────────────────────
+    doc_cursor = get_collection(tenant_id, DOCUMENTS).find(
+        {"deleted_at": None, "status": {"$in": ["ready", "error"]}},
+        {"_id": 1, "filename": 1, "status": 1, "workspace_id": 1, "updated_at": 1},
+    )
+    doc_rows = await doc_cursor.to_list(length=100)
+    for row in doc_rows:
+        doc_id = str(row.get("_id", ""))
+        ws_id = str(row.get("workspace_id", ""))
+        doc_status = str(row.get("status", ""))
+        filename = str(row.get("filename", "Unknown file"))
+        timestamp = str(row.get("updated_at", ""))
+        if doc_status == "ready":
+            items.append(
+                AdminActivityItem(
+                    id=f"doc_ready_{doc_id}",
+                    type="document_ready",
+                    title="\U0001f4c4 Document Ready",
+                    body=f"'{filename}' finished processing. Questions are being generated.",
+                    workspace_id=ws_id,
+                    workspace_name=ws_name_map.get(ws_id),
+                    timestamp=timestamp,
+                )
+            )
+        elif doc_status == "error":
+            items.append(
+                AdminActivityItem(
+                    id=f"doc_error_{doc_id}",
+                    type="generation_error",
+                    title="\u26a0\ufe0f Processing Failed",
+                    body=f"'{filename}' could not be processed. Please re-upload or check the file.",
+                    workspace_id=ws_id,
+                    workspace_name=ws_name_map.get(ws_id),
+                    timestamp=timestamp,
+                )
+            )
+
+    # ── Stream 2: recent student sessions (activity signal) ───────────────────
+    session_cursor = get_collection(tenant_id, ADAPTIVE_SESSIONS).find(
+        {"status": {"$in": ["completed", "timed_out", "exited"]}},
+        {
+            "_id": 1,
+            "student_id": 1,
+            "workspace_id": 1,
+            "mode": 1,
+            "accuracy_percentage": 1,
+            "completed_at": 1,
+        },
+    )
+    session_rows = await session_cursor.to_list(length=100)
+    student_ids = list(
+        {str(row.get("student_id", "")) for row in session_rows if row.get("student_id")}
+    )
+    student_names: dict[str, str] = {}
+    if student_ids:
+        user_cursor = get_collection(tenant_id, USERS).find(
+            {"_id": {"$in": student_ids}}, {"_id": 1, "display_name": 1}
+        )
+        for u in await user_cursor.to_list(length=200):
+            student_names[str(u["_id"])] = str(u.get("display_name", "A student"))
+    for row in session_rows:
+        sid = str(row.get("_id", ""))
+        ws_id = str(row.get("workspace_id", ""))
+        mode = str(row.get("mode", "study")).capitalize()
+        accuracy = row.get("accuracy_percentage")
+        student = student_names.get(str(row.get("student_id", "")), "A student")
+        ts = str(row.get("completed_at", ""))
+        acc_label = f" \u2014 {int(accuracy)}% accuracy" if accuracy is not None else ""
+        items.append(
+            AdminActivityItem(
+                id=f"session_{sid}",
+                type="session_completed",
+                title=f"\U0001f393 {mode} Session Completed",
+                body=f"{student} completed a {mode.lower()} session{acc_label}.",
+                workspace_id=ws_id,
+                workspace_name=ws_name_map.get(ws_id),
+                timestamp=ts,
+            )
+        )
+
+    # Sort newest first and cap at 50
+    items.sort(key=lambda x: x.timestamp, reverse=True)
+    items = items[:50]
+    return AdminActivityFeedResponse(items=items, unread_count=len(items))

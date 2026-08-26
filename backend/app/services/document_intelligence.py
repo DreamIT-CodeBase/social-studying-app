@@ -53,9 +53,7 @@ def _client() -> DocumentIntelligenceClient:
 def _to_extracted(result: AnalyzeResult) -> ExtractedDocument:
     text = (result.content or "").strip()
     pages = result.pages or []
-    languages = sorted(
-        {lang.locale for lang in (result.languages or []) if lang.locale}
-    )
+    languages = sorted({lang.locale for lang in (result.languages or []) if lang.locale})
     return ExtractedDocument(text=text, page_count=len(pages), languages=languages)
 
 
@@ -98,9 +96,7 @@ async def extract_text(
         result = await asyncio.to_thread(_sync)
     except Exception as exc:
         logger.exception("Document Intelligence analyze failed")
-        raise ServiceUnavailableError(
-            f"Document Intelligence extraction failed: {exc}"
-        ) from exc
+        raise ServiceUnavailableError(f"Document Intelligence extraction failed: {exc}") from exc
 
     extracted = _to_extracted(result)
     logger.info(
@@ -135,9 +131,7 @@ async def extract_text_from_url(document_url: str) -> ExtractedDocument:
         result = await asyncio.to_thread(_sync)
     except Exception as exc:
         logger.exception("Document Intelligence URL analysis failed")
-        raise ServiceUnavailableError(
-            f"Document Intelligence extraction failed: {exc}"
-        ) from exc
+        raise ServiceUnavailableError(f"Document Intelligence extraction failed: {exc}") from exc
 
     extracted = _to_extracted(result)
     logger.info(

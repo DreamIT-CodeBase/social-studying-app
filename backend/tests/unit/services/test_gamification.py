@@ -110,8 +110,7 @@ def test_xp_into_level_at_floor_is_zero():
 def test_xp_into_level_plus_remaining_equals_next_floor_minus_floor():
     """``xp_into_level`` + remaining-to-next = full span of the current level."""
     xp = 550
-    assert xp_into_level(xp) + (xp_for_next_level(xp) - xp_into_level(xp)) == \
-        xp_for_next_level(xp)
+    assert xp_into_level(xp) + (xp_for_next_level(xp) - xp_into_level(xp)) == xp_for_next_level(xp)
 
 
 def test_xp_for_next_level_always_positive():
@@ -400,7 +399,7 @@ async def test_record_question_attempt_level_up_flag_fires_on_threshold_cross():
             topic="Photosynthesis",
             difficulty=DifficultyLevel.advanced,
             is_correct=True,
-            now="2026-05-23T10:00:00+00:00", # same day, no daily login bonus
+            now="2026-05-23T10:00:00+00:00",  # same day, no daily login bonus
         )
     assert delta.leveled_up is True
     assert delta.new_level == 2

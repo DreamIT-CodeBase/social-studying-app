@@ -18,9 +18,7 @@ from app.models.rag_evaluation import (
     QuestionEvaluation,
     RAGFailureStage,
     RetrievalEvaluation,
-    RetrievedChunkTrace,
 )
-
 
 # ── Text & Entity Normalization Helpers ────────────────────────────────────────
 
@@ -157,7 +155,7 @@ def evaluate_chunking_quality(
     avg_chars = total_chars / n
 
     # Semantic coherence based on clean boundaries and size
-    coherence_score = (0.6 * boundary_score + 0.4 * size_score)
+    coherence_score = 0.6 * boundary_score + 0.4 * size_score
     passed = boundary_score >= 0.70 and size_score >= 0.70
 
     return ChunkingEvaluation(
@@ -402,21 +400,19 @@ def calculate_overall_rag_score(
     """Compute weighted composite RAG score and overall pass/fail boolean."""
     r_score = retrieval.scope_validity
     if retrieval.evidence_coverage is not None:
-        r_score = 0.4 * retrieval.scope_validity + 0.3 * retrieval.evidence_coverage + 0.3 * retrieval.context_density
+        r_score = (
+            0.4 * retrieval.scope_validity
+            + 0.3 * retrieval.evidence_coverage
+            + 0.3 * retrieval.context_density
+        )
     else:
         r_score = 0.6 * retrieval.scope_validity + 0.4 * retrieval.context_density
 
     q_score = (
-        0.4 * question.groundedness
-        + 0.3 * question.answerability
-        + 0.3 * question.topic_relevance
+        0.4 * question.groundedness + 0.3 * question.answerability + 0.3 * question.topic_relevance
     )
 
-    a_score = (
-        0.4 * answer.correctness
-        + 0.3 * answer.completeness
-        + 0.3 * answer.faithfulness
-    )
+    a_score = 0.4 * answer.correctness + 0.3 * answer.completeness + 0.3 * answer.faithfulness
 
     if chunking is not None:
         c_score = 0.5 * chunking.boundary_integrity + 0.5 * chunking.size_compliance

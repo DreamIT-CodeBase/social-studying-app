@@ -112,7 +112,9 @@ Explanation (if available):
             temperature=0.0,
         )
     except Exception as exc:
-        logger.warning("RAG Evaluator LLM call failed (%s); falling back to conservative defaults", exc)
+        logger.warning(
+            "RAG Evaluator LLM call failed (%s); falling back to conservative defaults", exc
+        )
         return SemanticEvaluationResult(
             chunks_relevant=True,
             chunks_sufficient=True,

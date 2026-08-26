@@ -83,9 +83,7 @@ async def publish_chunking_message(message: ChunkingMessage) -> None:
             worker — wrap in best-effort try/except).
     """
     if not settings.service_bus_connection:
-        raise RuntimeError(
-            "SERVICE_BUS_CONNECTION is not configured — cannot publish."
-        )
+        raise RuntimeError("SERVICE_BUS_CONNECTION is not configured — cannot publish.")
 
     body = message.to_json()
     sb = ServiceBusClient.from_connection_string(settings.service_bus_connection)
@@ -135,9 +133,7 @@ async def consume_chunking_messages(
     complete/abandon/dead_letter per message.
     """
     if not settings.service_bus_connection:
-        raise RuntimeError(
-            "SERVICE_BUS_CONNECTION is not configured — cannot consume."
-        )
+        raise RuntimeError("SERVICE_BUS_CONNECTION is not configured — cannot consume.")
 
     sb = ServiceBusClient.from_connection_string(settings.service_bus_connection)
     async with sb:
