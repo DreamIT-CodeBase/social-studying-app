@@ -242,17 +242,32 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
       final fallbackSummary = AdaptiveSessionSummary(
         sessionId: plan.sessionId,
         mode: plan.mode,
-        level: plan.level,
-        completedCount: totalQ + _flashcardAttempts.length,
+        status: reason == 'completed' ? 'completed' : 'exited',
         plannedCount: plan.itemCount,
-        accuracyPercentage: plan.mode == AdaptiveSessionMode.flashcard ? null : localAccuracy,
+        completedCount: totalQ + _flashcardAttempts.length,
+        correctCount: correctCount,
+        wrongCount: math.max(0, totalQ - correctCount),
+        rememberedCount: _flashcardAttempts
+            .where((a) => a.rating == 'good' || a.rating == 'easy')
+            .length,
+        needsReviewCount: _flashcardAttempts
+            .where((a) => a.rating == 'again' || a.rating == 'hard')
+            .length,
+        accuracyPercentage: plan.mode == AdaptiveSessionMode.flashcard
+            ? null
+            : localAccuracy,
         xpGained: math.max(0, _sessionXp),
+        actionXp: math.max(0, _sessionXp - 50),
+        completionBonus: 50,
+        achievementXp: 0,
+        achievementsUnlocked: const [],
         masteryBefore: plan.masteryScore,
         masteryAfter: math.min(1.0, plan.masteryScore + 0.05),
-        completionReason: reason,
+        level: plan.level,
+        gamificationLevel: 1,
         elapsedSeconds: _elapsedSeconds,
-        unlockedBadges: const [],
-        coachFeedback: 'Great work! Your progress and XP have been recorded.',
+        performanceMessage:
+            'Great work! Your progress and XP have been recorded.',
       );
       setState(() {
         _summary = fallbackSummary;
