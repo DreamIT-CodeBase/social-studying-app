@@ -9,7 +9,6 @@ import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/features/questions/data/demo_questions_repository.dart';
 import 'package:social_study_app/features/questions/data/questions_repository.dart';
 import 'package:social_study_app/features/questions/presentation/question_screen.dart';
-import 'package:social_study_app/features/questions/presentation/question_session_notifier.dart';
 import 'package:social_study_app/shared/models/question.dart';
 
 class _MockRepo extends Mock implements QuestionsRepository {}

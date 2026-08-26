@@ -277,28 +277,7 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
     if (answer.isEmpty || _answerRevealed || _answerSubmitting) return;
 
     setState(() => _answerSubmitting = true);
-    late final bool matched;
-    try {
-      if (question.questionType == 'mcq' ||
-          question.questionType == 'true_false') {
-        matched = _matchesPreparedAnswer(question, answer);
-      } else {
-        final evaluation = await _repository.evaluateAnswer(
-          workspaceId: widget.workspaceId,
-          sessionId: plan.sessionId,
-          questionId: question.id,
-          answer: answer,
-        );
-        matched = evaluation.isCorrect;
-      }
-    } on AdaptiveSessionException catch (error) {
-      if (!mounted) return;
-      setState(() => _answerSubmitting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
-      return;
-    }
+    final matched = _matchesPreparedAnswer(question, answer);
     if (!mounted ||
         _phase != _SessionPhase.active ||
         _plan?.questions[_index].id != question.id) {
@@ -345,8 +324,15 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
         .replaceAll(RegExp(r'[.!?,;:]$'), '');
 
     if (question.questionType == 'mcq') {
-      return submitted.trim().toUpperCase() ==
-          question.answer.trim().toUpperCase();
+      final sub = submitted.trim();
+      if (sub.toUpperCase() == question.answer.trim().toUpperCase()) return true;
+      for (final opt in question.options) {
+        if (opt.key.toUpperCase() == question.answer.trim().toUpperCase() &&
+            opt.text.trim().toLowerCase() == sub.toLowerCase()) {
+          return true;
+        }
+      }
+      return false;
     }
     if (question.questionType == 'true_false') {
       String booleanValue(String value) {
@@ -369,9 +355,19 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
     if (question.questionType == 'mathematical') {
       return normalized(submitted).contains(normalized(question.answer));
     }
+    final normSub = normalized(submitted);
     final candidates = [question.answer, ...question.gradingHints];
-    return candidates
-        .any((candidate) => normalized(candidate) == normalized(submitted));
+    if (candidates.any((candidate) => normalized(candidate) == normSub)) {
+      return true;
+    }
+    final cleanSub = submitted.trim().toLowerCase();
+    if (cleanSub.isNotEmpty &&
+        candidates.any((c) =>
+            c.trim().toLowerCase().contains(cleanSub) ||
+            cleanSub.contains(c.trim().toLowerCase()))) {
+      return true;
+    }
+    return false;
   }
 
   void _nextQuestion() {
