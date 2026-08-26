@@ -54,7 +54,14 @@ from app.models.base import utc_now
 from app.models.flashcard import Flashcard, FlashcardRatingEvent, FlashcardStatus
 from app.models.question import AnswerSubmission, DifficultyLevel, Question, QuestionStatus
 from app.models.user import User, UserRole
-from app.services import answer_evaluation, flashcard_generation, question_pipeline, study_sources
+from app.services import (
+    answer_evaluation,
+    flashcard_generation,
+    question_generation,
+    question_pipeline,
+    question_safety,
+    study_sources,
+)
 from app.services import gamification as gamification_service
 from app.services import knowledge_state as knowledge_state_service
 
@@ -91,7 +98,7 @@ _COMPLETION_BONUSES = {
     AdaptiveSessionMode.revision: 5,
     AdaptiveSessionMode.flashcard: 5,
 }
-_MAX_GENERATED_FLASHCARDS_PER_PREPARE = 4
+_MAX_GENERATED_FLASHCARDS_PER_PREPARE = 25
 
 
 def _session_duration_minutes(
@@ -416,6 +423,201 @@ async def _question_session_history(
     return ids, fingerprints
 
 
+async def _current_grounding_chunks(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    topic: str,
+    current_document_ids: frozenset[str],
+) -> list[RetrievedChunk]:
+    """Retrieve grounding only from the current ready source snapshot.
+
+    Search can briefly lag a newly indexed document or rank an older scrape
+    first. The Cosmos fallback keeps session preparation source-backed while
+    guaranteeing that superseded document versions are never used.
+    """
+    chunks: list[RetrievedChunk] = []
+    try:
+        retrieved = await retrieve_content(
+            RetrieveContentInput(
+                tenant_id=tenant_id,
+                workspace_id=workspace_id,
+                query_text=topic,
+                top_k=50,
+            )
+        )
+        chunks.extend(
+            chunk for chunk in retrieved.chunks if chunk.document_id in current_document_ids
+        )
+    except Exception:
+        logger.exception(
+            "Flashcard source retrieval failed workspace=%s topic=%s",
+            workspace_id,
+            topic,
+        )
+
+    seen_chunk_ids = {chunk.chunk_id for chunk in chunks}
+    if len(chunks) < 5:
+        cursor = get_collection(tenant_id, CHUNKS).find(
+            {
+                "workspace_id": workspace_id,
+                "document_id": {"$in": sorted(current_document_ids)},
+                "deleted_at": None,
+            }
+        )
+        rows = await cursor.to_list(length=200)
+        topic_terms = set(re.findall(r"[a-z0-9]+", topic.casefold()))
+        rows.sort(
+            key=lambda row: (
+                -len(
+                    topic_terms & set(re.findall(r"[a-z0-9]+", str(row.get("text", "")).casefold()))
+                ),
+                str(row.get("document_id", "")),
+                int(row.get("chunk_index", 0)),
+            )
+        )
+        for row in rows:
+            chunk_id = str(row.get("_id", ""))
+            document_id = str(row.get("document_id", ""))
+            text = str(row.get("text", "")).strip()
+            if (
+                not chunk_id
+                or chunk_id in seen_chunk_ids
+                or document_id not in current_document_ids
+                or not text
+            ):
+                continue
+            chunks.append(
+                RetrievedChunk(
+                    chunk_id=chunk_id,
+                    chunk_index=int(row.get("chunk_index", 0)),
+                    document_id=document_id,
+                    text=text,
+                    topic_ids=[str(value) for value in row.get("topic_ids") or []],
+                    score=0.0,
+                )
+            )
+            seen_chunk_ids.add(chunk_id)
+            if len(chunks) >= 5:
+                break
+    return chunks[:5]
+
+
+async def _generate_fresh_questions(
+    *,
+    user: User,
+    workspace_id: str,
+    target: int,
+    level: AdaptiveLevel,
+    current_sources: study_sources.CurrentStudySources,
+    weak_topics: dict[str, float],
+    seen_ids: set[str],
+    reserved_ids: set[str],
+    seen_fingerprints: set[str],
+    reserved_fingerprints: set[str],
+    session_seen_fingerprints: set[str],
+    revision: bool = False,
+) -> list[Question]:
+    """Generate fresh study questions directly from current source chunks when
+    pre-queued questions or LPE batches are insufficient or unavailable.
+    """
+    generation_target = min(target, 25)
+    if generation_target <= 0 or not current_sources.document_ids:
+        return []
+
+    topics = list(current_sources.topic_names) or ["key concepts"]
+    topics.sort(
+        key=lambda topic: (
+            weak_topics.get(topic, weak_topics.get(topic.casefold(), 1.0)),
+            topic.casefold(),
+        )
+    )
+
+    desired_difficulty = {
+        AdaptiveLevel.beginner: DifficultyLevel.beginner,
+        AdaptiveLevel.intermediate: DifficultyLevel.intermediate,
+        AdaptiveLevel.expert: DifficultyLevel.advanced,
+    }[level]
+
+    all_blocked_fingerprints = seen_fingerprints | reserved_fingerprints | session_seen_fingerprints
+    prompt_seen = list(all_blocked_fingerprints)[-30:]
+
+    prepared: list[Question] = []
+    col = get_collection(user.tenant_id, QUESTION_QUEUE)
+
+    attempt_budget = max(len(topics), generation_target * 2)
+    for attempt in range(attempt_budget):
+        if len(prepared) >= generation_target:
+            break
+        topic = topics[attempt % len(topics)]
+        needed = generation_target - len(prepared)
+        try:
+            chunks = await _current_grounding_chunks(
+                tenant_id=user.tenant_id,
+                workspace_id=workspace_id,
+                topic=topic,
+                current_document_ids=current_sources.document_ids,
+            )
+            if not chunks:
+                continue
+
+            document_id = chunks[0].document_id
+            source_chunk_ids = [c.chunk_id for c in chunks]
+
+            batch_count = min(needed + 1, 5)
+            generated_list = await question_generation.generate_batch_questions(
+                topic=topic,
+                difficulty=desired_difficulty,
+                count=batch_count,
+                grounding_chunks=chunks,
+                seen_question_bodies=prompt_seen,
+            )
+
+            for gq in generated_list:
+                if len(prepared) >= generation_target:
+                    break
+                fp = _question_fingerprint(gq.body)
+                if not revision and fp in all_blocked_fingerprints:
+                    continue
+
+                review = await question_safety.review_question(gq)
+                if review.verdict != question_safety.ReviewVerdict.approved:
+                    continue
+
+                all_blocked_fingerprints.add(fp)
+                prompt_seen.append(gq.body)
+
+                question_id = f"qst_{uuid4().hex}"
+                q_model = Question(
+                    **{"_id": question_id},
+                    tenant_id=user.tenant_id,
+                    workspace_id=workspace_id,
+                    document_id=document_id,
+                    topic=topic,
+                    question_type=gq.question_type,
+                    difficulty=gq.difficulty,
+                    body=gq.body,
+                    options=gq.options,
+                    answer=gq.answer,
+                    explanation=gq.explanation,
+                    grading_hints=gq.grading_hints,
+                    source_chunk_ids=source_chunk_ids,
+                    prompt_version=gq.prompt_version,
+                    status=QuestionStatus.approved,
+                )
+                await col.insert_one(q_model.model_dump(by_alias=True))
+                prepared.append(q_model)
+
+        except Exception:
+            logger.exception(
+                "Direct fresh question generation failed workspace=%s topic=%s",
+                workspace_id,
+                topic,
+            )
+
+    return prepared
+
+
 async def _prepare_questions(
     *,
     user: User,
@@ -557,6 +759,28 @@ async def _prepare_questions(
         except Exception:
             logger.exception("Adaptive session batch generation failed")
 
+    # If still missing questions after batch generation attempt, generate directly from source chunks
+    missing_after_batch = target - len(selected)
+    if missing_after_batch > 0:
+        try:
+            fresh = await _generate_fresh_questions(
+                user=user,
+                workspace_id=workspace_id,
+                target=missing_after_batch,
+                level=level,
+                current_sources=current_sources,
+                weak_topics=weak_topics,
+                seen_ids=seen_ids,
+                reserved_ids=reserved_ids,
+                seen_fingerprints=seen_fingerprints,
+                reserved_fingerprints=reserved_fingerprints,
+                session_seen_fingerprints=session_seen_fingerprints,
+                revision=revision,
+            )
+            selected = _unique_questions([*selected, *fresh])[:target]
+        except Exception:
+            logger.exception("Direct fresh question generation fallback failed")
+
     if not selected:
         raise ServiceUnavailableError(
             "No approved questions are ready yet. Please try again after "
@@ -580,86 +804,6 @@ async def _prepare_questions(
         )
         for question in selected
     ]
-
-
-async def _current_grounding_chunks(
-    *,
-    tenant_id: str,
-    workspace_id: str,
-    topic: str,
-    current_document_ids: frozenset[str],
-) -> list[RetrievedChunk]:
-    """Retrieve grounding only from the current ready source snapshot.
-
-    Search can briefly lag a newly indexed document or rank an older scrape
-    first. The Cosmos fallback keeps session preparation source-backed while
-    guaranteeing that superseded document versions are never used.
-    """
-    chunks: list[RetrievedChunk] = []
-    try:
-        retrieved = await retrieve_content(
-            RetrieveContentInput(
-                tenant_id=tenant_id,
-                workspace_id=workspace_id,
-                query_text=topic,
-                top_k=50,
-            )
-        )
-        chunks.extend(
-            chunk for chunk in retrieved.chunks if chunk.document_id in current_document_ids
-        )
-    except Exception:
-        logger.exception(
-            "Flashcard source retrieval failed workspace=%s topic=%s",
-            workspace_id,
-            topic,
-        )
-
-    seen_chunk_ids = {chunk.chunk_id for chunk in chunks}
-    if len(chunks) < 5:
-        cursor = get_collection(tenant_id, CHUNKS).find(
-            {
-                "workspace_id": workspace_id,
-                "document_id": {"$in": sorted(current_document_ids)},
-                "deleted_at": None,
-            }
-        )
-        rows = await cursor.to_list(length=200)
-        topic_terms = set(re.findall(r"[a-z0-9]+", topic.casefold()))
-        rows.sort(
-            key=lambda row: (
-                -len(
-                    topic_terms & set(re.findall(r"[a-z0-9]+", str(row.get("text", "")).casefold()))
-                ),
-                str(row.get("document_id", "")),
-                int(row.get("chunk_index", 0)),
-            )
-        )
-        for row in rows:
-            chunk_id = str(row.get("_id", ""))
-            document_id = str(row.get("document_id", ""))
-            text = str(row.get("text", "")).strip()
-            if (
-                not chunk_id
-                or chunk_id in seen_chunk_ids
-                or document_id not in current_document_ids
-                or not text
-            ):
-                continue
-            chunks.append(
-                RetrievedChunk(
-                    chunk_id=chunk_id,
-                    chunk_index=int(row.get("chunk_index", 0)),
-                    document_id=document_id,
-                    text=text,
-                    topic_ids=[str(value) for value in row.get("topic_ids") or []],
-                    score=0.0,
-                )
-            )
-            seen_chunk_ids.add(chunk_id)
-            if len(chunks) >= 5:
-                break
-    return chunks[:5]
 
 
 async def _generate_fresh_flashcards(
@@ -912,17 +1056,6 @@ async def _prepare_flashcards(
         if len(cards) >= target:
             break
 
-    # Personal flashcards are a spaced-review surface. Reusing approved cards
-    # is correct and must remain fast; never hold the iPhone loader open while
-    # attempting to AI-generate extra cards merely to fill the tier target.
-    if is_personal_workspace:
-        if cards:
-            return cards
-        raise ConflictError(
-            "No approved questions are ready for flashcards yet. Complete a "
-            "study question first, then try again."
-        )
-
     missing = target - len(cards)
     if missing > 0:
         generated_cards = await _generate_fresh_flashcards(
@@ -942,12 +1075,14 @@ async def _prepare_flashcards(
         )
         cards.extend(generated_cards)
 
-    if not cards:
+    selected = _unique_flashcards(cards)[:target]
+
+    if not selected:
         raise ConflictError(
             "No new flashcards could be generated from the current ready study material. "
             "Try again shortly or add a new source."
         )
-    return cards
+    return selected
 
 
 @router.post("/prepare", response_model=AdaptiveSessionPlan)

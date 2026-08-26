@@ -515,3 +515,36 @@ async def test_revision_session_can_repeat_an_incorrect_question():
         )
 
     assert [question.id for question in prepared] == ["qst_wrong"]
+
+
+def test_mastery_level_count_ranges_match_specification():
+    from app.api.adaptive_sessions import (
+        _FLASHCARD_RANGES,
+        _QUESTION_RANGES,
+        _adaptive_count,
+        _level_for_mastery,
+    )
+
+    # Beginner (score < 0.40): 5-7 questions, 3-4 flashcards
+    beg_level = _level_for_mastery(0.0)
+    assert beg_level == AdaptiveLevel.beginner
+    beg_q_count = _adaptive_count(0.0, beg_level, _QUESTION_RANGES[beg_level])
+    assert 5 <= beg_q_count <= 7
+    beg_f_count = _adaptive_count(0.0, beg_level, _FLASHCARD_RANGES[beg_level])
+    assert 3 <= beg_f_count <= 4
+
+    # Intermediate (score 0.40 - 0.75): 12-15 questions, 10-13 flashcards
+    inter_level = _level_for_mastery(0.55)
+    assert inter_level == AdaptiveLevel.intermediate
+    inter_q_count = _adaptive_count(0.55, inter_level, _QUESTION_RANGES[inter_level])
+    assert 12 <= inter_q_count <= 15
+    inter_f_count = _adaptive_count(0.55, inter_level, _FLASHCARD_RANGES[inter_level])
+    assert 10 <= inter_f_count <= 13
+
+    # Expert (score > 0.75): 20-25 questions, 18-25 flashcards
+    exp_level = _level_for_mastery(0.90)
+    assert exp_level == AdaptiveLevel.expert
+    exp_q_count = _adaptive_count(0.90, exp_level, _QUESTION_RANGES[exp_level])
+    assert 20 <= exp_q_count <= 25
+    exp_f_count = _adaptive_count(0.90, exp_level, _FLASHCARD_RANGES[exp_level])
+    assert 18 <= exp_f_count <= 25

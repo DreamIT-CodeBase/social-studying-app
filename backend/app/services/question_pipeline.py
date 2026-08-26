@@ -8,11 +8,15 @@ from uuid import uuid4
 
 from fastapi import BackgroundTasks
 
-from app.core.database import INTERACTIONS, QUESTION_QUEUE, get_collection
-from app.core.exceptions import ConflictError, NotFoundError, ServiceUnavailableError
+from app.core.database import CHUNKS, INTERACTIONS, QUESTION_QUEUE, get_collection
+from app.core.exceptions import ServiceUnavailableError
 from app.core.redis_client import get_redis
 from app.mcp_tools import invoke
-from app.mcp_tools.retrieve_content import RetrieveContentInput, RetrieveContentOutput
+from app.mcp_tools.retrieve_content import (
+    RetrieveContentInput,
+    RetrieveContentOutput,
+    RetrievedChunk,
+)
 from app.mcp_tools.retrieve_student_context import (
     RetrieveStudentContextInput,
     RetrieveStudentContextOutput,
@@ -21,7 +25,10 @@ from app.models.question import Question, QuestionStatus
 from app.models.user import User
 from app.services import question_generation, question_safety, rag_evaluation, study_sources
 from app.services.difficulty import calibrate_difficulty
-from app.services.learning_path import NoTopicsAvailable, WorkspaceNotFound, select_next_topic
+from app.services.learning_path import (
+    TopicScore,
+    select_next_topic,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -194,18 +201,21 @@ async def _generate_and_persist_batch(
             workspace_id=workspace_id,
             student_id=student_id,
         )
-    except NoTopicsAvailable as exc:
-        raise ConflictError(
-            "This workspace has no topics yet. Ask an admin to upload "
-            "study material before requesting questions."
-        ) from exc
-    except WorkspaceNotFound as exc:
-        raise NotFoundError("Workspace", workspace_id) from exc
-    except Exception as e:
-        logger.warning("LPE topic selection failed: %s", e)
-        return []
+        candidates = selection.candidates[:5]
+    except Exception as exc:
+        logger.info("LPE topic selection not available (%s), using source topics fallback", exc)
+        fallback_topics = list(current_sources.topic_names) or ["Key Concepts"]
+        candidates = [
+            TopicScore(
+                topic_id=f"tpc_{i}",
+                topic_name=t,
+                score=1.0,
+                components={},
+                complexity_level=1.0,
+            )
+            for i, t in enumerate(fallback_topics[:5])
+        ]
 
-    candidates = selection.candidates[:5]  # use top 5 topics for diverse parallel generation
     if not candidates:
         return []
 
@@ -318,24 +328,60 @@ async def _generate_topic_batch(
     calibration = calibrate_difficulty(mastery=mastery)
     difficulty = calibration.difficulty
 
+    current_chunks: list[RetrievedChunk] = []
+    all_retrieved: list[RetrievedChunk] = []
     try:
+        topic_ids = [candidate.topic_id] if not candidate.topic_id.startswith("tpc_") else []
         retrieved = await invoke(
             "retrieve_content",
             RetrieveContentInput(
                 tenant_id=tenant_id,
                 workspace_id=workspace_id,
-                topic_ids=[candidate.topic_id],
+                topic_ids=topic_ids,
                 query_text=candidate.topic_name,
-                top_k=3,
+                top_k=5,
             ),
         )
-        assert isinstance(retrieved, RetrieveContentOutput)
-        current_chunks = [
-            chunk for chunk in retrieved.chunks if chunk.document_id in current_document_ids
-        ]
-        if not current_chunks:
+        if isinstance(retrieved, RetrieveContentOutput):
+            all_retrieved = retrieved.chunks
+            current_chunks = [
+                chunk for chunk in retrieved.chunks if chunk.document_id in current_document_ids
+            ]
+    except Exception as e:
+        logger.warning("Search retrieval failed in topic batch for %s: %s", candidate.topic_name, e)
+
+    if not current_chunks:
+        try:
+            cursor = get_collection(tenant_id, CHUNKS).find(
+                {
+                    "workspace_id": workspace_id,
+                    "document_id": {"$in": sorted(current_document_ids)},
+                    "deleted_at": None,
+                }
+            )
+            rows = await cursor.to_list(length=50)
+            current_chunks = [
+                RetrievedChunk(
+                    chunk_id=str(r["_id"]),
+                    chunk_index=int(r.get("chunk_index", 0)),
+                    document_id=str(r.get("document_id", "")),
+                    text=str(r.get("text", "")).strip(),
+                    topic_ids=[str(v) for v in r.get("topic_ids") or []],
+                    score=0.0,
+                )
+                for r in rows
+                if str(r.get("text", "")).strip()
+            ][:5]
+            if not all_retrieved:
+                all_retrieved = current_chunks
+        except Exception as e:
+            logger.warning("Cosmos chunk fallback failed in topic batch: %s", e)
             return []
 
+    if not current_chunks:
+        return []
+
+    try:
         # A question has one purgeable source. Ground it only in chunks from
         # the highest-ranked current document so deleting that source removes
         # every derivative deterministically.
@@ -349,7 +395,7 @@ async def _generate_topic_batch(
             seen_question_bodies=seen_bodies[:30],
         )
         source_chunk_ids = [chunk.chunk_id for chunk in grounding_chunks]
-        return [(gq, candidate, document_id, source_chunk_ids, retrieved.chunks) for gq in gqs]
+        return [(gq, candidate, document_id, source_chunk_ids, all_retrieved) for gq in gqs]
     except Exception as e:
         logger.warning("Topic batch generation failed for %s: %s", candidate.topic_name, e)
         return []
