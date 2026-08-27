@@ -81,10 +81,30 @@ def _extracted_text_path(tenant_id: str, workspace_id: str, document_id: str) ->
     return f"{tenant_id}/{workspace_id}/extracted-text/{document_id}.txt"
 
 
+_blob_service_client: "BlobServiceClient | None" = None
+
+
 def _client() -> BlobServiceClient:
-    if not settings.storage_connection_string:
-        raise RuntimeError("STORAGE_CONNECTION_STRING is not configured.")
-    return BlobServiceClient.from_connection_string(settings.storage_connection_string)
+    """Return a cached BlobServiceClient singleton.
+
+    Creating a new BlobServiceClient on every call sets up a fresh TCP
+    connection pool and re-validates the connection string on each invocation.
+    The ingestion worker alone calls this 3+ times per document (SAS URL
+    creation, extracted-text upload, blob read URL). Caching removes that
+    repeated overhead.
+
+    Thread-safety: BlobServiceClient is documented as thread-safe by the
+    Azure SDK. The one-time initialisation race is benign — at worst two
+    clients are created and one is immediately discarded.
+    """
+    global _blob_service_client
+    if _blob_service_client is None:
+        if not settings.storage_connection_string:
+            raise RuntimeError("STORAGE_CONNECTION_STRING is not configured.")
+        _blob_service_client = BlobServiceClient.from_connection_string(
+            settings.storage_connection_string
+        )
+    return _blob_service_client
 
 
 def _connection_string_value(name: str) -> str:
@@ -166,8 +186,15 @@ async def get_document_properties(blob_path: str) -> DocumentBlobProperties:
     return await asyncio.to_thread(_sync)
 
 
-def create_blob_read_url(blob_path: str, *, expires_in_minutes: int = 30) -> str:
-    """Issue a short-lived read URL for Document Intelligence ingestion."""
+def create_blob_read_url(blob_path: str, *, expires_in_minutes: int = 90) -> str:
+    """Issue a read URL for Document Intelligence ingestion.
+
+    Expiry is 90 minutes (was 30). Document Intelligence on the S0 tier can
+    take 15–30 minutes for large PDFs, and the 10-minute poller timeout means
+    the entire operation could span up to 10 minutes. The extra margin prevents
+    the SAS from expiring mid-analysis and causing a 403 that gets
+    misclassified as UnsupportedContent, leaving the document stuck.
+    """
     return _blob_sas_url(
         path=blob_path,
         permissions=BlobSasPermissions(read=True),

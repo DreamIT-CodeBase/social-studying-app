@@ -90,7 +90,12 @@ async def extract_text(
                 body=content,
                 content_type=content_type,
             )
-            return poller.result()
+            # 10-minute hard timeout. Document Intelligence on the S0 tier
+            # can take 15+ minutes for very large PDFs, but without a timeout
+            # the thread blocks forever if DI hangs or is silently throttled.
+            # TimeoutError propagates as a transient failure so Service Bus
+            # redelivers the message rather than leaving the doc stuck.
+            return poller.result(timeout=600)
 
     try:
         result = await asyncio.to_thread(_sync)
@@ -125,7 +130,12 @@ async def extract_text_from_url(document_url: str) -> ExtractedDocument:
                 model_id=_PREBUILT_READ,
                 body=AnalyzeDocumentRequest(url_source=document_url),
             )
-            return poller.result()
+            # 10-minute hard timeout. Without this, a stalled or throttled
+            # Document Intelligence job blocks the worker thread indefinitely,
+            # causing the Service Bus message lock (default 5 min) to expire
+            # and the message to be redelivered — starting a new DI job on
+            # top of the still-running one and burning through all 5 retries.
+            return poller.result(timeout=600)
 
     try:
         result = await asyncio.to_thread(_sync)

@@ -145,6 +145,15 @@ class ReceivedExtractionMessage:
             self._raw, reason=reason, error_description=description
         )
 
+    async def renew_lock(self) -> None:
+        """Renew the Service Bus message lock to prevent expiry-driven redelivery.
+
+        Call this periodically while a long-running operation (e.g. Document
+        Intelligence) is in flight. The lock duration is configured on the
+        queue (default 5 minutes); renewals extend it by another full duration.
+        """
+        await self._receiver.renew_message_lock(self._raw)
+
 
 @asynccontextmanager
 async def consume_extraction_messages(

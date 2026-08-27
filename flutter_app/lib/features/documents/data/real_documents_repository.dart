@@ -23,14 +23,35 @@ import 'package:social_study_app/shared/models/document.dart';
 /// between polls — UI should not retry forever).
 class RealDocumentsRepository implements DocumentsRepository {
   RealDocumentsRepository({required this.dio, Dio? blobDio})
-      : _blobDio = blobDio ?? Dio();
+      : _blobDio = blobDio ?? _buildBlobDio();
 
   final Dio dio;
   final Dio _blobDio;
 
   static const _apiPrefix = '/api/v1';
   static const _storageApiVersion = '2023-11-03';
-  static const _parallelBlockUploads = 4;
+  // Upload 8 blocks in parallel for maximum throughput.
+  static const _parallelBlockUploads = 8;
+  // Override the server-sent block size with 4 MB for better parallelism.
+  // A 5 MB PDF becomes 2 blocks (instead of 1 with 8 MB), allowing two
+  // concurrent PUT calls. Larger files benefit even more.
+  static const _clientBlockSizeBytes = 4 * 1024 * 1024; // 4 MB
+
+  /// Blob Dio instance with explicit timeouts so a stalled Azure Blob PUT
+  /// fails fast instead of hanging the upload indefinitely.
+  static Dio _buildBlobDio() {
+    return Dio(
+      BaseOptions(
+        // 60 seconds to connect to Azure Blob Storage.
+        connectTimeout: const Duration(seconds: 60),
+        // 60 seconds per block send — enough for a 4 MB block on a ~500 kB/s
+        // connection, but fast enough to fail hard if the connection stalls.
+        sendTimeout: const Duration(seconds: 60),
+        // 60 seconds to receive the PUT 201 response.
+        receiveTimeout: const Duration(seconds: 60),
+      ),
+    );
+  }
 
   @override
   Future<List<Document>> list({required String workspaceId}) async {
@@ -118,9 +139,14 @@ class RealDocumentsRepository implements DocumentsRepository {
     required _DirectUploadAuthorization authorization,
     required DocumentUpload file,
     required String contentType,
+    void Function(int sent, int total)? onProgress,
   }) async {
-    final blockSize = authorization.blockSizeBytes;
+    // Use the client-side 4 MB block size rather than the server-sent value.
+    // This gives more blocks to upload in parallel and keeps individual block
+    // PUT timeouts well within the 60-second window even on slow connections.
+    const blockSize = _clientBlockSizeBytes;
     final blockCount = (file.sizeBytes + blockSize - 1) ~/ blockSize;
+    int bytesStaged = 0;
     final blockIds = List<String>.generate(
       blockCount,
       (index) => base64Encode(
@@ -145,7 +171,13 @@ class RealDocumentsRepository implements DocumentsRepository {
             end: (index + 1) * blockSize < file.sizeBytes
                 ? (index + 1) * blockSize
                 : file.sizeBytes,
-          ),
+          ).then((_) {
+            // Report cumulative progress after each block completes.
+            final blockEnd = (blockIds.indexOf(blockIds[index]) + 1) * blockSize;
+            bytesStaged =
+                blockEnd < file.sizeBytes ? blockEnd : file.sizeBytes;
+            onProgress?.call(bytesStaged, file.sizeBytes);
+          }),
       ]);
     }
 

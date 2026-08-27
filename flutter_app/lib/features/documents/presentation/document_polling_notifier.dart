@@ -9,10 +9,18 @@ import 'package:social_study_app/shared/models/document.dart';
 
 part 'document_polling_notifier.g.dart';
 
-/// Default cadence between status polls. Two seconds is responsive
-/// enough that the demo's per-stage transitions feel live without
-/// hammering the backend on a real run.
-const Duration kDocumentPollInterval = Duration(seconds: 2);
+/// Fast poll cadence — used while the document is waiting in queue or
+/// being extracted by Document Intelligence (typically fast stages).
+const Duration kDocumentPollIntervalFast = Duration(seconds: 2);
+
+/// Slow poll cadence — used during AI-heavy stages (topic extraction,
+/// chunking, vectorization) that can take tens of seconds each.
+/// Backing off prevents hammering the API 30+ times/min during a long
+/// GPT-4o call where the status won't change for 20–60 seconds anyway.
+const Duration kDocumentPollIntervalSlow = Duration(seconds: 5);
+
+/// Legacy name kept for compatibility with existing tests.
+const Duration kDocumentPollInterval = kDocumentPollIntervalFast;
 
 /// Polls a single document's state until it reaches a terminal status.
 ///
@@ -69,7 +77,22 @@ class DocumentPolling extends _$DocumentPolling {
   void _scheduleNext(Document doc) {
     _cancelTimer();
     if (doc.status.isTerminal) return;
-    _timer = Timer(debugInterval, _poll);
+    _timer = Timer(_pollIntervalFor(doc.status), _poll);
+  }
+
+  /// Returns a faster interval for queue/DI stages and a slower one for
+  /// the AI-heavy stages that won't change status for 10–60 seconds.
+  Duration _pollIntervalFor(DocumentStatus status) {
+    // In debug/test mode honour the override so tests still run fast.
+    if (!identical(debugInterval, kDocumentPollIntervalFast)) return debugInterval;
+    return switch (status) {
+      // These stages complete in seconds — poll fast.
+      DocumentStatus.pending ||
+      DocumentStatus.extracting =>
+        kDocumentPollIntervalFast,
+      // These stages invoke GPT-4o / embedding models that take 10–60 s.
+      _ => kDocumentPollIntervalSlow,
+    };
   }
 
   Future<void> _poll() async {

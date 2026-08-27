@@ -108,10 +108,23 @@ class Settings(BaseSettings):
     storage_container: str = "documents"
     # Admin apps upload straight to a short-lived, blob-scoped SAS URL.  This
     # keeps large file bodies off the API ingress and out of API memory.
-    direct_upload_sas_ttl_minutes: int = 60
-    direct_upload_block_size_bytes: int = 8 * 1024 * 1024
-    # Maximum allowed document upload limit (100 MB).
-    max_document_upload_bytes: int = 100 * 1024 * 1024
+    #
+    # SAS TTL extended to 120 minutes (was 60). On a slow mobile connection
+    # a large PDF can take >60 minutes just to stage all blocks to Azure Blob
+    # Storage, causing the SAS to expire mid-upload and the whole operation
+    # to fail silently.
+    direct_upload_sas_ttl_minutes: int = 120
+    # 4 MB blocks give better parallelism than 8 MB for typical PDF/DOCX
+    # sizes. The Flutter client uses 8 parallel block uploads, so with 4 MB
+    # blocks it can push 32 MB/s worth of concurrent PUT calls — well above
+    # any mobile connection ceiling.
+    direct_upload_block_size_bytes: int = 4 * 1024 * 1024
+    # Maximum allowed document upload limit.
+    # Set to 500 MB to match the Document Intelligence service limit
+    # (the previous 100 MB cap was arbitrary and blocked large textbooks).
+    # DI itself enforces the true ceiling; we just prevent obviously garbage
+    # uploads from ever reaching blob storage.
+    max_document_upload_bytes: int = 500 * 1024 * 1024
 
     # Azure AI Document Intelligence (formerly Form Recognizer)
     document_intelligence_endpoint: str = ""

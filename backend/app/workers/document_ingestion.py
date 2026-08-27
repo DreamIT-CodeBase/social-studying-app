@@ -179,7 +179,13 @@ async def _handle(msg: ReceivedExtractionMessage) -> None:
     else:
         try:
             source_url = blob_storage.create_blob_read_url(payload.blob_path)
-            extracted = await document_intelligence.extract_text_from_url(source_url)
+            # Renew the Service Bus message lock every 3 minutes while Document
+            # Intelligence is running. Without renewal the default 5-minute lock
+            # expires mid-analysis, causing Service Bus to redeliver the message
+            # to another worker instance — which starts a duplicate DI job and
+            # burns through retries until the doc is marked failed. The renewal
+            # task is cancelled as soon as DI returns (success or error).
+            extracted = await _extract_with_lock_renewal(msg, source_url)
         except HttpResponseError as exc:
             if _is_permanent(exc):
                 await _mark_failed(payload, f"Document Intelligence rejected file: {exc.message}")
@@ -271,6 +277,56 @@ async def _mark_failed(payload: ExtractionMessage, reason: str) -> None:
             "processing_completed_at": utc_now(),
         },
     )
+
+
+_LOCK_RENEWAL_INTERVAL_SECONDS = 180  # renew every 3 minutes
+
+
+async def _extract_with_lock_renewal(
+    msg: ReceivedExtractionMessage,
+    source_url: str,
+) -> ExtractedDocument:
+    """Run Document Intelligence while keeping the Service Bus message lock alive.
+
+    Document Intelligence on the S0 tier can take 10–30 minutes for large
+    PDFs. The default Service Bus lock duration is 5 minutes. Without periodic
+    renewal, the lock expires and Service Bus redelivers the message to another
+    worker, starting a second DI job while the first is still running. After 5
+    such redeliveries the document is permanently marked ``failed``.
+
+    This function spawns a background asyncio task that calls
+    ``renew_message_lock`` every 3 minutes, then cancels it the moment DI
+    finishes (success, timeout, or any error).
+    """
+    renewal_task: asyncio.Task[None] | None = None
+
+    async def _keep_alive() -> None:
+        """Loop: renew lock, sleep 3 min, repeat until cancelled."""
+        while True:
+            await asyncio.sleep(_LOCK_RENEWAL_INTERVAL_SECONDS)
+            try:
+                await msg.renew_lock()
+                logger.debug(
+                    "Renewed SB lock for doc=%s", msg.payload.document_id
+                )
+            except Exception:
+                # Renewal failure is non-fatal — log and keep trying.
+                # If the lock truly expires, Service Bus will redeliver and the
+                # next delivery will see the doc is still `extracting` and
+                # retry DI cleanly.
+                logger.exception(
+                    "SB lock renewal failed for doc=%s — lock may expire",
+                    msg.payload.document_id,
+                )
+
+    try:
+        renewal_task = asyncio.create_task(_keep_alive())
+        return await document_intelligence.extract_text_from_url(source_url)
+    finally:
+        if renewal_task is not None:
+            renewal_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await renewal_task
 
 
 async def _write_moderation_log(
