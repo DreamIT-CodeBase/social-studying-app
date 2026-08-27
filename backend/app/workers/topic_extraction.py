@@ -37,6 +37,7 @@ import logging
 import os
 import signal
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 
@@ -154,6 +155,29 @@ async def _handle(msg: ReceivedTopicMessage) -> None:
         payload.extracted_text_blob_path,
     )
 
+    renewal_task: asyncio.Task[None] | None = None
+
+    async def _keep_alive() -> None:
+        while True:
+            await asyncio.sleep(60)  # renew every 60s
+            try:
+                await msg.renew_lock()
+                logger.debug("Renewed SB lock for topic doc=%s", payload.document_id)
+            except Exception:
+                logger.exception("SB lock renewal failed for topic doc=%s", payload.document_id)
+
+    try:
+        renewal_task = asyncio.create_task(_keep_alive())
+        return await _handle_inner(msg)
+    finally:
+        if renewal_task is not None:
+            renewal_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await renewal_task
+
+
+async def _handle_inner(msg: ReceivedTopicMessage) -> None:
+    payload = msg.payload
     await _set_status(
         tenant_id=payload.tenant_id,
         workspace_id=payload.workspace_id,

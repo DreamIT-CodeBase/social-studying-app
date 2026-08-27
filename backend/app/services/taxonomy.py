@@ -59,13 +59,11 @@ DEPENDENCY_INFERENCE_PROMPT_VERSION = "dependency_inference_v1"
 # we lose three races in a row, something pathological is happening.
 _MAX_MERGE_RETRIES = 3
 
-# Tokens budget for the merge response. ~3K topics worth of JSON fits in 8K
-# tokens comfortably; we cap at 6K to leave headroom for very long taxonomies.
-_MERGE_MAX_OUTPUT_TOKENS = 6_000
+# Tokens budget for the merge response. Capped at 2,000 for fast responses.
+_MERGE_MAX_OUTPUT_TOKENS = 2_000
 
-# Tokens budget for the dependency inference response. Smaller than merge —
-# each row is just {topic_id, parent_id}, much tighter than full topic JSON.
-_INFER_DEPS_MAX_OUTPUT_TOKENS = 3_000
+# Tokens budget for the dependency inference response.
+_INFER_DEPS_MAX_OUTPUT_TOKENS = 1_500
 
 
 class TaxonomyMergeError(RuntimeError):

@@ -114,6 +114,10 @@ class ReceivedTopicMessage:
             self._raw, reason=reason, error_description=description
         )
 
+    async def renew_lock(self) -> None:
+        """Renew the Service Bus message lock to prevent expiry-driven redelivery."""
+        await self._receiver.renew_message_lock(self._raw)
+
 
 @asynccontextmanager
 async def consume_topic_messages(
