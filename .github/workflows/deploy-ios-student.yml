@@ -35,7 +35,7 @@ jobs:
             bundle_id: ai.socialstudying.app.admin
             target: lib/main_admin.dart
             profile_secret: IOS_ADMIN_PROVISIONING_PROFILE_BASE64
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
     defaults:
       run:
