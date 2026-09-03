@@ -48,16 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 16 toolchain
-        run: |
-          if [ -d "/Applications/Xcode_16.0.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
-          fi
-          sudo xcodebuild -runFirstLaunch
-          xcodebuild -version
-          xcrun --sdk iphoneos --show-sdk-version
+
 
       - name: Verify App Store build toolchain
         run: |

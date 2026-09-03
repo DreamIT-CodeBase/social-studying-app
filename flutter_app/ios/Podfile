@@ -52,4 +52,14 @@ post_install do |installer|
       config.build_settings['OTHER_SWIFT_FLAGS'] << 'AccessLevelOnImport'
     end
   end
+
+  # Patch FirebaseCoreInternal for Xcode 15 / Swift 5 compatibility
+  lock_file = File.join(installer.sandbox.root, 'FirebaseCoreInternal', 'FirebaseCore', 'Internal', 'Sources', 'Utilities', 'FIRAllocatedUnfairLock.swift')
+  if File.exist?(lock_file)
+    content = File.read(lock_file)
+    if content.include?('sending State')
+      File.write(lock_file, content.gsub('sending State', 'State'))
+      puts '[Podfile] Successfully patched FIRAllocatedUnfairLock.swift for Swift 5 compiler compatibility.'
+    end
+  end
 end
