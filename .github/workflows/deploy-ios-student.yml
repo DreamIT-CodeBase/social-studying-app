@@ -35,7 +35,7 @@ jobs:
             bundle_id: ai.socialstudying.app.admin
             target: lib/main_admin.dart
             profile_secret: IOS_ADMIN_PROVISIONING_PROFILE_BASE64
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
     defaults:
       run:
@@ -47,6 +47,20 @@ jobs:
       APPLE_TEAM_ID: B7BJ5HC53B
     steps:
       - uses: actions/checkout@v4
+
+      - name: Select Xcode 16 toolchain
+        run: |
+          if [ -d "/Applications/Xcode_16.2.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_16.1.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_16.0.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_16.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+          fi
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
 
       - name: Verify App Store build toolchain
         run: |
