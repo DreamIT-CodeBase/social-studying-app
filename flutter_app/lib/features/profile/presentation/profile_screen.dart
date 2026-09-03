@@ -6,6 +6,7 @@ import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/features/screen_time/widgets/accessibility_disclosure_dialog.dart';
 
 // ─── Colours matching the reference exactly ───────────────────────────────
 const _kSkyTop = Color(0xFFB8EBF7); // pale sky blue
@@ -155,6 +156,18 @@ class ProfileScreen extends ConsumerWidget {
                           icon: Icons.palette_rounded,
                           label: 'Experience Style',
                           onTap: () => context.push(AppRoutes.themeSelection),
+                        ),
+                        _MenuItem(
+                          icon: Icons.accessibility_new_rounded,
+                          label: 'Accessibility & Study Protection',
+                          onTap: () {
+                            showAccessibilityProminentDisclosureDialog(
+                              context,
+                              onAccept: () {
+                                context.push(AppRoutes.studentScreenTimeSettings);
+                              },
+                            );
+                          },
                         ),
                         if (!isStudent)
                           _MenuItem(
@@ -317,6 +330,19 @@ class _CollegeProfileScreen extends ConsumerWidget {
                 title: 'Experience style',
                 subtitle: 'Change your study environment',
                 onTap: () => context.push(AppRoutes.themeSelection),
+              ),
+              _CollegeSettingsTile(
+                icon: Icons.accessibility_new_rounded,
+                title: 'Accessibility & Study Protection',
+                subtitle: 'View permission disclosure & focus settings',
+                onTap: () {
+                  showAccessibilityProminentDisclosureDialog(
+                    context,
+                    onAccept: () {
+                      context.push(AppRoutes.studentScreenTimeSettings);
+                    },
+                  );
+                },
               ),
               if (!isStudent)
                 _CollegeSettingsTile(

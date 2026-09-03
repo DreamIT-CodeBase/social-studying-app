@@ -10,6 +10,7 @@ import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/features/home/providers/workspace_providers.dart';
 import 'package:social_study_app/features/admin/moderation/presentation/moderation_screen.dart';
 import 'package:social_study_app/features/admin/moderation/presentation/moderation_notifier.dart';
+import 'package:social_study_app/features/screen_time/widgets/accessibility_disclosure_dialog.dart';
 
 class ScreenTimeSettingsScreen extends ConsumerStatefulWidget {
   const ScreenTimeSettingsScreen({super.key});
@@ -416,14 +417,39 @@ class _ScreenTimeSettingsScreenState
                     _isAccessibilityEnabled ? Colors.grey : AppColors.primary,
               ),
               onPressed: () {
-                ref
-                    .read(screenTimeNotifierProvider.notifier)
-                    .openAccessibilitySettings();
+                showAccessibilityProminentDisclosureDialog(
+                  context,
+                  onAccept: () {
+                    ref
+                        .read(screenTimeNotifierProvider.notifier)
+                        .openAccessibilitySettings();
+                  },
+                );
               },
               icon: const Icon(Icons.settings_power_rounded),
               label: Text(_isAccessibilityEnabled
                   ? 'Configure Settings'
                   : 'Enable Service'),
+            ),
+            const SizedBox(height: Spacing.xs),
+            Center(
+              child: TextButton.icon(
+                onPressed: () {
+                  showAccessibilityProminentDisclosureDialog(
+                    context,
+                    onAccept: () {
+                      ref
+                          .read(screenTimeNotifierProvider.notifier)
+                          .openAccessibilitySettings();
+                    },
+                  );
+                },
+                icon: const Icon(Icons.info_outline_rounded, size: 16),
+                label: const Text(
+                  'View Prominent Disclosure & Privacy Policy',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
             ),
           ],
         ),
