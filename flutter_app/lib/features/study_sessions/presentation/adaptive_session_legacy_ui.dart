@@ -304,6 +304,95 @@ class LegacyAdaptiveFlashcardView extends StatelessWidget {
   }
 }
 
+/// Shown when the current study material has produced every non-repeating
+/// session it can.
+///
+/// This is a success state, not an error: the learner has genuinely worked
+/// through everything the uploaded material supports, so the copy and colours
+/// are encouraging and the primary action is uploading more material. The
+/// backend signals it with `exhausted: true` on an otherwise empty plan.
+class SessionExhaustedView extends StatelessWidget {
+  const SessionExhaustedView({
+    super.key,
+    required this.mode,
+    required this.canUpload,
+    required this.onUpload,
+    required this.onClose,
+  });
+
+  final AdaptiveSessionMode mode;
+
+  /// False for admin-provisioned workspaces, where a student cannot add
+  /// material themselves — the upload action is hidden rather than dead.
+  final bool canUpload;
+  final VoidCallback onUpload;
+  final VoidCallback onClose;
+
+  String get _detail => switch (mode) {
+        AdaptiveSessionMode.flashcard =>
+          'You have reviewed every flashcard your current study material can '
+              'make. Upload more material to unlock a fresh set.',
+        _ => 'You have answered every question your current study material can '
+            'make. Upload more material to unlock a fresh set.',
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.auto_stories_rounded,
+                size: 46,
+                color: scheme.onPrimaryContainer,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'All caught up!',
+              textAlign: TextAlign.center,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _detail,
+              textAlign: TextAlign.center,
+              style: TextStyle(height: 1.45, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 24),
+            if (canUpload) ...[
+              FilledButton.icon(
+                onPressed: onUpload,
+                icon: const Icon(Icons.upload_file_rounded),
+                label: const Text('Upload more study material'),
+              ),
+              const SizedBox(height: 8),
+            ],
+            TextButton(
+              onPressed: onClose,
+              child: Text(canUpload ? 'Not now' : 'Close'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class LegacySessionHeader extends StatelessWidget {
   const LegacySessionHeader({
     super.key,

@@ -8,6 +8,8 @@ import 'package:social_study_app/features/screen_time/providers/screen_time_prov
 import 'package:social_study_app/features/screen_time/models/student_device_status.dart';
 import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/features/home/providers/workspace_providers.dart';
+import 'package:social_study_app/features/admin/moderation/presentation/moderation_screen.dart';
+import 'package:social_study_app/features/admin/moderation/presentation/moderation_notifier.dart';
 
 class ScreenTimeSettingsScreen extends ConsumerStatefulWidget {
   const ScreenTimeSettingsScreen({super.key});
@@ -133,6 +135,16 @@ class _ScreenTimeSettingsScreenState
                 _buildSectionTitle('Apps to Control'),
                 const SizedBox(height: Spacing.sm),
                 _buildAppSelectorCard(blockedPackages, isEditable),
+                const SizedBox(height: Spacing.lg),
+              ],
+              _buildSectionTitle('Social Media Question Rules & Reoccurring Timeframe'),
+              const SizedBox(height: Spacing.sm),
+              _buildSocialQuestionsCard(isEditable),
+              const SizedBox(height: Spacing.lg),
+              if (isEditable && workspaceId != null) ...[
+                _buildSectionTitle('Flagged Uploads & Content Controls'),
+                const SizedBox(height: Spacing.sm),
+                _buildFlaggedUploadsCard(workspaceId),
                 const SizedBox(height: Spacing.lg),
               ],
               _buildSectionTitle('Rules & Conversion'),
@@ -567,6 +579,201 @@ class _ScreenTimeSettingsScreenState
             );
           }
         },
+      ),
+    );
+  }
+
+  Widget _buildSocialQuestionsCard(bool isAdmin) {
+    final enableSocialAsync = ref.watch(enableSocialQuestionsProvider);
+    final intervalAsync = ref.watch(recurringQuestionsIntervalProvider);
+    final promptCountAsync = ref.watch(questionsPerPromptProvider);
+    final targetSubjectAsync = ref.watch(socialQuestionsSubjectProvider);
+
+    final enableSocial = enableSocialAsync.valueOrNull ?? true;
+    final interval = intervalAsync.valueOrNull ?? 15;
+    final promptCount = promptCountAsync.valueOrNull ?? 1;
+    final targetSubject = targetSubjectAsync.valueOrNull;
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(Spacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Require Questions for Social Media',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                isAdmin
+                    ? 'Learner must answer study questions to open or continue using social media'
+                    : 'Configured by parent to reinforce study habits',
+              ),
+              value: enableSocial,
+              activeColor: AppColors.primary,
+              onChanged: isAdmin
+                  ? (value) async {
+                      await ref
+                          .read(screenTimeNotifierProvider.notifier)
+                          .updateEnableSocialQuestions(value);
+                    }
+                  : null,
+            ),
+            if (enableSocial) ...[
+              const Divider(height: 24),
+              const Text(
+                'Recurring Question Interval (Timeframe)',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Frequency of recurring study questions while browsing social apps:',
+                style: TextStyle(fontSize: 12, color: AppColors.onSurfaceVariant),
+              ),
+              const SizedBox(height: Spacing.sm),
+              DropdownButtonFormField<int>(
+                value: interval,
+                decoration: InputDecoration(
+                  labelText: 'Recurring Interval',
+                  filled: true,
+                  fillColor: context.colorScheme.surfaceContainer,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 0, child: Text('On App Launch Only')),
+                  DropdownMenuItem(value: 15, child: Text('Every 15 Minutes (Recommended)')),
+                  DropdownMenuItem(value: 30, child: Text('Every 30 Minutes')),
+                  DropdownMenuItem(value: 45, child: Text('Every 45 Minutes')),
+                  DropdownMenuItem(value: 60, child: Text('Every 1 Hour')),
+                ],
+                onChanged: isAdmin
+                    ? (value) async {
+                        if (value != null) {
+                          await ref
+                              .read(screenTimeNotifierProvider.notifier)
+                              .updateRecurringQuestionsInterval(value);
+                        }
+                      }
+                    : null,
+              ),
+              const SizedBox(height: Spacing.md),
+              const Text(
+                'Questions per Recurring Prompt',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              const SizedBox(height: Spacing.sm),
+              DropdownButtonFormField<int>(
+                value: promptCount,
+                decoration: InputDecoration(
+                  labelText: 'Question Count',
+                  filled: true,
+                  fillColor: context.colorScheme.surfaceContainer,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 1, child: Text('1 Question (Quick Recall)')),
+                  DropdownMenuItem(value: 2, child: Text('2 Questions (Balanced)')),
+                  DropdownMenuItem(value: 3, child: Text('3 Questions (Deep Practice)')),
+                ],
+                onChanged: isAdmin
+                    ? (value) async {
+                        if (value != null) {
+                          await ref
+                              .read(screenTimeNotifierProvider.notifier)
+                              .updateQuestionsPerPrompt(value);
+                        }
+                      }
+                    : null,
+              ),
+              const SizedBox(height: Spacing.md),
+              const Text(
+                'Target Study Subject Focus',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              const SizedBox(height: Spacing.sm),
+              DropdownButtonFormField<String?>(
+                value: targetSubject,
+                decoration: InputDecoration(
+                  labelText: 'Subject Focus',
+                  filled: true,
+                  fillColor: context.colorScheme.surfaceContainer,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                items: const [
+                  DropdownMenuItem(value: null, child: Text('All Subjects (Rotational)')),
+                  DropdownMenuItem(value: 'Chemistry', child: Text('Chemistry Focus 🧪')),
+                  DropdownMenuItem(value: 'Mathematics', child: Text('Mathematics Focus 📐')),
+                  DropdownMenuItem(value: 'Physics', child: Text('Physics Focus ⚡')),
+                  DropdownMenuItem(value: 'Biology', child: Text('Biology Focus 🧬')),
+                ],
+                onChanged: isAdmin
+                    ? (value) async {
+                        await ref
+                            .read(screenTimeNotifierProvider.notifier)
+                            .updateSocialQuestionsSubject(value);
+                      }
+                    : null,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFlaggedUploadsCard(String workspaceId) {
+    final queueAsync = ref.watch(moderationQueueProvider(workspaceId));
+    final flaggedCount = queueAsync.valueOrNull?.length ?? 0;
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(Spacing.md),
+        child: Column(
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: (flaggedCount > 0 ? Colors.orange : Colors.green)
+                      .withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  flaggedCount > 0
+                      ? Icons.flag_rounded
+                      : Icons.verified_user_rounded,
+                  color: flaggedCount > 0 ? Colors.orange : Colors.green,
+                  size: 22,
+                ),
+              ),
+              title: Text(
+                flaggedCount > 0
+                    ? '$flaggedCount Flagged Upload(s) Awaiting Review'
+                    : 'All Uploads Approved & Safe',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              subtitle: Text(
+                flaggedCount > 0
+                    ? 'Review study materials before questions are generated'
+                    : 'AI content safety filter is active and protecting uploads',
+                style: const TextStyle(fontSize: 12),
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ModerationScreen(workspaceId: workspaceId),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

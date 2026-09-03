@@ -28,8 +28,7 @@ Field rules:
 - page_refs: Integers (1-indexed) or empty list [].
 
 Content rules:
-- Extract 5 to 15 high-yield, distinct topics covering the main themes.
-- If the document only covers 1 or 2 topics, return those.
+{{extraction_guidance}}
 - If empty or purely administrative, return {"topics": []}.
 - The first character of your response MUST be `{` and the last MUST be `}`.
 

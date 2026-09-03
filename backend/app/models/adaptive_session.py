@@ -63,17 +63,32 @@ class AdaptiveSessionPlan(BaseModel):
     mode: AdaptiveSessionMode
     level: AdaptiveLevel
     mastery_score: float = Field(ge=0.0, le=1.0)
-    duration_minutes: int = Field(gt=0)
-    item_count: int = Field(gt=0)
+    # ``exhausted`` plans carry zero items (the learner has consumed every
+    # non-repeating session the current material can produce), so the lower
+    # bound is ``ge=0`` rather than ``gt=0``. Every real session still has
+    # at least one item because the prepare endpoint returns an exhausted
+    # plan before it would ever build an empty real one.
+    duration_minutes: int = Field(ge=0)
+    item_count: int = Field(ge=0)
     estimated_xp_min: int
     estimated_xp_max: int
     questions: list[PreparedQuestion] = Field(default_factory=list)
     flashcards: list[PreparedFlashcard] = Field(default_factory=list)
     content_ready: bool = True
+    # True only for the "you have completed every available session from this
+    # material — upload more to unlock new ones" fallback. The client renders
+    # a call-to-action instead of a runnable session and never posts complete.
+    exhausted: bool = False
+    subject: str | None = None
+    subcategory: str | None = None
+    question_type: QuestionType | None = None
 
 
 class PrepareAdaptiveSessionRequest(BaseModel):
     mode: AdaptiveSessionMode = AdaptiveSessionMode.study
+    subject: str | None = None
+    subcategory: str | None = None
+    question_type: QuestionType | None = None
 
 
 class SessionQuestionAttempt(BaseModel):

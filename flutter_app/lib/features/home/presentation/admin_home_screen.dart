@@ -6,7 +6,8 @@ import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/features/admin/analytics/data/analytics_repository.dart';
 import 'package:social_study_app/features/admin/analytics/presentation/learning_progress_card.dart';
-import 'package:social_study_app/features/admin/notifications/admin_notifications_tab.dart';
+import 'package:social_study_app/features/admin/notifications/admin_notifications_tab.dart'
+    show adminProgressNotificationsEnabledProvider;
 import 'package:social_study_app/features/admin/users/presentation/users_screen.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/documents/presentation/documents_list_screen.dart';
@@ -51,7 +52,6 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
     (icon: Icons.dashboard_rounded, label: 'Dashboard'),
     (icon: Icons.description_rounded, label: 'Documents'),
     (icon: Icons.people_rounded, label: 'Students'),
-    (icon: Icons.notifications_rounded, label: 'Notifications'),
     (icon: Icons.settings_rounded, label: 'Settings'),
   ];
 
@@ -167,7 +167,6 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
                   ),
                   _DocumentsTab(workspaceId: workspaceId),
                   _StudentsTab(workspaceId: workspaceId),
-                  const AdminNotificationsTab(),
                   _SettingsTab(workspaceId: workspaceId),
                 ],
               ),
@@ -194,19 +193,9 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
                   destinations: [
                     ..._tabs.asMap().entries.map((entry) {
                       final tab = entry.value;
-                      final isNotif = tab.label == 'Notifications';
-                      final badge = isNotif
-                          ? ref.watch(adminNotificationBadgeProvider)
-                          : 0;
                       return NavigationDestination(
-                        icon: badge > 0 && isNotif
-                            ? Badge(
-                                label: Text('$badge'),
-                                child: Icon(tab.icon,
-                                    color: _dashboardMuted, size: 22),
-                              )
-                            : Icon(tab.icon,
-                                color: _dashboardMuted, size: 22),
+                        icon: Icon(tab.icon,
+                            color: _dashboardMuted, size: 22),
                         selectedIcon: Icon(tab.icon,
                             color: Colors.white, size: 22),
                         label: tab.label,
@@ -479,10 +468,10 @@ class _ReferenceWelcomeBanner extends StatelessWidget {
           Positioned(
             left: Spacing.lg,
             top: 12,
-            bottom: 12,
-            width: 185,
+            right: 130,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
                   '👋 Welcome back,',
@@ -513,7 +502,7 @@ class _ReferenceWelcomeBanner extends StatelessWidget {
                     height: 1.35,
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(height: 8),
                 Container(
                   constraints: const BoxConstraints(maxWidth: 190),
                   padding: const EdgeInsets.symmetric(
@@ -875,17 +864,23 @@ class _StudentsTab extends StatelessWidget {
   }
 }
 
-class _SettingsTab extends StatelessWidget {
+class _SettingsTab extends ConsumerWidget {
   const _SettingsTab({required this.workspaceId});
 
   final String? workspaceId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final wsId = workspaceId;
     return ListView(
       children: [
         const SizedBox(height: Spacing.sm),
+        _SettingsTile(
+          icon: Icons.notifications_active_rounded,
+          title: 'Progress Notifications',
+          subtitle: 'Student study completions, streaks, and milestone alerts',
+          onTap: () => _showProgressNotificationsSheet(context, ref),
+        ),
         _SettingsTile(
           icon: Icons.folder_shared_rounded,
           title: 'Workspaces',
@@ -966,6 +961,231 @@ class _SettingsTile extends StatelessWidget {
       trailing: Icon(Icons.chevron_right_rounded,
           color: context.colorScheme.onSurfaceVariant),
       onTap: onTap,
+    );
+  }
+}
+
+void _showProgressNotificationsSheet(BuildContext context, WidgetRef ref) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: const Color(0xFF0D1A30),
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      side: BorderSide(color: Color(0xFF213451)),
+    ),
+    builder: (ctx) {
+      return Consumer(
+        builder: (context, ref, _) {
+          final isEnabled =
+              ref.watch(adminProgressNotificationsEnabledProvider);
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(Spacing.xl),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF06B6D4).withAlpha(35),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFF06B6D4).withAlpha(80),
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.notifications_active_rounded,
+                          color: Color(0xFF06B6D4),
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: Spacing.md),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Child Progress Alerts',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Real-time study updates for parents',
+                              style: TextStyle(
+                                color: Color(0xFFA7B5CF),
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: Spacing.xl),
+                  Container(
+                    padding: const EdgeInsets.all(Spacing.md),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF111F37),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFF213451)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Enable Progress Notifications',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              SizedBox(height: 3),
+                              Text(
+                                'Receive notifications when your child completes study sessions, achieves streaks, or levels up.',
+                                style: TextStyle(
+                                  color: Color(0xFFA7B5CF),
+                                  fontSize: 12,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: Spacing.md),
+                        Switch(
+                          value: isEnabled,
+                          onChanged: (val) {
+                            ref
+                                .read(adminProgressNotificationsEnabledProvider.notifier)
+                                .setEnabled(val);
+                          },
+                          activeThumbColor: const Color(0xFF06B6D4),
+                          activeTrackColor: const Color(0xFF06B6D4).withAlpha(80),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: Spacing.lg),
+                  const Text(
+                    'INCLUDED ALERTS',
+                    style: TextStyle(
+                      color: Color(0xFFA7B5CF),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(height: Spacing.sm),
+                  const _ProgressAlertItem(
+                    icon: Icons.school_rounded,
+                    color: Color(0xFF3B82F6),
+                    title: 'Session Completions',
+                    subtitle: 'Subject, topic, accuracy, and XP earned per session',
+                  ),
+                  const SizedBox(height: Spacing.xs),
+                  const _ProgressAlertItem(
+                    icon: Icons.local_fire_department_rounded,
+                    color: Color(0xFFF97316),
+                    title: 'Daily Streak Milestones',
+                    subtitle: '3-day, 5-day, 7-day+ continuous learning streaks',
+                  ),
+                  const SizedBox(height: Spacing.xs),
+                  const _ProgressAlertItem(
+                    icon: Icons.military_tech_rounded,
+                    color: Color(0xFFF59E0B),
+                    title: 'Mastery & Level Ups',
+                    subtitle: 'New levels reached and topic mastery milestones',
+                  ),
+                  const SizedBox(height: Spacing.lg),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF06B6D4),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Done',
+                        style: TextStyle(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+class _ProgressAlertItem extends StatelessWidget {
+  const _ProgressAlertItem({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: Spacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Color(0xFFA7B5CF),
+                    fontSize: 11.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

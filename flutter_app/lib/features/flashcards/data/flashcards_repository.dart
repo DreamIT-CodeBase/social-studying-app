@@ -39,6 +39,7 @@ abstract class FlashcardsRepository {
     required String workspaceId,
     List<String>? selectedTopicIds,
     double? mastery,
+    String? subject,
   });
 
   /// Record a student's self-rating for a flashcard they've reviewed.

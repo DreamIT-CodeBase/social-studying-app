@@ -26,6 +26,11 @@ class ScreenTimeService {
   static const String _keyBlockedPackages = 'blocked_packages_json';
   static const String _keyEnforcementReady = 'enforcement_ready';
 
+  static const String _keyEnableSocialQuestions = 'enable_social_questions';
+  static const String _keyRecurringQuestionsInterval = 'recurring_questions_interval_minutes';
+  static const String _keyQuestionsPerPrompt = 'questions_per_prompt';
+  static const String _keySocialQuestionsSubject = 'social_questions_subject';
+
   static const String _keyCurrentUserId = 'current_user_id';
 
   Future<SharedPreferences> _getPrefs() async {
@@ -180,6 +185,50 @@ class ScreenTimeService {
   Future<void> saveBlockedPackages(List<String> packages) async {
     final prefs = await _getPrefs();
     await prefs.setString(_keyBlockedPackages, jsonEncode(packages));
+  }
+
+  Future<bool> getEnableSocialQuestions() async {
+    final prefs = await _getPrefs();
+    return prefs.getBool(_keyEnableSocialQuestions) ?? true;
+  }
+
+  Future<void> saveEnableSocialQuestions(bool enable) async {
+    final prefs = await _getPrefs();
+    await prefs.setBool(_keyEnableSocialQuestions, enable);
+  }
+
+  Future<int> getRecurringQuestionsInterval() async {
+    final prefs = await _getPrefs();
+    return prefs.getInt(_keyRecurringQuestionsInterval) ?? 15; // default: 15 minutes
+  }
+
+  Future<void> saveRecurringQuestionsInterval(int minutes) async {
+    final prefs = await _getPrefs();
+    await prefs.setInt(_keyRecurringQuestionsInterval, minutes);
+  }
+
+  Future<int> getQuestionsPerPrompt() async {
+    final prefs = await _getPrefs();
+    return prefs.getInt(_keyQuestionsPerPrompt) ?? 1; // default: 1 question
+  }
+
+  Future<void> saveQuestionsPerPrompt(int count) async {
+    final prefs = await _getPrefs();
+    await prefs.setInt(_keyQuestionsPerPrompt, count);
+  }
+
+  Future<String?> getSocialQuestionsSubject() async {
+    final prefs = await _getPrefs();
+    return prefs.getString(_keySocialQuestionsSubject);
+  }
+
+  Future<void> saveSocialQuestionsSubject(String? subject) async {
+    final prefs = await _getPrefs();
+    if (subject == null || subject.isEmpty) {
+      await prefs.remove(_keySocialQuestionsSubject);
+    } else {
+      await prefs.setString(_keySocialQuestionsSubject, subject);
+    }
   }
 
   Future<void> showNotification(int minutesEarned) async {

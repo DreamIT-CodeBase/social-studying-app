@@ -300,6 +300,26 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
   Future<void> openAccessibilitySettings() async {
     await _service.openAccessibilitySettings();
   }
+
+  Future<void> updateEnableSocialQuestions(bool enable) async {
+    await _service.saveEnableSocialQuestions(enable);
+    ref.invalidate(enableSocialQuestionsProvider);
+  }
+
+  Future<void> updateRecurringQuestionsInterval(int minutes) async {
+    await _service.saveRecurringQuestionsInterval(minutes);
+    ref.invalidate(recurringQuestionsIntervalProvider);
+  }
+
+  Future<void> updateQuestionsPerPrompt(int count) async {
+    await _service.saveQuestionsPerPrompt(count);
+    ref.invalidate(questionsPerPromptProvider);
+  }
+
+  Future<void> updateSocialQuestionsSubject(String? subject) async {
+    await _service.saveSocialQuestionsSubject(subject);
+    ref.invalidate(socialQuestionsSubjectProvider);
+  }
 }
 
 // Helpers to expose settings as simpler read/write providers
@@ -365,3 +385,19 @@ Future<List<String>> blockedPackages(BlockedPackagesRef ref) async {
   }
   return ScreenTimeService().getBlockedPackages();
 }
+
+final enableSocialQuestionsProvider = FutureProvider<bool>((ref) async {
+  return ScreenTimeService().getEnableSocialQuestions();
+});
+
+final recurringQuestionsIntervalProvider = FutureProvider<int>((ref) async {
+  return ScreenTimeService().getRecurringQuestionsInterval();
+});
+
+final questionsPerPromptProvider = FutureProvider<int>((ref) async {
+  return ScreenTimeService().getQuestionsPerPrompt();
+});
+
+final socialQuestionsSubjectProvider = FutureProvider<String?>((ref) async {
+  return ScreenTimeService().getSocialQuestionsSubject();
+});

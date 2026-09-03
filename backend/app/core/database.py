@@ -1,5 +1,6 @@
 """Cosmos DB for MongoDB API — tenant-aware async client."""
 
+import asyncio
 import logging
 from collections.abc import Mapping
 from copy import deepcopy
@@ -11,6 +12,50 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection, Asyn
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# ── Cosmos 429 retry helper ──────────────────────────────────────────────────
+
+_COSMOS_429_CODE = 16500
+_MAX_RETRY_ATTEMPTS = 3
+_MAX_RETRY_WAIT_MS = 2000  # never wait more than 2 s regardless of server hint
+
+
+async def cosmos_retry(coro_factory, *, max_attempts: int = _MAX_RETRY_ATTEMPTS):
+    """Run ``coro_factory()`` and retry automatically on Cosmos TooManyRequests (429).
+
+    Usage::
+
+        docs = await cosmos_retry(lambda: cursor.to_list(length=300))
+
+    Args:
+        coro_factory: zero-arg callable that returns a coroutine. Re-called on
+            each retry so a fresh coroutine is produced every time.
+        max_attempts: maximum total tries (default 3).
+
+    Returns:
+        The first successful coroutine result.
+
+    Raises:
+        The last exception when all retries are exhausted.
+    """
+    import re
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await coro_factory()
+        except Exception as exc:
+            # Check for Cosmos TooManyRequests (pymongo OperationFailure code 16500)
+            code = getattr(exc, "code", None)
+            if code != _COSMOS_429_CODE or attempt >= max_attempts:
+                raise
+            # Extract RetryAfterMs from the error message when available
+            match = re.search(r"RetryAfterMs=(\d+)", str(exc))
+            wait_ms = int(match.group(1)) if match else 500
+            wait_ms = min(wait_ms, _MAX_RETRY_WAIT_MS)
+            logger.warning(
+                "Cosmos 429 on attempt %d/%d - waiting %d ms before retry",
+                attempt, max_attempts, wait_ms,
+            )
+            await asyncio.sleep(wait_ms / 1000.0)
 
 # Collection names — one per domain, shared across all tenant databases
 USERS = "users"

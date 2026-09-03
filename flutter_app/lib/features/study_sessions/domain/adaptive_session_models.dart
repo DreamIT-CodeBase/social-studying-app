@@ -122,6 +122,10 @@ class AdaptiveSessionPlan {
     required this.estimatedXpMax,
     required this.questions,
     required this.flashcards,
+    this.contentReady = true,
+    this.exhausted = false,
+    this.subject,
+    this.questionType,
   });
 
   factory AdaptiveSessionPlan.fromJson(Map<String, dynamic> json) =>
@@ -142,6 +146,14 @@ class AdaptiveSessionPlan {
             .whereType<Map<String, dynamic>>()
             .map(PreparedFlashcard.fromJson)
             .toList(growable: false),
+        contentReady: json['content_ready'] is bool
+            ? json['content_ready'] as bool
+            : true,
+        exhausted: json['exhausted'] is bool
+            ? json['exhausted'] as bool
+            : false,
+        subject: json['subject'] as String?,
+        questionType: json['question_type'] as String?,
       );
 
   final String sessionId;
@@ -154,6 +166,15 @@ class AdaptiveSessionPlan {
   final int estimatedXpMax;
   final List<PreparedQuestion> questions;
   final List<PreparedFlashcard> flashcards;
+  final bool contentReady;
+  final String? subject;
+  final String? questionType;
+
+  /// True when the learner has consumed every non-repeating session the
+  /// currently uploaded material can produce. The session screen renders an
+  /// "upload more study material" call-to-action instead of a runnable session,
+  /// and never posts `complete` for such a plan.
+  final bool exhausted;
 }
 
 class SessionQuestionAttempt {

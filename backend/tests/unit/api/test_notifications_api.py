@@ -251,3 +251,77 @@ def test_run_scheduler_refused_for_workspace_admin(client):
 def test_run_scheduler_refused_for_student(client, student):
     response = client.post("/api/v1/admin/notifications/run-scheduler")
     assert response.status_code == 403
+
+
+def test_activity_feed_allowed_for_workspace_admin(client):
+    workspace_admin = make_user(
+        user_id="usr_wadm",
+        role=UserRole.workspace_admin,
+        workspace_ids=["wsp_a"],
+    )
+    app.dependency_overrides[get_current_user] = lambda: workspace_admin
+
+    class _MockCursor:
+        def __init__(self, items):
+            self.items = items
+        async def to_list(self, length=100):
+            return self.items
+
+    class _MockCollection:
+        def __init__(self, data=None):
+            self.data = data or []
+        def find(self, *args, **kwargs):
+            return _MockCursor(self.data)
+
+    def _mock_get_collection(tenant_id, name):
+        if name == "adaptive_sessions":
+            return _MockCollection([
+                {
+                    "_id": "ses_1",
+                    "student_id": "stu_a",
+                    "workspace_id": "wsp_a",
+                    "mode": "study",
+                    "plan": {"subject": "Chemistry", "subcategory": "Atomic Structure"},
+                    "accuracy_percentage": 85.0,
+                    "xp_gained": 40,
+                    "completed_count": 5,
+                    "completed_at": "2026-09-01T12:00:00Z",
+                }
+            ])
+        if name == "users":
+            return _MockCollection([
+                {"_id": "stu_a", "display_name": "Alice"}
+            ])
+        if name == "workspaces":
+            return _MockCollection([
+                {"_id": "wsp_a", "name": "Grade 10 Chemistry"}
+            ])
+        if name == "gamification":
+            return _MockCollection([
+                {
+                    "_id": "gam_1",
+                    "student_id": "stu_a",
+                    "workspace_id": "wsp_a",
+                    "streak_days": 5,
+                    "level": 3,
+                    "xp_total": 350,
+                    "updated_at": "2026-09-01T12:00:00Z",
+                }
+            ])
+        return _MockCollection([])
+
+    with patch("app.core.database.get_collection", _mock_get_collection):
+        response = client.get("/api/v1/admin/notifications/activity-feed")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "items" in data
+    types = [item["type"] for item in data["items"]]
+    assert "child_progress" in types
+    assert "streak_milestone" in types
+    assert "mastery_milestone" in types
+
+
+def test_activity_feed_refused_for_student(client, student):
+    response = client.get("/api/v1/admin/notifications/activity-feed")
+    assert response.status_code == 403

@@ -70,6 +70,7 @@ from app.services.flashcard_generation import (
 from app.services.learning_path import (  # noqa: F401 - kept for compatibility patch seam
     select_next_topic,
 )
+from app.services.subject_classifier import classify_subject_from_text
 
 
 class NextFlashcardRequest(BaseModel):
@@ -81,6 +82,9 @@ class NextFlashcardRequest(BaseModel):
         ge=0.0,
         le=1.0,
         description="Student's current overall mastery (0–1). Used to bias difficulty.",
+    )
+    subject: str | None = Field(
+        default=None, description="Optional subject name to filter flashcards."
     )
 
 
@@ -199,11 +203,21 @@ async def next_flashcard(
     cursor = interactions_col.find(query)
     interactions = await cursor.to_list(length=5000)
 
+    if request_data and request_data.subject:
+        interactions = [
+            i for i in interactions
+            if classify_subject_from_text(str(i.get("topic", ""))).casefold()
+            == request_data.subject.casefold()
+        ]
+
     if not interactions:
-        raise ConflictError(
-            "You haven't answered any questions correctly yet! "
-            "Go to the Study tab and answer questions correctly to unlock flashcards."
+        msg = (
+            f"You haven't answered any {request_data.subject} questions correctly yet! "
+            f"Go to the Study tab and answer {request_data.subject} questions correctly to unlock flashcards."
+            if request_data and request_data.subject
+            else "You haven't answered any questions correctly yet! Go to the Study tab and answer questions correctly to unlock flashcards."
         )
+        raise ConflictError(msg)
 
     # Determine mastery tier for difficulty calibration
     mastery = request_data.mastery if request_data else None

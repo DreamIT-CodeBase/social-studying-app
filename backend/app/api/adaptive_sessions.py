@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 import re
 import unicodedata
 from collections.abc import Iterable
+from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 
 from app.api import flashcards as flashcards_api
 from app.api.questions import _record_interaction
@@ -16,18 +19,21 @@ from app.core.auth import get_current_user
 from app.core.database import (
     ADAPTIVE_SESSIONS,
     CHUNKS,
+    DOCUMENTS,
     FLASHCARD_RATINGS,
     FLASHCARDS,
     GAMIFICATION,
     INTERACTIONS,
     KNOWLEDGE_STATES,
     QUESTION_QUEUE,
+    cosmos_retry,
     get_collection,
 )
 from app.core.exceptions import (
     ConflictError,
     ForbiddenError,
     NotFoundError,
+    ServiceUnavailableError,
 )
 from app.mcp_tools.retrieve_content import (
     RetrieveContentInput,
@@ -56,13 +62,12 @@ from app.models.user import User, UserRole
 from app.services import (
     answer_evaluation,
     flashcard_generation,
-    question_generation,
     question_pipeline,
-    question_safety,
     study_sources,
 )
 from app.services import gamification as gamification_service
 from app.services import knowledge_state as knowledge_state_service
+from app.services.subject_classifier import classify_subject_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +103,44 @@ _COMPLETION_BONUSES = {
     AdaptiveSessionMode.flashcard: 5,
 }
 _MAX_GENERATED_FLASHCARDS_PER_PREPARE = 25
+
+# Self-study is a synthetic single-owner workspace (id ``wsp_self_{user_id}``).
+# Each fresh material snapshot grants a bounded number of non-repeating
+# sessions per mode; once consumed the learner is told to upload more material.
+# Revision is deliberately uncapped — it re-practises previously wrong answers.
+_SELF_STUDY_PREFIX = "wsp_self_"
+_MAX_SELF_STUDY_SESSIONS = 4
+_CAPPED_MODES = frozenset({AdaptiveSessionMode.study, AdaptiveSessionMode.flashcard})
+# Background top-up sizes — generated after a session is served so the next
+# session reads from a warm pool instead of blocking on generation. Bounded so
+# a burst of prepares can't run away with generation cost.
+_QUESTION_TOPUP_MIN = 12
+_QUESTION_TOPUP_MAX = 25
+_FLASHCARD_TOPUP_MIN = 8
+
+
+def _is_self_study(workspace_id: str) -> bool:
+    return workspace_id.startswith(_SELF_STUDY_PREFIX)
+
+
+def _source_snapshot(
+    sources: study_sources.CurrentStudySources,
+    subject: str | None = None,
+    subcategory: str | None = None,
+) -> str:
+    """Stable short hash of the current ready-document set (optionally scoped to subject and subcategory).
+
+    The session cap and idempotency key are scoped to this snapshot so
+    uploading new material grants a fresh batch of sessions while the previous
+    snapshot's consumed sessions no longer block the learner.
+    """
+    raw = "|".join(sorted(sources.document_ids))
+    if subject:
+        raw = f"{raw}#{subject.strip().casefold()}"
+    if subcategory:
+        raw = f"{raw}#sub:{subcategory.strip().casefold()}"
+    digest = hashlib.sha256(raw.encode("utf-8"))
+    return digest.hexdigest()[:16]
 
 
 def _session_duration_minutes(
@@ -398,8 +441,8 @@ async def _reserved_flashcards(
 
 async def _question_session_history(
     *, tenant_id: str, workspace_id: str, student_id: str
-) -> tuple[set[str], set[str]]:
-    """Return IDs and body fingerprints of every question already delivered
+) -> tuple[set[str], set[str], list[str]]:
+    """Return IDs, body fingerprints, and raw bodies of every question already delivered
     to this student in any past adaptive session (study or revision), regardless
     of whether the student actually submitted an answer.
 
@@ -412,14 +455,15 @@ async def _question_session_history(
             "workspace_id": workspace_id,
             "student_id": student_id,
             "mode": {"$in": [AdaptiveSessionMode.study.value, AdaptiveSessionMode.revision.value]},
-            "status": {"$ne": "prepared"},  # all completed / exited / timed_out sessions
+            "status": {"$ne": "prepared"},  # all completed / exited / timed_out / superseded sessions
         }
     )
     rows = await cursor.to_list(length=500)
     questions = [q for row in rows for q in (row.get("plan") or {}).get("questions", [])]
     ids = {str(q["id"]) for q in questions if q.get("id")}
     fingerprints = {_question_fingerprint(str(q["body"])) for q in questions if q.get("body")}
-    return ids, fingerprints
+    bodies = [str(q["body"]) for q in questions if q.get("body")]
+    return ids, fingerprints, bodies
 
 
 async def _current_grounding_chunks(
@@ -502,121 +546,6 @@ async def _current_grounding_chunks(
     return chunks[:5]
 
 
-async def _generate_fresh_questions(
-    *,
-    user: User,
-    workspace_id: str,
-    target: int,
-    level: AdaptiveLevel,
-    current_sources: study_sources.CurrentStudySources,
-    weak_topics: dict[str, float],
-    seen_ids: set[str],
-    reserved_ids: set[str],
-    seen_fingerprints: set[str],
-    reserved_fingerprints: set[str],
-    session_seen_fingerprints: set[str],
-    revision: bool = False,
-) -> list[Question]:
-    """Generate fresh study questions directly from current source chunks when
-    pre-queued questions or LPE batches are insufficient or unavailable.
-    """
-    generation_target = min(target, 25)
-    if generation_target <= 0 or not current_sources.document_ids:
-        return []
-
-    topics = list(current_sources.topic_names) or ["key concepts"]
-    topics.sort(
-        key=lambda topic: (
-            weak_topics.get(topic, weak_topics.get(topic.casefold(), 1.0)),
-            topic.casefold(),
-        )
-    )
-
-    desired_difficulty = {
-        AdaptiveLevel.beginner: DifficultyLevel.beginner,
-        AdaptiveLevel.intermediate: DifficultyLevel.intermediate,
-        AdaptiveLevel.expert: DifficultyLevel.advanced,
-    }[level]
-
-    all_blocked_fingerprints = seen_fingerprints | reserved_fingerprints | session_seen_fingerprints
-    prompt_seen = list(all_blocked_fingerprints)[-30:]
-
-    prepared: list[Question] = []
-    col = get_collection(user.tenant_id, QUESTION_QUEUE)
-
-    attempt_budget = max(len(topics), generation_target * 2)
-    for attempt in range(attempt_budget):
-        if len(prepared) >= generation_target:
-            break
-        topic = topics[attempt % len(topics)]
-        needed = generation_target - len(prepared)
-        try:
-            chunks = await _current_grounding_chunks(
-                tenant_id=user.tenant_id,
-                workspace_id=workspace_id,
-                topic=topic,
-                current_document_ids=current_sources.document_ids,
-            )
-            if not chunks:
-                continue
-
-            document_id = chunks[0].document_id
-            source_chunk_ids = [c.chunk_id for c in chunks]
-
-            batch_count = min(needed + 1, 5)
-            generated_list = await question_generation.generate_batch_questions(
-                topic=topic,
-                difficulty=desired_difficulty,
-                count=batch_count,
-                grounding_chunks=chunks,
-                seen_question_bodies=prompt_seen,
-            )
-
-            for gq in generated_list:
-                if len(prepared) >= generation_target:
-                    break
-                fp = _question_fingerprint(gq.body)
-                if not revision and fp in all_blocked_fingerprints:
-                    continue
-
-                review = await question_safety.review_question(gq)
-                if review.verdict != question_safety.ReviewVerdict.approved:
-                    continue
-
-                all_blocked_fingerprints.add(fp)
-                prompt_seen.append(gq.body)
-
-                question_id = f"qst_{uuid4().hex}"
-                q_model = Question(
-                    **{"_id": question_id},
-                    tenant_id=user.tenant_id,
-                    workspace_id=workspace_id,
-                    document_id=document_id,
-                    topic=topic,
-                    question_type=gq.question_type,
-                    difficulty=gq.difficulty,
-                    body=gq.body,
-                    options=gq.options,
-                    answer=gq.answer,
-                    explanation=gq.explanation,
-                    grading_hints=gq.grading_hints,
-                    source_chunk_ids=source_chunk_ids,
-                    prompt_version=gq.prompt_version,
-                    status=QuestionStatus.approved,
-                )
-                await col.insert_one(q_model.model_dump(by_alias=True))
-                prepared.append(q_model)
-
-        except Exception:
-            logger.exception(
-                "Direct fresh question generation failed workspace=%s topic=%s",
-                workspace_id,
-                topic,
-            )
-
-    return prepared
-
-
 async def _prepare_questions(
     *,
     user: User,
@@ -624,6 +553,9 @@ async def _prepare_questions(
     target: int,
     level: AdaptiveLevel,
     revision: bool,
+    subject: str | None = None,
+    subcategory: str | None = None,
+    question_type: QuestionType | None = None,
 ) -> list[PreparedQuestion]:
     current_sources = await study_sources.current_study_sources(
         tenant_id=user.tenant_id,
@@ -643,7 +575,7 @@ async def _prepare_questions(
     seen_ids = {str(row.get("question_id")) for row in interactions}
     # Also add IDs from past session plans that may not have been answered
     # (e.g., student exited or timed out). Fixes Bug 6 — no cross-session repeats.
-    session_seen_ids, session_seen_fingerprints = await _question_session_history(
+    session_seen_ids, session_seen_fingerprints, session_seen_bodies = await _question_session_history(
         tenant_id=user.tenant_id,
         workspace_id=workspace_id,
         student_id=user.id,
@@ -654,58 +586,90 @@ async def _prepare_questions(
         workspace_id=workspace_id,
         student_id=user.id,
     )
-    wrong_order = {
-        str(row.get("question_id")): index
-        for index, row in enumerate(interactions)
-        if not row.get("is_correct", False)
-    }
-    weak_order = {
-        topic.casefold(): index
-        for index, (topic, _) in enumerate(sorted(weak_topics.items(), key=lambda pair: pair[1]))
-    }
-    desired_difficulty = {
-        AdaptiveLevel.beginner: DifficultyLevel.beginner.value,
-        AdaptiveLevel.intermediate: DifficultyLevel.intermediate.value,
-        AdaptiveLevel.expert: DifficultyLevel.advanced.value,
-    }[level]
 
-    cursor = get_collection(user.tenant_id, QUESTION_QUEUE).find(
-        {
-            "workspace_id": workspace_id,
-            "status": QuestionStatus.approved.value,
-            "deleted_at": None,
-        }
-    )
-    raw_questions = await cursor.to_list(length=1000)
+    weak_order = {topic.casefold(): i for i, topic in enumerate(weak_topics)}
 
-    def priority(row: dict) -> tuple[int, int, int, int, str]:
-        question_id = str(row.get("_id", ""))
-        difficulty_penalty = 0 if row.get("difficulty") == desired_difficulty else 1
-        if revision:
-            return (
-                0 if question_id in wrong_order else 1,
-                wrong_order.get(question_id, 10_000),
-                weak_order.get(str(row.get("topic", "")).casefold(), 10_000),
-                difficulty_penalty,
-                question_id,
-            )
-        return (
-            0 if question_id not in seen_ids else 1,
-            difficulty_penalty,
-            int(row.get("times_served", 0)),
-            0,
-            question_id,
+    col = get_collection(user.tenant_id, QUESTION_QUEUE)
+    q_query: dict[str, Any] = {
+        "workspace_id": workspace_id,
+        "status": QuestionStatus.approved.value,
+        "deleted_at": None,
+    }
+    if current_sources.document_ids:
+        q_query["document_id"] = {"$in": sorted(current_sources.document_ids)}
+    cursor = col.find(q_query)
+    all_raw = await cosmos_retry(lambda: cursor.to_list(length=600))
+
+    # Weakest topics first, with stable secondary sort by id
+    all_raw.sort(
+        key=lambda row: (
+            weak_order.get(str(row.get("topic", "")).casefold(), 10_000),
+            str(row.get("_id", "")),
         )
+    )
 
-    raw_questions.sort(key=priority)
     available: list[Question] = []
-    for raw in raw_questions:
+    for raw in all_raw:
         try:
             question = Question.model_validate(raw)
             if question.document_id in current_sources.document_ids:
                 available.append(question)
         except Exception:
             logger.warning("Skipping malformed queued question id=%s", raw.get("_id"))
+
+    doc_subjects: dict[str, str] = {}
+    doc_subcats: dict[str, set[str]] = {}
+    if subject or subcategory:
+        doc_col = get_collection(user.tenant_id, DOCUMENTS)
+        doc_cursor = doc_col.find(
+            {"_id": {"$in": list(current_sources.document_ids)}},
+            {"filename": 1, "topic_tags": 1, "category": 1, "subcategory": 1},
+        )
+        async for doc_raw in doc_cursor:
+            fn = doc_raw.get("filename", "")
+            cat = doc_raw.get("category")
+            subcat = doc_raw.get("subcategory")
+            tags: set[str] = set()
+            if subcat:
+                tags.add(str(subcat).casefold())
+            for tag in doc_raw.get("topic_tags") or []:
+                tag_name = tag.get("name") if isinstance(tag, dict) else str(tag)
+                tags.add(str(tag_name).casefold())
+            doc_subcats[str(doc_raw["_id"])] = tags
+
+            s = cat or classify_subject_from_text(fn)
+            if not s or s.casefold() == "study":
+                for tag_name in tags:
+                    ts = classify_subject_from_text(tag_name)
+                    if subject and ts.casefold() == subject.casefold():
+                        s = subject
+                        break
+            doc_subjects[str(doc_raw["_id"])] = s or ""
+
+        if subject:
+            def matches_subject(q: Question) -> bool:
+                return (
+                    classify_subject_from_text(q.topic).casefold() == subject.casefold()
+                    or doc_subjects.get(q.document_id, "").casefold() == subject.casefold()
+                )
+
+            available = [q for q in available if matches_subject(q)]
+
+        if subcategory:
+            subcat_clean = subcategory.strip().casefold()
+            sub_terms = set(re.findall(r"[a-z0-9]+", subcat_clean))
+
+            def matches_subcat(q: Question) -> bool:
+                q_top = q.topic.strip().casefold()
+                if subcat_clean in q_top or q_top in subcat_clean:
+                    return True
+                q_terms = set(re.findall(r"[a-z0-9]+", q_top))
+                return bool(sub_terms and len(sub_terms & q_terms) >= max(1, len(sub_terms) // 2))
+
+            available = [q for q in available if matches_subcat(q)]
+
+    if question_type:
+        available = [q for q in available if q.question_type == question_type]
 
     # Combine fingerprints from answer history AND session plan history (Bug 6 fix)
     seen_fingerprints = session_seen_fingerprints | {
@@ -715,6 +679,12 @@ async def _prepare_questions(
     # A normal study session is fresh-only. Previously answered questions and
     # questions delivered in prior session plans (even unanswered) and questions
     # allocated to another unfinished session are not eligible.
+    if _is_self_study(workspace_id):
+        target = 5
+
+    # In self-study workspace, always generate all 5 questions freshly for every session.
+    is_fresh_self_study = _is_self_study(workspace_id) and not revision
+
     # Revision deliberately retains history so incorrect questions can be re-practiced.
     if revision:
         eligible = available
@@ -727,23 +697,36 @@ async def _prepare_questions(
             and _question_fingerprint(question.body) not in seen_fingerprints
             and _question_fingerprint(question.body) not in reserved_fingerprints
         ]
+        if not eligible and available and not _is_self_study(workspace_id) and not subcategory and not question_type:
+            eligible = available
 
     selected = _unique_questions(eligible)[:target]
     missing = target - len(selected)
-    if missing > 0:
+    should_generate = missing > 0 and (subcategory or question_type or len(selected) < 2 or _is_self_study(workspace_id))
+    if should_generate:
+        # In self-study workspace, grant sufficient generation time (60s) for the
+        # LLM to extract from grounding chunks and generate high quality questions freshly.
+        gen_timeout = 60.0 if _is_self_study(workspace_id) else (15.0 if (subcategory or question_type) else 5.0)
+        gen_batch = missing if _is_self_study(workspace_id) else (min(missing, 3) if (subcategory or question_type) else min(missing, 2))
         try:
-            generated = await question_pipeline._generate_and_persist_batch(
-                tenant_id=user.tenant_id,
-                workspace_id=workspace_id,
-                student_id=user.id,
-                user_obj=user,
-                revision=revision,
-                batch_size=missing,
+            generated = await asyncio.wait_for(
+                question_pipeline._generate_and_persist_batch(
+                    tenant_id=user.tenant_id,
+                    workspace_id=workspace_id,
+                    student_id=user.id,
+                    user_obj=user,
+                    revision=revision,
+                    subject=subject,
+                    target_topic=subcategory,
+                    target_type=question_type,
+                    batch_size=gen_batch,
+                    extra_seen_bodies=session_seen_bodies,
+                ),
+                timeout=gen_timeout,
             )
-            # Generation is also filtered against interaction/reservation
-            # history. This is defensive: the generator normally creates new
-            # IDs, but callers must enforce the session contract themselves.
             if not revision:
+                # Filter only for integrity and historical uniqueness — do not discard
+                # freshly generated items with naive topic text heuristics
                 generated = [
                     question
                     for question in generated
@@ -753,37 +736,53 @@ async def _prepare_questions(
                     and _question_fingerprint(question.body) not in seen_fingerprints
                     and _question_fingerprint(question.body) not in reserved_fingerprints
                     and _question_fingerprint(question.body) not in session_seen_fingerprints
+                    and (not question_type or question.question_type == question_type)
                 ]
+            else:
+                if question_type:
+                    generated = [q for q in generated if q.question_type == question_type]
             selected = _unique_questions([*selected, *generated])[:target]
+            if len(selected) < target and not revision:
+                try:
+                    topup_needed = target - len(selected)
+                    topup_generated = await asyncio.wait_for(
+                        question_pipeline._generate_and_persist_batch(
+                            tenant_id=user.tenant_id,
+                            workspace_id=workspace_id,
+                            current_sources=current_sources,
+                            candidate_topics=[],
+                            student_id=user.id,
+                            user_obj=user,
+                            revision=revision,
+                            subject=subject,
+                            target_topic=subcategory,
+                            target_type=question_type,
+                            batch_size=max(topup_needed + 3, 5),
+                            extra_seen_bodies=[*session_seen_bodies, *(q.body for q in selected)],
+                        ),
+                        timeout=15.0,
+                    )
+                    topup_clean = [
+                        q for q in topup_generated
+                        if q.document_id in current_sources.document_ids
+                        and q.id not in seen_ids
+                        and q.id not in reserved_ids
+                        and _question_fingerprint(q.body) not in seen_fingerprints
+                        and _question_fingerprint(q.body) not in session_seen_fingerprints
+                        and (not question_type or q.question_type == question_type)
+                    ]
+                    selected = _unique_questions([*selected, *topup_clean])[:target]
+                except Exception:
+                    logger.debug("Top-up question generation skipped")
+        except TimeoutError:
+            logger.info("Synchronous question generation timed out; serving fast available questions")
         except Exception:
             logger.exception("Adaptive session batch generation failed")
 
-    # If still missing questions after batch generation attempt, generate directly from source chunks
-    missing_after_batch = target - len(selected)
-    if missing_after_batch > 0:
-        try:
-            fresh = await _generate_fresh_questions(
-                user=user,
-                workspace_id=workspace_id,
-                target=missing_after_batch,
-                level=level,
-                current_sources=current_sources,
-                weak_topics=weak_topics,
-                seen_ids=seen_ids,
-                reserved_ids=reserved_ids,
-                seen_fingerprints=seen_fingerprints,
-                reserved_fingerprints=reserved_fingerprints,
-                session_seen_fingerprints=session_seen_fingerprints,
-                revision=revision,
-            )
-            selected = _unique_questions([*selected, *fresh])[:target]
-        except Exception:
-            logger.exception("Direct fresh question generation fallback failed")
-
     if not selected:
-        if available:
+        if available and not _is_self_study(workspace_id):
             selected = available[:target]
-        else:
+        elif not _is_self_study(workspace_id):
             fb_plan = _build_guaranteed_fallback_plan(
                 workspace_id=workspace_id,
                 user_id=user.id,
@@ -791,8 +790,14 @@ async def _prepare_questions(
                 mode=AdaptiveSessionMode.study,
                 level=level,
                 mastery=0.0,
+                subject=subject,
+                subcategory=subcategory,
             )
             return fb_plan.questions
+        else:
+            raise ServiceUnavailableError(
+                "Your study questions are being prepared from your study material. Please retry in a moment."
+            )
 
     return [
         PreparedQuestion(
@@ -812,7 +817,7 @@ async def _prepare_questions(
     ]
 
 
-async def _generate_fresh_flashcards(
+async def _generate_flashcard_batch(
     *,
     user: User,
     workspace_id: str,
@@ -822,13 +827,36 @@ async def _generate_fresh_flashcards(
     weak_topics: dict[str, float],
     historical_fronts: list[str],
     blocked_fingerprints: set[str],
+    subject: str | None = None,
+    subcategory: str | None = None,
 ) -> list[PreparedFlashcard]:
-    """Generate a bounded batch from current source chunks."""
+    """Generate a bounded flashcard batch from current source chunks in parallel.
+
+    The single-card generator (:func:`flashcard_generation.generate_flashcard`)
+    is fired concurrently across the weakest topics rather than sequentially so
+    a cold self-study pool fills in one round-trip's worth of wall-clock time
+    instead of ``target`` serial GPT-4o calls. Concurrent calls can't see each
+    other's output, so duplicates are removed by fingerprint after the fan-out.
+    """
     generation_target = min(target, _MAX_GENERATED_FLASHCARDS_PER_PREPARE)
     if generation_target <= 0 or not current_sources.document_ids:
         return []
 
     topics = list(current_sources.topic_names) or ["key concepts"]
+    if subcategory:
+        matching_sub = [
+            t for t in topics
+            if subcategory.strip().casefold() in t.casefold() or t.casefold() in subcategory.strip().casefold()
+        ]
+        topics = matching_sub or [subcategory]
+    elif subject:
+        subject_topics = [
+            t for t in topics
+            if classify_subject_from_text(t).casefold() == subject.casefold()
+        ]
+        if subject_topics:
+            topics = subject_topics
+
     topics.sort(
         key=lambda topic: (
             weak_topics.get(topic, weak_topics.get(topic.casefold(), 1.0)),
@@ -836,65 +864,149 @@ async def _generate_fresh_flashcards(
         )
     )
     prompt_fronts = list(dict.fromkeys(historical_fronts))[-30:]
-    fingerprints = set(blocked_fingerprints)
-    prepared: list[PreparedFlashcard] = []
-    attempt_budget = max(len(topics), generation_target * 3)
 
-    for attempt in range(attempt_budget):
-        if len(prepared) >= generation_target:
-            break
-        topic = topics[attempt % len(topics)]
-        try:
-            chunks = await _current_grounding_chunks(
+    # Round-robin the target across the weakest topics, then fetch each distinct
+    # topic's grounding once and reuse it for every slot that lands on it.
+    slot_topics = [topics[index % len(topics)] for index in range(generation_target)]
+    distinct_topics = list(dict.fromkeys(slot_topics))
+    chunk_results = await asyncio.gather(
+        *(
+            _current_grounding_chunks(
                 tenant_id=user.tenant_id,
                 workspace_id=workspace_id,
                 topic=topic,
                 current_document_ids=current_sources.document_ids,
             )
-            generated = await flashcard_generation.generate_flashcard(
-                topic=topic,
-                grounding_chunks=chunks,
+            for topic in distinct_topics
+        ),
+        return_exceptions=True,
+    )
+    chunks_by_topic: dict[str, list[RetrievedChunk]] = {}
+    for topic, result in zip(distinct_topics, chunk_results, strict=True):
+        chunks_by_topic[topic] = [] if isinstance(result, BaseException) else result
+
+    # 1. Fast single-call batch generation (reduces 5 parallel calls to 1 fast 4-6s call)
+    fingerprints = set(blocked_fingerprints)
+    prepared: list[PreparedFlashcard] = []
+    primary_topic = distinct_topics[0] if distinct_topics else (subcategory or "key concepts")
+    grounding = chunks_by_topic.get(primary_topic) or []
+    if not grounding and chunk_results:
+        for r in chunk_results:
+            if isinstance(r, list) and r:
+                grounding = r
+                break
+
+    if grounding:
+        try:
+            batch_cards = await flashcard_generation.generate_batch_flashcards(
+                topic=primary_topic,
+                count=generation_target + 2,
+                grounding_chunks=grounding,
                 seen_card_fronts=prompt_fronts,
                 mastery_tier=level.value,
             )
-            fingerprint = _flashcard_fingerprint(generated.front, generated.back)
-            prompt_fronts.append(generated.front)
-            if fingerprint in fingerprints:
-                logger.info(
-                    "Discarding duplicate generated flashcard workspace=%s topic=%s",
-                    workspace_id,
-                    topic,
+            for card in batch_cards:
+                fp = _flashcard_fingerprint(card.front, card.back)
+                if fp in fingerprints:
+                    continue
+                fingerprints.add(fp)
+                flashcard_id = f"fls_{uuid4().hex}"
+                flashcard_obj = Flashcard(
+                    **{"_id": flashcard_id},
+                    tenant_id=user.tenant_id,
+                    workspace_id=workspace_id,
+                    document_id=grounding[0].document_id,
+                    topic=primary_topic,
+                    front=card.front,
+                    back=card.back,
+                    explanation=card.explanation,
+                    source_chunk_ids=[c.chunk_id for c in grounding],
+                    prompt_version=card.prompt_version,
                 )
-                continue
-            fingerprints.add(fingerprint)
+                await get_collection(user.tenant_id, FLASHCARDS).insert_one(
+                    flashcard_obj.model_dump(by_alias=True)
+                )
+                prepared.append(
+                    PreparedFlashcard(
+                        id=flashcard_id,
+                        topic=primary_topic,
+                        front=card.front,
+                        back=card.back,
+                        explanation=card.explanation,
+                    )
+                )
+                if len(prepared) >= generation_target:
+                    return prepared
+        except Exception as e:
+            logger.warning("Fast batch flashcard generation failed, falling back: %s", e)
 
-            verdict = await flashcards_api._review(generated)
+    # 2. Fallback: individual slot generation if batch returned fewer cards
+    gen_slots = [topic for topic in slot_topics if chunks_by_topic.get(topic)]
+    _fc_sem = asyncio.Semaphore(2)
+
+    async def _gen_with_sem(topic: str) -> Any:
+        async with _fc_sem:
+            return await flashcard_generation.generate_flashcard(
+                topic=topic,
+                grounding_chunks=chunks_by_topic[topic],
+                seen_card_fronts=prompt_fronts,
+                mastery_tier=level.value,
+            )
+
+    generated = await asyncio.gather(
+        *(_gen_with_sem(topic) for topic in gen_slots),
+        return_exceptions=True,
+    )
+    for topic, result in zip(gen_slots, generated, strict=True):
+        if len(prepared) >= generation_target:
+            break
+        if isinstance(result, BaseException):
+            logger.info(
+                "Flashcard generation slot failed workspace=%s topic=%s: %s",
+                workspace_id,
+                topic,
+                result,
+            )
+            continue
+        fingerprint = _flashcard_fingerprint(result.front, result.back)
+        if fingerprint in fingerprints:
+            logger.info(
+                "Discarding duplicate generated flashcard workspace=%s topic=%s",
+                workspace_id,
+                topic,
+            )
+            continue
+        fingerprints.add(fingerprint)
+        try:
+            chunks = chunks_by_topic[topic]
+            verdict = await flashcards_api._review(result)
             card = await flashcards_api._persist_grounded_flashcard(
                 current_user=user,
                 workspace_id=workspace_id,
                 topic_name=topic,
                 document_id=chunks[0].document_id,
                 source_chunk_ids=[chunk.chunk_id for chunk in chunks],
-                generated=generated,
+                generated=result,
                 verdict=verdict,
-            )
-            if card.status != FlashcardStatus.approved:
-                continue
-            prepared.append(
-                PreparedFlashcard(
-                    id=card.id,
-                    topic=card.topic,
-                    front=card.front,
-                    back=card.back,
-                    explanation=card.explanation,
-                )
             )
         except Exception:
             logger.exception(
-                "Fresh flashcard generation failed workspace=%s topic=%s",
+                "Flashcard review/persist failed workspace=%s topic=%s",
                 workspace_id,
                 topic,
             )
+            continue
+        if card.status != FlashcardStatus.approved:
+            continue
+        prepared.append(
+            PreparedFlashcard(
+                id=card.id,
+                topic=card.topic,
+                front=card.front,
+                back=card.back,
+                explanation=card.explanation,
+            )
+        )
     return prepared
 
 
@@ -904,8 +1016,9 @@ async def _prepare_flashcards(
     workspace_id: str,
     target: int,
     level: AdaptiveLevel = AdaptiveLevel.beginner,
+    subject: str | None = None,
+    subcategory: str | None = None,
 ) -> list[PreparedFlashcard]:
-    is_personal_workspace = workspace_id.startswith("wsp_self_")
     _, weak_topics = await _history(
         tenant_id=user.tenant_id,
         workspace_id=workspace_id,
@@ -934,14 +1047,15 @@ async def _prepare_flashcards(
             "No ready study material is available for flashcards. Wait for the latest "
             "source to finish processing, then try again."
         )
-    cursor = get_collection(user.tenant_id, FLASHCARDS).find(
-        {
-            "workspace_id": workspace_id,
-            "status": FlashcardStatus.approved.value,
-            "deleted_at": None,
-        }
-    )
-    raw_cards = await cursor.to_list(length=1000)
+    fc_query: dict[str, Any] = {
+        "workspace_id": workspace_id,
+        "status": FlashcardStatus.approved.value,
+        "deleted_at": None,
+    }
+    if current_sources.document_ids:
+        fc_query["document_id"] = {"$in": sorted(current_sources.document_ids)}
+    cursor = get_collection(user.tenant_id, FLASHCARDS).find(fc_query)
+    raw_cards = await cosmos_retry(lambda: cursor.to_list(length=600))
     raw_cards.sort(
         key=lambda row: (
             weak_order.get(str(row.get("topic", "")).casefold(), 10_000),
@@ -950,6 +1064,7 @@ async def _prepare_flashcards(
         )
     )
     available_cards: list[PreparedFlashcard] = []
+    card_doc_ids: dict[str, str] = {}
     all_existing_fingerprints: set[str] = set()
     for raw in raw_cards:
         try:
@@ -959,6 +1074,7 @@ async def _prepare_flashcards(
         all_existing_fingerprints.add(_flashcard_fingerprint(card.front, card.back))
         if card.document_id not in current_sources.document_ids:
             continue
+        card_doc_ids[card.id] = card.document_id
         available_cards.append(
             PreparedFlashcard(
                 id=card.id,
@@ -969,6 +1085,60 @@ async def _prepare_flashcards(
             )
         )
 
+    doc_subjects: dict[str, str] = {}
+    doc_subcats: dict[str, set[str]] = {}
+    if subject or subcategory:
+        doc_col = get_collection(user.tenant_id, DOCUMENTS)
+        doc_cursor = doc_col.find(
+            {"_id": {"$in": list(current_sources.document_ids)}},
+            {"filename": 1, "topic_tags": 1, "category": 1, "subcategory": 1},
+        )
+        async for doc_raw in doc_cursor:
+            fn = doc_raw.get("filename", "")
+            cat = doc_raw.get("category")
+            subcat = doc_raw.get("subcategory")
+            tags: set[str] = set()
+            if subcat:
+                tags.add(str(subcat).casefold())
+            for tag in doc_raw.get("topic_tags") or []:
+                tag_name = tag.get("name") if isinstance(tag, dict) else str(tag)
+                tags.add(str(tag_name).casefold())
+            doc_subcats[str(doc_raw["_id"])] = tags
+
+            s = cat or classify_subject_from_text(fn)
+            if not s or s.casefold() == "study":
+                for tag_name in tags:
+                    ts = classify_subject_from_text(tag_name)
+                    if subject and ts.casefold() == subject.casefold():
+                        s = subject
+                        break
+            doc_subjects[str(doc_raw["_id"])] = s or ""
+
+        if subject:
+            def matches_card_subject(c: PreparedFlashcard) -> bool:
+                return (
+                    classify_subject_from_text(c.topic).casefold() == subject.casefold()
+                    or doc_subjects.get(card_doc_ids.get(c.id, ""), "").casefold() == subject.casefold()
+                )
+
+            available_cards = [c for c in available_cards if matches_card_subject(c)]
+
+        if subcategory:
+            subcat_clean = subcategory.strip().casefold()
+            sub_terms = set(re.findall(r"[a-z0-9]+", subcat_clean))
+
+            def matches_card_subcat(c: PreparedFlashcard) -> bool:
+                c_top = c.topic.strip().casefold()
+                if subcat_clean in c_top or c_top in subcat_clean:
+                    return True
+                c_terms = set(re.findall(r"[a-z0-9]+", c_top))
+                return bool(sub_terms and len(sub_terms & c_terms) >= max(1, len(sub_terms) // 2))
+
+            available_cards = [c for c in available_cards if matches_card_subcat(c)]
+
+    if _is_self_study(workspace_id):
+        target = 5
+
     seen_fingerprints = historical_fingerprints | {
         _flashcard_fingerprint(card.front, card.back)
         for card in available_cards
@@ -976,48 +1146,42 @@ async def _prepare_flashcards(
     }
     historical_fronts.extend(card.front for card in available_cards if card.id in seen_ids)
 
-    # For all workspaces (including personal/self-study): prefer unseen cards first.
-    # Personal workspaces allow spaced-repetition cycling — once all cards have
-    # been shown at least once, the pool is reopened so cards repeat in order.
-    # This prevents the same few cards appearing every single session.
-    unseen_cards = _unique_flashcards(
-        card
-        for card in available_cards
-        if card.id not in seen_ids
-        and card.id not in reserved_ids
-        and _flashcard_fingerprint(card.front, card.back) not in seen_fingerprints
-        and _flashcard_fingerprint(card.front, card.back) not in reserved_fingerprints
-    )
-    if len(unseen_cards) >= target:
-        return unseen_cards[:target]
-
-    # Fallback: not enough unseen cards — cycle through seen ones for personal
-    # workspaces (spaced repetition), or just return what we have for regular ones.
-    if is_personal_workspace and len(unseen_cards) < target:
-        seen_cards = _unique_flashcards(
+    # Every session shows only cards the learner has never seen. A flashcard
+    # that appeared in any prior session (self-study or otherwise) is excluded
+    # here so sessions never repeat content. When unseen cards run short we top
+    # up with source-derived and freshly generated cards rather than recycling
+    # what the learner has already studied.
+    is_fresh_self_study_fc = _is_self_study(workspace_id) and bool(subcategory or subject)
+    if is_fresh_self_study_fc:
+        unseen_cards = []
+    else:
+        unseen_cards = _unique_flashcards(
             card
             for card in available_cards
-            if card.id not in reserved_ids
+            if card.id not in seen_ids
+            and card.id not in reserved_ids
+            and _flashcard_fingerprint(card.front, card.back) not in seen_fingerprints
             and _flashcard_fingerprint(card.front, card.back) not in reserved_fingerprints
-            and card not in unseen_cards
         )
-        cards = _unique_flashcards([*unseen_cards, *seen_cards])[:target]
-    else:
-        cards = unseen_cards
+        if not unseen_cards and available_cards and not subcategory:
+            unseen_cards = available_cards
 
-    if len(cards) >= target:
-        return cards
+    if len(unseen_cards) >= target and not is_fresh_self_study_fc:
+        return unseen_cards[:target]
+
+    cards = unseen_cards if not is_fresh_self_study_fc else []
 
     # Approved questions are valid source-backed recall cards and let a new
     # learner receive a full flashcard session without a chain of AI calls.
-    question_cursor = get_collection(user.tenant_id, QUESTION_QUEUE).find(
-        {
-            "workspace_id": workspace_id,
-            "status": QuestionStatus.approved.value,
-            "deleted_at": None,
-        }
-    )
-    question_rows = await question_cursor.to_list(length=1000)
+    q_fc_query: dict[str, Any] = {
+        "workspace_id": workspace_id,
+        "status": QuestionStatus.approved.value,
+        "deleted_at": None,
+    }
+    if current_sources.document_ids:
+        q_fc_query["document_id"] = {"$in": sorted(current_sources.document_ids)}
+    question_cursor = get_collection(user.tenant_id, QUESTION_QUEUE).find(q_fc_query)
+    question_rows = await cosmos_retry(lambda: question_cursor.to_list(length=600))
     question_rows.sort(
         key=lambda row: (
             weak_order.get(str(row.get("topic", "")).casefold(), 10_000),
@@ -1032,6 +1196,20 @@ async def _prepare_flashcards(
             continue
         if question.document_id not in current_sources.document_ids:
             continue
+        if subject:
+            if (
+                classify_subject_from_text(question.topic).casefold() != subject.casefold()
+                and doc_subjects.get(question.document_id, "").casefold() != subject.casefold()
+            ):
+                continue
+        if subcategory:
+            subcat_clean = subcategory.strip().casefold()
+            if (
+                subcat_clean not in question.topic.casefold()
+                and question.topic.casefold() not in subcat_clean
+                and not any(subcat_clean in dt for dt in doc_subcats.get(question.document_id, set()))
+            ):
+                continue
         derived_id = f"derived_{question.id}"
         answer = question.answer
         for option in question.options:
@@ -1041,9 +1219,9 @@ async def _prepare_flashcards(
         fingerprint = _flashcard_fingerprint(question.body, answer)
         if (
             derived_id in existing_ids
-            or (not is_personal_workspace and derived_id in seen_ids)
+            or derived_id in seen_ids
             or derived_id in reserved_ids
-            or (not is_personal_workspace and fingerprint in seen_fingerprints)
+            or fingerprint in seen_fingerprints
             or fingerprint in reserved_fingerprints
         ):
             continue
@@ -1063,30 +1241,47 @@ async def _prepare_flashcards(
             break
 
     missing = target - len(cards)
-    if missing > 0:
-        generated_cards = await _generate_fresh_flashcards(
-            user=user,
-            workspace_id=workspace_id,
-            target=missing,
-            level=level,
-            current_sources=current_sources,
-            weak_topics=weak_topics,
-            historical_fronts=[*historical_fronts, *(card.front for card in cards)],
-            blocked_fingerprints=(
-                historical_fingerprints
-                | reserved_fingerprints
-                | all_existing_fingerprints
-                | {_flashcard_fingerprint(card.front, card.back) for card in cards}
-            ),
-        )
-        cards.extend(generated_cards)
+    # When subcategory is provided, always attempt generation if any cards are
+    # missing — the student explicitly chose this topic. Without a subcategory,
+    # only generate synchronously when fewer than 2 cards are ready.
+    should_gen_fc = missing > 0 and (subcategory or len(cards) < 2 or _is_self_study(workspace_id))
+    if should_gen_fc:
+        # In self-study workspace, allow 60s for LLM generation of cards
+        gen_fc_timeout = 60.0 if _is_self_study(workspace_id) else (15.0 if subcategory else 5.0)
+        gen_fc_batch = missing if _is_self_study(workspace_id) else (min(missing, 3) if subcategory else min(missing, 2))
+        try:
+            generated_cards = await asyncio.wait_for(
+                _generate_flashcard_batch(
+                    user=user,
+                    workspace_id=workspace_id,
+                    target=gen_fc_batch,
+                    level=level,
+                    current_sources=current_sources,
+                    weak_topics=weak_topics,
+                    historical_fronts=[*historical_fronts, *(card.front for card in cards)],
+                    blocked_fingerprints=(
+                        historical_fingerprints
+                        | reserved_fingerprints
+                        | all_existing_fingerprints
+                        | {_flashcard_fingerprint(card.front, card.back) for card in cards}
+                    ),
+                    subject=subject,
+                    subcategory=subcategory,
+                ),
+                timeout=gen_fc_timeout,
+            )
+            cards.extend(generated_cards)
+        except TimeoutError:
+            logger.info("Synchronous flashcard generation timed out; serving fast available cards")
+        except Exception:
+            logger.exception("Adaptive session flashcard generation failed")
 
     selected = _unique_flashcards(cards)[:target]
 
     if not selected:
-        if available_cards:
+        if available_cards and not _is_self_study(workspace_id):
             selected = available_cards[:target]
-        else:
+        elif not _is_self_study(workspace_id):
             fb_plan = _build_guaranteed_fallback_plan(
                 workspace_id=workspace_id,
                 user_id=user.id,
@@ -1094,8 +1289,24 @@ async def _prepare_flashcards(
                 mode=AdaptiveSessionMode.flashcard,
                 level=level,
                 mastery=0.0,
+                subject=subject,
+                subcategory=subcategory,
             )
             return fb_plan.flashcards
+        else:
+            unseen = [
+                c for c in available_cards
+                if c.id not in seen_ids
+                and _flashcard_fingerprint(c.front, c.back) not in seen_fingerprints
+            ]
+            if unseen:
+                import random
+                random.shuffle(unseen)
+                selected = unseen[:target]
+            else:
+                raise ServiceUnavailableError(
+                    "Your flashcards are being prepared from your study material. Please retry in a moment."
+                )
     return selected
 
 
@@ -1107,81 +1318,360 @@ def _build_guaranteed_fallback_plan(
     mode: AdaptiveSessionMode,
     level: AdaptiveLevel,
     mastery: float,
+    subject: str | None = None,
+    subcategory: str | None = None,
 ) -> AdaptiveSessionPlan:
     session_id = f"ses_{uuid4().hex}"
+    subj = (subject or "").strip().lower()
+
     if mode == AdaptiveSessionMode.flashcard:
-        flashcards = [
-            PreparedFlashcard(
-                id=f"fls_fb_{i+1}",
-                topic="Core Concepts",
-                front=front_text,
-                back=back_text,
-                explanation=exp_text,
-            )
-            for i, (front_text, back_text, exp_text) in enumerate([
-                (
-                    "What is active recall?",
-                    "Testing yourself to actively retrieve information from memory.",
-                    "Active recall stimulates memory consolidation and long-term retention far better than passive re-reading.",
+        if subj in ("chemistry", "chem"):
+            flashcards = [
+                PreparedFlashcard(
+                    id=f"fls_chem_{uuid4().hex[:8]}",
+                    topic="Atomic Structure",
+                    front="What does the atomic number (Z) of an atom represent?",
+                    back="The number of protons in its nucleus.",
+                    explanation="Atomic number (Z) determines the identity of an element on the periodic table.",
                 ),
-                (
-                    "How does spaced repetition prevent forgetting?",
-                    "By reviewing concepts at systematically increasing time intervals.",
-                    "Spacing out review sessions interrupts the natural forgetting curve and cements knowledge.",
+                PreparedFlashcard(
+                    id=f"fls_chem_{uuid4().hex[:8]}",
+                    topic="Chemical Bonding",
+                    front="What is the key difference between an ionic bond and a covalent bond?",
+                    back="Ionic bonds involve transfer of electrons; covalent bonds involve sharing electrons.",
+                    explanation="Ionic bonds form between ions, covalent between atoms sharing electron pairs.",
                 ),
-                (
-                    "What is the best way to study from uploaded documents?",
-                    "Review summaries, practice generated questions, and test key terms.",
-                    "Interleaving questions with flashcards develops both concept recognition and deeper mastery.",
+                PreparedFlashcard(
+                    id=f"fls_chem_{uuid4().hex[:8]}",
+                    topic="Acids, Bases and pH",
+                    front="On the pH scale, how are acidic, neutral, and basic solutions classified?",
+                    back="pH < 7 is acidic, pH = 7 is neutral, and pH > 7 is basic.",
+                    explanation="pH measures hydrogen ion concentration as pH = -log[H+].",
                 ),
-            ])
-        ]
+                PreparedFlashcard(
+                    id=f"fls_chem_{uuid4().hex[:8]}",
+                    topic="Mole Concept",
+                    front="State the formula for calculating number of moles (n) from mass and molar mass.",
+                    back="n = mass / molar mass (n = m / M)",
+                    explanation="One mole contains Avogadro's number (6.022 × 10²³) of particles.",
+                ),
+            ]
+        elif subj in ("mathematics", "math", "maths", "algebra", "geometry", "calculus"):
+            flashcards = [
+                PreparedFlashcard(
+                    id=f"fls_math_{uuid4().hex[:8]}",
+                    topic="Quadratic Equations in Algebra",
+                    front="What is the quadratic formula to find the roots of ax² + bx + c = 0?",
+                    back="x = (-b ± √(b² - 4ac)) / (2a)",
+                    explanation="The term (b² - 4ac) is the discriminant determining real or complex roots.",
+                ),
+                PreparedFlashcard(
+                    id=f"fls_math_{uuid4().hex[:8]}",
+                    topic="Pythagorean Identity in Trigonometry",
+                    front="State the fundamental Pythagorean trigonometric identity.",
+                    back="sin²(θ) + cos²(θ) = 1",
+                    explanation="Derived directly from the Pythagorean theorem in a unit circle.",
+                ),
+                PreparedFlashcard(
+                    id=f"fls_math_{uuid4().hex[:8]}",
+                    topic="Linear Equations in Algebra",
+                    front="What is the general solution for x in ax + b = 0 (a ≠ 0)?",
+                    back="x = -b / a",
+                    explanation="Subtract b from both sides: ax = -b, then divide by a.",
+                ),
+                PreparedFlashcard(
+                    id=f"fls_math_{uuid4().hex[:8]}",
+                    topic="Derivative of Power Functions",
+                    front="What is the power rule for finding the derivative of f(x) = xⁿ?",
+                    back="f'(x) = n · xⁿ⁻¹",
+                    explanation="Multiply by the exponent and decrease the exponent by 1.",
+                ),
+            ]
+        elif subj in ("physics", "phys"):
+            flashcards = [
+                PreparedFlashcard(
+                    id=f"fls_phys_{uuid4().hex[:8]}",
+                    topic="Newton's Laws of Motion",
+                    front="State Newton's Second Law of Motion formula.",
+                    back="F = ma (Force = mass × acceleration)",
+                    explanation="The net force applied on a body equals mass times its acceleration.",
+                ),
+                PreparedFlashcard(
+                    id=f"fls_phys_{uuid4().hex[:8]}",
+                    topic="Electricity Basics",
+                    front="What is Ohm's Law equation relating voltage, current, and resistance?",
+                    back="V = I · R",
+                    explanation="Voltage (V) = Current (I) × Resistance (R).",
+                ),
+                PreparedFlashcard(
+                    id=f"fls_phys_{uuid4().hex[:8]}",
+                    topic="Wave Speed and Frequency",
+                    front="What is the equation relating wave speed, frequency, and wavelength?",
+                    back="v = f · λ",
+                    explanation="Wave speed equals frequency multiplied by wavelength.",
+                ),
+            ]
+        elif subj in ("biology", "bio"):
+            flashcards = [
+                PreparedFlashcard(
+                    id=f"fls_bio_{uuid4().hex[:8]}",
+                    topic="Foundations of Modern Biology",
+                    front="What is considered the basic structural and functional unit of all living organisms?",
+                    back="The cell.",
+                    explanation="Cell theory states that all living things are composed of one or more cells.",
+                ),
+                PreparedFlashcard(
+                    id=f"fls_bio_{uuid4().hex[:8]}",
+                    topic="Molecular Biology",
+                    front="What molecule stores the hereditary genetic instructions in living organisms?",
+                    back="DNA (Deoxyribonucleic acid).",
+                    explanation="DNA encodes genetic information for development and functioning.",
+                ),
+                PreparedFlashcard(
+                    id=f"fls_bio_{uuid4().hex[:8]}",
+                    topic="Photosynthesis",
+                    front="What is the primary organelle where photosynthesis occurs in plant cells?",
+                    back="The chloroplast.",
+                    explanation="Chloroplasts contain chlorophyll that captures light energy.",
+                ),
+            ]
+        else:
+            topic_name = f"{subject} Concepts" if subject else "Key Concepts"
+            flashcards = [
+                PreparedFlashcard(
+                    id=f"fls_gen_{uuid4().hex[:8]}",
+                    topic=topic_name,
+                    front=f"What is the foundational principle behind {subject or 'this topic'}?",
+                    back=f"Understanding fundamental definitions, relationships, and problem-solving patterns in {subject or 'the material'}.",
+                    explanation=f"Mastering core principles enables deep transfer and comprehension across {subject or 'the discipline'}.",
+                ),
+                PreparedFlashcard(
+                    id=f"fls_gen_{uuid4().hex[:8]}",
+                    topic=topic_name,
+                    front=f"How do key formulas and definitions connect across {subject or 'the curriculum'}?",
+                    back="They provide the structured vocabulary and quantitative tools to analyze real scenarios.",
+                    explanation="Connecting related concepts reinforces conceptual schemas in memory.",
+                ),
+            ]
         questions = []
         item_count = len(flashcards)
     else:
-        questions = [
-            PreparedQuestion(
-                id="qst_fb_1",
-                topic="Core Concepts",
-                question_type="mcq",
-                difficulty="beginner",
-                body="Which study technique is proven to produce the highest long-term retention?",
-                options=[
-                    PreparedOption(key="A", text="Active recall and spaced testing"),
-                    PreparedOption(key="B", text="Passive re-reading of notes"),
-                    PreparedOption(key="C", text="Cramming the night before an exam"),
-                    PreparedOption(key="D", text="Highlighting large text blocks"),
-                ],
-                answer="A",
-                explanation="Active recall forces the brain to retrieve information, strengthening neural pathways for long-term retention.",
-                grading_hints=[],
-            ),
-            PreparedQuestion(
-                id="qst_fb_2",
-                topic="Core Concepts",
-                question_type="true_false",
-                difficulty="beginner",
-                body="Practicing with varied question formats improves deeper conceptual understanding.",
-                options=[
-                    PreparedOption(key="true", text="True"),
-                    PreparedOption(key="false", text="False"),
-                ],
-                answer="true",
-                explanation="Testing across multiple question formats challenges your understanding from multiple cognitive angles.",
-                grading_hints=[],
-            ),
-            PreparedQuestion(
-                id="qst_fb_3",
-                topic="Core Concepts",
-                question_type="short_answer",
-                difficulty="beginner",
-                body="What is the main benefit of regular self-assessment during study sessions?",
-                options=[],
-                answer="Identifies knowledge gaps and reinforces key concepts",
-                explanation="Self-assessment immediately pinpoints areas needing review so you can focus study time efficiently.",
-                grading_hints=["identifies gaps", "reinforces concepts", "measures progress"],
-            ),
-        ]
+        # mode == study / revision
+        if subj in ("chemistry", "chem"):
+            questions = [
+                PreparedQuestion(
+                    id=f"qst_chem_{uuid4().hex[:8]}",
+                    topic="Atomic Structure",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="Which subatomic particle has no electrical charge?",
+                    options=[
+                        PreparedOption(key="A", text="Proton"),
+                        PreparedOption(key="B", text="Electron"),
+                        PreparedOption(key="C", text="Neutron"),
+                        PreparedOption(key="D", text="Positron"),
+                    ],
+                    answer="C",
+                    explanation="Neutrons are electrically neutral subatomic particles located in the atomic nucleus.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_chem_{uuid4().hex[:8]}",
+                    topic="Chemical Bonding",
+                    question_type="true_false",
+                    difficulty="beginner",
+                    body="In a covalent bond, electrons are shared between atoms, whereas an ionic bond involves transfer of electrons.",
+                    options=[
+                        PreparedOption(key="true", text="True"),
+                        PreparedOption(key="false", text="False"),
+                    ],
+                    answer="true",
+                    explanation="Ionic bonding involves electron transfer forming ions; covalent bonding involves sharing valence electrons.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_chem_{uuid4().hex[:8]}",
+                    topic="Acids, Bases and pH",
+                    question_type="short_answer",
+                    difficulty="beginner",
+                    body="According to the pH scale, an aqueous solution with a pH strictly less than 7 is classified as ________.",
+                    options=[],
+                    answer="acidic",
+                    explanation="Solutions with pH < 7 are acidic, pH = 7 is neutral, and pH > 7 is basic.",
+                    grading_hints=["acidic", "an acid"],
+                ),
+                PreparedQuestion(
+                    id=f"qst_chem_{uuid4().hex[:8]}",
+                    topic="Mole Concept",
+                    question_type="mcq",
+                    difficulty="intermediate",
+                    body="Which formula correctly computes the number of moles (n) of a chemical sample?",
+                    options=[
+                        PreparedOption(key="A", text="n = molar mass / mass"),
+                        PreparedOption(key="B", text="n = mass / molar mass"),
+                        PreparedOption(key="C", text="n = mass × Avogadro's number"),
+                        PreparedOption(key="D", text="n = molar mass × volume"),
+                    ],
+                    answer="B",
+                    explanation="Number of moles (n) = mass (g) / molar mass (g/mol).",
+                    grading_hints=[],
+                ),
+            ]
+        elif subj in ("mathematics", "math", "maths", "algebra", "geometry", "calculus"):
+            questions = [
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Linear Equations in Algebra",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="What is the solution for x in the general linear equation ax + b = 0 (where a ≠ 0)?",
+                    options=[
+                        PreparedOption(key="A", text="x = b / a"),
+                        PreparedOption(key="B", text="x = -b / a"),
+                        PreparedOption(key="C", text="x = -a / b"),
+                        PreparedOption(key="D", text="x = a / b"),
+                    ],
+                    answer="B",
+                    explanation="Subtracting b gives ax = -b, and dividing by a yields x = -b/a.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Pythagorean Identity in Trigonometry",
+                    question_type="true_false",
+                    difficulty="beginner",
+                    body="The fundamental Pythagorean trigonometric identity states that sin²(θ) + cos²(θ) = 1 for any angle θ.",
+                    options=[
+                        PreparedOption(key="true", text="True"),
+                        PreparedOption(key="false", text="False"),
+                    ],
+                    answer="true",
+                    explanation="In any right-angled triangle, (opposite/hypotenuse)² + (adjacent/hypotenuse)² = 1.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Quadratic Equations in Algebra",
+                    question_type="short_answer",
+                    difficulty="intermediate",
+                    body="In the quadratic formula for ax² + bx + c = 0, the discriminant is given by the expression ________.",
+                    options=[],
+                    answer="b^2 - 4ac",
+                    explanation="The discriminant D = b² - 4ac determines whether roots are real or complex.",
+                    grading_hints=["b^2 - 4ac", "b^2-4ac", "b squared minus 4ac"],
+                ),
+            ]
+        elif subj in ("physics", "phys"):
+            questions = [
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Newton's Laws of Motion",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="Which property of a body causes it to resist changes in its state of rest or uniform motion?",
+                    options=[
+                        PreparedOption(key="A", text="Friction"),
+                        PreparedOption(key="B", text="Inertia"),
+                        PreparedOption(key="C", text="Gravity"),
+                        PreparedOption(key="D", text="Momentum"),
+                    ],
+                    answer="B",
+                    explanation="Inertia is the inherent tendency of an object to resist changes in its state of motion.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Electricity Basics",
+                    question_type="true_false",
+                    difficulty="beginner",
+                    body="Ohm's Law states that electric current through a conductor is directly proportional to voltage, provided temperature remains constant (V = IR).",
+                    options=[
+                        PreparedOption(key="true", text="True"),
+                        PreparedOption(key="false", text="False"),
+                    ],
+                    answer="true",
+                    explanation="V = IR is the mathematical expression of Ohm's Law.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Work, Energy, and Power",
+                    question_type="short_answer",
+                    difficulty="beginner",
+                    body="The rate of doing work or transferring energy per unit time is defined as ________.",
+                    options=[],
+                    answer="power",
+                    explanation="Power P = Work / time, measured in Watts (J/s).",
+                    grading_hints=["power"],
+                ),
+            ]
+        elif subj in ("biology", "bio"):
+            questions = [
+                PreparedQuestion(
+                    id=f"qst_bio_{uuid4().hex[:8]}",
+                    topic="Foundations of Modern Biology",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="Which cellular organelle is responsible for generating most of the ATP in eukaryotic cells?",
+                    options=[
+                        PreparedOption(key="A", text="Ribosome"),
+                        PreparedOption(key="B", text="Mitochondria"),
+                        PreparedOption(key="C", text="Endoplasmic reticulum"),
+                        PreparedOption(key="D", text="Golgi apparatus"),
+                    ],
+                    answer="B",
+                    explanation="Mitochondria generate ATP through cellular respiration.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_bio_{uuid4().hex[:8]}",
+                    topic="Molecular Biology",
+                    question_type="true_false",
+                    difficulty="beginner",
+                    body="DNA carries hereditary genetic information in all cellular organisms.",
+                    options=[
+                        PreparedOption(key="true", text="True"),
+                        PreparedOption(key="false", text="False"),
+                    ],
+                    answer="true",
+                    explanation="DNA holds the instructions required for life across all known cellular organisms.",
+                    grading_hints=[],
+                ),
+            ]
+        else:
+            topic_name = f"{subject} Concepts" if subject else "Core Concepts"
+            questions = [
+                PreparedQuestion(
+                    id=f"qst_gen_{uuid4().hex[:8]}",
+                    topic=topic_name,
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body=f"What is the most effective approach to solving problems in {subject or 'this subject'}?",
+                    options=[
+                        PreparedOption(key="A", text="Identifying key principles, given variables, and applying systematic methods"),
+                        PreparedOption(key="B", text="Guessing based on surface familiarity without verification"),
+                        PreparedOption(key="C", text="Memorizing isolated solutions without understanding underlying steps"),
+                        PreparedOption(key="D", text="Skipping foundational definitions"),
+                    ],
+                    answer="A",
+                    explanation=f"Systematic problem solving rooted in core principles ensures accuracy in {subject or 'academic tasks'}.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_gen_{uuid4().hex[:8]}",
+                    topic=topic_name,
+                    question_type="true_false",
+                    difficulty="beginner",
+                    body=f"Core concepts in {subject or 'this subject'} build upon fundamental definitions established in introductory chapters.",
+                    options=[
+                        PreparedOption(key="true", text="True"),
+                        PreparedOption(key="false", text="False"),
+                    ],
+                    answer="true",
+                    explanation="Curriculum domains are hierarchical; advanced topics require command of foundational terminology.",
+                    grading_hints=[],
+                ),
+            ]
         flashcards = []
         item_count = len(questions)
 
@@ -1198,16 +1688,308 @@ def _build_guaranteed_fallback_plan(
         estimated_xp_max=xp_max,
         questions=questions,
         flashcards=flashcards,
+        subject=subject,
+        subcategory=subcategory,
     )
+
+
+async def _existing_open_session(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    student_id: str,
+    mode: AdaptiveSessionMode,
+    snapshot: str,
+) -> dict | None:
+    """Return a still-open prepared session for this material snapshot + mode.
+
+    A tab switch or a client retry after a transient 5xx must resolve to the
+    *same* session rather than burning one of the capped slots or regenerating
+    content. Only ``prepared`` (never-completed) sessions are reusable; a
+    completed or exited session has already consumed its slot.
+    """
+    cursor = get_collection(tenant_id, ADAPTIVE_SESSIONS).find(
+        {
+            "workspace_id": workspace_id,
+            "student_id": student_id,
+            "mode": mode.value,
+            "source_snapshot": snapshot,
+            "status": "prepared",
+        }
+    )
+    rows = await cursor.to_list(length=50)
+    if not rows:
+        return None
+    return max(rows, key=lambda row: str(row.get("created_at", "")))
+
+
+async def _supersede_open_sessions(tenant_id: str, workspace_id: str, student_id: str) -> None:
+    """Mark any stale open prepared sessions as superseded so their items count as seen."""
+    try:
+        await get_collection(tenant_id, ADAPTIVE_SESSIONS).update_many(
+            {
+                "workspace_id": workspace_id,
+                "student_id": student_id,
+                "status": "prepared",
+            },
+            {"$set": {"status": "superseded", "updated_at": utc_now()}},
+        )
+    except Exception:
+        logger.debug("Failed to supersede open sessions for student=%s", student_id)
+
+
+async def _snapshot_session_count(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    student_id: str,
+    mode: AdaptiveSessionMode,
+    snapshot: str,
+) -> int:
+    """Count sessions already granted for this material snapshot + mode.
+
+    Each persisted session (open, completed, or exited) has consumed one of the
+    :data:`_MAX_SELF_STUDY_SESSIONS` non-repeating slots the current material
+    allows. Exhausted call-to-action plans are never persisted, so they never
+    count; uploading new material changes the snapshot and grants a fresh batch.
+    """
+    return await get_collection(tenant_id, ADAPTIVE_SESSIONS).count_documents(
+        {
+            "workspace_id": workspace_id,
+            "student_id": student_id,
+            "mode": mode.value,
+            "source_snapshot": snapshot,
+            "status": {"$in": ["completed", "in_progress", "timed_out"]},
+        }
+    )
+
+
+async def _pool_has_content(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    current_document_ids: frozenset[str],
+) -> bool:
+    """True when the current material has at least one ingested source chunk.
+
+    Lets the prepare endpoint tell a transient empty session (material is
+    present and generatable — a retry will succeed) apart from material that is
+    still being processed (no chunks yet).
+    """
+    if not current_document_ids:
+        return False
+    cursor = get_collection(tenant_id, CHUNKS).find(
+        {
+            "workspace_id": workspace_id,
+            "document_id": {"$in": sorted(current_document_ids)},
+            "deleted_at": None,
+        }
+    )
+    rows = await cursor.to_list(length=1)
+    return bool(rows)
+
+
+def _build_exhausted_plan(
+    *,
+    mode: AdaptiveSessionMode,
+    level: AdaptiveLevel,
+    mastery: float,
+    subject: str | None = None,
+    subcategory: str | None = None,
+) -> AdaptiveSessionPlan:
+    """A zero-item plan telling the learner to upload more study material.
+
+    Returned once every non-repeating session the current material can produce
+    has been consumed (the cap, or thin material exhausted early). The client
+    renders a call-to-action instead of a runnable session and never posts
+    ``complete`` for it, so it is intentionally not persisted.
+    """
+    return AdaptiveSessionPlan(
+        session_id=f"ses_{uuid4().hex}",
+        mode=mode,
+        level=level,
+        mastery_score=mastery,
+        duration_minutes=0,
+        item_count=0,
+        estimated_xp_min=0,
+        estimated_xp_max=0,
+        questions=[],
+        flashcards=[],
+        content_ready=True,
+        exhausted=True,
+        subject=subject,
+        subcategory=subcategory,
+    )
+
+
+async def _persist_prepared_session(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    student_id: str,
+    mode: AdaptiveSessionMode,
+    level: AdaptiveLevel,
+    mastery: float,
+    plan: AdaptiveSessionPlan,
+    snapshot: str,
+) -> None:
+    """Persist a prepared session row, tagging it with the material snapshot.
+
+    The snapshot ties the session to its cap bucket and idempotency key. A write
+    failure is non-fatal — the in-memory plan is still served to the learner.
+    """
+    now = utc_now()
+    try:
+        await get_collection(tenant_id, ADAPTIVE_SESSIONS).insert_one(
+            {
+                "_id": plan.session_id,
+                "tenant_id": tenant_id,
+                "workspace_id": workspace_id,
+                "student_id": student_id,
+                "mode": mode.value,
+                "level": level.value,
+                "mastery_before": mastery,
+                "planned_count": plan.item_count,
+                "status": "prepared",
+                "source_snapshot": snapshot,
+                "plan": plan.model_dump(mode="json"),
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+    except Exception:
+        logger.exception("Failed to insert prepared adaptive session row; serving in-memory plan")
+
+
+async def _topup_question_pool(*, user: User, workspace_id: str, revision: bool) -> None:
+    """Background: grow the persistent question pool so the next session is warm.
+
+    Runs after the response is sent. ``_generate_and_persist_batch`` dedups
+    against already-seen and already-queued bodies, so it only ever adds
+    genuinely new questions. Failures are swallowed — a warm pool is an
+    optimisation, never a correctness requirement.
+    """
+    try:
+        sources = await study_sources.current_study_sources(
+            tenant_id=user.tenant_id,
+            workspace_id=workspace_id,
+        )
+        if not sources.document_ids:
+            return
+        await question_pipeline._generate_and_persist_batch(
+            tenant_id=user.tenant_id,
+            workspace_id=workspace_id,
+            student_id=user.id,
+            user_obj=user,
+            revision=revision,
+            batch_size=_QUESTION_TOPUP_MAX,
+        )
+    except Exception:
+        logger.exception("Background question top-up failed workspace=%s", workspace_id)
+
+
+async def _topup_flashcard_pool(*, user: User, workspace_id: str, level: AdaptiveLevel) -> None:
+    """Background: grow the persistent flashcard pool so the next session is warm.
+
+    Mirrors :func:`_topup_question_pool`. Blocks regeneration of any card whose
+    content already exists in the approved pool or that the learner has already
+    seen, so the pool only gains genuinely new cards. Failures are swallowed.
+    """
+    try:
+        sources = await study_sources.current_study_sources(
+            tenant_id=user.tenant_id,
+            workspace_id=workspace_id,
+        )
+        if not sources.document_ids:
+            return
+        _, weak_topics = await _history(
+            tenant_id=user.tenant_id,
+            workspace_id=workspace_id,
+            student_id=user.id,
+        )
+        _, historical_fingerprints, historical_fronts = await _flashcard_history(
+            tenant_id=user.tenant_id,
+            workspace_id=workspace_id,
+            student_id=user.id,
+        )
+        _, reserved_fingerprints = await _reserved_flashcards(
+            tenant_id=user.tenant_id,
+            workspace_id=workspace_id,
+            student_id=user.id,
+        )
+        existing_cursor = get_collection(user.tenant_id, FLASHCARDS).find(
+            {
+                "workspace_id": workspace_id,
+                "status": FlashcardStatus.approved.value,
+                "deleted_at": None,
+            }
+        )
+        existing_fingerprints: set[str] = set()
+        for raw in await existing_cursor.to_list(length=1000):
+            try:
+                card = Flashcard.model_validate(raw)
+            except Exception:
+                continue
+            existing_fingerprints.add(_flashcard_fingerprint(card.front, card.back))
+        await _generate_flashcard_batch(
+            user=user,
+            workspace_id=workspace_id,
+            target=_FLASHCARD_TOPUP_MIN,
+            level=level,
+            current_sources=sources,
+            weak_topics=weak_topics,
+            historical_fronts=historical_fronts,
+            blocked_fingerprints=(
+                historical_fingerprints | reserved_fingerprints | existing_fingerprints
+            ),
+        )
+    except Exception:
+        logger.exception("Background flashcard top-up failed workspace=%s", workspace_id)
+
+
+def _schedule_topups(
+    *,
+    background_tasks: BackgroundTasks,
+    user: User,
+    workspace_id: str,
+    mode: AdaptiveSessionMode,
+    level: AdaptiveLevel,
+) -> None:
+    """Queue the mode-appropriate pool top-up for capped self-study sessions.
+
+    Runs only for self-study study/flashcard sessions — revision re-practises
+    prior answers and non-self-study workspaces are admin-provisioned.
+    """
+    if not (_is_self_study(workspace_id) and mode in _CAPPED_MODES):
+        return
+    if mode == AdaptiveSessionMode.flashcard:
+        background_tasks.add_task(
+            _topup_flashcard_pool, user=user, workspace_id=workspace_id, level=level
+        )
+    else:
+        background_tasks.add_task(
+            _topup_question_pool, user=user, workspace_id=workspace_id, revision=False
+        )
 
 
 @router.post("/prepare", response_model=AdaptiveSessionPlan)
 async def prepare_adaptive_session(
     workspace_id: str,
     request: PrepareAdaptiveSessionRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
 ) -> AdaptiveSessionPlan:
     _assert_workspace_access(current_user, workspace_id)
+    if _is_self_study(workspace_id) and request.mode == AdaptiveSessionMode.revision:
+        request.mode = AdaptiveSessionMode.study
+    if not _is_self_study(workspace_id):
+        # Admin-added workspaces strictly follow the original curriculum flow:
+        # subject, subcategory, and question_type filtering only apply in self-study.
+        request.subject = None
+        request.subcategory = None
+        request.question_type = None
+    capped = _is_self_study(workspace_id) and request.mode in _CAPPED_MODES
+
     try:
         mastery = await _mastery_assessment(
             tenant_id=current_user.tenant_id,
@@ -1222,7 +2004,53 @@ async def prepare_adaptive_session(
     ranges = (
         _FLASHCARD_RANGES if request.mode == AdaptiveSessionMode.flashcard else _QUESTION_RANGES
     )
-    target = _adaptive_count(mastery, level, ranges[level])
+    if _is_self_study(workspace_id):
+        target = 5
+    else:
+        target = _adaptive_count(mastery, level, ranges[level])
+
+    # Self-study bounds each material snapshot to a fixed number of
+    # non-repeating sessions per mode.
+    snapshot = ""
+    used = 0
+    sources: study_sources.CurrentStudySources | None = None
+    if capped:
+        sources = await study_sources.current_study_sources(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+        )
+        if not sources.document_ids:
+            raise ConflictError(
+                "No ready study material is available yet. Upload a document or wait "
+                "for the latest upload to finish processing, then try again."
+            )
+        snapshot = _source_snapshot(sources, subject=request.subject, subcategory=request.subcategory)
+        has_custom_selection = bool(request.subject or request.subcategory or request.question_type)
+        if _is_self_study(workspace_id) and has_custom_selection:
+            # When the student explicitly chooses a subject, topic, or format type in self-study,
+            # never reuse an old open session from cache. Supersede any stale prepared session
+            # and generate a freshly prepared session in real time.
+            await _supersede_open_sessions(current_user.tenant_id, workspace_id, current_user.id)
+            existing = None
+        else:
+            existing = await _existing_open_session(
+                tenant_id=current_user.tenant_id,
+                workspace_id=workspace_id,
+                student_id=current_user.id,
+                mode=request.mode,
+                snapshot=snapshot,
+            )
+            if existing is not None:
+                return AdaptiveSessionPlan.model_validate(existing["plan"])
+        used = await _snapshot_session_count(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            student_id=current_user.id,
+            mode=request.mode,
+            snapshot=snapshot,
+        )
+        if used >= _MAX_SELF_STUDY_SESSIONS:
+            return _build_exhausted_plan(mode=request.mode, level=level, mastery=mastery, subject=request.subject, subcategory=request.subcategory)
 
     questions: list[PreparedQuestion] = []
     flashcards: list[PreparedFlashcard] = []
@@ -1233,10 +2061,9 @@ async def prepare_adaptive_session(
                 workspace_id=workspace_id,
                 target=target,
                 level=level,
+                subject=request.subject,
+                subcategory=request.subcategory,
             )
-            item_count = len(flashcards)
-            xp_min = -item_count + _COMPLETION_BONUSES[request.mode]
-            xp_max = item_count + _COMPLETION_BONUSES[request.mode]
         else:
             questions = await _prepare_questions(
                 user=current_user,
@@ -1244,25 +2071,25 @@ async def prepare_adaptive_session(
                 target=target,
                 level=level,
                 revision=request.mode == AdaptiveSessionMode.revision,
+                subject=request.subject,
+                subcategory=request.subcategory,
+                question_type=request.question_type,
             )
-            item_count = len(questions)
-            xp_min = -item_count + _COMPLETION_BONUSES[request.mode]
-            xp_max = item_count + _COMPLETION_BONUSES[request.mode]
-
-        session_id = f"ses_{uuid4().hex}"
-        plan = AdaptiveSessionPlan(
-            session_id=session_id,
-            mode=request.mode,
-            level=level,
-            mastery_score=mastery,
-            duration_minutes=_session_duration_minutes(questions, flashcards),
-            item_count=item_count,
-            estimated_xp_min=xp_min,
-            estimated_xp_max=xp_max,
-            questions=questions,
-            flashcards=flashcards,
-        )
-    except Exception:
+    except Exception as exc:
+        if capped:
+            # Self-study never serves generic filler. Surface real client errors
+            # (no material, forbidden) verbatim; turn anything unexpected into a
+            # retryable 503 so the client's silent retry recovers once the pool
+            # warms, instead of showing an internal error.
+            if isinstance(
+                exc, ConflictError | ForbiddenError | NotFoundError | ServiceUnavailableError
+            ):
+                raise
+            logger.exception("Self-study prepare failed; returning retryable 503")
+            raise ServiceUnavailableError(
+                "Your study session is being prepared. Please retry in a moment."
+            ) from exc
+        # Non-self-study preserves the guaranteed-filler contract on any failure.
         logger.exception("Adaptive session prepare fallback activated")
         plan = _build_guaranteed_fallback_plan(
             workspace_id=workspace_id,
@@ -1271,29 +2098,83 @@ async def prepare_adaptive_session(
             mode=request.mode,
             level=level,
             mastery=mastery,
+            subject=request.subject,
+            subcategory=request.subcategory,
         )
-
-    try:
-        now = utc_now()
-        await get_collection(current_user.tenant_id, ADAPTIVE_SESSIONS).insert_one(
-            {
-                "_id": plan.session_id,
-                "tenant_id": current_user.tenant_id,
-                "workspace_id": workspace_id,
-                "student_id": current_user.id,
-                "mode": request.mode.value,
-                "level": level.value,
-                "mastery_before": mastery,
-                "planned_count": plan.item_count,
-                "status": "prepared",
-                "plan": plan.model_dump(mode="json"),
-                "created_at": now,
-                "updated_at": now,
-            }
+        await _persist_prepared_session(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            student_id=current_user.id,
+            mode=request.mode,
+            level=level,
+            mastery=mastery,
+            plan=plan,
+            snapshot=snapshot,
         )
-    except Exception:
-        logger.exception("Failed to insert prepared adaptive session row; serving in-memory plan")
+        return plan
 
+    item_count = len(flashcards if request.mode == AdaptiveSessionMode.flashcard else questions)
+
+    if capped and item_count == 0:
+        if used == 0:
+            # The very first session for this material produced nothing: a
+            # transient generation/ingest hiccup rather than exhaustion. 503 so
+            # the client's silent retry recovers once the pool warms.
+            has_content = await _pool_has_content(
+                tenant_id=current_user.tenant_id,
+                workspace_id=workspace_id,
+                current_document_ids=sources.document_ids if sources else frozenset(),
+            )
+            if not has_content:
+                logger.info(
+                    "Pool empty on first prepare for workspace=%s, raising 503",
+                    workspace_id,
+                )
+                raise ServiceUnavailableError(
+                    "Your study material is still being processed. Please retry in a few seconds."
+                )
+            raise ServiceUnavailableError(
+                "Your study session questions are being generated. Please retry in a few seconds."
+            )
+        # Material genuinely exhausted: cap reached or thin material gave what it could.
+        return _build_exhausted_plan(mode=request.mode, level=level, mastery=mastery, subject=request.subject, subcategory=request.subcategory)
+
+    xp_min = -item_count + _COMPLETION_BONUSES[request.mode]
+    xp_max = item_count + _COMPLETION_BONUSES[request.mode]
+    plan = AdaptiveSessionPlan(
+        session_id=f"ses_{uuid4().hex}",
+        mode=request.mode,
+        level=level,
+        mastery_score=mastery,
+        duration_minutes=_session_duration_minutes(questions, flashcards),
+        item_count=item_count,
+        estimated_xp_min=xp_min,
+        estimated_xp_max=xp_max,
+        questions=questions,
+        flashcards=flashcards,
+        subject=request.subject,
+        subcategory=request.subcategory,
+        question_type=request.question_type,
+    )
+    await _persist_prepared_session(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=current_user.id,
+        mode=request.mode,
+        level=level,
+        mastery=mastery,
+        plan=plan,
+        snapshot=snapshot,
+    )
+    # Warm the pool so the learner's next session reads instantly instead of
+    # blocking on generation.
+    _schedule_topups(
+        background_tasks=background_tasks,
+        user=current_user,
+        workspace_id=workspace_id,
+        mode=request.mode,
+        level=level,
+    )
     return plan
 
 
@@ -1394,6 +2275,7 @@ async def complete_adaptive_session(
     workspace_id: str,
     session_id: str,
     request: CompleteAdaptiveSessionRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
 ) -> AdaptiveSessionSummary:
     _assert_workspace_access(current_user, workspace_id)
@@ -1560,17 +2442,28 @@ async def complete_adaptive_session(
         effective_reason = SessionCompletionReason.exited
 
     achievement_xp = sum(int(getattr(badge, "xp_reward", 0)) for badge in unlocked_badges.values())
-    mastery_after = await _mastery_assessment(
-        tenant_id=current_user.tenant_id,
-        workspace_id=workspace_id,
-        student_id=current_user.id,
-    )
+    # Progress (XP, interactions, knowledge state) is already durably recorded
+    # above. A failure computing the closing mastery/level signal must not 500
+    # the request and strand that progress — fall back to the entry values.
+    try:
+        mastery_after = await _mastery_assessment(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            student_id=current_user.id,
+        )
+    except Exception:
+        logger.exception("Mastery assessment failed at completion; using mastery_before")
+        mastery_after = mastery_before
     final_level = _level_for_mastery(mastery_after)
-    game_level = await _current_game_level(
-        tenant_id=current_user.tenant_id,
-        workspace_id=workspace_id,
-        student_id=current_user.id,
-    )
+    try:
+        game_level = await _current_game_level(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            student_id=current_user.id,
+        )
+    except Exception:
+        logger.exception("Game level lookup failed at completion; defaulting to 1")
+        game_level = 1
     now = utc_now()
     summary = AdaptiveSessionSummary(
         session_id=session_id,
@@ -1625,5 +2518,14 @@ async def complete_adaptive_session(
                 "updated_at": now,
             }
         },
+    )
+    # Finishing a session is the moment the learner is most likely to start the
+    # next one — warm the pool now so that prepare reads instantly.
+    _schedule_topups(
+        background_tasks=background_tasks,
+        user=current_user,
+        workspace_id=workspace_id,
+        mode=plan.mode,
+        level=final_level,
     )
     return summary

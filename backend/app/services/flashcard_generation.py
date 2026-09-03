@@ -223,3 +223,63 @@ def _require_string(raw: dict[str, Any], field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise FlashcardShapeError(f"Required field {field_name!r} is missing or empty.")
     return value.strip()
+
+
+async def generate_batch_flashcards(
+    *,
+    topic: str,
+    count: int,
+    grounding_chunks: list[RetrievedChunk],
+    seen_card_fronts: list[str] | None = None,
+    mastery_tier: str = "beginner",
+) -> list[GeneratedFlashcard]:
+    """Generate a batch of diverse flashcards in a single fast LLM call."""
+    if not grounding_chunks:
+        raise InsufficientFlashcardSource(
+            "No grounding chunks supplied for batch flashcard generation."
+        )
+
+    template = load_prompt("flashcard_batch_v1")
+    system_prompt, user_template = split_system_user(template)
+    source_content = _format_source(grounding_chunks)
+    seen_section = _format_seen(seen_card_fronts or [])
+
+    user_prompt = render(
+        user_template,
+        topic=topic,
+        count=str(count),
+        difficulty=mastery_tier,
+        source_content=source_content,
+        seen_cards=seen_section,
+    )
+
+    response = await azure_openai.chat_json(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        max_output_tokens=1500,
+        temperature=0.7,
+    )
+
+    if response.get("insufficient_source") is True:
+        raise InsufficientFlashcardSource(f"Model returned insufficient_source for topic={topic!r}.")
+
+    raw_cards = response.get("flashcards")
+    if not isinstance(raw_cards, list):
+        raise FlashcardShapeError("Expected 'flashcards' field to be a list in response.")
+
+    results: list[GeneratedFlashcard] = []
+    for raw in raw_cards:
+        front = raw.get("front")
+        back = raw.get("back")
+        if not isinstance(front, str) or not front.strip() or not isinstance(back, str) or not back.strip():
+            continue
+        exp = str(raw.get("explanation") or "").strip()
+        results.append(
+            GeneratedFlashcard(
+                front=front.strip(),
+                back=back.strip(),
+                explanation=exp,
+                prompt_version="flashcard_batch_v1",
+            )
+        )
+    return results

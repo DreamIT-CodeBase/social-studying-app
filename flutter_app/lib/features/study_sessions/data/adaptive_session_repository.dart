@@ -9,11 +9,24 @@ class AdaptiveSessionRepository {
   Future<AdaptiveSessionPlan> prepare({
     required String workspaceId,
     required AdaptiveSessionMode mode,
+    String? subject,
+    String? subcategory,
+    String? questionType,
   }) async {
     try {
+      final data = <String, dynamic>{'mode': mode.wire};
+      if (subject != null) {
+        data['subject'] = subject;
+      }
+      if (subcategory != null) {
+        data['subcategory'] = subcategory;
+      }
+      if (questionType != null) {
+        data['question_type'] = questionType;
+      }
       final response = await _dio.post<Map<String, dynamic>>(
         '/api/v1/workspaces/$workspaceId/adaptive-sessions/prepare',
-        data: {'mode': mode.wire},
+        data: data,
       );
       return AdaptiveSessionPlan.fromJson(response.data!);
     } on DioException catch (error) {
@@ -84,7 +97,16 @@ class AdaptiveSessionRepository {
 
   bool _isRetryablePreparationError(DioException error) {
     final statusCode = error.response?.statusCode;
-    if (statusCode != null && (statusCode >= 500 || statusCode == 429 || statusCode == 408 || statusCode == 409)) {
+    if (statusCode == 409) {
+      final message = _message(error).toLowerCase();
+      return message.contains('wait') ||
+          message.contains('process') ||
+          message.contains('extract') ||
+          message.contains('chunk') ||
+          message.contains('vector');
+    }
+    if (statusCode != null &&
+        (statusCode >= 500 || statusCode == 429 || statusCode == 408)) {
       return true;
     }
     return error.type == DioExceptionType.connectionError ||

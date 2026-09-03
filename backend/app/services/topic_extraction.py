@@ -178,6 +178,42 @@ def _dedupe(topics: list[TopicTag]) -> list[TopicTag]:
     return out
 
 
+def _get_extraction_guidance(char_count: int) -> str:
+    """Length-tailored extraction instructions to balance granularity and speed.
+
+    - Under 2K chars: Short study note / concise material (< 2,000 chars).
+      Extract a generous, good amount of distinct topics (4 to 8 fine-grained topics)
+      covering every specific concept, principle, definition, rule, or formula so
+      the learner has multiple focused topics to practice from this short text.
+    - Over 3K chars: Comprehensive / multi-page document (> 3,000 chars).
+      Read wholly and comprehensively through the entire document from start to finish.
+      Extract ONLY the MAIN, primary overarching core topics (5 to 10 major themes/units),
+      consolidating minor sub-details and micro-vocabulary under their parent pillars.
+    - 2K - 3K chars: Balanced extraction of 4 to 8 core concepts.
+    """
+    if char_count < 2000:
+        return (
+            "- DOCUMENT SIZE: Short study note / concise material (< 2,000 characters).\n"
+            "- GRANULAR EXTRACTION: Thoroughly extract a generous, good amount of distinct topics (4 to 8 topics).\n"
+            "- DEEP COVERAGE: Break down the content into specific concepts, principles, key definitions, rules, or formulas mentioned, "
+            "so the student has multiple focused, granular topics to study from this short text.\n"
+            "- Avoid collapsing everything into a single broad topic."
+        )
+    elif char_count > 3000:
+        return (
+            "- DOCUMENT SIZE: Comprehensive / multi-page study material (> 3,000 characters).\n"
+            "- WHOLE-DOCUMENT ANALYSIS: Read wholly and comprehensively through the entire provided text from start to finish.\n"
+            "- MAIN TOPICS ONLY: Extract ONLY the MAIN, primary overarching core topics (5 to 10 major themes, units, or foundational concepts).\n"
+            "- HIGH-LEVEL SYNTHESIS: Consolidate sub-details and minor vocabulary under their parent main topic. "
+            "Do NOT extract microscopic factoids or fragmented single-paragraph subtopics; focus on the primary curriculum pillars."
+        )
+    else:
+        return (
+            "- DOCUMENT SIZE: Medium study material (2,000 - 3,000 characters).\n"
+            "- BALANCED EXTRACTION: Extract 4 to 8 clear, distinct core topics that accurately represent the key concepts of the study material."
+        )
+
+
 async def extract_topics(text: str) -> list[TopicTag]:
     """Extract a list of topics from a document's extracted text.
 
@@ -193,18 +229,24 @@ async def extract_topics(text: str) -> list[TopicTag]:
         logger.info("Topic extraction: empty text, returning []")
         return []
 
-    system_prompt, user_template = _system_user()
-    max_budget = min(settings.openai_topic_extraction_max_input_chars, 16_000)
+    system_template, user_template = _system_user()
+    char_count = len(text.strip())
+    guidance = _get_extraction_guidance(char_count)
+
+    max_budget = min(settings.openai_topic_extraction_max_input_chars, 20_000)
     distilled_text = _prepare_text_for_topic_extraction(text, max_chars=max_budget)
+
+    system_prompt = render(system_template, extraction_guidance=guidance)
     user_prompt = render(
         user_template,
         source_content=distilled_text,
+        extraction_guidance=guidance,
     )
 
     response = await azure_openai.chat_json(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        max_output_tokens=min(settings.openai_topic_extraction_max_output_tokens, 1500),
+        max_output_tokens=min(settings.openai_topic_extraction_max_output_tokens, 1200),
     )
 
     raw_topics = response.get("topics")
@@ -220,7 +262,9 @@ async def extract_topics(text: str) -> list[TopicTag]:
     parsed = [t for t in (_coerce_topic(r) for r in raw_topics if isinstance(r, dict)) if t]
     deduped = _dedupe(parsed)
     logger.info(
-        "Topic extraction: %d raw → %d parsed → %d deduped",
+        "Topic extraction (%d chars, mode=%s): %d raw → %d parsed → %d deduped",
+        char_count,
+        "short_granular" if char_count < 2000 else ("long_main" if char_count > 3000 else "medium"),
         len(raw_topics),
         len(parsed),
         len(deduped),

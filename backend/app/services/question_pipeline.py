@@ -8,7 +8,14 @@ from uuid import uuid4
 
 from fastapi import BackgroundTasks
 
-from app.core.database import CHUNKS, INTERACTIONS, QUESTION_QUEUE, get_collection
+from app.core.database import (
+    CHUNKS,
+    DOCUMENTS,
+    INTERACTIONS,
+    QUESTION_QUEUE,
+    cosmos_retry,
+    get_collection,
+)
 from app.core.exceptions import ServiceUnavailableError
 from app.core.redis_client import get_redis
 from app.mcp_tools import invoke
@@ -21,7 +28,7 @@ from app.mcp_tools.retrieve_student_context import (
     RetrieveStudentContextInput,
     RetrieveStudentContextOutput,
 )
-from app.models.question import Question, QuestionStatus
+from app.models.question import Question, QuestionStatus, QuestionType
 from app.models.user import User
 from app.services import question_generation, question_safety, rag_evaluation, study_sources
 from app.services.difficulty import calibrate_difficulty
@@ -29,6 +36,7 @@ from app.services.learning_path import (
     TopicScore,
     select_next_topic,
 )
+from app.services.subject_classifier import classify_subject_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +64,7 @@ async def get_next_question(
     student_id: str,
     user_obj: User,
     revision: bool = False,
+    subject: str | None = None,
     background_tasks: BackgroundTasks,
 ) -> Question:
     """Retrieve the next question from the queue cache.
@@ -63,7 +72,8 @@ async def get_next_question(
     Falls back to synchronous batch generation if buffer is empty.
     """
     redis = await get_redis()
-    cache_key = f"{CACHE_KEY_PREFIX}:{workspace_id}:{student_id}"
+    cache_suffix = f":{subject.strip().casefold()}" if subject else ""
+    cache_key = f"{CACHE_KEY_PREFIX}:{workspace_id}:{student_id}{cache_suffix}"
 
     # 1. Read buffer from Redis
     cached = await redis.get(cache_key)
@@ -80,6 +90,11 @@ async def get_next_question(
         question
         for question in questions
         if str(question.get("document_id", "")) in current_document_ids
+        and (
+            not subject
+            or classify_subject_from_text(str(question.get("topic", ""))).casefold()
+            == subject.casefold()
+        )
     ]
 
     if questions:
@@ -96,19 +111,21 @@ async def get_next_question(
                 student_id=student_id,
                 user_obj=user_obj,
                 revision=revision,
+                subject=subject,
             )
-            logger.info("Triggered background question prefetch for student=%s", student_id)
+            logger.info("Triggered background question prefetch for student=%s subject=%s", student_id, subject)
 
         return Question.model_validate(first_q)
 
     # 2. Buffer is empty: run synchronous batch generation
-    logger.info("Buffer empty for student=%s, running synchronous batch generation", student_id)
+    logger.info("Buffer empty for student=%s subject=%s, running synchronous batch generation", student_id, subject)
     generated_list = await _generate_and_persist_batch(
         tenant_id=tenant_id,
         workspace_id=workspace_id,
         student_id=student_id,
         user_obj=user_obj,
         revision=revision,
+        subject=subject,
         batch_size=20,
     )
 
@@ -133,10 +150,12 @@ async def prefetch_batch_background(
     student_id: str,
     user_obj: User,
     revision: bool = False,
+    subject: str | None = None,
 ) -> None:
     """FastAPI background task to pre-populate cache queue."""
     redis = await get_redis()
-    cache_key = f"{CACHE_KEY_PREFIX}:{workspace_id}:{student_id}"
+    cache_suffix = f":{subject.strip().casefold()}" if subject else ""
+    cache_key = f"{CACHE_KEY_PREFIX}:{workspace_id}:{student_id}{cache_suffix}"
 
     # Verify current size before running to avoid duplicate triggers
     cached = await redis.get(cache_key)
@@ -144,13 +163,14 @@ async def prefetch_batch_background(
     if len(questions) > 5:
         return
 
-    logger.info("Starting background prefetch for student=%s", student_id)
+    logger.info("Starting background prefetch for student=%s subject=%s", student_id, subject)
     new_questions = await _generate_and_persist_batch(
         tenant_id=tenant_id,
         workspace_id=workspace_id,
         student_id=student_id,
         user_obj=user_obj,
         revision=revision,
+        subject=subject,
         batch_size=20,
     )
 
@@ -168,16 +188,25 @@ async def _generate_and_persist_batch(
     student_id: str,
     user_obj: User,
     revision: bool = False,
+    subject: str | None = None,
+    target_topic: str | None = None,
+    target_type: QuestionType | None = None,
     batch_size: int = 20,
+    extra_seen_bodies: Sequence[str] | None = None,
 ) -> list[Question]:
-    """Generate 20-30 questions in parallel using asyncio.gather across top candidate topics.
-    Filter out duplicate questions using a temporary Redis set.
+    """Generate questions in parallel across top candidate topics.
+    Filter out duplicate questions using temporary Redis set and historical stems.
+
+    When *target_topic* is supplied the LPE topic-selection step is skipped
+    entirely and all generation slots are allocated to that single topic.
+    This produces fresh, focused questions for the student's explicitly
+    chosen subcategory (e.g. "Atomic Structure") without mixing in
+    unrelated topics.
     """
     redis = await get_redis()
     seen_key = f"{SEEN_KEY_PREFIX}:{workspace_id}:{student_id}"
 
     # Fetch student context and seen/queued question bodies
-    # For simplicity, fetch the context once
     context = await _fetch_student_context(tenant_id, workspace_id, student_id)
     all_seen_bodies = await _fetch_all_seen_and_queued_bodies(tenant_id, workspace_id, student_id)
 
@@ -185,7 +214,8 @@ async def _generate_and_persist_batch(
     redis_seen = await redis.smembers(seen_key) or []
     local_seen_normalized = {s.strip().lower().rstrip("?.!") for s in redis_seen}
     db_seen_normalized = {s.strip().lower().rstrip("?.!") for s in all_seen_bodies}
-    combined_seen = local_seen_normalized.union(db_seen_normalized)
+    extra_normalized = {s.strip().lower().rstrip("?.!") for s in (extra_seen_bodies or []) if s}
+    combined_seen = local_seen_normalized.union(db_seen_normalized).union(extra_normalized)
 
     current_sources = await study_sources.current_study_sources(
         tenant_id=tenant_id,
@@ -194,33 +224,138 @@ async def _generate_and_persist_batch(
     if not current_sources.document_ids:
         return []
 
-    # Retrieve top topic candidates from Learning Path Engine
-    try:
-        selection = await select_next_topic(
-            tenant_id=tenant_id,
-            workspace_id=workspace_id,
-            student_id=student_id,
-        )
-        candidates = selection.candidates[:5]
-    except Exception as exc:
-        logger.info("LPE topic selection not available (%s), using source topics fallback", exc)
-        fallback_topics = list(current_sources.topic_names) or ["Key Concepts"]
+    # ── Fast path: target_topic provided → single-topic generation ──────
+    if target_topic:
         candidates = [
             TopicScore(
-                topic_id=f"tpc_{i}",
-                topic_name=t,
+                topic_id="tpc_target_0",
+                topic_name=target_topic.strip(),
                 score=1.0,
                 components={},
-                complexity_level=1.0,
+                complexity_level=2.0,
             )
-            for i, t in enumerate(fallback_topics[:5])
         ]
+    else:
+        # Retrieve top topic candidates from Learning Path Engine
+        try:
+            selection = await select_next_topic(
+                tenant_id=tenant_id,
+                workspace_id=workspace_id,
+                student_id=student_id,
+            )
+            candidates = selection.candidates
+        except Exception as exc:
+            logger.info("LPE topic selection not available (%s), using source topics fallback", exc)
+            fallback_topics = list(current_sources.topic_names) or ["Key Concepts"]
+            candidates = [
+                TopicScore(
+                    topic_id=f"tpc_{i}",
+                    topic_name=t,
+                    score=1.0,
+                    components={},
+                    complexity_level=1.0,
+                )
+                for i, t in enumerate(fallback_topics[:10])
+            ]
+
+    matching_doc_ids: frozenset[str] | None = None
+    if subject or target_topic:
+        # Check documents for matching subject or target topic
+        doc_col = get_collection(tenant_id, DOCUMENTS)
+        matching_docs: list[dict] = []
+        matching_ids_set: set[str] = set()
+        cursor_doc = doc_col.find({"_id": {"$in": list(current_sources.document_ids)}})
+        docs_raw = await cosmos_retry(lambda: cursor_doc.to_list(length=200))
+        for doc_raw in docs_raw:
+            filename = doc_raw.get("filename", "")
+            doc_subj = classify_subject_from_text(filename)
+            tags = doc_raw.get("topic_tags") or []
+            if subject:
+                if not doc_subj or doc_subj.casefold() == "study":
+                    for tag in tags:
+                        tag_name = tag.get("name") if isinstance(tag, dict) else str(tag)
+                        if classify_subject_from_text(tag_name).casefold() == subject.casefold():
+                            doc_subj = subject
+                            break
+                if doc_subj and doc_subj.casefold() == subject.casefold():
+                    matching_ids_set.add(str(doc_raw["_id"]))
+                    matching_docs.append(doc_raw)
+
+            if target_topic:
+                doc_subcat = str(doc_raw.get("subcategory", "")).casefold()
+                if target_topic.casefold() in doc_subcat or doc_subcat in target_topic.casefold():
+                    matching_ids_set.add(str(doc_raw["_id"]))
+                for tag in tags:
+                    tag_name = tag.get("name") if isinstance(tag, dict) else str(tag)
+                    if target_topic.casefold() in tag_name.casefold() or tag_name.casefold() in target_topic.casefold():
+                        matching_ids_set.add(str(doc_raw["_id"]))
+
+        if matching_ids_set:
+            matching_doc_ids = frozenset(matching_ids_set)
+
+        if not target_topic and subject:
+            # Deeply extract topics directly from the matching subject documents!
+            subject_topic_scores: list[TopicScore] = []
+            for mdoc in matching_docs:
+                for tag in mdoc.get("topic_tags") or []:
+                    t_name = tag.get("name") if isinstance(tag, dict) else str(tag)
+                    if t_name and t_name.strip() and t_name.strip() not in [c.topic_name for c in subject_topic_scores]:
+                        c_level = float(tag.get("complexity_level", 2.0)) if isinstance(tag, dict) else 2.0
+                        subject_topic_scores.append(
+                            TopicScore(
+                                topic_id=f"doc_tpc_{len(subject_topic_scores)}",
+                                topic_name=t_name.strip(),
+                                score=1.0,
+                                components={},
+                                complexity_level=c_level,
+                            )
+                        )
+
+            if subject_topic_scores:
+                candidates = subject_topic_scores
+            else:
+                # Filter candidate topics to those matching the requested subject
+                matched_candidates = [
+                    c for c in candidates
+                    if classify_subject_from_text(c.topic_name).casefold() == subject.casefold()
+                ]
+                if matched_candidates:
+                    candidates = matched_candidates
+                else:
+                    source_matches = [
+                        t for t in current_sources.topic_names
+                        if classify_subject_from_text(t).casefold() == subject.casefold()
+                    ]
+                    if source_matches:
+                        candidates = [
+                            TopicScore(
+                                topic_id=f"tpc_{i}",
+                                topic_name=t,
+                                score=1.0,
+                                components={},
+                                complexity_level=1.0,
+                            )
+                            for i, t in enumerate(source_matches[:5])
+                        ]
+                    else:
+                        candidates = [
+                            TopicScore(
+                                topic_id="tpc_subject_0",
+                                topic_name=f"{subject} Fundamentals",
+                                score=1.0,
+                                components={},
+                                complexity_level=1.0,
+                            )
+                        ]
+
+    candidates = candidates[:6]
 
     if not candidates:
         return []
 
-    # Determine generation batch size per topic
-    items_per_topic = (batch_size // len(candidates)) + 1
+    # Determine generation batch size per topic (with buffer to ensure target is met after filtering)
+    effective_batch = max(batch_size + 3, 7) if len(candidates) == 1 else batch_size
+    items_per_topic = (effective_batch // len(candidates)) + 1
 
     # Run concurrent LLM batch generations
     tasks = []
@@ -234,6 +369,8 @@ async def _generate_and_persist_batch(
                 seen_bodies=list(combined_seen),
                 count=items_per_topic,
                 current_document_ids=current_sources.document_ids,
+                matching_doc_ids=matching_doc_ids,
+                target_type=target_type,
             )
         )
 
@@ -247,6 +384,7 @@ async def _generate_and_persist_batch(
             logger.warning("Batch generation task encountered error: %s", batch)
             continue
 
+        candidate_items = []
         for gq, candidate_obj, document_id, source_chunk_ids, all_retrieved_chunks in batch:
             # 1. Duplicate check: Question text stem similarity & exact normalization match
             norm_body = gq.body.strip().lower().rstrip("?.!")
@@ -254,12 +392,36 @@ async def _generate_and_persist_batch(
                 continue  # duplicate detected, skip
 
             combined_seen.add(norm_body)
-            await redis.sadd(seen_key, norm_body)  # store in temporary Redis memory
+            candidate_items.append(
+                (gq, candidate_obj, document_id, source_chunk_ids, all_retrieved_chunks, norm_body)
+            )
 
-            # 2. Moderation safety check
-            review = await question_safety.review_question(gq)
-            if review.verdict != question_safety.ReviewVerdict.approved:
+        if not candidate_items:
+            continue
+
+        # 2. Moderation safety checks in parallel
+        async def _check_safety(item):
+            cand_gq = item[0]
+            try:
+                review = await question_safety.review_question(cand_gq)
+                return review.verdict == question_safety.ReviewVerdict.approved
+            except ServiceUnavailableError as exc:
+                logger.warning(
+                    "Content Safety service unavailable during batch generation: %s. Allowing question.",
+                    exc,
+                )
+                return True
+            except Exception as exc:
+                logger.warning("Safety review encountered unexpected error: %s", exc)
+                return True
+
+        safety_results = await asyncio.gather(*[_check_safety(item) for item in candidate_items])
+
+        for (gq, candidate_obj, document_id, source_chunk_ids, all_retrieved_chunks, norm_body), is_approved in zip(candidate_items, safety_results):
+            if not is_approved:
                 continue
+
+            await redis.sadd(seen_key, norm_body)  # store in temporary Redis memory
 
             # 3. Create model and save to db
             question_id = f"qst_{uuid4().hex}"
@@ -285,25 +447,27 @@ async def _generate_and_persist_batch(
 
             # 4. End-to-end RAG Evaluation (Scope, Groundedness, Facts, Provenance)
             try:
-                await rag_evaluation.evaluate_and_persist_rag(
-                    tenant_id=tenant_id,
-                    workspace_id=workspace_id,
-                    student_id=student_id,
-                    selected_topic_id=candidate_obj.topic_id,
-                    selected_topic_name=candidate_obj.topic_name,
-                    active_document_ids=current_sources.document_ids,
-                    retrieved_chunks=all_retrieved_chunks,
-                    generation_chunk_ids=source_chunk_ids,
-                    question_id=question_id,
-                    question_type=gq.question_type.value,
-                    question_body=gq.body,
-                    reference_answer=gq.answer,
-                    explanation=gq.explanation,
-                    known_source_chunk_ids=source_chunk_ids,
+                asyncio.create_task(
+                    rag_evaluation.evaluate_and_persist_rag(
+                        tenant_id=tenant_id,
+                        workspace_id=workspace_id,
+                        student_id=student_id,
+                        selected_topic_id=candidate_obj.topic_id,
+                        selected_topic_name=candidate_obj.topic_name,
+                        active_document_ids=current_sources.document_ids,
+                        retrieved_chunks=all_retrieved_chunks,
+                        generation_chunk_ids=source_chunk_ids,
+                        question_id=question_id,
+                        question_type=gq.question_type.value,
+                        question_body=gq.body,
+                        reference_answer=gq.answer,
+                        explanation=gq.explanation,
+                        known_source_chunk_ids=source_chunk_ids,
+                    )
                 )
             except Exception as eval_exc:
                 logger.warning(
-                    "RAG evaluation failed for batch question %s: %s", question_id, eval_exc
+                    "RAG evaluation dispatch failed for batch question %s: %s", question_id, eval_exc
                 )
 
     return persisted_questions
@@ -317,6 +481,8 @@ async def _generate_topic_batch(
     seen_bodies: list[str],
     count: int,
     current_document_ids: frozenset[str],
+    matching_doc_ids: frozenset[str] | None = None,
+    target_type: QuestionType | None = None,
 ) -> list[tuple[Any, Any, str, list[str], list[Any]]]:
     """Retrieve chunks for topic and trigger batch question generator."""
     mastery = 0.5
@@ -328,10 +494,11 @@ async def _generate_topic_batch(
     calibration = calibrate_difficulty(mastery=mastery)
     difficulty = calibration.difficulty
 
+    effective_doc_ids = matching_doc_ids if matching_doc_ids else current_document_ids
     current_chunks: list[RetrievedChunk] = []
     all_retrieved: list[RetrievedChunk] = []
     try:
-        topic_ids = [candidate.topic_id] if not candidate.topic_id.startswith("tpc_") else []
+        topic_ids = [candidate.topic_id] if not candidate.topic_id.startswith("tpc_") and not candidate.topic_id.startswith("doc_tpc_") else []
         retrieved = await invoke(
             "retrieve_content",
             RetrieveContentInput(
@@ -345,7 +512,7 @@ async def _generate_topic_batch(
         if isinstance(retrieved, RetrieveContentOutput):
             all_retrieved = retrieved.chunks
             current_chunks = [
-                chunk for chunk in retrieved.chunks if chunk.document_id in current_document_ids
+                chunk for chunk in retrieved.chunks if chunk.document_id in effective_doc_ids
             ]
     except Exception as e:
         logger.warning("Search retrieval failed in topic batch for %s: %s", candidate.topic_name, e)
@@ -355,11 +522,11 @@ async def _generate_topic_batch(
             cursor = get_collection(tenant_id, CHUNKS).find(
                 {
                     "workspace_id": workspace_id,
-                    "document_id": {"$in": sorted(current_document_ids)},
+                    "document_id": {"$in": sorted(effective_doc_ids)},
                     "deleted_at": None,
                 }
             )
-            rows = await cursor.to_list(length=50)
+            rows = await cosmos_retry(lambda: cursor.to_list(length=20))
             current_chunks = [
                 RetrievedChunk(
                     chunk_id=str(r["_id"]),
@@ -378,6 +545,11 @@ async def _generate_topic_batch(
             logger.warning("Cosmos chunk fallback failed in topic batch: %s", e)
             return []
 
+    if not current_chunks and matching_doc_ids:
+        current_chunks = [
+            chunk for chunk in all_retrieved if chunk.document_id in current_document_ids
+        ]
+
     if not current_chunks:
         return []
 
@@ -392,7 +564,8 @@ async def _generate_topic_batch(
             difficulty=difficulty,
             count=count,
             grounding_chunks=grounding_chunks,
-            seen_question_bodies=seen_bodies[:30],
+            seen_question_bodies=seen_bodies[:50],
+            target_type=target_type,
         )
         source_chunk_ids = [chunk.chunk_id for chunk in grounding_chunks]
         return [(gq, candidate, document_id, source_chunk_ids, all_retrieved) for gq in gqs]
@@ -423,22 +596,42 @@ async def _fetch_student_context(
 async def _fetch_all_seen_and_queued_bodies(
     tenant_id: str, workspace_id: str, student_id: str
 ) -> list[str]:
+    """Return bodies of recently-seen and queued questions for deduplication.
+
+    Limited to the 200 most-recent interactions and 300 queue entries to keep
+    RU consumption low. A small number of very old questions may slip through
+    the dedup filter on busy workspaces, which is an acceptable trade-off vs
+    hitting Cosmos TooManyRequests (429) on every session prepare.
+    """
     col_q = get_collection(tenant_id, QUESTION_QUEUE)
     col_i = get_collection(tenant_id, INTERACTIONS)
 
-    # 1. Fetch all question IDs from student's interactions in this workspace
+    # 1. Fetch interaction question IDs for this student
+    # Cosmos DB requires an explicit index to use .sort("created_at", -1).
+    # To avoid a 400 Bad Request, we fetch without sorting and take the last 200,
+    # which roughly corresponds to the most recent insertions.
     cursor_i = col_i.find(
-        {"workspace_id": workspace_id, "student_id": student_id}, {"question_id": 1}
+        {"workspace_id": workspace_id, "student_id": student_id},
+        {"question_id": 1},
     )
-    interacted_ids = [doc["question_id"] async for doc in cursor_i if doc.get("question_id")]
+    docs_i = await cosmos_retry(lambda: cursor_i.to_list(length=2000))
+    interacted_ids = [doc["question_id"] for doc in docs_i if doc.get("question_id")]
+    interacted_ids = interacted_ids[-200:]
 
-    # 2. Fetch all question bodies from the queue for this workspace
-    cursor_q = col_q.find({"workspace_id": workspace_id, "deleted_at": None}, {"body": 1})
-    bodies = [doc["body"] async for doc in cursor_q if doc.get("body")]
+    # 2. Fetch up to 300 approved question bodies from this workspace
+    cursor_q = col_q.find(
+        {"workspace_id": workspace_id, "deleted_at": None},
+        {"body": 1},
+    ).limit(300)
+    docs_q = await cosmos_retry(lambda: cursor_q.to_list(length=300))
+    bodies: list[str] = [doc["body"] for doc in docs_q if doc.get("body")]
 
-    # 3. Include answered questions no longer in the active workspace queue.
+    # 3. Include bodies of answered questions still in the queue
     if interacted_ids:
-        cursor_q2 = col_q.find({"_id": {"$in": interacted_ids}}, {"body": 1})
-        bodies.extend([doc["body"] async for doc in cursor_q2 if doc.get("body")])
+        cursor_q2 = col_q.find(
+            {"_id": {"$in": interacted_ids}}, {"body": 1}
+        ).limit(200)
+        docs_q2 = await cosmos_retry(lambda: cursor_q2.to_list(length=200))
+        bodies.extend([doc["body"] for doc in docs_q2 if doc.get("body")])
 
     return list(set(bodies))

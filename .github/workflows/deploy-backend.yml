@@ -26,8 +26,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
@@ -44,7 +44,7 @@ jobs:
       AZURE_CORE_OUTPUT: none
       IMAGE_TAG: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Sign in to Azure with OIDC
         uses: azure/login@v2
         with:
@@ -54,7 +54,7 @@ jobs:
       - name: Sign in to Azure Container Registry
         run: az acr login --name "${{ vars.ACR_NAME }}"
       - name: Build and push immutable image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v6
         with:
           context: backend
           file: backend/Dockerfile

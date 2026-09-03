@@ -24,10 +24,10 @@ class MainActivity : FlutterActivity() {
     private lateinit var googleSignInHelper: LegacyGoogleSignInHelper
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        try {
-            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        } catch (_: Throwable) {}
         super.onCreate(savedInstanceState)
+        try {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } catch (_: Throwable) {}
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

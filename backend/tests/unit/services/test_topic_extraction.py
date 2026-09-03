@@ -269,3 +269,83 @@ async def test_empty_topics_list_returns_empty():
     ):
         topics = await topic_extraction.extract_topics("table of contents page")
     assert topics == []
+
+
+# ── Length-aware extraction guidance (< 2K, > 3K, 2K-3K) ─────────────────────
+
+
+@pytest.mark.asyncio
+async def test_short_file_under_2k_chars_uses_granular_guidance():
+    short_text = (
+        "Photosynthesis occurs in chloroplasts. Chlorophyll absorbs sunlight. "
+        "Light reactions produce ATP and NADPH. Calvin cycle fixes CO2 into glucose."
+    )
+    assert len(short_text) < 2000
+
+    captured: dict[str, str] = {}
+
+    async def _fake_chat(**kwargs):
+        captured["system_prompt"] = kwargs["system_prompt"]
+        captured["user_prompt"] = kwargs["user_prompt"]
+        return {"topics": [{"name": "Photosynthesis Light Reactions", "complexity_level": 2}]}
+
+    with patch(
+        "app.services.topic_extraction.azure_openai.chat_json",
+        AsyncMock(side_effect=_fake_chat),
+    ):
+        topics = await topic_extraction.extract_topics(short_text)
+
+    assert len(topics) == 1
+    assert "GRANULAR EXTRACTION" in captured["system_prompt"]
+    assert "< 2,000 characters" in captured["system_prompt"]
+    assert "Photosynthesis occurs in chloroplasts" in captured["user_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_large_file_over_3k_chars_uses_whole_document_main_topics_guidance():
+    sections = [
+        f"Chapter {i}: Core Unit {i}\n" + ("This is detailed curriculum content for section. " * 30)
+        for i in range(1, 5)
+    ]
+    long_text = "\n\n".join(sections)
+    assert len(long_text) > 3000
+
+    captured: dict[str, str] = {}
+
+    async def _fake_chat(**kwargs):
+        captured["system_prompt"] = kwargs["system_prompt"]
+        captured["user_prompt"] = kwargs["user_prompt"]
+        return {"topics": [{"name": "Core Unit 1", "complexity_level": 3}]}
+
+    with patch(
+        "app.services.topic_extraction.azure_openai.chat_json",
+        AsyncMock(side_effect=_fake_chat),
+    ):
+        topics = await topic_extraction.extract_topics(long_text)
+
+    assert len(topics) == 1
+    assert "WHOLE-DOCUMENT ANALYSIS" in captured["system_prompt"]
+    assert "MAIN TOPICS ONLY" in captured["system_prompt"]
+    assert "> 3,000 characters" in captured["system_prompt"]
+    # Check that it read wholly through (both beginning Chapter 1 and end Chapter 4 are present)
+    assert "Chapter 1" in captured["user_prompt"]
+    assert "Chapter 4" in captured["user_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_medium_file_between_2k_and_3k_chars_uses_balanced_guidance():
+    medium_text = "A" * 2500
+    captured: dict[str, str] = {}
+
+    async def _fake_chat(**kwargs):
+        captured["system_prompt"] = kwargs["system_prompt"]
+        return {"topics": []}
+
+    with patch(
+        "app.services.topic_extraction.azure_openai.chat_json",
+        AsyncMock(side_effect=_fake_chat),
+    ):
+        await topic_extraction.extract_topics(medium_text)
+
+    assert "BALANCED EXTRACTION" in captured["system_prompt"]
+    assert "2,000 - 3,000 characters" in captured["system_prompt"]

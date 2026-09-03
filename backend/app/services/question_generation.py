@@ -359,13 +359,19 @@ def _parse_long_answer(
 def _parse_true_false(
     raw: dict[str, Any],
 ) -> tuple[str, str, list[McqOption], list[str]]:
-    answer_raw = raw.get("answer")
-    if answer_raw not in ("true", "false"):
+    answer_val = raw.get("answer")
+    if isinstance(answer_val, bool):
+        answer_str = "true" if answer_val else "false"
+    elif isinstance(answer_val, str):
+        answer_str = answer_val.strip().lower()
+    else:
+        answer_str = ""
+    if answer_str not in ("true", "false"):
         raise QuestionShapeError(
-            f"true_false 'answer' must be exactly 'true' or 'false'; got {answer_raw!r}."
+            f"true_false 'answer' must be boolean or 'true'/'false'; got {answer_val!r}."
         )
     explanation = _require_string(raw, "explanation")
-    return answer_raw, explanation, [], []
+    return answer_str, explanation, [], []
 
 
 def _parse_mathematical(
@@ -428,6 +434,7 @@ async def generate_batch_questions(
     count: int = 5,
     grounding_chunks: list[RetrievedChunk],
     seen_question_bodies: list[str] | None = None,
+    target_type: QuestionType | None = None,
 ) -> list[GeneratedQuestion]:
     """Generate a batch of diverse questions using question_batch_v1 prompt."""
     if not grounding_chunks:
@@ -441,6 +448,22 @@ async def generate_batch_questions(
 
     source_content = _format_source(grounding_chunks)
     seen_section = _format_seen(seen_question_bodies or [])
+
+    type_instruction = ""
+    if target_type:
+        type_desc_map = {
+            QuestionType.mcq: "Multiple Choice Question (mcq) — 4 options, exactly 1 correct",
+            QuestionType.short_answer: "Short Answer (short_answer) — concise 1-10 word factual recall answer",
+            QuestionType.true_false: "True / False (true_false) — answer must be exactly 'true' or 'false', with explanation",
+            QuestionType.long_answer: "Long Answer (long_answer) — essay-style answer with at least 3 key_points and a reference_answer",
+        }
+        type_desc = type_desc_map.get(target_type, target_type.value)
+        type_instruction = (
+            f"\nCRITICAL REQUIREMENT: Generate EXACTLY {count} questions in the 'questions' list. "
+            f"Every single question in the 'questions' list MUST have question_type = '{target_type.value}' ({type_desc}). "
+            f"Do not include any other question types. Ensure there are exactly {count} questions.\n"
+        )
+
     user_prompt = render(
         user_template,
         topic=topic,
@@ -448,12 +471,14 @@ async def generate_batch_questions(
         source_content=source_content,
         seen_questions=seen_section,
         count=str(count),
+        type_instruction=type_instruction,
     )
 
     response = await azure_openai.chat_json(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        max_output_tokens=3500,
+        max_output_tokens=1500,
+        temperature=0.7,
     )
 
     if response.get("insufficient_source") is True:
@@ -468,6 +493,13 @@ async def generate_batch_questions(
         try:
             q_type_str = raw.get("question_type")
             q_type = QuestionType(q_type_str)
+            if target_type and q_type != target_type:
+                logger.info(
+                    "Skipping question with mismatched type %s (expected %s)",
+                    q_type,
+                    target_type,
+                )
+                continue
 
             spec = _PROMPT_REGISTRY[q_type]
             answer, explanation, options, grading_hints = spec.parser(raw)

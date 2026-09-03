@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from app.models.base import CosmosDocument
 
@@ -96,6 +96,16 @@ class Document(CosmosDocument):
     vectorization_started_at: str | None = None  # ISO 8601 UTC
     vectorization_completed_at: str | None = None  # ISO 8601 UTC
 
+    # ── Subject & Topic Categorization (Test Studying) ─────────────────────────
+    category: str | None = None  # Subject, e.g. Chemistry, Mathematics, Physics
+    subcategory: str | None = None  # Unit/Topic/Test, e.g. Atomic Structure, Midterm 1
+
+
+class DocumentUpdateRequest(BaseModel):
+    category: str | None = None
+    subcategory: str | None = None
+    moderation_flagged: bool | None = None
+
 
 class DocumentResponse(CosmosDocument.__base__):
     id: str
@@ -112,6 +122,8 @@ class DocumentResponse(CosmosDocument.__base__):
     text_char_count: int | None = None
     languages: list[str] = Field(default_factory=list)
     processing_error: str | None = None
+    category: str | None = None
+    subcategory: str | None = None
 
     @classmethod
     def from_doc(cls, doc: Document) -> "DocumentResponse":
@@ -129,4 +141,6 @@ class DocumentResponse(CosmosDocument.__base__):
             text_char_count=doc.text_char_count,
             languages=doc.languages,
             processing_error=doc.processing_error,
+            category=doc.category,
+            subcategory=doc.subcategory,
         )

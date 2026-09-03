@@ -13,7 +13,10 @@ import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 import 'package:social_study_app/features/gamification/data/gamification_repository.dart';
+import 'package:social_study_app/features/home/providers/self_study_subject_providers.dart';
 import 'package:social_study_app/features/progress/services/recall_service.dart';
+import 'package:social_study_app/shared/models/workspace.dart'
+    show isSelfLearningWorkspaceId;
 
 part 'flashcard_session_notifier.g.dart';
 
@@ -248,10 +251,14 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
     state = const FlashcardSession.loading();
     try {
       final repo = ref.read(flashcardsRepositoryProvider);
+      final subject = isSelfLearningWorkspaceId(_workspaceId)
+          ? ref.read(selfStudySubjectProvider)
+          : null;
       final card = await repo.next(
         workspaceId: _workspaceId,
         selectedTopicIds: _selectedTopicIds,
         mastery: _lastMastery,
+        subject: subject,
       );
       state = FlashcardSession.viewingFront(card: card);
       _cardStartTime = DateTime.now();

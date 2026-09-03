@@ -27,6 +27,8 @@ import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/models/workspace.dart';
 import 'package:social_study_app/shared/services/session_persistence_service.dart';
 import 'package:social_study_app/features/screen_time/services/telemetry_service.dart';
+import 'package:social_study_app/features/home/presentation/widgets/subject_switcher_bar.dart';
+import 'package:social_study_app/features/home/providers/self_study_subject_providers.dart';
 
 final studentHomeTabProvider = StateProvider<int>((ref) {
   final saved = SessionPersistenceService.instance.getTabSync() ?? 0;
@@ -219,14 +221,57 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
             userId: userId,
             onStartStudy: workspaceId == null
                 ? () => ref.read(studentHomeTabProvider.notifier).state = 0
-                : () => context.push(
-                      '/student/session/$workspaceId?mode=study',
-                    ),
+                : () {
+                    final activeSubject = isSelfLearningWorkspaceId(workspaceId)
+                        ? ref.read(selfStudySubjectProvider)
+                        : null;
+                    final activeSubcat = isSelfLearningWorkspaceId(workspaceId)
+                        ? ref.read(selfStudySubcategoryProvider)
+                        : null;
+                    final activeType = isSelfLearningWorkspaceId(workspaceId)
+                        ? ref.read(selfStudyQuestionTypeProvider)
+                        : null;
+                    final subjectQuery = activeSubject != null
+                        ? '&subject=${Uri.encodeComponent(activeSubject)}'
+                        : '';
+                    final subcatQuery = activeSubcat != null
+                        ? '&subcategory=${Uri.encodeComponent(activeSubcat)}'
+                        : '';
+                    final typeQuery = activeType != null
+                        ? '&question_type=${Uri.encodeComponent(activeType)}'
+                        : '';
+                    context.push(
+                      '/student/session/$workspaceId?mode=study$subjectQuery$subcatQuery$typeQuery',
+                    );
+                  },
             onStartRevision: workspaceId == null
                 ? null
-                : () => context.push(
-                      '/student/session/$workspaceId?mode=revision',
-                    ),
+                : () {
+                    final activeSubject = isSelfLearningWorkspaceId(workspaceId)
+                        ? ref.read(selfStudySubjectProvider)
+                        : null;
+                    final activeSubcat = isSelfLearningWorkspaceId(workspaceId)
+                        ? ref.read(selfStudySubcategoryProvider)
+                        : null;
+                    final activeType = isSelfLearningWorkspaceId(workspaceId)
+                        ? ref.read(selfStudyQuestionTypeProvider)
+                        : null;
+                    final subjectQuery = activeSubject != null
+                        ? '&subject=${Uri.encodeComponent(activeSubject)}'
+                        : '';
+                    final subcatQuery = activeSubcat != null
+                        ? '&subcategory=${Uri.encodeComponent(activeSubcat)}'
+                        : '';
+                    final typeQuery = activeType != null
+                        ? '&question_type=${Uri.encodeComponent(activeType)}'
+                        : '';
+                    final sessionMode = isSelfLearningWorkspaceId(workspaceId)
+                        ? 'study'
+                        : 'revision';
+                    context.push(
+                      '/student/session/$workspaceId?mode=$sessionMode$subjectQuery$subcatQuery$typeQuery',
+                    );
+                  },
             onOpenBadges: (workspaceId == null || userId == null)
                 ? null
                 : () => context.push(
@@ -284,12 +329,41 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
                 return GestureDetector(
                   onTap: () {
                     if (workspaceId != null && index == 1) {
-                      context.push('/student/session/$workspaceId?mode=study');
+                      final activeSubject = isSelfLearningWorkspaceId(workspaceId)
+                          ? ref.read(selfStudySubjectProvider)
+                          : null;
+                      final activeSubcat = isSelfLearningWorkspaceId(workspaceId)
+                          ? ref.read(selfStudySubcategoryProvider)
+                          : null;
+                      final activeType = isSelfLearningWorkspaceId(workspaceId)
+                          ? ref.read(selfStudyQuestionTypeProvider)
+                          : null;
+                      final subjectQuery = activeSubject != null
+                          ? '&subject=${Uri.encodeComponent(activeSubject)}'
+                          : '';
+                      final subcatQuery = activeSubcat != null
+                          ? '&subcategory=${Uri.encodeComponent(activeSubcat)}'
+                          : '';
+                      final typeQuery = activeType != null
+                          ? '&question_type=${Uri.encodeComponent(activeType)}'
+                          : '';
+                      context.push('/student/session/$workspaceId?mode=study$subjectQuery$subcatQuery$typeQuery');
                       return;
                     }
                     if (workspaceId != null && index == 2) {
-                      context
-                          .push('/student/session/$workspaceId?mode=flashcard');
+                      final activeSubject = isSelfLearningWorkspaceId(workspaceId)
+                          ? ref.read(selfStudySubjectProvider)
+                          : null;
+                      final activeSubcat = isSelfLearningWorkspaceId(workspaceId)
+                          ? ref.read(selfStudySubcategoryProvider)
+                          : null;
+                      final subjectQuery = activeSubject != null
+                          ? '&subject=${Uri.encodeComponent(activeSubject)}'
+                          : '';
+                      final subcatQuery = activeSubcat != null
+                          ? '&subcategory=${Uri.encodeComponent(activeSubcat)}'
+                          : '';
+                      context.push('/student/session/$workspaceId?mode=flashcard$subjectQuery$subcatQuery');
                       return;
                     }
                     ref.read(studentHomeTabProvider.notifier).state = index;
@@ -751,50 +825,104 @@ class _HomeTab extends ConsumerWidget {
 
     // Standard Study Center contents
     Widget buildStudyCenterContent(BuildContext context, Widget hero) {
+      final isSelfStudy = workspaceId != null && isSelfLearningWorkspaceId(workspaceId!);
+      final activeSubject = isSelfStudy ? ref.watch(selfStudySubjectProvider) : null;
+      final activeSubcategory = isSelfStudy ? ref.watch(selfStudySubcategoryProvider) : null;
+      final activeQuestionType = isSelfStudy ? ref.watch(selfStudyQuestionTypeProvider) : null;
+
       return ListView(
         padding: const EdgeInsets.only(bottom: 100),
         children: [
           hero,
           const SizedBox(height: 15),
+          if (isSelfStudy)
+            SubjectSwitcherBar(
+              workspaceId: workspaceId!,
+              onAddMaterial: onManageStudy,
+            ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Start Study Card
-                _StartStudySessionCard(onStartStudy: onStartStudy),
-                const SizedBox(height: 10),
-
-                // Start Quick Revision Card
-                if (onStartRevision != null) ...[
-                  _SmallPillButton(
-                    icon: Icons.bolt_rounded,
-                    label: 'Quick Revision',
-                    onTap: onStartRevision!,
-                    isDark: isDark,
-                    themeMode: themeMode,
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFF59E0B), Color(0xFFEA580C)],
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                    ),
+                if (isSelfStudy) ...[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.tune_rounded,
+                            size: 13,
+                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            'Session Format',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.2,
+                              color: isDark ? Colors.white70 : const Color(0xFF475569),
+                            ),
+                          ),
+                        ],
+                      ),
+                      _QuestionTypeDropdownSelector(
+                        selectedType: activeQuestionType,
+                        onChanged: (newType) {
+                          ref.read(selfStudyQuestionTypeProvider.notifier).state = newType;
+                        },
+                        isDark: isDark,
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 10),
                 ],
+                // Start Study Card
+                _StartStudySessionCard(
+                  onStartStudy: onStartStudy,
+                  subject: activeSubject,
+                  subcategory: activeSubcategory,
+                  questionType: activeQuestionType,
+                ),
+                const SizedBox(height: 12),
 
-                // Small secondary action pills: Manage Study
-                if (canManageStudy && onManageStudy != null) ...[
+                // Secondary action pills: Quick Revision + Manage Study in a balanced row
+                if (onStartRevision != null || (canManageStudy && onManageStudy != null)) ...[
                   Row(
                     children: [
-                      Expanded(
-                        child: _SmallPillButton(
-                          icon: Icons.my_library_books_rounded,
-                          label: 'Manage Study',
-                          onTap: onManageStudy!,
-                          isDark: isDark,
-                          themeMode: themeMode,
+                      if (onStartRevision != null)
+                        Expanded(
+                          child: _SmallPillButton(
+                            icon: Icons.bolt_rounded,
+                            label: activeSubcategory != null
+                                ? 'Revise Topic'
+                                : (activeSubject != null
+                                    ? 'Revise $activeSubject'
+                                    : 'Quick Revision'),
+                            onTap: onStartRevision!,
+                            isDark: isDark,
+                            themeMode: themeMode,
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFF59E0B), Color(0xFFEA580C)],
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                            ),
+                          ),
                         ),
-                      ),
+                      if (onStartRevision != null && canManageStudy && onManageStudy != null)
+                        const SizedBox(width: 10),
+                      if (canManageStudy && onManageStudy != null)
+                        Expanded(
+                          child: _SmallPillButton(
+                            icon: Icons.my_library_books_rounded,
+                            label: 'Manage Study',
+                            onTap: onManageStudy!,
+                            isDark: isDark,
+                            themeMode: themeMode,
+                          ),
+                        ),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -1520,10 +1648,130 @@ class _ShieldPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
+class _QuestionTypeDropdownSelector extends StatelessWidget {
+  const _QuestionTypeDropdownSelector({
+    required this.selectedType,
+    required this.onChanged,
+    required this.isDark,
+  });
+
+  final String? selectedType;
+  final ValueChanged<String?> onChanged;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final isFiltered = selectedType != null;
+    const accentColor = Color(0xFF6366F1);
+    final bgColor = isDark
+        ? (isFiltered ? accentColor.withValues(alpha: 0.2) : const Color(0xFF1E293B))
+        : (isFiltered ? accentColor.withValues(alpha: 0.1) : const Color(0xFFF1F5F9));
+    final borderColor = isDark
+        ? (isFiltered ? accentColor.withValues(alpha: 0.6) : const Color(0xFF334155))
+        : (isFiltered ? accentColor.withValues(alpha: 0.4) : const Color(0xFFE2E8F0));
+    final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
+
+    return Container(
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: borderColor,
+          width: isFiltered ? 1.4 : 1.0,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            selectedType == 'mcq'
+                ? Icons.radio_button_checked_rounded
+                : (selectedType == 'short_answer'
+                    ? Icons.edit_note_rounded
+                    : (selectedType == 'true_false'
+                        ? Icons.check_circle_outline_rounded
+                        : (selectedType == 'long_answer'
+                            ? Icons.article_rounded
+                            : Icons.tune_rounded))),
+            size: 15,
+            color: isFiltered ? accentColor : (isDark ? Colors.white60 : const Color(0xFF64748B)),
+          ),
+          const SizedBox(width: 6),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<String?>(
+              value: selectedType,
+              isDense: true,
+              icon: Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: isFiltered ? accentColor : (isDark ? Colors.white60 : const Color(0xFF64748B)),
+                size: 18,
+              ),
+              dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isFiltered ? FontWeight.w700 : FontWeight.w600,
+                color: isFiltered ? (isDark ? Colors.white : accentColor) : textColor,
+              ),
+              onChanged: onChanged,
+              items: const [
+                DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text('All Formats'),
+                ),
+                DropdownMenuItem<String?>(
+                  value: 'mcq',
+                  child: Text('Multiple Choice (MCQ)'),
+                ),
+                DropdownMenuItem<String?>(
+                  value: 'short_answer',
+                  child: Text('Short Answer'),
+                ),
+                DropdownMenuItem<String?>(
+                  value: 'true_false',
+                  child: Text('True / False'),
+                ),
+                DropdownMenuItem<String?>(
+                  value: 'long_answer',
+                  child: Text('Long Answer'),
+                ),
+              ],
+            ),
+          ),
+          if (isFiltered) ...[
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: () => onChanged(null),
+              child: Padding(
+                padding: const EdgeInsets.all(2),
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 14,
+                  color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _StartStudySessionCard extends ConsumerStatefulWidget {
-  const _StartStudySessionCard({required this.onStartStudy});
+  const _StartStudySessionCard({
+    required this.onStartStudy,
+    this.subject,
+    this.subcategory,
+    this.questionType,
+  });
 
   final VoidCallback onStartStudy;
+  final String? subject;
+  final String? subcategory;
+  final String? questionType;
 
   @override
   ConsumerState<_StartStudySessionCard> createState() =>
@@ -1561,17 +1809,24 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
     final isMature = themeMode == AppThemeMode.mature;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final gradient = isMature
-        ? const LinearGradient(
-            colors: [Color(0xFF1E1B4B), Color(0xFF311062)],
+    final customColor = widget.subject != null ? subjectColor(widget.subject) : null;
+    final gradient = customColor != null
+        ? LinearGradient(
+            colors: [customColor, customColor.withOpacity(0.8)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           )
-        : const LinearGradient(
-            colors: [Color(0xFF2563EB), Color(0xFF8B5CF6)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          );
+        : (isMature
+            ? const LinearGradient(
+                colors: [Color(0xFF1E1B4B), Color(0xFF311062)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : const LinearGradient(
+                colors: [Color(0xFF2563EB), Color(0xFF8B5CF6)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ));
 
     return Container(
       height: 76,
@@ -1702,17 +1957,23 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
                         size: 22,
                       ),
                     ),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            isMature
-                                ? 'Start Your Study Session'
-                                : 'Start your study session',
-                            textAlign: TextAlign.center,
+                            widget.subject != null
+                                ? 'Study ${widget.subject}'
+                                : (widget.subcategory != null
+                                    ? 'Study ${widget.subcategory}'
+                                    : (isMature
+                                        ? 'Start Your Study Session'
+                                        : 'Start your study session')),
+                            textAlign: TextAlign.start,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 15,
@@ -1720,13 +1981,53 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
                               height: 1.15,
                             ),
                           ),
+                          if (widget.subject != null || widget.subcategory != null || widget.questionType != null) ...[
+                            const SizedBox(height: 2),
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                () {
+                                  final formatSuffix = widget.questionType == 'mcq'
+                                      ? ' • MCQ Only'
+                                      : (widget.questionType == 'short_answer'
+                                          ? ' • Short Answer'
+                                          : (widget.questionType == 'true_false'
+                                              ? ' • True / False'
+                                              : (widget.questionType == 'long_answer'
+                                                  ? ' • Long Answer'
+                                                  : '')));
+                                  if (widget.subcategory != null) {
+                                    return widget.subject != null
+                                        ? '${widget.subject} • ${widget.subcategory}$formatSuffix'
+                                        : 'Topic: ${widget.subcategory}$formatSuffix';
+                                  }
+                                  if (widget.subject != null) {
+                                    return 'Personalized ${widget.subject} questions$formatSuffix';
+                                  }
+                                  return formatSuffix.isNotEmpty
+                                      ? 'Personalized questions$formatSuffix'
+                                      : 'Personalized study questions';
+                                }(),
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.start,
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.85),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
                     if (isMature)
-                      const SizedBox(width: 72)
+                      const SizedBox(width: 64)
                     else
-                      const SizedBox(width: 50),
+                      const SizedBox(width: 76),
                   ],
                 ),
               ),
@@ -3290,23 +3591,27 @@ class _ActivityEntryItem extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 9, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? const Color(0xFF2D3748)
-                                : const Color(0xFFF0F4F8),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            subjectTag,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2.5),
+                            decoration: BoxDecoration(
                               color: isDark
-                                  ? const Color(0xFF94A3B8)
-                                  : const Color(0xFF64748B),
+                                  ? const Color(0xFF2D3748)
+                                  : const Color(0xFFF0F4F8),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              subjectTag,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: isDark
+                                    ? const Color(0xFF94A3B8)
+                                    : const Color(0xFF64748B),
+                              ),
                             ),
                           ),
                         ),
@@ -3412,21 +3717,28 @@ class _SmallPillButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             onTap: onTap,
             splashColor: Colors.white.withValues(alpha: 0.1),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, size: 16, color: Colors.white),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    letterSpacing: 0.2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 16, color: Colors.white),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        letterSpacing: 0.1,
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -3448,6 +3760,7 @@ class _SmallPillButton extends StatelessWidget {
         onTap: onTap,
         child: Container(
           height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: borderColor, width: 1.2),
@@ -3457,12 +3770,16 @@ class _SmallPillButton extends StatelessWidget {
             children: [
               Icon(icon, size: 14, color: contentColor),
               const SizedBox(width: 5),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                  color: contentColor,
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: contentColor,
+                  ),
                 ),
               ),
             ],

@@ -81,7 +81,7 @@ Format Rules:
 [USER]
 Generate {{count}} diverse questions on the topic: {{topic}}
 Difficulty: {{difficulty}}
-
+{{type_instruction}}
 Source material (use ONLY this content):
 ---
 {{source_content}}

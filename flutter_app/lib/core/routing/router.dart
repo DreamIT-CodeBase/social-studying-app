@@ -210,15 +210,37 @@ GoRouter router(RouterRef ref) {
       ),
       GoRoute(
         path: AppRoutes.studentAdaptiveSession,
-        builder: (_, state) => AdaptiveSessionScreen(
-          workspaceId: state.pathParameters['workspaceId']!,
-          mode: adaptiveSessionModeFromWire(
+        builder: (_, state) {
+          final workspaceId = state.pathParameters['workspaceId']!;
+          final rawMode = adaptiveSessionModeFromWire(
             state.uri.queryParameters['mode'],
-          ),
-        ),
+          );
+          final mode = isSelfLearningWorkspaceId(workspaceId) &&
+                  rawMode == AdaptiveSessionMode.revision
+              ? AdaptiveSessionMode.study
+              : rawMode;
+          return AdaptiveSessionScreen(
+            workspaceId: workspaceId,
+            mode: mode,
+            subject: state.uri.queryParameters['subject'],
+            subcategory: state.uri.queryParameters['subcategory'],
+            questionType: state.uri.queryParameters['question_type'],
+          );
+        },
       ),
       GoRoute(
         path: AppRoutes.studentRevisionSession,
+        redirect: (_, state) {
+          final workspaceId = state.pathParameters['workspaceId']!;
+          if (isSelfLearningWorkspaceId(workspaceId)) {
+            final subject = state.uri.queryParameters['subject'];
+            final query = subject != null
+                ? '?mode=study&subject=${Uri.encodeComponent(subject)}'
+                : '?mode=study';
+            return '/student/session/$workspaceId$query';
+          }
+          return null;
+        },
         builder: (_, state) {
           final autoStart = state.uri.queryParameters['autoStart'] == 'true';
           return RevisionScreen(

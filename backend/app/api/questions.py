@@ -96,6 +96,7 @@ from app.services import (
 from app.services import (
     gamification as gamification_service,
 )
+from app.services.subject_classifier import classify_subject_from_text
 from app.services import (
     knowledge_state as knowledge_state_service,
 )
@@ -136,6 +137,7 @@ async def next_question(
     workspace_id: str,
     background_tasks: BackgroundTasks,
     revision: bool = False,
+    subject: str | None = None,
     current_user: User = Depends(get_current_user),
 ) -> QuestionForStudent:
     """Generate and return the next adaptive question for the calling student."""
@@ -151,6 +153,7 @@ async def next_question(
             student_id=current_user.id,
             user_obj=current_user,
             revision=revision,
+            subject=subject,
             background_tasks=background_tasks,
         )
         return QuestionForStudent.from_doc(q_doc)
@@ -163,6 +166,12 @@ async def next_question(
             {"workspace_id": workspace_id, "student_id": current_user.id}
         )
         interactions = await cursor.to_list(length=1000)
+        if subject:
+            interactions = [
+                i for i in interactions
+                if classify_subject_from_text(str(i.get("topic", ""))).casefold()
+                == subject.casefold()
+            ]
 
         # 2. Extract wrong answers (recent wrong answers favoured/sorted first)
         wrong_interactions = [i for i in interactions if not i.get("is_correct", True)]

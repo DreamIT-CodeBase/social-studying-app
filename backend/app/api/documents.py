@@ -36,7 +36,13 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.models.base import utc_now
-from app.models.document import Document, DocumentResponse, DocumentStatus, DocumentType
+from app.models.document import (
+    Document,
+    DocumentResponse,
+    DocumentStatus,
+    DocumentType,
+    DocumentUpdateRequest,
+)
 from app.models.user import User, UserRole
 from app.services import blob_storage, document_purge, document_queue
 from app.services.cosmos_retry import run_with_throttle_retry
@@ -634,6 +640,43 @@ async def get_document(
     if raw is None:
         raise NotFoundError("Document", document_id)
     return DocumentResponse.from_doc(Document.model_validate(raw))
+
+
+@router.patch("/{document_id}", response_model=DocumentResponse)
+async def update_document(
+    workspace_id: str,
+    document_id: str,
+    body: DocumentUpdateRequest,
+    current_user: User = Depends(get_current_user),
+) -> DocumentResponse:
+    """Update document category, subcategory, or moderation status."""
+    _assert_workspace_access(current_user, workspace_id)
+    col = get_collection(current_user.tenant_id, DOCUMENTS)
+    raw = await col.find_one(
+        {
+            "_id": document_id,
+            "workspace_id": workspace_id,
+            "tenant_id": current_user.tenant_id,
+            "deleted_at": None,
+        }
+    )
+    if raw is None:
+        raise NotFoundError("Document", document_id)
+
+    updates: dict = {"updated_at": utc_now()}
+    if body.category is not None:
+        updates["category"] = body.category.strip()
+    if body.subcategory is not None:
+        updates["subcategory"] = body.subcategory.strip()
+    if body.moderation_flagged is not None:
+        updates["moderation_flagged"] = body.moderation_flagged
+
+    await col.update_one(
+        {"_id": document_id, "workspace_id": workspace_id},
+        {"$set": updates},
+    )
+    updated_raw = await col.find_one({"_id": document_id, "workspace_id": workspace_id})
+    return DocumentResponse.from_doc(Document.model_validate(updated_raw))
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)

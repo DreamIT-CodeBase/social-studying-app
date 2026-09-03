@@ -7,13 +7,14 @@ import pytest
 from app.api.adaptive_sessions import (
     _current_grounding_chunks,
     _flashcard_fingerprint,
-    _generate_fresh_flashcards,
+    _generate_flashcard_batch,
     _prepare_flashcards,
     _prepare_questions,
     _question_fingerprint,
     _unique_flashcards,
     _unique_questions,
 )
+from app.core.exceptions import ServiceUnavailableError
 from app.mcp_tools.retrieve_content import RetrieveContentOutput, RetrievedChunk
 from app.models.adaptive_session import AdaptiveLevel, PreparedFlashcard
 from app.models.flashcard import Flashcard, FlashcardStatus
@@ -30,6 +31,10 @@ class _Cursor:
 
     async def to_list(self, *, length: int | None) -> list[dict]:
         return list(self._rows[:length] if length is not None else self._rows)
+
+    async def __aiter__(self):
+        for row in self._rows:
+            yield row
 
 
 def _question(question_id: str, body: str) -> Question:
@@ -155,7 +160,7 @@ async def test_flashcard_session_excludes_all_previously_appeared_pairs():
             ),
         ),
         patch(
-            "app.api.adaptive_sessions._generate_fresh_flashcards",
+            "app.api.adaptive_sessions._generate_flashcard_batch",
             AsyncMock(return_value=[]),
         ),
         patch(
@@ -208,7 +213,7 @@ async def test_flashcard_session_ignores_placeholder_questions_and_uses_fresh_ge
             ),
         ),
         patch(
-            "app.api.adaptive_sessions._generate_fresh_flashcards",
+            "app.api.adaptive_sessions._generate_flashcard_batch",
             AsyncMock(return_value=[fresh]),
         ) as generate,
         patch(
@@ -267,7 +272,14 @@ async def test_current_grounding_discards_search_hits_from_superseded_documents(
 
 
 @pytest.mark.asyncio
-async def test_fresh_generation_retries_duplicate_content_before_persisting():
+async def test_parallel_generation_dedupes_duplicate_content_before_persisting():
+    """The parallel fan-out persists only the non-duplicate card.
+
+    ``_generate_flashcard_batch`` fires ``generation_target`` single-card
+    generations concurrently, so two slots can land on the same topic and one
+    can echo an already-seen pair. The fingerprint filter after the fan-out must
+    drop the blocked duplicate and persist only the genuinely new card.
+    """
     student = make_user(user_id="stu_a", role=UserRole.student, workspace_ids=["wsp_a"])
     chunk = RetrievedChunk(
         chunk_id="chk_current",
@@ -306,10 +318,10 @@ async def test_fresh_generation_retries_duplicate_content_before_persisting():
             AsyncMock(return_value=persisted),
         ) as persist,
     ):
-        prepared = await _generate_fresh_flashcards(
+        prepared = await _generate_flashcard_batch(
             user=student,
             workspace_id="wsp_a",
-            target=1,
+            target=2,
             level=AdaptiveLevel.beginner,
             current_sources=CurrentStudySources(
                 document_ids=frozenset({"doc_current"}),
@@ -548,3 +560,290 @@ def test_mastery_level_count_ranges_match_specification():
     assert 20 <= exp_q_count <= 25
     exp_f_count = _adaptive_count(0.90, exp_level, _FLASHCARD_RANGES[exp_level])
     assert 18 <= exp_f_count <= 25
+
+
+def _raw_with_topic(question_id: str, body: str, topic: str) -> dict:
+    q = _question(question_id, body)
+    q.topic = topic
+    return q.model_dump(by_alias=True)
+
+
+def _raw_flashcard_with_topic(card_id: str, front: str, back: str, topic: str) -> dict:
+    fc = _flashcard(card_id, front, back)
+    fc.topic = topic
+    return fc.model_dump(by_alias=True)
+
+
+@pytest.mark.asyncio
+async def test_prepare_questions_self_study_topic_strict_filtering():
+    student = make_user(user_id="stu_a", role=UserRole.student, workspace_ids=["wsp_self_stu_a"])
+
+    queue = MagicMock()
+    queue.find.return_value = _Cursor([
+        _raw_with_topic("qst_kin_1", "What is velocity?", "Kinematics"),
+        _raw_with_topic("qst_thermo_1", "What is entropy?", "Thermodynamics"),
+    ])
+
+    with (
+        patch("app.api.adaptive_sessions._history", AsyncMock(return_value=([], {}))),
+        patch("app.api.adaptive_sessions._reserved_questions", AsyncMock(return_value=(set(), set()))),
+        patch("app.api.adaptive_sessions.get_collection", return_value=queue),
+        patch(
+            "app.api.adaptive_sessions.study_sources.current_study_sources",
+            AsyncMock(
+                return_value=CurrentStudySources(
+                    document_ids=frozenset({"doc_a"}),
+                    topic_names=("Kinematics", "Thermodynamics"),
+                )
+            ),
+        ),
+        patch("app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch", AsyncMock(return_value=[])),
+    ):
+        # When subcategory="Kinematics" is specified, only Kinematics question is served
+        prepared = await _prepare_questions(
+            user=student,
+            workspace_id="wsp_self_stu_a",
+            target=1,
+            level=AdaptiveLevel.beginner,
+            revision=False,
+            subcategory="Kinematics",
+        )
+
+    assert len(prepared) == 1
+    assert prepared[0].id == "qst_kin_1"
+    assert prepared[0].topic == "Kinematics"
+
+
+@pytest.mark.asyncio
+async def test_prepare_questions_self_study_raises_503_never_fallback():
+    student = make_user(user_id="stu_a", role=UserRole.student, workspace_ids=["wsp_self_stu_a"])
+    queue = MagicMock()
+    queue.find.return_value = _Cursor([])
+
+    with (
+        patch("app.api.adaptive_sessions._history", AsyncMock(return_value=([], {}))),
+        patch("app.api.adaptive_sessions._reserved_questions", AsyncMock(return_value=(set(), set()))),
+        patch("app.api.adaptive_sessions.get_collection", return_value=queue),
+        patch(
+            "app.api.adaptive_sessions.study_sources.current_study_sources",
+            AsyncMock(
+                return_value=CurrentStudySources(
+                    document_ids=frozenset({"doc_a"}),
+                    topic_names=("Kinematics",),
+                )
+            ),
+        ),
+        patch("app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch", AsyncMock(return_value=[])),
+    ):
+        with pytest.raises(ServiceUnavailableError) as exc_info:
+            await _prepare_questions(
+                user=student,
+                workspace_id="wsp_self_stu_a",
+                target=3,
+                level=AdaptiveLevel.beginner,
+                revision=False,
+                subcategory="Kinematics",
+            )
+
+    assert exc_info.value.status_code == 503
+    assert "prepared from your study material" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_prepare_flashcards_self_study_topic_strict_filtering():
+    student = make_user(user_id="stu_a", role=UserRole.student, workspace_ids=["wsp_self_stu_a"])
+
+    card_col = MagicMock()
+    card_col.find.return_value = _Cursor([
+        _raw_flashcard_with_topic("fcd_kin_1", "What is acceleration?", "Rate of change of velocity", "Kinematics"),
+        _raw_flashcard_with_topic("fcd_thermo_1", "What is enthalpy?", "Heat content", "Thermodynamics"),
+    ])
+    q_col = MagicMock()
+    q_col.find.return_value = _Cursor([])
+
+    def get_col(tenant_id, name):
+        return card_col if "flashcard" in name else q_col
+
+    with (
+        patch("app.api.adaptive_sessions._history", AsyncMock(return_value=([], {}))),
+        patch("app.api.adaptive_sessions._reserved_flashcards", AsyncMock(return_value=(set(), set()))),
+        patch("app.api.adaptive_sessions.get_collection", side_effect=get_col),
+        patch(
+            "app.api.adaptive_sessions.study_sources.current_study_sources",
+            AsyncMock(
+                return_value=CurrentStudySources(
+                    document_ids=frozenset({"doc_a"}),
+                    topic_names=("Kinematics", "Thermodynamics"),
+                )
+            ),
+        ),
+        patch("app.api.adaptive_sessions._generate_flashcard_batch", AsyncMock(return_value=[])),
+    ):
+        prepared = await _prepare_flashcards(
+            user=student,
+            workspace_id="wsp_self_stu_a",
+            target=1,
+            level=AdaptiveLevel.beginner,
+            subcategory="Kinematics",
+        )
+
+    assert len(prepared) == 1
+    assert prepared[0].id == "fcd_kin_1"
+    assert prepared[0].topic == "Kinematics"
+
+
+@pytest.mark.asyncio
+async def test_prepare_flashcards_self_study_raises_503_never_fallback():
+    student = make_user(user_id="stu_a", role=UserRole.student, workspace_ids=["wsp_self_stu_a"])
+    empty_col = MagicMock()
+    empty_col.find.return_value = _Cursor([])
+
+    with (
+        patch("app.api.adaptive_sessions._history", AsyncMock(return_value=([], {}))),
+        patch("app.api.adaptive_sessions._reserved_flashcards", AsyncMock(return_value=(set(), set()))),
+        patch("app.api.adaptive_sessions.get_collection", return_value=empty_col),
+        patch(
+            "app.api.adaptive_sessions.study_sources.current_study_sources",
+            AsyncMock(
+                return_value=CurrentStudySources(
+                    document_ids=frozenset({"doc_a"}),
+                    topic_names=("Kinematics",),
+                )
+            ),
+        ),
+        patch("app.api.adaptive_sessions._generate_flashcard_batch", AsyncMock(return_value=[])),
+    ):
+        with pytest.raises(ServiceUnavailableError) as exc_info:
+            await _prepare_flashcards(
+                user=student,
+                workspace_id="wsp_self_stu_a",
+                target=3,
+                level=AdaptiveLevel.beginner,
+                subcategory="Kinematics",
+            )
+
+    assert exc_info.value.status_code == 503
+    assert "prepared from your study material" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_prepare_questions_self_study_question_type_strict_filtering():
+    student = make_user(user_id="stu_a", role=UserRole.student, workspace_ids=["wsp_self_stu_a"])
+
+    q_mcq = _question("qst_mcq_1", "What is acceleration?")
+    q_mcq.topic = "Physics"
+    q_mcq.question_type = QuestionType.mcq
+
+    q_short = _question("qst_short_1", "Define velocity.")
+    q_short.topic = "Physics"
+    q_short.question_type = QuestionType.short_answer
+
+    queue = MagicMock()
+    queue.find.return_value = _Cursor([
+        q_mcq.model_dump(by_alias=True),
+        q_short.model_dump(by_alias=True),
+    ])
+
+    with (
+        patch("app.api.adaptive_sessions._history", AsyncMock(return_value=([], {}))),
+        patch("app.api.adaptive_sessions._reserved_questions", AsyncMock(return_value=(set(), set()))),
+        patch("app.api.adaptive_sessions.get_collection", return_value=queue),
+        patch(
+            "app.api.adaptive_sessions.study_sources.current_study_sources",
+            AsyncMock(
+                return_value=CurrentStudySources(
+                    document_ids=frozenset({"doc_a"}),
+                    topic_names=("Physics",),
+                )
+            ),
+        ),
+        patch("app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch", AsyncMock(return_value=[])) as mock_gen,
+    ):
+        # Requesting only mcq questions
+        prepared = await _prepare_questions(
+            user=student,
+            workspace_id="wsp_self_stu_a",
+            target=1,
+            level=AdaptiveLevel.beginner,
+            revision=False,
+            question_type=QuestionType.mcq,
+        )
+
+    assert len(prepared) == 1
+    assert prepared[0].id == "qst_mcq_1"
+    assert prepared[0].question_type == QuestionType.mcq
+
+
+@pytest.mark.asyncio
+async def test_prepare_self_study_generates_five_fresh_questions_on_topic_and_type():
+    """Verify that in self-study mode, selecting a subcategory and MCQ generates 5 fresh questions."""
+    student = make_user("stu_self", role=UserRole.student)
+    fresh_questions = [
+        Question(
+            **{"_id": f"qst_fresh_{i}"},
+            tenant_id="ten_test001",
+            workspace_id="wsp_self_stu_self",
+            document_id="doc_a",
+            topic="Atomic Structure",
+            question_type=QuestionType.mcq,
+            difficulty=DifficultyLevel.beginner,
+            body=f"What is atomic principle {i}?",
+            answer="B",
+            status=QuestionStatus.approved,
+        )
+        for i in range(5)
+    ]
+
+    queue = MagicMock()
+    # Pool has older generic questions
+    queue.find.return_value = _Cursor([
+        _raw("qst_old_1", "What is an atom?"),
+    ])
+
+    with (
+        patch("app.api.adaptive_sessions._history", AsyncMock(return_value=([], {}))),
+        patch("app.api.adaptive_sessions._reserved_questions", AsyncMock(return_value=(set(), set()))),
+        patch("app.api.adaptive_sessions._question_session_history", AsyncMock(return_value=(set(), set(), ["Old stem from session 1"]))),
+        patch("app.api.adaptive_sessions.get_collection", return_value=queue),
+        patch(
+            "app.api.adaptive_sessions.study_sources.current_study_sources",
+            AsyncMock(
+                return_value=CurrentStudySources(
+                    document_ids=frozenset({"doc_a"}),
+                    topic_names=("Atomic Structure",),
+                )
+            ),
+        ),
+        patch(
+            "app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch",
+            AsyncMock(return_value=fresh_questions),
+        ) as mock_gen,
+    ):
+        prepared = await _prepare_questions(
+            user=student,
+            workspace_id="wsp_self_stu_self",
+            target=5,
+            level=AdaptiveLevel.beginner,
+            revision=False,
+            subject="Chemistry",
+            subcategory="Atomic Structure",
+            question_type=QuestionType.mcq,
+        )
+
+    # Must generate 5 fresh questions
+    assert len(prepared) == 5
+    mock_gen.assert_awaited_once_with(
+        tenant_id="ten_test001",
+        workspace_id="wsp_self_stu_self",
+        student_id="stu_self",
+        user_obj=student,
+        revision=False,
+        subject="Chemistry",
+        target_topic="Atomic Structure",
+        target_type=QuestionType.mcq,
+        batch_size=5,
+        extra_seen_bodies=["Old stem from session 1"],
+    )
+    assert all(q.id.startswith("qst_fresh_") for q in prepared)
+
+

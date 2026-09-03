@@ -13,7 +13,10 @@ import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/gamification/presentation/gamification_notifier.dart';
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 import 'package:social_study_app/features/gamification/data/gamification_repository.dart';
+import 'package:social_study_app/features/home/providers/self_study_subject_providers.dart';
 import 'package:social_study_app/features/progress/services/recall_service.dart';
+import 'package:social_study_app/shared/models/workspace.dart'
+    show isSelfLearningWorkspaceId;
 
 part 'question_session_notifier.g.dart';
 
@@ -214,7 +217,13 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
     state = const QuestionSession.loading();
     try {
       final repo = ref.read(questionsRepositoryProvider);
-      final question = await repo.next(workspaceId: _workspaceId);
+      final subject = isSelfLearningWorkspaceId(_workspaceId)
+          ? ref.read(selfStudySubjectProvider)
+          : null;
+      final question = await repo.next(
+        workspaceId: _workspaceId,
+        subject: subject,
+      );
       state = QuestionSession.ready(question: question);
       _questionStartTime = DateTime.now();
     } on NoTopicsAvailableException catch (e) {

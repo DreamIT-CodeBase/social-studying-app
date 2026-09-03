@@ -16,6 +16,8 @@ import 'package:social_study_app/features/gamification/presentation/widgets/cele
 import 'package:social_study_app/features/study_sessions/data/adaptive_session_repository.dart';
 import 'package:social_study_app/features/study_sessions/domain/adaptive_session_models.dart';
 import 'package:social_study_app/features/study_sessions/presentation/adaptive_session_legacy_ui.dart';
+import 'package:social_study_app/shared/models/workspace.dart'
+    show isSelfLearningWorkspaceId;
 import 'package:social_study_app/shared/services/dio_client.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 
@@ -24,32 +26,39 @@ class AdaptiveSessionScreen extends ConsumerStatefulWidget {
     super.key,
     required this.workspaceId,
     required this.mode,
+    this.subject,
+    this.subcategory,
+    this.questionType,
   });
 
   final String workspaceId;
   final AdaptiveSessionMode mode;
+  final String? subject;
+  final String? subcategory;
+  final String? questionType;
 
   @override
   ConsumerState<AdaptiveSessionScreen> createState() =>
       _AdaptiveSessionScreenState();
 }
 
-enum _SessionPhase { preparing, ready, active, completing, complete, error }
+enum _SessionPhase {
+  preparing,
+  ready,
+  active,
+  completing,
+  complete,
+  exhausted,
+  error,
+}
 
 class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
   static const _preparationRetryDelays = <Duration>[
+    Duration(seconds: 1),
+    Duration(seconds: 1),
+    Duration(seconds: 2),
     Duration(seconds: 2),
     Duration(seconds: 3),
-    Duration(seconds: 5),
-    Duration(seconds: 5),
-    Duration(seconds: 5),
-    Duration(seconds: 5),
-    Duration(seconds: 5),
-    Duration(seconds: 5),
-    Duration(seconds: 5),
-    Duration(seconds: 5),
-    Duration(seconds: 5),
-    Duration(seconds: 5),
   ];
   final TextEditingController _answerController = TextEditingController();
   final List<SessionQuestionAttempt> _questionAttempts = [];
@@ -117,21 +126,44 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
       _flashcardAttempts.clear();
       _preparationAttempt = 0;
     });
-    for (var attempt = 0;; attempt++) {
+    const maxAttempts = 8;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
       try {
+        final isSelfStudy = isSelfLearningWorkspaceId(widget.workspaceId);
+        final effectiveMode = isSelfStudy &&
+                widget.mode == AdaptiveSessionMode.revision
+            ? AdaptiveSessionMode.study
+            : widget.mode;
         final plan = await _repository.prepare(
           workspaceId: widget.workspaceId,
-          mode: widget.mode,
+          mode: effectiveMode,
+          subject: isSelfStudy ? widget.subject : null,
+          subcategory: isSelfStudy ? widget.subcategory : null,
+          questionType: isSelfStudy ? widget.questionType : null,
         );
         if (!mounted || generation != _prepareGeneration) return;
+        // A plan with no runnable items is a call-to-action, not a session:
+        // the learner has used every non-repeating session this material can
+        // produce and needs to upload more. Never retry it as an error.
+        final noContent = plan.exhausted || plan.itemCount == 0;
         setState(() {
           _plan = plan;
           _remainingSeconds = plan.durationMinutes * 60;
-          _phase = _SessionPhase.ready;
+          _phase =
+              noContent ? _SessionPhase.exhausted : _SessionPhase.ready;
         });
         return;
       } catch (error) {
         if (!mounted || generation != _prepareGeneration) return;
+        if (attempt >= maxAttempts - 1) {
+          setState(() {
+            _phase = _SessionPhase.error;
+            _error = error is AdaptiveSessionException
+                ? error.message
+                : 'Unable to prepare study session. Please try again.';
+          });
+          return;
+        }
         final delay = attempt < _preparationRetryDelays.length
             ? _preparationRetryDelays[attempt]
             : const Duration(seconds: 4);
@@ -519,6 +551,14 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
             summary: _summary!,
             onDone: () => context.pop(),
             onAnother: _prepare,
+          ),
+        _SessionPhase.exhausted => SessionExhaustedView(
+            mode: widget.mode,
+            canUpload: isSelfLearningWorkspaceId(widget.workspaceId),
+            onUpload: () => context.pushReplacement(
+              '/student/documents/${widget.workspaceId}',
+            ),
+            onClose: () => context.pop(),
           ),
         _SessionPhase.error => _ErrorView(
             message: _error ?? 'Something went wrong.',
