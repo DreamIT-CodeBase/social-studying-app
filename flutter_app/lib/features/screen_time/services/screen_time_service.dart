@@ -190,17 +190,34 @@ class ScreenTimeService {
     final prefs = await _getPrefs();
     final jsonStr = prefs.getString(_keyBlockedPackages);
     if (jsonStr == null) {
-      // Default list of apps to block
+      // Default list of apps to block (India & US popular social media and video apps)
       return [
         'com.instagram.android',
         'com.instagram.barcelona',
         'com.zhiliaoapp.musically',
+        'com.ss.android.ugc.trill',
         'com.google.android.youtube',
+        'com.google.android.apps.youtube.music',
         'com.facebook.katana',
+        'com.facebook.orca',
         'com.twitter.android',
+        'com.x.android',
         'com.snapchat.android',
         'com.reddit.frontpage',
         'com.pinterest',
+        'tv.twitch.android.app',
+        'com.discord',
+        'org.telegram.messenger',
+        'com.linkedin.android',
+        'com.netflix.mediaclient',
+        'com.amazon.avod.thirdpartyclient',
+        'com.hotstar.mobile',
+        'com.jio.media.ondemand',
+        'in.mohalla.sharechat',
+        'com.next.innovation.takatak',
+        'com.eterno',
+        'video.like',
+        'com.kwai.video',
       ];
     }
     try {

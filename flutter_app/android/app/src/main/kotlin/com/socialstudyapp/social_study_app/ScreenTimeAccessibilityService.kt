@@ -325,12 +325,50 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
 
     private fun showExhaustedOverlay() {
         try {
+            // 1. Kick out of the blocked app immediately by performing Home action
+            performGlobalAction(GLOBAL_ACTION_HOME)
+
+            // 2. Launch Social Study App in foreground with study tasks
+            try {
+                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                }
+                if (launchIntent != null) {
+                    startActivity(launchIntent)
+                }
+            } catch (_: Throwable) {}
+
+            // 3. Show Toast for instant visual feedback on any device
+            handler.post {
+                try {
+                    android.widget.Toast.makeText(
+                        applicationContext,
+                        "📚 Study Time Exhausted! Complete study tasks to earn more screen time.",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                } catch (_: Throwable) {}
+            }
+
+            // 4. Also display the full screen overlay if supported
             showOverlay(OverlayMode.EXHAUSTED) { createOverlayView() }
         } catch (_: Throwable) {}
     }
 
     private fun showBreakOverlay(userId: String, breakUntil: Long) {
         try {
+            // Kick out of blocked app during mandatory break
+            performGlobalAction(GLOBAL_ACTION_HOME)
+
+            handler.post {
+                try {
+                    android.widget.Toast.makeText(
+                        applicationContext,
+                        "⏸️ Take a 5-minute break! Social media is temporarily paused.",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                } catch (_: Throwable) {}
+            }
+
             if (overlayMode == OverlayMode.BREAK && overlayView != null) {
                 updateBreakCountdown(breakUntil)
                 return
@@ -694,12 +732,29 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
             "com.instagram.android",
             "com.instagram.barcelona",
             "com.zhiliaoapp.musically",
+            "com.ss.android.ugc.trill",
             "com.google.android.youtube",
+            "com.google.android.apps.youtube.music",
             "com.facebook.katana",
+            "com.facebook.orca",
             "com.twitter.android",
+            "com.x.android",
             "com.snapchat.android",
             "com.reddit.frontpage",
             "com.pinterest",
+            "tv.twitch.android.app",
+            "com.discord",
+            "org.telegram.messenger",
+            "com.linkedin.android",
+            "com.netflix.mediaclient",
+            "com.amazon.avod.thirdpartyclient",
+            "com.hotstar.mobile",
+            "com.jio.media.ondemand",
+            "in.mohalla.sharechat",
+            "com.next.innovation.takatak",
+            "com.eterno",
+            "video.like",
+            "com.kwai.video",
         )
 
         private enum class OverlayMode {

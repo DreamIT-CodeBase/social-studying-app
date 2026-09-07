@@ -36,16 +36,14 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
     final authState = ref.watch(authNotifierProvider).valueOrNull;
     final user =
         authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
-    if (user == null || user.workspaceMemberships.isEmpty) {
+    final memberships = effectiveStudentMemberships(user);
+    if (user == null || memberships.isEmpty) {
       await _service.setCurrentUserId(null);
       return ScreenTimeWallet.initial();
     }
 
-    final workspaceId = ref.watch(activeWorkspaceIdProvider);
-    if (workspaceId == null) {
-      await _service.setCurrentUserId(null);
-      return ScreenTimeWallet.initial();
-    }
+    final workspaceId = ref.watch(activeWorkspaceIdProvider) ??
+        memberships.first.workspaceId;
     final key = (workspaceId: workspaceId, userId: user.id);
 
     await _service.setCurrentUserId(user.id);
@@ -134,10 +132,11 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
         authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user == null) return;
 
-    final workspaceId = ref.read(activeWorkspaceIdProvider);
-    if (workspaceId == null) return;
+    final memberships = effectiveStudentMemberships(user);
+    if (memberships.isEmpty) return;
+    final workspaceId = ref.read(activeWorkspaceIdProvider) ??
+        memberships.first.workspaceId;
 
-    state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final wallet = await _syncWalletAndSettings(user.id, workspaceId);
       await _service.setEnforcementReady(true);
@@ -151,8 +150,10 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
         authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user == null) return;
 
-    final workspaceId = ref.read(activeWorkspaceIdProvider);
-    if (workspaceId == null) return;
+    final memberships = effectiveStudentMemberships(user);
+    if (memberships.isEmpty) return;
+    final workspaceId = ref.read(activeWorkspaceIdProvider) ??
+        memberships.first.workspaceId;
     final currentWallet = state.valueOrNull;
 
     try {
@@ -196,8 +197,10 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
         authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user == null) return;
 
-    final workspaceId = ref.read(activeWorkspaceIdProvider);
-    if (workspaceId == null) return;
+    final memberships = effectiveStudentMemberships(user);
+    if (memberships.isEmpty) return;
+    final workspaceId = ref.read(activeWorkspaceIdProvider) ??
+        memberships.first.workspaceId;
 
     try {
       final updatedSettings =
@@ -220,8 +223,10 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
         authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user == null) return;
 
-    final workspaceId = ref.read(activeWorkspaceIdProvider);
-    if (workspaceId == null) return;
+    final memberships = effectiveStudentMemberships(user);
+    if (memberships.isEmpty) return;
+    final workspaceId = ref.read(activeWorkspaceIdProvider) ??
+        memberships.first.workspaceId;
 
     try {
       final updatedSettings =
@@ -241,8 +246,10 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
         authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user == null) return;
 
-    final workspaceId = ref.read(activeWorkspaceIdProvider);
-    if (workspaceId == null) return;
+    final memberships = effectiveStudentMemberships(user);
+    if (memberships.isEmpty) return;
+    final workspaceId = ref.read(activeWorkspaceIdProvider) ??
+        memberships.first.workspaceId;
 
     try {
       final updatedSettings =
@@ -262,8 +269,10 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
         authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user == null) return;
 
-    final workspaceId = ref.read(activeWorkspaceIdProvider);
-    if (workspaceId == null) return;
+    final memberships = effectiveStudentMemberships(user);
+    if (memberships.isEmpty) return;
+    final workspaceId = ref.read(activeWorkspaceIdProvider) ??
+        memberships.first.workspaceId;
 
     try {
       final serverWallet =
@@ -370,7 +379,9 @@ Future<int> xpToMinuteRatio(XpToMinuteRatioRef ref) async {
   final user =
       authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
   if (user != null) {
-    final workspaceId = ref.watch(activeWorkspaceIdProvider);
+    final memberships = effectiveStudentMemberships(user);
+    final workspaceId = ref.watch(activeWorkspaceIdProvider) ??
+        (memberships.isNotEmpty ? memberships.first.workspaceId : null);
     if (workspaceId != null) {
       try {
         final settings = await ref
@@ -391,7 +402,9 @@ Future<bool> enableBlocking(EnableBlockingRef ref) async {
   final user =
       authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
   if (user != null) {
-    final workspaceId = ref.watch(activeWorkspaceIdProvider);
+    final memberships = effectiveStudentMemberships(user);
+    final workspaceId = ref.watch(activeWorkspaceIdProvider) ??
+        (memberships.isNotEmpty ? memberships.first.workspaceId : null);
     if (workspaceId != null) {
       try {
         final settings = await ref
@@ -412,7 +425,9 @@ Future<List<String>> blockedPackages(BlockedPackagesRef ref) async {
   final user =
       authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
   if (user != null) {
-    final workspaceId = ref.watch(activeWorkspaceIdProvider);
+    final memberships = effectiveStudentMemberships(user);
+    final workspaceId = ref.watch(activeWorkspaceIdProvider) ??
+        (memberships.isNotEmpty ? memberships.first.workspaceId : null);
     if (workspaceId != null) {
       try {
         final settings = await ref
