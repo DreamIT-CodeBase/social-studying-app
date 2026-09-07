@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/notifications/presentation/notification_service.dart';
 import 'package:social_study_app/features/screen_time/data/screen_time_repository.dart';
 import 'package:social_study_app/features/screen_time/providers/screen_time_providers.dart';
+import 'package:social_study_app/features/screen_time/screens/ios_permission_setup_screen.dart';
 import 'package:social_study_app/features/screen_time/services/screen_time_service.dart';
 import 'package:social_study_app/shared/services/session_persistence_service.dart';
 
@@ -36,6 +38,9 @@ class _StudentAppState extends ConsumerState<_StudentApp>
   Future<void>? _permissionCheckInFlight;
   String? _permissionCheckUserId;
 
+  // iOS: track whether we have already shown the setup screen this session.
+  bool _iosSetupShown = false;
+
   @override
   void initState() {
     super.initState();
@@ -61,6 +66,10 @@ class _StudentAppState extends ConsumerState<_StudentApp>
     unawaited(
       ref.read(screenTimeNotifierProvider.notifier).refreshWallet(),
     );
+    // Re-apply shields on every foreground resume (iOS)
+    if (Platform.isIOS) {
+      unawaited(ScreenTimeService().reapplyShields());
+    }
     unawaited(_verifyPermissionSetup(user.id, ref.read(routerProvider)));
   }
 
@@ -79,9 +88,14 @@ class _StudentAppState extends ConsumerState<_StudentApp>
             if (_lastAuthedUserId == user.id) return;
             _lastAuthedUserId = user.id;
             _signedOutHandled = false;
+            _iosSetupShown = false; // Reset so new user sees the setup
             _initNotifications(router);
             unawaited(ref.read(screenTimeNotifierProvider.future));
             unawaited(_verifyPermissionSetup(user.id, router));
+            // iOS: show permission setup if not yet authorized
+            if (Platform.isIOS) {
+              unawaited(_checkAndShowIOSPermissionSetup());
+            }
           },
           unauthenticated: () {
             if (_signedOutHandled) return;
@@ -103,6 +117,49 @@ class _StudentAppState extends ConsumerState<_StudentApp>
       themeMode: ThemeMode.system,
       routerConfig: router,
       debugShowCheckedModeBanner: false,
+    );
+  }
+
+  // ── iOS Permission Setup ─────────────────────────────────────────────────
+
+  Future<void> _checkAndShowIOSPermissionSetup() async {
+    if (!Platform.isIOS) return;
+    if (_iosSetupShown) return;
+    // Small delay so the router is fully ready
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+
+    final service = ScreenTimeService();
+    final status = await service.getIOSAuthorizationStatus();
+    final hasApps = await service.hasSelectedBlockedApps();
+
+    // If already fully set up, just re-apply shields and bail.
+    if (status == 'approved' && hasApps) {
+      unawaited(service.reapplyShields());
+      return;
+    }
+
+    _iosSetupShown = true;
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => SizedBox(
+        height: MediaQuery.of(context).size.height * 0.92,
+        child: IOSPermissionSetupScreen(
+          onComplete: () {
+            Navigator.of(context, rootNavigator: true).pop();
+            unawaited(service.reapplyShields());
+          },
+        ),
+      ),
     );
   }
 

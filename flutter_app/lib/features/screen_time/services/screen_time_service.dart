@@ -277,29 +277,52 @@ class ScreenTimeService {
   Future<bool> isScreenTimeAuthorized() async {
     if (!Platform.isIOS) return false;
     try {
-      return await _channel.invokeMethod<bool>('isScreenTimeAuthorized') ??
-          false;
+      return await _channel.invokeMethod<bool>('isScreenTimeAuthorized') ?? false;
     } catch (_) {
       return false;
     }
   }
 
-  Future<bool> requestScreenTimeAuthorization() async {
-    if (!Platform.isIOS) return false;
+  /// Returns 'approved', 'denied', or 'notDetermined'.
+  Future<String> getIOSAuthorizationStatus() async {
+    if (!Platform.isIOS) return 'approved';
     try {
-      return await _channel
-              .invokeMethod<bool>('requestScreenTimeAuthorization') ??
-          false;
+      return await _channel.invokeMethod<String>('getAuthorizationStatus') ??
+          'notDetermined';
     } catch (_) {
-      return false;
+      return 'notDetermined';
     }
+  }
+
+  /// Request Screen Time authorization. Returns true if approved.
+  /// On iOS 17.4+ personal devices this may fail — if so, [errorMessage]
+  /// will contain instructions to open Settings manually.
+  Future<({bool approved, String? errorMessage})>
+      requestScreenTimeAuthorization() async {
+    if (!Platform.isIOS) return (approved: false, errorMessage: null);
+    try {
+      final result =
+          await _channel.invokeMethod<bool>('requestScreenTimeAuthorization');
+      return (approved: result ?? false, errorMessage: null);
+    } on PlatformException catch (e) {
+      return (approved: false, errorMessage: e.message);
+    } catch (_) {
+      return (approved: false, errorMessage: null);
+    }
+  }
+
+  /// Opens the Screen Time section in iOS Settings.
+  Future<void> openScreenTimeSettings() async {
+    if (!Platform.isIOS) return;
+    try {
+      await _channel.invokeMethod<void>('openScreenTimeSettings');
+    } catch (_) {}
   }
 
   Future<bool> presentFamilyActivityPicker() async {
     if (!Platform.isIOS) return false;
     try {
-      return await _channel.invokeMethod<bool>('presentFamilyActivityPicker') ??
-          false;
+      return await _channel.invokeMethod<bool>('presentFamilyActivityPicker') ?? false;
     } catch (_) {
       return false;
     }
@@ -308,8 +331,7 @@ class ScreenTimeService {
   Future<bool> hasSelectedBlockedApps() async {
     if (!Platform.isIOS) return false;
     try {
-      return await _channel.invokeMethod<bool>('hasSelectedBlockedApps') ??
-          false;
+      return await _channel.invokeMethod<bool>('hasSelectedBlockedApps') ?? false;
     } catch (_) {
       return false;
     }
@@ -328,13 +350,34 @@ class ScreenTimeService {
     } catch (_) {}
   }
 
+  /// Force re-apply shields from cached state. Call after foreground resume.
+  Future<void> reapplyShields() async {
+    if (!Platform.isIOS) return;
+    try {
+      await _channel.invokeMethod<void>('reapplyShields');
+    } catch (_) {}
+  }
+
+  // MARK: - Notifications (cross-platform)
+
+  /// Request notification permission on iOS (Android uses the system dialog).
+  Future<bool> requestNotificationPermissionIOS() async {
+    if (!Platform.isIOS) return false;
+    try {
+      return await _channel
+              .invokeMethod<bool>('requestNotificationPermission') ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // MARK: - Android Accessibility Methods
 
   Future<bool> isAccessibilityServiceEnabled() async {
     if (!Platform.isAndroid) return false;
     try {
-      return await _channel.invokeMethod<bool>('isAccessibilityEnabled') ??
-          false;
+      return await _channel.invokeMethod<bool>('isAccessibilityEnabled') ?? false;
     } catch (_) {
       return false;
     }

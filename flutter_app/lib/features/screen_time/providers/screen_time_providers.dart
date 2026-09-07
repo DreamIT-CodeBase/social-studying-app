@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
@@ -62,7 +63,24 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
     final wallet = await _syncWalletAndSettings(user.id, workspaceId);
     await _service.setEnforcementReady(true);
+
+    // iOS: start a periodic timer to keep shields active even while the
+    // main app is running in the foreground.
+    if (Platform.isIOS) {
+      _startPeriodicShieldSync();
+    }
+
     return wallet;
+  }
+
+  Timer? _shieldSyncTimer;
+
+  void _startPeriodicShieldSync() {
+    _shieldSyncTimer?.cancel();
+    _shieldSyncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      _service.reapplyShields();
+    });
+    ref.onDispose(() => _shieldSyncTimer?.cancel());
   }
 
   Future<ScreenTimeWallet> _syncWalletAndSettings(
@@ -306,7 +324,8 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
   }
 
   Future<bool> requestScreenTimeAuthorization() async {
-    return _service.requestScreenTimeAuthorization();
+    final result = await _service.requestScreenTimeAuthorization();
+    return result.approved;
   }
 
   Future<bool> presentFamilyActivityPicker() async {
@@ -317,6 +336,10 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
   Future<bool> hasSelectedBlockedApps() async {
     return _service.hasSelectedBlockedApps();
+  }
+
+  Future<void> reapplyShields() async {
+    await _service.reapplyShields();
   }
 
   Future<void> updateEnableSocialQuestions(bool enable) async {
