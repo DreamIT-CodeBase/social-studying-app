@@ -52,17 +52,38 @@ jobs:
 
       - name: Select Xcode 16 toolchain
         run: |
-          if [ -d "/Applications/Xcode_16.3.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.2.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.1.1.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.1.1.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.0.1.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.0.1.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_16.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+          set -euo pipefail
+          XCODE_APP=""
+          # Prioritize stable Xcode 16.2 / 16.1 installations with pre-installed iOS platform runtimes.
+          # Avoid Xcode 16.3+ beta/preview installations that lack the bundled iOS 18.4 platform runtime.
+          for candidate in \
+            "/Applications/Xcode_16.2.app" \
+            "/Applications/Xcode_16.1.1.app" \
+            "/Applications/Xcode_16.1.app" \
+            "/Applications/Xcode_16.0.1.app" \
+            "/Applications/Xcode_16.0.app" \
+            "/Applications/Xcode_16.app" \
+            "/Applications/Xcode.app"; do
+            if [ -d "$candidate" ]; then
+              XCODE_APP="$candidate"
+              break
+            fi
+          done
+
+          if [ -z "$XCODE_APP" ]; then
+            if [ -d "/Applications/Xcode_16.3.app" ]; then
+              XCODE_APP="/Applications/Xcode_16.3.app"
+            else
+              echo "No Xcode 16 found on runner!" >&2
+              exit 1
+            fi
           fi
+
+          echo "Selected: $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          export DEVELOPER_DIR="$XCODE_APP/Contents/Developer"
+          echo "DEVELOPER_DIR=$XCODE_APP/Contents/Developer" >> "$GITHUB_ENV"
+          sudo xcodebuild -runFirstLaunch || true
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
 
@@ -202,9 +223,18 @@ jobs:
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
         run: |
+          set -euo pipefail
+          KEY_ID=$(echo "$APP_STORE_CONNECT_KEY_ID" | tr -d '\r\n ')
           mkdir -p "$HOME/.appstoreconnect/private_keys"
-          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
-          chmod 600 "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+          key_file="$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8"
+          if echo "$APP_STORE_CONNECT_PRIVATE_KEY" | grep -q "BEGIN PRIVATE KEY"; then
+            printf '%s\n' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$key_file"
+          elif echo "$APP_STORE_CONNECT_PRIVATE_KEY" | base64 -D 2>/dev/null | grep -q "BEGIN PRIVATE KEY"; then
+            echo "$APP_STORE_CONNECT_PRIVATE_KEY" | tr -d '\r\n ' | base64 -D > "$key_file"
+          else
+            printf '%b\n' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$key_file"
+          fi
+          chmod 600 "$key_file"
 
       - name: Upload to TestFlight
         if: (github.event_name == 'push' || inputs.upload_to_testflight) && env.SKIP_BUILD != 'true'
@@ -212,16 +242,20 @@ jobs:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
+          set -euo pipefail
+          KEY_ID=$(echo "$APP_STORE_CONNECT_KEY_ID" | tr -d '\r\n ')
+          ISSUER_ID=$(echo "$APP_STORE_CONNECT_ISSUER_ID" | tr -d '\r\n ')
           ipa_path=$(find build/ios/ipa -maxdepth 1 -name '*.ipa' -print -quit)
           test -n "$ipa_path"
           xcrun altool --upload-app \
             --type ios \
             --file "$ipa_path" \
-            --apiKey "$APP_STORE_CONNECT_KEY_ID" \
-            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+            --apiKey "$KEY_ID" \
+            --apiIssuer "$ISSUER_ID" \
+            --show-progress
 
       - name: Remove signing credentials
         if: always()
         run: |
           security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" 2>/dev/null || true
-          rm -f "$HOME/.appstoreconnect/private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_KEY_ID }}.p8"
+          rm -rf "$HOME/.appstoreconnect/private_keys"
