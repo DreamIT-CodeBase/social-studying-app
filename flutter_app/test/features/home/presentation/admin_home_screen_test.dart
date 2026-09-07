@@ -9,10 +9,12 @@ import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/models/workspace.dart';
 
 class _MockAuthRepository extends Mock implements AuthRepository {}
+
 class _MockWorkspacesRepository extends Mock implements WorkspacesRepository {}
 
 void main() {
-  testWidgets('AdminHomeScreen renders 4 navigation destinations without Notifications tab',
+  testWidgets(
+      'AdminHomeScreen renders 4 navigation destinations without Notifications tab',
       (tester) async {
     final authRepo = _MockAuthRepository();
     final workspacesRepo = _MockWorkspacesRepository();
@@ -66,12 +68,17 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     // Verify 4 tabs exist in navigation bar
-    expect(find.widgetWithText(NavigationDestination, 'Dashboard'), findsOneWidget);
-    expect(find.widgetWithText(NavigationDestination, 'Documents'), findsOneWidget);
-    expect(find.widgetWithText(NavigationDestination, 'Students'), findsOneWidget);
-    expect(find.widgetWithText(NavigationDestination, 'Settings'), findsOneWidget);
+    expect(find.widgetWithText(NavigationDestination, 'Dashboard'),
+        findsOneWidget);
+    expect(find.widgetWithText(NavigationDestination, 'Documents'),
+        findsOneWidget);
+    expect(
+        find.widgetWithText(NavigationDestination, 'Students'), findsOneWidget);
+    expect(
+        find.widgetWithText(NavigationDestination, 'Settings'), findsOneWidget);
 
     // Verify Notifications tab does NOT exist in navigation
-    expect(find.widgetWithText(NavigationDestination, 'Notifications'), findsNothing);
+    expect(find.widgetWithText(NavigationDestination, 'Notifications'),
+        findsNothing);
   });
 }

@@ -14,9 +14,7 @@ part 'users_notifier.g.dart';
 class WorkspaceUsersList extends _$WorkspaceUsersList {
   @override
   Future<List<User>> build(String workspaceId) {
-    return ref
-        .read(usersRepositoryProvider)
-        .listWorkspaceUsers(workspaceId);
+    return ref.read(usersRepositoryProvider).listWorkspaceUsers(workspaceId);
   }
 
   /// Re-fetch the roster. Used by pull-to-refresh and after mutations.

@@ -194,10 +194,9 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen> {
                     ..._tabs.asMap().entries.map((entry) {
                       final tab = entry.value;
                       return NavigationDestination(
-                        icon: Icon(tab.icon,
-                            color: _dashboardMuted, size: 22),
-                        selectedIcon: Icon(tab.icon,
-                            color: Colors.white, size: 22),
+                        icon: Icon(tab.icon, color: _dashboardMuted, size: 22),
+                        selectedIcon:
+                            Icon(tab.icon, color: Colors.white, size: 22),
                         label: tab.label,
                       );
                     }),
@@ -1069,11 +1068,13 @@ void _showProgressNotificationsSheet(BuildContext context, WidgetRef ref) {
                           value: isEnabled,
                           onChanged: (val) {
                             ref
-                                .read(adminProgressNotificationsEnabledProvider.notifier)
+                                .read(adminProgressNotificationsEnabledProvider
+                                    .notifier)
                                 .setEnabled(val);
                           },
                           activeThumbColor: const Color(0xFF06B6D4),
-                          activeTrackColor: const Color(0xFF06B6D4).withAlpha(80),
+                          activeTrackColor:
+                              const Color(0xFF06B6D4).withAlpha(80),
                         ),
                       ],
                     ),
@@ -1093,14 +1094,16 @@ void _showProgressNotificationsSheet(BuildContext context, WidgetRef ref) {
                     icon: Icons.school_rounded,
                     color: Color(0xFF3B82F6),
                     title: 'Session Completions',
-                    subtitle: 'Subject, topic, accuracy, and XP earned per session',
+                    subtitle:
+                        'Subject, topic, accuracy, and XP earned per session',
                   ),
                   const SizedBox(height: Spacing.xs),
                   const _ProgressAlertItem(
                     icon: Icons.local_fire_department_rounded,
                     color: Color(0xFFF97316),
                     title: 'Daily Streak Milestones',
-                    subtitle: '3-day, 5-day, 7-day+ continuous learning streaks',
+                    subtitle:
+                        '3-day, 5-day, 7-day+ continuous learning streaks',
                   ),
                   const SizedBox(height: Spacing.xs),
                   const _ProgressAlertItem(

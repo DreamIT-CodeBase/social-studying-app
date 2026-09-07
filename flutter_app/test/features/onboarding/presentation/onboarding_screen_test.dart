@@ -55,8 +55,8 @@ class _StubAuthRepo implements AuthRepository {
   );
 }
 
-
 class _MockDioClient extends Mock implements DioClient {}
+
 class _MockDio extends Mock implements Dio {}
 
 /// Builds a minimal app that renders the onboarding screen at ``/``
@@ -80,12 +80,17 @@ Widget _wrap({required WorkspacesRepository repo}) {
       ),
     ],
   );
-  
+
   final mockDioClient = _MockDioClient();
   final mockDio = _MockDio();
   when(() => mockDioClient.dio).thenReturn(mockDio);
-  when(() => mockDio.get(any(), queryParameters: any(named: 'queryParameters'), options: any(named: 'options'), cancelToken: any(named: 'cancelToken'), onReceiveProgress: any(named: 'onReceiveProgress')))
-      .thenThrow(DioException(requestOptions: RequestOptions(path: '/users/me')));
+  when(() => mockDio.get(any(),
+          queryParameters: any(named: 'queryParameters'),
+          options: any(named: 'options'),
+          cancelToken: any(named: 'cancelToken'),
+          onReceiveProgress: any(named: 'onReceiveProgress')))
+      .thenThrow(
+          DioException(requestOptions: RequestOptions(path: '/users/me')));
 
   return ProviderScope(
     overrides: [
@@ -99,7 +104,6 @@ Widget _wrap({required WorkspacesRepository repo}) {
     ),
   );
 }
-
 
 void main() {
   setUpAll(() {
@@ -225,7 +229,8 @@ void main() {
         description: any(named: 'description'),
       ),
     ).thenThrow(
-      const WorkspaceNameConflictException('A workspace with that name already exists'),
+      const WorkspaceNameConflictException(
+          'A workspace with that name already exists'),
     );
 
     await tester.pumpWidget(_wrap(repo: repo));

@@ -50,18 +50,18 @@ jobs:
 
 
 
-      - name: Select Xcode 26 toolchain
+      - name: Select Xcode 16 toolchain
         run: |
-          if [ -d "/Applications/Xcode_26.3.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_26.2.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_26.1.1.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_26.1.1.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_26.0.1.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_26.0.1.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_26.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_26.app/Contents/Developer
+          if [ -d "/Applications/Xcode_16.3.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_16.2.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_16.1.1.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.1.1.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_16.0.1.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.0.1.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_16.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
           fi
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
@@ -70,8 +70,8 @@ jobs:
         run: |
           xcode_version=$(xcodebuild -version | awk 'NR == 1 { print $2 }')
           xcode_major=${xcode_version%%.*}
-          if (( xcode_major < 26 )); then
-            echo "Xcode 26 or later is required by App Store Connect; runner selected Xcode $xcode_version." >&2
+          if (( xcode_major < 16 )); then
+            echo "Xcode 16 or later is required by App Store Connect; runner selected Xcode $xcode_version." >&2
             exit 1
           fi
           xcodebuild -version

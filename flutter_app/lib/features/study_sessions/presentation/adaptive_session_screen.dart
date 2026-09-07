@@ -130,10 +130,10 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         final isSelfStudy = isSelfLearningWorkspaceId(widget.workspaceId);
-        final effectiveMode = isSelfStudy &&
-                widget.mode == AdaptiveSessionMode.revision
-            ? AdaptiveSessionMode.study
-            : widget.mode;
+        final effectiveMode =
+            isSelfStudy && widget.mode == AdaptiveSessionMode.revision
+                ? AdaptiveSessionMode.study
+                : widget.mode;
         final plan = await _repository.prepare(
           workspaceId: widget.workspaceId,
           mode: effectiveMode,
@@ -149,8 +149,7 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
         setState(() {
           _plan = plan;
           _remainingSeconds = plan.durationMinutes * 60;
-          _phase =
-              noContent ? _SessionPhase.exhausted : _SessionPhase.ready;
+          _phase = noContent ? _SessionPhase.exhausted : _SessionPhase.ready;
         });
         return;
       } catch (error) {
@@ -270,7 +269,8 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
         return _matchesPreparedAnswer(q, a.answer);
       }).length;
       final totalQ = _questionAttempts.length;
-      final localAccuracy = totalQ > 0 ? (correctCount / totalQ) * 100.0 : 100.0;
+      final localAccuracy =
+          totalQ > 0 ? (correctCount / totalQ) * 100.0 : 100.0;
       final fallbackSummary = AdaptiveSessionSummary(
         sessionId: plan.sessionId,
         mode: plan.mode,
@@ -285,9 +285,8 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
         needsReviewCount: _flashcardAttempts
             .where((a) => a.rating == 'again' || a.rating == 'hard')
             .length,
-        accuracyPercentage: plan.mode == AdaptiveSessionMode.flashcard
-            ? null
-            : localAccuracy,
+        accuracyPercentage:
+            plan.mode == AdaptiveSessionMode.flashcard ? null : localAccuracy,
         xpGained: math.max(0, _sessionXp),
         actionXp: math.max(0, _sessionXp - 50),
         completionBonus: 50,
@@ -391,7 +390,8 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
 
     if (question.questionType == 'mcq') {
       final sub = submitted.trim();
-      if (sub.toUpperCase() == question.answer.trim().toUpperCase()) return true;
+      if (sub.toUpperCase() == question.answer.trim().toUpperCase())
+        return true;
       for (final opt in question.options) {
         if (opt.key.toUpperCase() == question.answer.trim().toUpperCase() &&
             opt.text.trim().toLowerCase() == sub.toLowerCase()) {

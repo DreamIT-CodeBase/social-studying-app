@@ -71,7 +71,8 @@ void main() {
     expect(find.text('Physics Mode'), findsOneWidget);
   });
 
-  testWidgets('SubjectSwitcherBar renders detected topics from document topicTags',
+  testWidgets(
+      'SubjectSwitcherBar renders detected topics from document topicTags',
       (tester) async {
     const docs = [
       Document(

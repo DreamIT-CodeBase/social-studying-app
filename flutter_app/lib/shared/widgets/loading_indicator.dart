@@ -5,7 +5,6 @@ import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/features/mascot/models/mascot_state.dart';
 import 'package:social_study_app/features/mascot/widgets/study_buddy.dart';
 
-
 class LoadingIndicator extends ConsumerStatefulWidget {
   const LoadingIndicator({
     super.key,
@@ -53,11 +52,14 @@ class _LoadingIndicatorState extends ConsumerState<LoadingIndicator>
   @override
   Widget build(BuildContext context) {
     final themeMode = ref.watch(appThemeModeProvider);
-    final showMascot = widget.useMascot && !Platform.environment.containsKey('FLUTTER_TEST');
+    final showMascot =
+        widget.useMascot && !Platform.environment.containsKey('FLUTTER_TEST');
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = isDark ? const Color(0xFF13132A) : Colors.white;
-    final borderColor = isDark ? const Color(0xFF2A2A50) : const Color(0xFFE5E7EB);
-    final textMuted = isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C);
+    final borderColor =
+        isDark ? const Color(0xFF2A2A50) : const Color(0xFFE5E7EB);
+    final textMuted =
+        isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C);
     final primaryColor = Theme.of(context).colorScheme.primary;
 
     return Center(
@@ -95,7 +97,8 @@ class _LoadingIndicatorState extends ConsumerState<LoadingIndicator>
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: primaryColor.withOpacity(isDark ? 0.22 : 0.12),
+                              color: primaryColor
+                                  .withOpacity(isDark ? 0.22 : 0.12),
                               blurRadius: _glowAnimation.value,
                               spreadRadius: _glowAnimation.value / 3,
                             ),
@@ -117,12 +120,14 @@ class _LoadingIndicatorState extends ConsumerState<LoadingIndicator>
                   Positioned(
                     top: 2,
                     right: 4,
-                    child: Icon(Icons.auto_awesome, size: 14, color: primaryColor.withOpacity(0.8)),
+                    child: Icon(Icons.auto_awesome,
+                        size: 14, color: primaryColor.withOpacity(0.8)),
                   ),
                   Positioned(
                     bottom: 4,
                     left: 2,
-                    child: Icon(Icons.auto_awesome, size: 10, color: Colors.amber.withOpacity(0.7)),
+                    child: Icon(Icons.auto_awesome,
+                        size: 10, color: Colors.amber.withOpacity(0.7)),
                   ),
                   // Pulsing Mascot or Spinner
                   AnimatedBuilder(
@@ -140,7 +145,8 @@ class _LoadingIndicatorState extends ConsumerState<LoadingIndicator>
                                 size: 52,
                                 color: primaryColor,
                               )
-                            : const StudyBuddy(state: MascotState.loading, size: 76))
+                            : const StudyBuddy(
+                                state: MascotState.loading, size: 76))
                         : CircularProgressIndicator(
                             color: primaryColor,
                             strokeWidth: 4,

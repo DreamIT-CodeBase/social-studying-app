@@ -164,7 +164,8 @@ class ProfileScreen extends ConsumerWidget {
                             showAccessibilityProminentDisclosureDialog(
                               context,
                               onAccept: () {
-                                context.push(AppRoutes.studentScreenTimeSettings);
+                                context
+                                    .push(AppRoutes.studentScreenTimeSettings);
                               },
                             );
                           },

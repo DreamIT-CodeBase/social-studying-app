@@ -183,6 +183,7 @@ class _PermissionOnboardingScreenState
     await _requestPermission(permission);
   }
 
+  Future<void> _requestPermission(_PermissionKind permission) async {
     if (Platform.isIOS) {
       try {
         switch (permission) {
@@ -232,6 +233,9 @@ class _PermissionOnboardingScreenState
         case _PermissionKind.battery:
           _waitingForAndroidSettings = true;
           await _screenTimeService.openBatteryOptimizationSettings();
+          break;
+        case _PermissionKind.screenTime:
+        case _PermissionKind.selectApps:
           break;
       }
 
@@ -337,7 +341,8 @@ class _PermissionOnboardingScreenState
         title: const Text('App permissions'),
         actions: [
           TextButton(
-            onPressed: _isSubmitting ? null : () => _finishOnboarding(force: true),
+            onPressed:
+                _isSubmitting ? null : () => _finishOnboarding(force: true),
             child: const Text('Skip'),
           ),
         ],
@@ -430,7 +435,9 @@ class _PermissionOnboardingScreenState
                         : const Icon(Icons.arrow_forward_rounded),
                     label: Text(
                       _sequenceActive
-                          ? (Platform.isIOS ? 'Complete the prompt' : 'Complete the Android prompt')
+                          ? (Platform.isIOS
+                              ? 'Complete the prompt'
+                              : 'Complete the Android prompt')
                           : requiredReady
                               ? 'Finish setup'
                               : 'Continue permission setup',
@@ -438,7 +445,9 @@ class _PermissionOnboardingScreenState
                   ),
                   const SizedBox(height: 8),
                   TextButton(
-                    onPressed: _isSubmitting ? null : () => _finishOnboarding(force: true),
+                    onPressed: _isSubmitting
+                        ? null
+                        : () => _finishOnboarding(force: true),
                     child: const Text('Skip for now and continue to app'),
                   ),
                 ],
@@ -502,10 +511,10 @@ enum _PermissionKind {
   bool get isRequired {
     if (Platform.isIOS) {
       return this == _PermissionKind.screenTime ||
-             this == _PermissionKind.selectApps;
+          this == _PermissionKind.selectApps;
     }
     return this == _PermissionKind.accessibility ||
-           this == _PermissionKind.usageAccess;
+        this == _PermissionKind.usageAccess;
   }
 
   String get shortTitle => switch (this) {

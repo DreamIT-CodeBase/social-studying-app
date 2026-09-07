@@ -50,7 +50,8 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
   int get currentIndex => _currentIndex;
   int get sessionTargetLength => _sessionTargetLength;
   List<String>? get selectedTopicIds => _selectedTopicIds;
-  List<FlashcardRating> get sessionRatings => List.unmodifiable(_sessionRatings);
+  List<FlashcardRating> get sessionRatings =>
+      List.unmodifiable(_sessionRatings);
 
   @override
   FlashcardSession build(String workspaceId) {
@@ -122,15 +123,19 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
     }
 
     final authState = ref.read(authNotifierProvider).valueOrNull;
-    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user != null) {
-      ref.read(gamificationRepositoryProvider).completeSession(
+      ref
+          .read(gamificationRepositoryProvider)
+          .completeSession(
             workspaceId: _workspaceId,
             userId: user.id,
             sessionType: 'flashcard',
-          ).then((_) {
-            _invalidateProfile();
-          }).catchError((_) {});
+          )
+          .then((_) {
+        _invalidateProfile();
+      }).catchError((_) {});
     }
 
     state = FlashcardSession.completed(
@@ -195,12 +200,15 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
       );
       _sessionRatings.add(rating);
       if (_cardStartTime != null) {
-        final durationMs = DateTime.now().difference(_cardStartTime!).inMilliseconds;
-        RecallService.instance.recordCardReview(
-          topic: card.topic,
-          rating: rating,
-          durationMs: durationMs,
-        ).catchError((_) {});
+        final durationMs =
+            DateTime.now().difference(_cardStartTime!).inMilliseconds;
+        RecallService.instance
+            .recordCardReview(
+              topic: card.topic,
+              rating: rating,
+              durationMs: durationMs,
+            )
+            .catchError((_) {});
       }
       state = FlashcardSession.rated(card: card, response: response);
       _invalidateProfile();
@@ -235,7 +243,8 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
 
   void _invalidateProfile() {
     final authState = ref.read(authNotifierProvider).valueOrNull;
-    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user != null) {
       final key = (workspaceId: _workspaceId, userId: user.id);
       ref.invalidate(gamificationProfileProvider(key));

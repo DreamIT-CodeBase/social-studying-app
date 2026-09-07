@@ -27,7 +27,8 @@ class ScreenTimeService {
   static const String _keyEnforcementReady = 'enforcement_ready';
 
   static const String _keyEnableSocialQuestions = 'enable_social_questions';
-  static const String _keyRecurringQuestionsInterval = 'recurring_questions_interval_minutes';
+  static const String _keyRecurringQuestionsInterval =
+      'recurring_questions_interval_minutes';
   static const String _keyQuestionsPerPrompt = 'questions_per_prompt';
   static const String _keySocialQuestionsSubject = 'social_questions_subject';
 
@@ -214,7 +215,8 @@ class ScreenTimeService {
 
   Future<int> getRecurringQuestionsInterval() async {
     final prefs = await _getPrefs();
-    return prefs.getInt(_keyRecurringQuestionsInterval) ?? 15; // default: 15 minutes
+    return prefs.getInt(_keyRecurringQuestionsInterval) ??
+        15; // default: 15 minutes
   }
 
   Future<void> saveRecurringQuestionsInterval(int minutes) async {
@@ -275,7 +277,8 @@ class ScreenTimeService {
   Future<bool> isScreenTimeAuthorized() async {
     if (!Platform.isIOS) return false;
     try {
-      return await _channel.invokeMethod<bool>('isScreenTimeAuthorized') ?? false;
+      return await _channel.invokeMethod<bool>('isScreenTimeAuthorized') ??
+          false;
     } catch (_) {
       return false;
     }
@@ -284,7 +287,9 @@ class ScreenTimeService {
   Future<bool> requestScreenTimeAuthorization() async {
     if (!Platform.isIOS) return false;
     try {
-      return await _channel.invokeMethod<bool>('requestScreenTimeAuthorization') ?? false;
+      return await _channel
+              .invokeMethod<bool>('requestScreenTimeAuthorization') ??
+          false;
     } catch (_) {
       return false;
     }
@@ -293,7 +298,8 @@ class ScreenTimeService {
   Future<bool> presentFamilyActivityPicker() async {
     if (!Platform.isIOS) return false;
     try {
-      return await _channel.invokeMethod<bool>('presentFamilyActivityPicker') ?? false;
+      return await _channel.invokeMethod<bool>('presentFamilyActivityPicker') ??
+          false;
     } catch (_) {
       return false;
     }
@@ -302,7 +308,8 @@ class ScreenTimeService {
   Future<bool> hasSelectedBlockedApps() async {
     if (!Platform.isIOS) return false;
     try {
-      return await _channel.invokeMethod<bool>('hasSelectedBlockedApps') ?? false;
+      return await _channel.invokeMethod<bool>('hasSelectedBlockedApps') ??
+          false;
     } catch (_) {
       return false;
     }
@@ -336,7 +343,8 @@ class ScreenTimeService {
   Future<DevicePermissionStatus> getPermissionStatus() async {
     if (Platform.isIOS) {
       try {
-        final map = await _channel.invokeMapMethod<String, dynamic>('getIOSPermissionStatus');
+        final map = await _channel
+            .invokeMapMethod<String, dynamic>('getIOSPermissionStatus');
         final screenTimeAuth = map?['screenTimeAuthorized'] as bool? ?? false;
         final hasSelectedApps = map?['hasSelectedApps'] as bool? ?? false;
         final notifications = map?['notifications'] as bool? ?? false;
@@ -451,6 +459,9 @@ class DevicePermissionStatus {
     if (Platform.isIOS) {
       return requiredPermissionsGranted && notifications;
     }
-    return requiredPermissionsGranted && overlay && notifications && batteryExempt;
+    return requiredPermissionsGranted &&
+        overlay &&
+        notifications &&
+        batteryExempt;
   }
 }

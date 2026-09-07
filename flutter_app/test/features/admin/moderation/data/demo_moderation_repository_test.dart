@@ -4,8 +4,7 @@ import 'package:social_study_app/shared/models/moderation.dart';
 
 void main() {
   group('DemoModerationRepository.listFlagged', () {
-    test('returns only the pending items (resolved seed excluded)',
-        () async {
+    test('returns only the pending items (resolved seed excluded)', () async {
       final repo = DemoModerationRepository();
       final flagged = await repo.listFlagged('wsp_demo_001');
       expect(flagged, hasLength(2));
@@ -20,8 +19,7 @@ void main() {
   });
 
   group('DemoModerationRepository.resolve', () {
-    test('approving sets the verdict and drops it from the queue',
-        () async {
+    test('approving sets the verdict and drops it from the queue', () async {
       final repo = DemoModerationRepository();
       final resolved = await repo.resolve(
         workspaceId: 'wsp_demo_001',
@@ -44,8 +42,7 @@ void main() {
       expect(resolved.verdict, ModerationVerdict.rejected);
     });
 
-    test('throws FlaggedItemNotFoundException for an unknown id',
-        () async {
+    test('throws FlaggedItemNotFoundException for an unknown id', () async {
       final repo = DemoModerationRepository();
       expect(
         () => repo.resolve(
@@ -59,8 +56,7 @@ void main() {
   });
 
   group('DemoModerationRepository.listLog', () {
-    test('returns resolved items — including ones just resolved',
-        () async {
+    test('returns resolved items — including ones just resolved', () async {
       final repo = DemoModerationRepository();
       // Seeded with one already-approved item.
       expect(await repo.listLog('wsp_demo_001'), hasLength(1));

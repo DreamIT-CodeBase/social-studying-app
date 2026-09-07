@@ -11,7 +11,8 @@ void main() {
     });
   });
 
-  testWidgets('AdminNotificationsTab renders progress banner, filter chips, and progress items',
+  testWidgets(
+      'AdminNotificationsTab renders progress banner, filter chips, and progress items',
       (tester) async {
     final mockFeed = AdminActivityFeed(
       items: [
@@ -19,7 +20,8 @@ void main() {
           id: 'item_progress_1',
           type: 'child_progress',
           title: '🎯 Alice: Chemistry Progress',
-          body: "Alice finished a Chemistry study session on 'Atomic Structure'.",
+          body:
+              "Alice finished a Chemistry study session on 'Atomic Structure'.",
           timestamp: '2026-09-01T10:00:00Z',
           subject: 'Chemistry',
           metric: '85% Acc • +40 XP',

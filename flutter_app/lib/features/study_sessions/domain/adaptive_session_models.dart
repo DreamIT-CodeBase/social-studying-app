@@ -149,9 +149,8 @@ class AdaptiveSessionPlan {
         contentReady: json['content_ready'] is bool
             ? json['content_ready'] as bool
             : true,
-        exhausted: json['exhausted'] is bool
-            ? json['exhausted'] as bool
-            : false,
+        exhausted:
+            json['exhausted'] is bool ? json['exhausted'] as bool : false,
         subject: json['subject'] as String?,
         questionType: json['question_type'] as String?,
       );

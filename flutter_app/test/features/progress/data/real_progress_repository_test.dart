@@ -88,11 +88,9 @@ void main() {
       expect(progress.recentActivity.single.isCorrect, isTrue);
     });
 
-    test('404 → StudentProgress.empty (new student, not an error)',
-        () async {
+    test('404 → StudentProgress.empty (new student, not an error)', () async {
       final adapter = _FakeAdapter(
-        (opts) => _json(jsonEncode({'detail': 'no progress yet'}),
-            status: 404),
+        (opts) => _json(jsonEncode({'detail': 'no progress yet'}), status: 404),
       );
       final repo = RealProgressRepository(dio: _dio(adapter));
       final progress = await repo.fetch(

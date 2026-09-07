@@ -55,8 +55,7 @@ class RealUsersRepository implements UsersRepository {
     } on DioException catch (e) {
       if (e.response?.statusCode == 409) {
         throw UserEmailConflictException(
-          _detail(e.response?.data) ??
-              'A user with that email already exists',
+          _detail(e.response?.data) ?? 'A user with that email already exists',
         );
       }
       rethrow;

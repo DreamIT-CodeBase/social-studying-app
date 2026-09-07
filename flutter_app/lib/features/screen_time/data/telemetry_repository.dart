@@ -17,7 +17,8 @@ class DemoTelemetryRepository implements TelemetryRepository {
     // offline/demo mode fallback: simply print to console for inspection
     print('[TELEMETRY DEMO] Buffered ${events.length} events:');
     for (final ev in events) {
-      print('  - Event: ${ev['event_type']}, Details: ${ev['details']}, Time: ${ev['occurred_at']}');
+      print(
+          '  - Event: ${ev['event_type']}, Details: ${ev['details']}, Time: ${ev['occurred_at']}');
     }
   }
 }

@@ -41,7 +41,6 @@ class QuestionNotAnswerableException implements Exception {
   String toString() => 'QuestionNotAnswerableException: $message';
 }
 
-
 /// Offline, deterministic implementation of the question loop.
 ///
 /// Backs the demo user so an offline dev can exercise the full

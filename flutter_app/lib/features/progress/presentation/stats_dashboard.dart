@@ -17,7 +17,8 @@ class CategoryHierarchy {
   final String subject;
   final String chapter;
   final String topic;
-  CategoryHierarchy({required this.subject, required this.chapter, required this.topic});
+  CategoryHierarchy(
+      {required this.subject, required this.chapter, required this.topic});
 }
 
 CategoryHierarchy mapTopicToHierarchy(String topic) {
@@ -32,35 +33,68 @@ CategoryHierarchy mapTopicToHierarchy(String topic) {
     return CategoryHierarchy(
         subject: detectedSubject, chapter: 'General Mathematics', topic: topic);
   }
-  
-  if (lowercase.contains('cell') || lowercase.contains('mitosis') || lowercase.contains('photosynthesis') || lowercase.contains('chloroplast')) {
-    return CategoryHierarchy(subject: 'Biology', chapter: 'Cell Biology', topic: topic);
+
+  if (lowercase.contains('cell') ||
+      lowercase.contains('mitosis') ||
+      lowercase.contains('photosynthesis') ||
+      lowercase.contains('chloroplast')) {
+    return CategoryHierarchy(
+        subject: 'Biology', chapter: 'Cell Biology', topic: topic);
   }
-  if (lowercase.contains('gene') || lowercase.contains('dna') || lowercase.contains('rna') || lowercase.contains('heredity')) {
-    return CategoryHierarchy(subject: 'Biology', chapter: 'Genetics', topic: topic);
+  if (lowercase.contains('gene') ||
+      lowercase.contains('dna') ||
+      lowercase.contains('rna') ||
+      lowercase.contains('heredity')) {
+    return CategoryHierarchy(
+        subject: 'Biology', chapter: 'Genetics', topic: topic);
   }
-  if (lowercase.contains('bio') || lowercase.contains('organism') || lowercase.contains('ecology')) {
-    return CategoryHierarchy(subject: 'Biology', chapter: 'General Biology', topic: topic);
+  if (lowercase.contains('bio') ||
+      lowercase.contains('organism') ||
+      lowercase.contains('ecology')) {
+    return CategoryHierarchy(
+        subject: 'Biology', chapter: 'General Biology', topic: topic);
   }
 
-  if (lowercase.contains('atom') || lowercase.contains('electron') || lowercase.contains('proton') || lowercase.contains('neutron')) {
-    return CategoryHierarchy(subject: 'Chemistry', chapter: 'Atomic Structure', topic: topic);
+  if (lowercase.contains('atom') ||
+      lowercase.contains('electron') ||
+      lowercase.contains('proton') ||
+      lowercase.contains('neutron')) {
+    return CategoryHierarchy(
+        subject: 'Chemistry', chapter: 'Atomic Structure', topic: topic);
   }
-  if (lowercase.contains('bond') || lowercase.contains('molec') || lowercase.contains('reaction')) {
-    return CategoryHierarchy(subject: 'Chemistry', chapter: 'Chemical Bonds', topic: topic);
+  if (lowercase.contains('bond') ||
+      lowercase.contains('molec') ||
+      lowercase.contains('reaction')) {
+    return CategoryHierarchy(
+        subject: 'Chemistry', chapter: 'Chemical Bonds', topic: topic);
   }
-  if (lowercase.contains('chem') || lowercase.contains('acid') || lowercase.contains('base')) {
-    return CategoryHierarchy(subject: 'Chemistry', chapter: 'General Chemistry', topic: topic);
+  if (lowercase.contains('chem') ||
+      lowercase.contains('acid') ||
+      lowercase.contains('base')) {
+    return CategoryHierarchy(
+        subject: 'Chemistry', chapter: 'General Chemistry', topic: topic);
   }
 
-  if (lowercase.contains('force') || lowercase.contains('motion') || lowercase.contains('grav') || lowercase.contains('newton') || lowercase.contains('mechanic')) {
-    return CategoryHierarchy(subject: 'Physics', chapter: 'Classical Mechanics', topic: topic);
+  if (lowercase.contains('force') ||
+      lowercase.contains('motion') ||
+      lowercase.contains('grav') ||
+      lowercase.contains('newton') ||
+      lowercase.contains('mechanic')) {
+    return CategoryHierarchy(
+        subject: 'Physics', chapter: 'Classical Mechanics', topic: topic);
   }
-  if (lowercase.contains('wave') || lowercase.contains('light') || lowercase.contains('sound') || lowercase.contains('optics')) {
-    return CategoryHierarchy(subject: 'Physics', chapter: 'Waves & Optics', topic: topic);
+  if (lowercase.contains('wave') ||
+      lowercase.contains('light') ||
+      lowercase.contains('sound') ||
+      lowercase.contains('optics')) {
+    return CategoryHierarchy(
+        subject: 'Physics', chapter: 'Waves & Optics', topic: topic);
   }
-  if (lowercase.contains('phys') || lowercase.contains('electr') || lowercase.contains('magnet')) {
-    return CategoryHierarchy(subject: 'Physics', chapter: 'Electromagnetism', topic: topic);
+  if (lowercase.contains('phys') ||
+      lowercase.contains('electr') ||
+      lowercase.contains('magnet')) {
+    return CategoryHierarchy(
+        subject: 'Physics', chapter: 'Electromagnetism', topic: topic);
   }
 
   return CategoryHierarchy(
@@ -79,10 +113,10 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
   String _selectedSubject = 'All';
   String _selectedChapter = 'All';
   String _selectedTopic = 'All';
-  
+
   int _recallScore = 85;
   Map<String, int> _timeSpentMap = {};
-  
+
   @override
   void initState() {
     super.initState();
@@ -103,17 +137,19 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     // Obtain active user/workspace profile
     final authState = ref.watch(authNotifierProvider).valueOrNull;
-    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user == null) {
       return const Center(child: Text('Please log in.'));
     }
 
     final key = (workspaceId: widget.workspaceId, userId: user.id);
     final profileAsync = ref.watch(gamificationProfileProvider(key));
-    final progressAsync = ref.watch(studentProgressNotifierProvider(widget.workspaceId));
+    final progressAsync =
+        ref.watch(studentProgressNotifierProvider(widget.workspaceId));
     final walletAsync = ref.watch(screenTimeNotifierProvider);
     final badgesAsync = ref.watch(badgesSummaryProvider(key));
 
@@ -134,30 +170,44 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
               allTopics.add('Mitosis'); // Seed fallback for visual consistency
             }
 
-            final List<CategoryHierarchy> hierarchies = allTopics
-                .map((t) => mapTopicToHierarchy(t))
-                .toList();
+            final List<CategoryHierarchy> hierarchies =
+                allTopics.map((t) => mapTopicToHierarchy(t)).toList();
 
             // Extract choices for drill-down filters
-            final subjects = {'All', ...hierarchies.map((h) => h.subject)}.toList();
-            
+            final subjects =
+                {'All', ...hierarchies.map((h) => h.subject)}.toList();
+
             final chapters = _selectedSubject == 'All'
                 ? ['All']
-                : {'All', ...hierarchies.where((h) => h.subject == _selectedSubject).map((h) => h.chapter)}.toList();
+                : {
+                    'All',
+                    ...hierarchies
+                        .where((h) => h.subject == _selectedSubject)
+                        .map((h) => h.chapter)
+                  }.toList();
 
             final topics = _selectedChapter == 'All'
                 ? ['All']
-                : {'All', ...hierarchies.where((h) => h.chapter == _selectedChapter).map((h) => h.topic)}.toList();
+                : {
+                    'All',
+                    ...hierarchies
+                        .where((h) => h.chapter == _selectedChapter)
+                        .map((h) => h.topic)
+                  }.toList();
 
             // Filter data according to selected hierarchy
             final filteredTopics = hierarchies.where((h) {
-              if (_selectedSubject != 'All' && h.subject != _selectedSubject) return false;
-              if (_selectedChapter != 'All' && h.chapter != _selectedChapter) return false;
-              if (_selectedTopic != 'All' && h.topic != _selectedTopic) return false;
+              if (_selectedSubject != 'All' && h.subject != _selectedSubject)
+                return false;
+              if (_selectedChapter != 'All' && h.chapter != _selectedChapter)
+                return false;
+              if (_selectedTopic != 'All' && h.topic != _selectedTopic)
+                return false;
               return true;
             }).toList();
 
-            final filteredTopicNames = filteredTopics.map((h) => h.topic).toSet();
+            final filteredTopicNames =
+                filteredTopics.map((h) => h.topic).toSet();
 
             // Compute Stats
             int filteredXp = 0;
@@ -183,19 +233,24 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                 masteryCount++;
               }
             }
-            final masteryPercent = masteryCount > 0 ? (aggregateMastery / masteryCount * 100).round() : 0;
+            final masteryPercent = masteryCount > 0
+                ? (aggregateMastery / masteryCount * 100).round()
+                : 0;
 
             // Compute recommended next topic (lowest mastery)
             TopicMastery? nextTopic;
             double lowestMastery = 999.0;
             for (final t in progress.topics) {
-              if (filteredTopicNames.contains(t.topicName) && t.mastery < lowestMastery) {
+              if (filteredTopicNames.contains(t.topicName) &&
+                  t.mastery < lowestMastery) {
                 lowestMastery = t.mastery;
                 nextTopic = t;
               }
             }
 
-            final nextTopicHierarchy = nextTopic != null ? mapTopicToHierarchy(nextTopic.topicName) : null;
+            final nextTopicHierarchy = nextTopic != null
+                ? mapTopicToHierarchy(nextTopic.topicName)
+                : null;
 
             final insights = <String>[];
             insights.add("You answered $_recallScore% of questions correctly.");
@@ -205,22 +260,27 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                 ..sort((a, b) => b.value.compareTo(a.value));
               final topTopic = sortedTimes.first.key;
               final hierarchy = mapTopicToHierarchy(topTopic);
-              insights.add("You spend more time studying ${hierarchy.subject}.");
+              insights
+                  .add("You spend more time studying ${hierarchy.subject}.");
             } else {
-              insights.add("You spent most of your study time on Biology today.");
+              insights
+                  .add("You spent most of your study time on Biology today.");
             }
 
             if (progress.topics.isNotEmpty) {
               final sortedMastery = progress.topics.toList()
                 ..sort((a, b) => a.mastery.compareTo(b.mastery));
-              insights.add("You should revise ${sortedMastery.first.topicName} next.");
+              insights.add(
+                  "You should revise ${sortedMastery.first.topicName} next.");
             } else {
-              insights.add("You should revise Cell Division to strengthen your mastery.");
+              insights.add(
+                  "You should revise Cell Division to strengthen your mastery.");
             }
 
             final totalXp = profile.xpTotal;
             final performancePct = 10 + (totalXp % 15);
-            insights.add("You performed $performancePct% better today than yesterday.");
+            insights.add(
+                "You performed $performancePct% better today than yesterday.");
 
             // Generate XP bar chart data
             Map<String, int> xpChartData = {};
@@ -232,35 +292,42 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
               }
             } else if (_selectedChapter == 'All') {
               // Group by Chapter
-              for (final h in hierarchies.where((h) => h.subject == _selectedSubject)) {
+              for (final h
+                  in hierarchies.where((h) => h.subject == _selectedSubject)) {
                 final xp = profile.xpByTopic[h.topic] ?? 0;
                 xpChartData[h.chapter] = (xpChartData[h.chapter] ?? 0) + xp;
               }
             } else {
               // Group by Topic
-              for (final h in hierarchies.where((h) => h.chapter == _selectedChapter)) {
+              for (final h
+                  in hierarchies.where((h) => h.chapter == _selectedChapter)) {
                 final xp = profile.xpByTopic[h.topic] ?? 0;
                 xpChartData[h.topic] = (xpChartData[h.topic] ?? 0) + xp;
               }
             }
             // Remove 0 XP items to keep chart clean, sort by XP descending
             xpChartData.removeWhere((k, v) => v == 0);
-            final sortedXpEntries = xpChartData.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+            final sortedXpEntries = xpChartData.entries.toList()
+              ..sort((a, b) => b.value.compareTo(a.value));
 
             // Generate Time chart data (Pie chart)
             Map<String, double> timeChartData = {};
             if (_selectedSubject == 'All') {
               for (final h in hierarchies) {
                 final time = (_timeSpentMap[h.topic] ?? 0).toDouble();
-                timeChartData[h.subject] = (timeChartData[h.subject] ?? 0) + time;
+                timeChartData[h.subject] =
+                    (timeChartData[h.subject] ?? 0) + time;
               }
             } else if (_selectedChapter == 'All') {
-              for (final h in hierarchies.where((h) => h.subject == _selectedSubject)) {
+              for (final h
+                  in hierarchies.where((h) => h.subject == _selectedSubject)) {
                 final time = (_timeSpentMap[h.topic] ?? 0).toDouble();
-                timeChartData[h.chapter] = (timeChartData[h.chapter] ?? 0) + time;
+                timeChartData[h.chapter] =
+                    (timeChartData[h.chapter] ?? 0) + time;
               }
             } else {
-              for (final h in hierarchies.where((h) => h.chapter == _selectedChapter)) {
+              for (final h
+                  in hierarchies.where((h) => h.chapter == _selectedChapter)) {
                 final time = (_timeSpentMap[h.topic] ?? 0).toDouble();
                 timeChartData[h.topic] = (timeChartData[h.topic] ?? 0) + time;
               }
@@ -282,14 +349,18 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                     decoration: BoxDecoration(
                       color: isDark ? const Color(0xFF1E293B) : Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+                      border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF2D3748)
+                              : const Color(0xFFE2E8F0)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
                           'Strict Analytics Filters',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                         const SizedBox(height: Spacing.sm),
                         Row(
@@ -299,13 +370,26 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text('Subject', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey)),
+                                  const Text('Subject',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.grey)),
                                   const SizedBox(height: 4),
                                   DropdownButtonFormField<String>(
                                     value: _selectedSubject,
                                     isExpanded: true,
-                                    decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4), border: OutlineInputBorder()),
-                                    items: subjects.map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))).toList(),
+                                    decoration: const InputDecoration(
+                                        contentPadding: EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
+                                        border: OutlineInputBorder()),
+                                    items: subjects
+                                        .map((s) => DropdownMenuItem(
+                                            value: s,
+                                            child: Text(s,
+                                                overflow:
+                                                    TextOverflow.ellipsis)))
+                                        .toList(),
                                     onChanged: (val) {
                                       if (val != null) {
                                         setState(() {
@@ -325,24 +409,39 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text('Chapter', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey)),
+                                  const Text('Chapter',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.grey)),
                                   const SizedBox(height: 4),
                                   DropdownButtonFormField<String>(
                                     value: _selectedChapter,
                                     isExpanded: true,
                                     disabledHint: const Text('Select Sub'),
-                                    decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4), border: OutlineInputBorder()),
-                                    items: _selectedSubject == 'All' 
+                                    decoration: const InputDecoration(
+                                        contentPadding: EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
+                                        border: OutlineInputBorder()),
+                                    items: _selectedSubject == 'All'
                                         ? []
-                                        : chapters.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))).toList(),
-                                    onChanged: _selectedSubject == 'All' ? null : (val) {
-                                      if (val != null) {
-                                        setState(() {
-                                          _selectedChapter = val;
-                                          _selectedTopic = 'All';
-                                        });
-                                      }
-                                    },
+                                        : chapters
+                                            .map((c) => DropdownMenuItem(
+                                                value: c,
+                                                child: Text(c,
+                                                    overflow:
+                                                        TextOverflow.ellipsis)))
+                                            .toList(),
+                                    onChanged: _selectedSubject == 'All'
+                                        ? null
+                                        : (val) {
+                                            if (val != null) {
+                                              setState(() {
+                                                _selectedChapter = val;
+                                                _selectedTopic = 'All';
+                                              });
+                                            }
+                                          },
                                   ),
                                 ],
                               ),
@@ -353,23 +452,38 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text('Topic', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey)),
+                                  const Text('Topic',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.grey)),
                                   const SizedBox(height: 4),
                                   DropdownButtonFormField<String>(
                                     value: _selectedTopic,
                                     isExpanded: true,
                                     disabledHint: const Text('Select Chap'),
-                                    decoration: const InputDecoration(contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4), border: OutlineInputBorder()),
+                                    decoration: const InputDecoration(
+                                        contentPadding: EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
+                                        border: OutlineInputBorder()),
                                     items: _selectedChapter == 'All'
                                         ? []
-                                        : topics.map((t) => DropdownMenuItem(value: t, child: Text(t, overflow: TextOverflow.ellipsis))).toList(),
-                                    onChanged: _selectedChapter == 'All' ? null : (val) {
-                                      if (val != null) {
-                                        setState(() {
-                                          _selectedTopic = val;
-                                        });
-                                      }
-                                    },
+                                        : topics
+                                            .map((t) => DropdownMenuItem(
+                                                value: t,
+                                                child: Text(t,
+                                                    overflow:
+                                                        TextOverflow.ellipsis)))
+                                            .toList(),
+                                    onChanged: _selectedChapter == 'All'
+                                        ? null
+                                        : (val) {
+                                            if (val != null) {
+                                              setState(() {
+                                                _selectedTopic = val;
+                                              });
+                                            }
+                                          },
                                   ),
                                 ],
                               ),
@@ -387,7 +501,9 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8),
+                      color: isDark
+                          ? const Color(0xFF60A5FA)
+                          : const Color(0xFF1D4ED8),
                     ),
                   ),
                   const SizedBox(height: Spacing.md),
@@ -398,43 +514,57 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                     padding: const EdgeInsets.all(Spacing.md),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: isDark 
-                          ? [const Color(0xFF1E1B4B), const Color(0xFF311042)]
-                          : [const Color(0xFFEEF2FF), const Color(0xFFFAE8FF)],
+                        colors: isDark
+                            ? [const Color(0xFF1E1B4B), const Color(0xFF311042)]
+                            : [
+                                const Color(0xFFEEF2FF),
+                                const Color(0xFFFAE8FF)
+                              ],
                       ),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: isDark ? const Color(0xFF3730A3) : const Color(0xFFC7D2FE)),
+                      border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF3730A3)
+                              : const Color(0xFFC7D2FE)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            const Icon(Icons.psychology_rounded, color: Colors.purple, size: 22),
+                            const Icon(Icons.psychology_rounded,
+                                color: Colors.purple, size: 22),
                             const SizedBox(width: 8),
                             Text(
                               'AI Learning Insights',
-                              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: -0.3),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16,
+                                  letterSpacing: -0.3),
                             ),
                           ],
                         ),
                         const SizedBox(height: Spacing.sm),
                         ...insights.map((insight) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('✨', style: TextStyle(fontSize: 12)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  insight,
-                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, height: 1.4),
-                                ),
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('✨',
+                                      style: TextStyle(fontSize: 12)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      insight,
+                                      style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          height: 1.4),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                        )),
+                            )),
                       ],
                     ),
                   ),
@@ -489,18 +619,29 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                         child: Container(
                           padding: const EdgeInsets.all(Spacing.md),
                           decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            color:
+                                isDark ? const Color(0xFF1E293B) : Colors.white,
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+                            border: Border.all(
+                                color: isDark
+                                    ? const Color(0xFF2D3748)
+                                    : const Color(0xFFE2E8F0)),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Remaining Social Time', style: TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold)),
+                              const Text('Remaining Social Time',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey,
+                                      fontWeight: FontWeight.bold)),
                               const SizedBox(height: 4),
                               Text(
-                                wallet != null ? '${wallet.availableMinutes} mins' : '--',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                wallet != null
+                                    ? '${wallet.availableMinutes} mins'
+                                    : '--',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 16),
                               ),
                             ],
                           ),
@@ -512,18 +653,29 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                         child: Container(
                           padding: const EdgeInsets.all(Spacing.md),
                           decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            color:
+                                isDark ? const Color(0xFF1E293B) : Colors.white,
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+                            border: Border.all(
+                                color: isDark
+                                    ? const Color(0xFF2D3748)
+                                    : const Color(0xFFE2E8F0)),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Achievements', style: TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold)),
+                              const Text('Achievements',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey,
+                                      fontWeight: FontWeight.bold)),
                               const SizedBox(height: 4),
                               Text(
-                                badges != null ? '${badges.earnedCount}/${badges.totalCount}' : '${profile.badges.length}/10',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                badges != null
+                                    ? '${badges.earnedCount}/${badges.totalCount}'
+                                    : '${profile.badges.length}/10',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 16),
                               ),
                             ],
                           ),
@@ -538,13 +690,18 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                     padding: const EdgeInsets.all(Spacing.md),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: isDark 
+                        colors: isDark
                             ? [const Color(0xFF1E1B4B), const Color(0xFF311042)]
-                            : [const Color(0xFFEEF2FF), const Color(0xFFFAE8FF)],
+                            : [
+                                const Color(0xFFEEF2FF),
+                                const Color(0xFFFAE8FF)
+                              ],
                       ),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: isDark ? const Color(0xFF4C1D95) : const Color(0xFFE0B0FF),
+                        color: isDark
+                            ? const Color(0xFF4C1D95)
+                            : const Color(0xFFE0B0FF),
                         width: 1.5,
                       ),
                     ),
@@ -553,29 +710,41 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.tips_and_updates_rounded, color: isDark ? Colors.purpleAccent : const Color(0xFF8B5CF6)),
+                            Icon(Icons.tips_and_updates_rounded,
+                                color: isDark
+                                    ? Colors.purpleAccent
+                                    : const Color(0xFF8B5CF6)),
                             const SizedBox(width: 8),
-                            const Text('Next Recommended Category', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            const Text('Next Recommended Category',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 14)),
                           ],
                         ),
                         const SizedBox(height: Spacing.sm),
                         if (nextTopicHierarchy != null) ...[
                           Text(
                             '${nextTopicHierarchy.subject} ➔ ${nextTopicHierarchy.chapter}',
-                            style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w600),
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                                fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             nextTopicHierarchy.topic,
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             'Current Mastery: ${(lowestMastery * 100).round()}%',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                            style: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w500),
                           ),
                         ] else ...[
-                          const Text('All subjects under selection are fully mastered! Outstanding job!', style: TextStyle(fontSize: 14)),
+                          const Text(
+                              'All subjects under selection are fully mastered! Outstanding job!',
+                              style: TextStyle(fontSize: 14)),
                         ]
                       ],
                     ),
@@ -588,14 +757,18 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                     decoration: BoxDecoration(
                       color: isDark ? const Color(0xFF1E293B) : Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+                      border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF2D3748)
+                              : const Color(0xFFE2E8F0)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
                           'Weekly Activity Trend',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 15),
                         ),
                         const SizedBox(height: 12),
                         SizedBox(
@@ -612,13 +785,27 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                         const Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('Mon', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                            Text('Tue', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                            Text('Wed', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                            Text('Thu', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                            Text('Fri', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                            Text('Sat', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                            Text('Sun', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                            Text('Mon',
+                                style: TextStyle(
+                                    fontSize: 10, color: Colors.grey)),
+                            Text('Tue',
+                                style: TextStyle(
+                                    fontSize: 10, color: Colors.grey)),
+                            Text('Wed',
+                                style: TextStyle(
+                                    fontSize: 10, color: Colors.grey)),
+                            Text('Thu',
+                                style: TextStyle(
+                                    fontSize: 10, color: Colors.grey)),
+                            Text('Fri',
+                                style: TextStyle(
+                                    fontSize: 10, color: Colors.grey)),
+                            Text('Sat',
+                                style: TextStyle(
+                                    fontSize: 10, color: Colors.grey)),
+                            Text('Sun',
+                                style: TextStyle(
+                                    fontSize: 10, color: Colors.grey)),
                           ],
                         )
                       ],
@@ -632,14 +819,18 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                     decoration: BoxDecoration(
                       color: isDark ? const Color(0xFF1E293B) : Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+                      border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF2D3748)
+                              : const Color(0xFFE2E8F0)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
                           'Study Consistency Heatmap',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 15),
                         ),
                         const SizedBox(height: 12),
                         SizedBox(
@@ -648,7 +839,20 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                           child: CustomPaint(
                             painter: _CalendarHeatmapPainter(
                               const {
-                                2: 1, 4: 3, 5: 2, 8: 4, 12: 1, 15: 3, 16: 4, 19: 2, 22: 4, 25: 1, 28: 3, 29: 2, 32: 4, 34: 3
+                                2: 1,
+                                4: 3,
+                                5: 2,
+                                8: 4,
+                                12: 1,
+                                15: 3,
+                                16: 4,
+                                19: 2,
+                                22: 4,
+                                25: 1,
+                                28: 3,
+                                29: 2,
+                                32: 4,
+                                34: 3
                               },
                               isDark,
                             ),
@@ -665,21 +869,26 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                     decoration: BoxDecoration(
                       color: isDark ? const Color(0xFF1E293B) : Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+                      border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF2D3748)
+                              : const Color(0xFFE2E8F0)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
                           'XP Distribution Chart',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 15),
                         ),
                         const SizedBox(height: Spacing.md),
                         if (sortedXpEntries.isEmpty)
                           const Center(
                             child: Padding(
                               padding: EdgeInsets.symmetric(vertical: 24),
-                              child: Text('No XP data recorded for selection.', style: TextStyle(color: Colors.grey)),
+                              child: Text('No XP data recorded for selection.',
+                                  style: TextStyle(color: Colors.grey)),
                             ),
                           )
                         else
@@ -687,27 +896,34 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
                             itemCount: sortedXpEntries.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 12),
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 12),
                             itemBuilder: (context, index) {
                               final entry = sortedXpEntries[index];
                               final maxVal = sortedXpEntries.first.value;
-                              final ratio = maxVal > 0 ? entry.value / maxVal : 0.0;
+                              final ratio =
+                                  maxVal > 0 ? entry.value / maxVal : 0.0;
                               return Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Expanded(
                                         child: Text(
                                           entry.key,
-                                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 12),
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
                                       Text(
                                         '${entry.value} XP',
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12),
                                       ),
                                     ],
                                   ),
@@ -716,7 +932,9 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                                     height: 8,
                                     width: double.infinity,
                                     decoration: BoxDecoration(
-                                      color: isDark ? Colors.grey[800] : Colors.grey[200],
+                                      color: isDark
+                                          ? Colors.grey[800]
+                                          : Colors.grey[200],
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: FractionallySizedBox(
@@ -725,9 +943,13 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                                       child: Container(
                                         decoration: BoxDecoration(
                                           gradient: LinearGradient(
-                                            colors: [Colors.orange, Colors.orangeAccent],
+                                            colors: [
+                                              Colors.orange,
+                                              Colors.orangeAccent
+                                            ],
                                           ),
-                                          borderRadius: BorderRadius.circular(4),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
                                         ),
                                       ),
                                     ),
@@ -747,21 +969,26 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                     decoration: BoxDecoration(
                       color: isDark ? const Color(0xFF1E293B) : Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+                      border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF2D3748)
+                              : const Color(0xFFE2E8F0)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
                           'Time Distribution (Pie Chart)',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 15),
                         ),
                         const SizedBox(height: Spacing.md),
                         if (timeChartData.isEmpty)
                           const Center(
                             child: Padding(
                               padding: EdgeInsets.symmetric(vertical: 24),
-                              child: Text('No study duration records yet.', style: TextStyle(color: Colors.grey)),
+                              child: Text('No study duration records yet.',
+                                  style: TextStyle(color: Colors.grey)),
                             ),
                           )
                         else ...[
@@ -784,7 +1011,11 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                             spacing: 12,
                             runSpacing: 8,
                             alignment: WrapAlignment.center,
-                            children: timeChartData.entries.toList().asMap().entries.map((entry) {
+                            children: timeChartData.entries
+                                .toList()
+                                .asMap()
+                                .entries
+                                .map((entry) {
                               final idx = entry.key;
                               final val = entry.value;
                               final color = _getColorForIndex(idx);
@@ -794,12 +1025,15 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                                   Container(
                                     width: 12,
                                     height: 12,
-                                    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                                    decoration: BoxDecoration(
+                                        color: color, shape: BoxShape.circle),
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
                                     '${val.key}: ${val.value.round()}s',
-                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                    style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600),
                                   ),
                                 ],
                               );
@@ -815,14 +1049,16 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                   Card(
                     elevation: 4,
                     color: Theme.of(context).colorScheme.primaryContainer,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24)),
                     child: Padding(
                       padding: const EdgeInsets.all(Spacing.xl),
                       child: Column(
                         children: [
                           const Text(
                             'Ready to grow your score?',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 6),
                           const Text(
@@ -833,13 +1069,16 @@ class _StatsDashboardState extends ConsumerState<StatsDashboard> {
                           const SizedBox(height: Spacing.lg),
                           FilledButton.icon(
                             onPressed: () {
-                              ref.read(studentHomeTabProvider.notifier).state = 1;
+                              ref.read(studentHomeTabProvider.notifier).state =
+                                  1;
                             },
                             icon: const Icon(Icons.rocket_launch_rounded),
                             label: const Text('Study More!'),
                             style: FilledButton.styleFrom(
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16)),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 32, vertical: 14),
                             ),
                           ),
                         ],
@@ -884,11 +1123,13 @@ class _StatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.sm),
+      padding: const EdgeInsets.symmetric(
+          horizontal: Spacing.md, vertical: Spacing.sm),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
+        border: Border.all(
+            color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(isDark ? 0.15 : 0.02),
@@ -908,7 +1149,10 @@ class _StatCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey,
+                      fontWeight: FontWeight.bold),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -999,8 +1243,7 @@ class _WeeklyLineChartPainter extends CustomPainter {
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
 
-    final fillPaint = Paint()
-      ..style = PaintingStyle.fill;
+    final fillPaint = Paint()..style = PaintingStyle.fill;
 
     final maxVal = values.reduce(math.max);
     final minVal = values.reduce(math.min);
@@ -1010,12 +1253,12 @@ class _WeeklyLineChartPainter extends CustomPainter {
     final fillPath = Path();
 
     final stepX = size.width / (values.length - 1);
-    
+
     for (int i = 0; i < values.length; i++) {
       final x = i * stepX;
       final ratio = range == 0 ? 0.5 : (values[i] - minVal) / range;
       final y = size.height - (ratio * (size.height - 20) + 10);
-      
+
       if (i == 0) {
         path.moveTo(x, y);
         fillPath.moveTo(x, size.height);
@@ -1030,7 +1273,10 @@ class _WeeklyLineChartPainter extends CustomPainter {
 
     // Draw area gradient
     fillPaint.shader = LinearGradient(
-      colors: [const Color(0xFF6366F1).withAlpha(50), const Color(0xFF6366F1).withAlpha(0)],
+      colors: [
+        const Color(0xFF6366F1).withAlpha(50),
+        const Color(0xFF6366F1).withAlpha(0)
+      ],
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
     ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
@@ -1050,7 +1296,7 @@ class _WeeklyLineChartPainter extends CustomPainter {
       final x = i * stepX;
       final ratio = range == 0 ? 0.5 : (values[i] - minVal) / range;
       final y = size.height - (ratio * (size.height - 20) + 10);
-      
+
       canvas.drawCircle(Offset(x, y), 5, pointPaint);
       canvas.drawCircle(Offset(x, y), 2, outerPointPaint);
     }
@@ -1072,7 +1318,8 @@ class _CalendarHeatmapPainter extends CustomPainter {
     final cellWidth = (size.width - (cols - 1) * 4) / cols;
     final cellHeight = (size.height - (rows - 1) * 4) / rows;
 
-    final baseColor = isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
+    final baseColor =
+        isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
     final levels = [
       baseColor,
       const Color(0xFF86EFAC), // light green
@@ -1088,7 +1335,7 @@ class _CalendarHeatmapPainter extends CustomPainter {
         final index = r * cols + c;
         final intensity = intensityMap[index] ?? 0;
         final color = levels[intensity.clamp(0, 4)];
-        
+
         paint.color = color;
         final rect = Rect.fromLTWH(
           c * (cellWidth + 4),

@@ -194,7 +194,15 @@ typedef FilePickerAdapter = Future<FileSelection?> Function();
 Future<FileSelection?> _filePickerAdapter() async {
   final result = await FilePicker.platform.pickFiles(
     type: FileType.custom,
-    allowedExtensions: const ['pdf', 'docx', 'jpg', 'jpeg', 'png', 'webp', 'txt'],
+    allowedExtensions: const [
+      'pdf',
+      'docx',
+      'jpg',
+      'jpeg',
+      'png',
+      'webp',
+      'txt'
+    ],
     // Native paths let us read one upload block at a time. Flutter Web does
     // not expose a local path, so it retains the current in-memory fallback
     // while still sending blocks directly to Blob Storage.

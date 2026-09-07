@@ -130,18 +130,23 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
           completed: (correctCount, totalCount) {
             _sessionTimer?.cancel();
             ref.read(notificationServiceProvider).showCompletionNotification(
+              title: 'Question session complete',
+              body:
+                  'Session finished! You answered $correctCount of $totalCount correctly.',
+              payload: {
+                'type': 'study_reminder',
+                'workspace_id': widget.workspaceId,
+              },
+            ).ignore();
+            ref
+                .read(notificationTokenRepositoryProvider)
+                .sendActivityPush(
                   title: 'Question session complete',
-                  body: 'Session finished! You answered $correctCount of $totalCount correctly.',
-                  payload: {
-                    'type': 'study_reminder',
-                    'workspace_id': widget.workspaceId,
-                  },
-                ).ignore();
-            ref.read(notificationTokenRepositoryProvider).sendActivityPush(
-                  title: 'Question session complete',
-                  body: 'Session finished! You answered $correctCount of $totalCount correctly.',
+                  body:
+                      'Session finished! You answered $correctCount of $totalCount correctly.',
                   workspaceId: widget.workspaceId,
-                ).ignore();
+                )
+                .ignore();
           },
         );
       },

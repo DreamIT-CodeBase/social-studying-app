@@ -46,16 +46,15 @@ class WorkspaceAnalyticsScreen extends ConsumerWidget {
         },
         child: async.when(
           data: (analytics) => _Body(analytics: analytics),
-          loading: () =>
-              const LoadingIndicator(message: 'Loading analytics…'),
+          loading: () => const LoadingIndicator(message: 'Loading analytics…'),
           error: (error, _) => ListView(
             children: [
               SizedBox(
                 height: context.screenHeight * 0.7,
                 child: ErrorView(
                   message: error.toString(),
-                  onRetry: () => ref
-                      .invalidate(workspaceAnalyticsProvider(workspaceId)),
+                  onRetry: () =>
+                      ref.invalidate(workspaceAnalyticsProvider(workspaceId)),
                 ),
               ),
             ],
@@ -81,8 +80,7 @@ class _Body extends StatelessWidget {
             child: const EmptyStateView(
               icon: Icons.insights_rounded,
               title: 'No analytics yet',
-              subtitle:
-                  'Once students join and start answering questions, '
+              subtitle: 'Once students join and start answering questions, '
                   'their activity and mastery will show up here.',
             ),
           ),
@@ -404,7 +402,9 @@ class _EngagementHeatmap extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     for (final cell in cells) ...[
-                      Expanded(child: _HeatmapSquare(cell: cell, maxEvents: maxEvents)),
+                      Expanded(
+                          child:
+                              _HeatmapSquare(cell: cell, maxEvents: maxEvents)),
                       if (cell != cells.last) const SizedBox(width: 4),
                     ],
                   ],
@@ -441,8 +441,18 @@ class _EngagementHeatmap extends StatelessWidget {
     final parsed = DateTime.tryParse(iso);
     if (parsed == null) return iso;
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${months[parsed.month - 1]} ${parsed.day}';
   }
@@ -547,8 +557,7 @@ class _TopicCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final mastery = topic.avgMastery.clamp(0.0, 1.0);
     final masteryPct = (mastery * 100).round();
-    final accuracyPct =
-        (topic.correctRate.clamp(0.0, 1.0) * 100).round();
+    final accuracyPct = (topic.correctRate.clamp(0.0, 1.0) * 100).round();
     final color = _bandColor(mastery);
     return Card(
       margin: EdgeInsets.zero,

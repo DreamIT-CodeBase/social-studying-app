@@ -116,8 +116,10 @@ class _LegalDocumentScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor = isDark ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B);
-    final secondaryColor = isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569);
+    final textColor =
+        isDark ? const Color(0xFFE2E8F0) : const Color(0xFF1E293B);
+    final secondaryColor =
+        isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569);
 
     return Scaffold(
       appBar: AppBar(title: Text(title)),
@@ -126,14 +128,25 @@ class _LegalDocumentScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
           children: [
-            Text('Social Studying', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary)),
+            Text('Social Studying',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(context).colorScheme.primary)),
             const SizedBox(height: 8),
-            Text('Effective July 14, 2026', style: TextStyle(fontSize: 13, color: secondaryColor)),
+            Text('Effective July 14, 2026',
+                style: TextStyle(fontSize: 13, color: secondaryColor)),
             const SizedBox(height: 24),
             for (final section in sections) ...[
-              Text(section.heading, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: textColor)),
+              Text(section.heading,
+                  style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: textColor)),
               const SizedBox(height: 8),
-              Text(section.body, style: TextStyle(fontSize: 14, height: 1.55, color: secondaryColor)),
+              Text(section.body,
+                  style: TextStyle(
+                      fontSize: 14, height: 1.55, color: secondaryColor)),
               const SizedBox(height: 24),
             ],
           ],

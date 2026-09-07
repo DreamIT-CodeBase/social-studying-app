@@ -60,7 +60,7 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
   /// doesn't accidentally double-fetch.
   Future<void> start({double? mastery}) async {
     if (state is! QuestionSessionIdle) return;
-    
+
     _sessionTargetLength = 20;
 
     _questionsAnswered = 0;
@@ -84,15 +84,19 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
 
   void _transitionToCompleted() {
     final authState = ref.read(authNotifierProvider).valueOrNull;
-    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user != null) {
-      ref.read(gamificationRepositoryProvider).completeSession(
+      ref
+          .read(gamificationRepositoryProvider)
+          .completeSession(
             workspaceId: _workspaceId,
             userId: user.id,
             sessionType: 'study',
-          ).then((_) {
-            _invalidateProfile();
-          }).catchError((_) {});
+          )
+          .then((_) {
+        _invalidateProfile();
+      }).catchError((_) {});
     }
     state = QuestionSession.completed(
       correctCount: _questionsCorrect,
@@ -113,15 +117,19 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
         state is QuestionSessionCompleted) {
       if (_questionsAnswered > 0 && state is! QuestionSessionCompleted) {
         final authState = ref.read(authNotifierProvider).valueOrNull;
-        final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+        final user =
+            authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
         if (user != null) {
-          ref.read(gamificationRepositoryProvider).completeSession(
+          ref
+              .read(gamificationRepositoryProvider)
+              .completeSession(
                 workspaceId: _workspaceId,
                 userId: user.id,
                 sessionType: 'study',
-              ).then((_) {
-                _invalidateProfile();
-              }).catchError((_) {});
+              )
+              .then((_) {
+            _invalidateProfile();
+          }).catchError((_) {});
         }
       }
       state = const QuestionSession.idle();
@@ -169,11 +177,14 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
       );
       _questionsAnswered++;
       if (_questionStartTime != null) {
-        final durationMs = DateTime.now().difference(_questionStartTime!).inMilliseconds;
-        RecallService.instance.recordQuestionAnswered(
-          topic: current.question.topic,
-          durationMs: durationMs,
-        ).catchError((_) {});
+        final durationMs =
+            DateTime.now().difference(_questionStartTime!).inMilliseconds;
+        RecallService.instance
+            .recordQuestionAnswered(
+              topic: current.question.topic,
+              durationMs: durationMs,
+            )
+            .catchError((_) {});
       }
       if (feedback.isCorrect) {
         _questionsCorrect++;
@@ -201,7 +212,8 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
 
   void _invalidateProfile() {
     final authState = ref.read(authNotifierProvider).valueOrNull;
-    final user = authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
     if (user != null) {
       final key = (workspaceId: _workspaceId, userId: user.id);
       ref.invalidate(gamificationProfileProvider(key));

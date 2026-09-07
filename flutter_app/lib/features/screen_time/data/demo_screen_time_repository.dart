@@ -33,7 +33,8 @@ class DemoScreenTimeRepository implements ScreenTimeRepository {
   );
 
   @override
-  Future<ScreenTimeSettings> fetchSettings({required String workspaceId}) async {
+  Future<ScreenTimeSettings> fetchSettings(
+      {required String workspaceId}) async {
     await Future.delayed(const Duration(milliseconds: 100));
     return _settings;
   }

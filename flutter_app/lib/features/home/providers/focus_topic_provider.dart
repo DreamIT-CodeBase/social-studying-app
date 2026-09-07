@@ -26,6 +26,8 @@ class FocusTopicNotifier extends StateNotifier<String?> {
   }
 }
 
-final focusTopicProvider = StateNotifierProvider.family<FocusTopicNotifier, String?, String>((ref, workspaceId) {
+final focusTopicProvider =
+    StateNotifierProvider.family<FocusTopicNotifier, String?, String>(
+        (ref, workspaceId) {
   return FocusTopicNotifier(workspaceId);
 });

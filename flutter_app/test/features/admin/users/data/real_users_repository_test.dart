@@ -81,11 +81,10 @@ void main() {
   });
 
   group('RealUsersRepository.createUser', () {
-    test('POSTs email/display_name/role with snake_case role value',
-        () async {
+    test('POSTs email/display_name/role with snake_case role value', () async {
       final adapter = _FakeAdapter(
-        (opts) => _json(jsonEncode(_userJson(role: 'workspace_admin')),
-            status: 201),
+        (opts) =>
+            _json(jsonEncode(_userJson(role: 'workspace_admin')), status: 201),
       );
       final repo = RealUsersRepository(dio: _dio(adapter));
       await repo.createUser(
@@ -153,7 +152,8 @@ void main() {
       );
 
       expect(adapter.lastRequest!.method, 'PATCH');
-      expect(adapter.lastRequest!.path, '/api/v1/workspaces/wsp_1/members/usr_1');
+      expect(
+          adapter.lastRequest!.path, '/api/v1/workspaces/wsp_1/members/usr_1');
       final sent = jsonDecode(utf8.decode(adapter.lastRequestBody!))
           as Map<String, dynamic>;
       expect(sent['role'], 'workspace_admin');
@@ -165,7 +165,8 @@ void main() {
       );
       final repo = RealUsersRepository(dio: _dio(adapter));
       expect(
-        () => repo.changeRole(workspaceId: 'wsp_1', userId: 'usr_ghost', role: UserRole.student),
+        () => repo.changeRole(
+            workspaceId: 'wsp_1', userId: 'usr_ghost', role: UserRole.student),
         throwsA(isA<UserNotFoundException>()),
       );
     });

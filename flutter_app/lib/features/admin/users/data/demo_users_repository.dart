@@ -89,8 +89,7 @@ class DemoUsersRepository implements UsersRepository {
     await _latency();
     return List.unmodifiable(
       _users.where(
-        (u) => u.workspaceMemberships
-            .any((m) => m.workspaceId == workspaceId),
+        (u) => u.workspaceMemberships.any((m) => m.workspaceId == workspaceId),
       ),
     );
   }

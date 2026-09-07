@@ -25,7 +25,7 @@ class TelemetryService with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addObserver(this);
     _appSessionStart = DateTime.now();
-    
+
     // Periodically flush events every 30 seconds
     _flushTimer = Timer.periodic(const Duration(seconds: 30), (_) => flush());
 

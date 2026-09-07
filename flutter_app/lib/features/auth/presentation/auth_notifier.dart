@@ -42,8 +42,7 @@ class AuthNotifier extends _$AuthNotifier {
         );
         if (user != null &&
             user.workspaceMemberships.any(
-              (membership) =>
-                  membership.workspaceId == 'wsp_self_${user.id}',
+              (membership) => membership.workspaceId == 'wsp_self_${user.id}',
             )) {
           return;
         }

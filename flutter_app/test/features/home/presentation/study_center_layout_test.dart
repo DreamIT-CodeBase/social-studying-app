@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('Long text in pill button does not overflow on a small 360px screen', (tester) async {
+  testWidgets(
+      'Long text in pill button does not overflow on a small 360px screen',
+      (tester) async {
     tester.view.physicalSize = const Size(360, 640);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() {

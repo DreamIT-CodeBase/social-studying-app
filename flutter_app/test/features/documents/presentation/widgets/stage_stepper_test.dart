@@ -10,11 +10,14 @@ Widget _wrap(Widget child) => MaterialApp(
     );
 
 void main() {
-  testWidgets('renders one row per stage with the correct label', (tester) async {
+  testWidgets('renders one row per stage with the correct label',
+      (tester) async {
     final rows = [
       const StageRow(stage: PipelineStage.uploaded, state: StageRowState.done),
-      const StageRow(stage: PipelineStage.extracting, state: StageRowState.active),
-      const StageRow(stage: PipelineStage.topics, state: StageRowState.upcoming),
+      const StageRow(
+          stage: PipelineStage.extracting, state: StageRowState.active),
+      const StageRow(
+          stage: PipelineStage.topics, state: StageRowState.upcoming),
     ];
     await tester.pumpWidget(_wrap(StageStepper(rows: rows)));
 
@@ -34,7 +37,8 @@ void main() {
   testWidgets('active state renders a CircularProgressIndicator',
       (tester) async {
     final rows = [
-      const StageRow(stage: PipelineStage.extracting, state: StageRowState.active),
+      const StageRow(
+          stage: PipelineStage.extracting, state: StageRowState.active),
     ];
     await tester.pumpWidget(_wrap(StageStepper(rows: rows)));
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
@@ -42,7 +46,8 @@ void main() {
 
   testWidgets('error state renders the error icon', (tester) async {
     final rows = [
-      const StageRow(stage: PipelineStage.extracting, state: StageRowState.error),
+      const StageRow(
+          stage: PipelineStage.extracting, state: StageRowState.error),
     ];
     await tester.pumpWidget(_wrap(StageStepper(rows: rows)));
     expect(find.byIcon(Icons.priority_high_rounded), findsOneWidget);

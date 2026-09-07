@@ -54,8 +54,6 @@ abstract class WorkspacesRepository {
   ///
   /// Throws [WorkspaceNotFoundException] (404).
   Future<GeneratedInviteCode> generateInviteCode(String workspaceId);
-
-
 }
 
 /// Selects demo vs. real implementation by authenticated user — the

@@ -48,7 +48,8 @@ enum AdminRole {
   parent('Parent', 'Family Study', 'Daily learning at home.'),
   teacher('Teacher', 'My Class', 'Classroom learning space.');
 
-  const AdminRole(this.label, this.defaultWorkspaceName, this.defaultDescription);
+  const AdminRole(
+      this.label, this.defaultWorkspaceName, this.defaultDescription);
 
   final String label;
   final String defaultWorkspaceName;
@@ -59,8 +60,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   _Step _step = _Step.roleChoice;
   AdminRole? _role;
 
-  late final TextEditingController _nameController =
-      TextEditingController();
+  late final TextEditingController _nameController = TextEditingController();
   late final TextEditingController _descriptionController =
       TextEditingController();
 
@@ -166,11 +166,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────
 // Step 1 — role choice
 // ─────────────────────────────────────────────────────────────────────────
-
 
 class _RoleChoiceView extends StatelessWidget {
   const _RoleChoiceView({super.key, required this.onSelect});
@@ -216,7 +214,6 @@ class _RoleChoiceView extends StatelessWidget {
   }
 }
 
-
 class _Hero extends StatelessWidget {
   const _Hero();
 
@@ -225,7 +222,6 @@ class _Hero extends StatelessWidget {
     return const Center(child: AppLogo(size: 96));
   }
 }
-
 
 class _RoleCard extends StatelessWidget {
   const _RoleCard({required this.role, required this.onTap});
@@ -300,11 +296,9 @@ class _RoleCard extends StatelessWidget {
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────
 // Step 2 — workspace setup form
 // ─────────────────────────────────────────────────────────────────────────
-
 
 class _WorkspaceSetupView extends StatelessWidget {
   const _WorkspaceSetupView({
@@ -415,7 +409,6 @@ class _WorkspaceSetupView extends StatelessWidget {
     );
   }
 }
-
 
 void _snack(BuildContext context, String message) {
   ScaffoldMessenger.of(context)

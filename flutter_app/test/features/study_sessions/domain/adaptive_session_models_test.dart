@@ -38,14 +38,15 @@ void main() {
     });
 
     test('parses content_ready when the backend reports a warming pool', () {
-      final plan =
-          AdaptiveSessionPlan.fromJson(_planJson(overrides: {'content_ready': false}));
+      final plan = AdaptiveSessionPlan.fromJson(
+          _planJson(overrides: {'content_ready': false}));
 
       expect(plan.contentReady, isFalse);
       expect(plan.exhausted, isFalse);
     });
 
-    test('defaults exhausted to false and content_ready to true when absent', () {
+    test('defaults exhausted to false and content_ready to true when absent',
+        () {
       // Older backends omit both flags; a runnable session must not be
       // mistaken for a call-to-action.
       final plan = AdaptiveSessionPlan.fromJson(_planJson());

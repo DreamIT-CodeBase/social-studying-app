@@ -102,8 +102,7 @@ void main() {
     expect(find.text('Photosynthesis'), findsOneWidget);
   });
 
-  testWidgets('empty workspace shows the no-analytics callout',
-      (tester) async {
+  testWidgets('empty workspace shows the no-analytics callout', (tester) async {
     when(() => repo.fetchWorkspace(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => WorkspaceAnalytics.empty);
 
@@ -157,8 +156,7 @@ void main() {
     expect(find.text('41 attempts • 51% correct'), findsOneWidget);
   });
 
-  testWidgets('repository receives the workspace id verbatim',
-      (tester) async {
+  testWidgets('repository receives the workspace id verbatim', (tester) async {
     when(() => repo.fetchWorkspace(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _populated());
 

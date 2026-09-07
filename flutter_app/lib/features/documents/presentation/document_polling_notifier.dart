@@ -84,7 +84,8 @@ class DocumentPolling extends _$DocumentPolling {
   /// the AI-heavy stages that won't change status for 10–60 seconds.
   Duration _pollIntervalFor(DocumentStatus status) {
     // In debug/test mode honour the override so tests still run fast.
-    if (!identical(debugInterval, kDocumentPollIntervalFast)) return debugInterval;
+    if (!identical(debugInterval, kDocumentPollIntervalFast))
+      return debugInterval;
     return switch (status) {
       // These stages complete in seconds — poll fast.
       DocumentStatus.pending ||

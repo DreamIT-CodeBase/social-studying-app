@@ -275,7 +275,8 @@ class _FeedList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final progressEnabled = ref.watch(adminProgressNotificationsEnabledProvider);
+    final progressEnabled =
+        ref.watch(adminProgressNotificationsEnabledProvider);
     final activeFilter = ref.watch(adminNotificationFilterProvider);
 
     final progressCount = items.where((e) => e.isProgressItem).length;
@@ -302,7 +303,8 @@ class _FeedList extends ConsumerWidget {
       slivers: [
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(Spacing.lg, Spacing.md, Spacing.lg, Spacing.sm),
+            padding: const EdgeInsets.fromLTRB(
+                Spacing.lg, Spacing.md, Spacing.lg, Spacing.sm),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -311,7 +313,8 @@ class _FeedList extends ConsumerWidget {
                   enabled: progressEnabled,
                   onChanged: (val) {
                     ref
-                        .read(adminProgressNotificationsEnabledProvider.notifier)
+                        .read(
+                            adminProgressNotificationsEnabledProvider.notifier)
                         .setEnabled(val);
                   },
                 ),
@@ -319,12 +322,15 @@ class _FeedList extends ConsumerWidget {
                 // ── Category Filter Chips Bar ──
                 _CategoryFilterBar(
                   selected: activeFilter,
-                  allCount: progressEnabled ? items.length : items.length - progressCount,
+                  allCount: progressEnabled
+                      ? items.length
+                      : items.length - progressCount,
                   progressCount: progressCount,
                   flaggedCount: flaggedCount,
                   docCount: docCount,
                   onSelected: (filter) {
-                    ref.read(adminNotificationFilterProvider.notifier).state = filter;
+                    ref.read(adminNotificationFilterProvider.notifier).state =
+                        filter;
                   },
                 ),
               ],

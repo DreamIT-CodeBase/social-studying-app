@@ -8,4 +8,5 @@ enum SessionLevel {
 }
 
 /// Selected session difficulty level, defaults to beginner.
-final sessionLevelProvider = StateProvider<SessionLevel>((ref) => SessionLevel.beginner);
+final sessionLevelProvider =
+    StateProvider<SessionLevel>((ref) => SessionLevel.beginner);

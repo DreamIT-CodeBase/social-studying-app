@@ -168,9 +168,7 @@ PipelineStage _activeStage(DocumentStatus status) {
     DocumentStatus.vectorizing =>
       PipelineStage.vectorizing,
     DocumentStatus.ready => PipelineStage.ready,
-    DocumentStatus.flagged ||
-    DocumentStatus.failed =>
-      PipelineStage.uploaded,
+    DocumentStatus.flagged || DocumentStatus.failed => PipelineStage.uploaded,
   };
 }
 
@@ -278,8 +276,7 @@ class _MetadataCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final entries = <(String, String)>[
       ('File type', doc.docType.name.toUpperCase()),
-      if (doc.pageCount != null)
-        ('Pages', '${doc.pageCount}'),
+      if (doc.pageCount != null) ('Pages', '${doc.pageCount}'),
       if (doc.textCharCount != null)
         ('Characters extracted', _formatNumber(doc.textCharCount!)),
       if (doc.languages.isNotEmpty)

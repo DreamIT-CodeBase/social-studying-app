@@ -59,7 +59,8 @@ Widget _wrap(
         workspacesRepositoryProvider
             .overrideWithValue(wsRepo ?? _MockWorkspacesRepo()),
         if (currentUser != null)
-          authNotifierProvider.overrideWith(() => MockAuthNotifier(currentUser)),
+          authNotifierProvider
+              .overrideWith(() => MockAuthNotifier(currentUser)),
       ],
       child: MaterialApp(
         theme: AppTheme.light,
@@ -307,7 +308,8 @@ void main() {
     expect(find.text('Maya Chen removed'), findsOneWidget);
   });
 
-  testWidgets('deactivating/deleting a user completely confirms then calls the repository',
+  testWidgets(
+      'deactivating/deleting a user completely confirms then calls the repository',
       (tester) async {
     var calls = 0;
     when(() => usersRepo.listWorkspaceUsers(any())).thenAnswer((_) async {
@@ -316,7 +318,8 @@ void main() {
     });
     when(() => usersRepo.deactivateUser(any())).thenAnswer((_) async {});
 
-    final tenantAdmin = _user(id: 'usr_owner', name: 'Owner', role: UserRole.tenantAdmin);
+    final tenantAdmin =
+        _user(id: 'usr_owner', name: 'Owner', role: UserRole.tenantAdmin);
 
     await tester.pumpWidget(_wrap(usersRepo, currentUser: tenantAdmin));
     await tester.pumpAndSettle();
@@ -334,8 +337,7 @@ void main() {
     expect(find.text('Maya Chen deleted'), findsOneWidget);
   });
 
-  testWidgets('promoting a student to admin calls changeRole',
-      (tester) async {
+  testWidgets('promoting a student to admin calls changeRole', (tester) async {
     var calls = 0;
     when(() => usersRepo.listWorkspaceUsers(any())).thenAnswer((_) async {
       calls++;
@@ -382,8 +384,7 @@ void main() {
       ProviderScope(
         overrides: [
           usersRepositoryProvider.overrideWithValue(DemoUsersRepository()),
-          workspacesRepositoryProvider
-              .overrideWithValue(_MockWorkspacesRepo()),
+          workspacesRepositoryProvider.overrideWithValue(_MockWorkspacesRepo()),
         ],
         child: const MaterialApp(
           home: Scaffold(

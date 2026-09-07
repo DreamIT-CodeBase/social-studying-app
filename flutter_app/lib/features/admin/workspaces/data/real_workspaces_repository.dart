@@ -117,8 +117,6 @@ class RealWorkspacesRepository implements WorkspacesRepository {
     }
   }
 
-
-
   String? _detail(Object? body) {
     if (body is Map<String, dynamic> && body['detail'] is String) {
       return body['detail'] as String;

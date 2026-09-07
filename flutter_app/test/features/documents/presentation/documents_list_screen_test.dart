@@ -55,7 +55,8 @@ void main() {
 
   tearDown(() => setAppFlavor(AppFlavor.student));
 
-  testWidgets('shows loading then empty state when no docs exist', (tester) async {
+  testWidgets('shows loading then empty state when no docs exist',
+      (tester) async {
     final completer = Completer<List<Document>>();
     when(() => repo.list(workspaceId: 'wsp_test'))
         .thenAnswer((_) => completer.future);
@@ -109,7 +110,8 @@ void main() {
     expect(find.text('Try Again'), findsOneWidget);
   });
 
-  testWidgets('detail line summarises pages, chunks, and topics', (tester) async {
+  testWidgets('detail line summarises pages, chunks, and topics',
+      (tester) async {
     when(() => repo.list(workspaceId: 'wsp_test')).thenAnswer(
       (_) async => [
         const Document(

@@ -132,7 +132,6 @@ class _ScreenTimeSettingsScreenState
             children: [
               _buildParentMessage(),
               const SizedBox(height: Spacing.lg),
-
               if (isEditable &&
                   workspaceId != null &&
                   deviceStatusesAsync != null) ...[
@@ -169,7 +168,8 @@ class _ScreenTimeSettingsScreenState
                   const SizedBox(height: Spacing.lg),
                 ],
               ],
-              _buildSectionTitle('Social Media Question Rules & Reoccurring Timeframe'),
+              _buildSectionTitle(
+                  'Social Media Question Rules & Reoccurring Timeframe'),
               const SizedBox(height: Spacing.sm),
               _buildSocialQuestionsCard(isEditable),
               const SizedBox(height: Spacing.lg),
@@ -306,7 +306,8 @@ class _ScreenTimeSettingsScreenState
             );
           }
 
-          final readyCount = statuses.where((status) => status.blockingReady).length;
+          final readyCount =
+              statuses.where((status) => status.blockingReady).length;
           return Column(
             children: [
               ListTile(
@@ -327,8 +328,8 @@ class _ScreenTimeSettingsScreenState
                 ),
                 trailing: IconButton(
                   tooltip: 'Refresh device health',
-                  onPressed: () =>
-                      ref.invalidate(studentDeviceStatusesProvider(workspaceId)),
+                  onPressed: () => ref
+                      .invalidate(studentDeviceStatusesProvider(workspaceId)),
                   icon: const Icon(Icons.refresh_rounded),
                 ),
               ),
@@ -579,8 +580,7 @@ class _ScreenTimeSettingsScreenState
                   _hasIOSSelectedApps
                       ? Icons.verified_rounded
                       : Icons.app_blocking_rounded,
-                  color:
-                      _hasIOSSelectedApps ? Colors.green : AppColors.primary,
+                  color: _hasIOSSelectedApps ? Colors.green : AppColors.primary,
                   size: 28,
                 ),
                 const SizedBox(width: Spacing.md),
@@ -851,7 +851,8 @@ class _ScreenTimeSettingsScreenState
               const SizedBox(height: 4),
               const Text(
                 'Frequency of recurring study questions while browsing social apps:',
-                style: TextStyle(fontSize: 12, color: AppColors.onSurfaceVariant),
+                style:
+                    TextStyle(fontSize: 12, color: AppColors.onSurfaceVariant),
               ),
               const SizedBox(height: Spacing.sm),
               DropdownButtonFormField<int>(
@@ -860,11 +861,13 @@ class _ScreenTimeSettingsScreenState
                   labelText: 'Recurring Interval',
                   filled: true,
                   fillColor: context.colorScheme.surfaceContainer,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
                 items: const [
                   DropdownMenuItem(value: 0, child: Text('On App Launch Only')),
-                  DropdownMenuItem(value: 15, child: Text('Every 15 Minutes (Recommended)')),
+                  DropdownMenuItem(
+                      value: 15, child: Text('Every 15 Minutes (Recommended)')),
                   DropdownMenuItem(value: 30, child: Text('Every 30 Minutes')),
                   DropdownMenuItem(value: 45, child: Text('Every 45 Minutes')),
                   DropdownMenuItem(value: 60, child: Text('Every 1 Hour')),
@@ -891,12 +894,16 @@ class _ScreenTimeSettingsScreenState
                   labelText: 'Question Count',
                   filled: true,
                   fillColor: context.colorScheme.surfaceContainer,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
                 items: const [
-                  DropdownMenuItem(value: 1, child: Text('1 Question (Quick Recall)')),
-                  DropdownMenuItem(value: 2, child: Text('2 Questions (Balanced)')),
-                  DropdownMenuItem(value: 3, child: Text('3 Questions (Deep Practice)')),
+                  DropdownMenuItem(
+                      value: 1, child: Text('1 Question (Quick Recall)')),
+                  DropdownMenuItem(
+                      value: 2, child: Text('2 Questions (Balanced)')),
+                  DropdownMenuItem(
+                      value: 3, child: Text('3 Questions (Deep Practice)')),
                 ],
                 onChanged: isAdmin
                     ? (value) async {
@@ -920,14 +927,21 @@ class _ScreenTimeSettingsScreenState
                   labelText: 'Subject Focus',
                   filled: true,
                   fillColor: context.colorScheme.surfaceContainer,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
                 items: const [
-                  DropdownMenuItem(value: null, child: Text('All Subjects (Rotational)')),
-                  DropdownMenuItem(value: 'Chemistry', child: Text('Chemistry Focus 🧪')),
-                  DropdownMenuItem(value: 'Mathematics', child: Text('Mathematics Focus 📐')),
-                  DropdownMenuItem(value: 'Physics', child: Text('Physics Focus ⚡')),
-                  DropdownMenuItem(value: 'Biology', child: Text('Biology Focus 🧬')),
+                  DropdownMenuItem(
+                      value: null, child: Text('All Subjects (Rotational)')),
+                  DropdownMenuItem(
+                      value: 'Chemistry', child: Text('Chemistry Focus 🧪')),
+                  DropdownMenuItem(
+                      value: 'Mathematics',
+                      child: Text('Mathematics Focus 📐')),
+                  DropdownMenuItem(
+                      value: 'Physics', child: Text('Physics Focus ⚡')),
+                  DropdownMenuItem(
+                      value: 'Biology', child: Text('Biology Focus 🧬')),
                 ],
                 onChanged: isAdmin
                     ? (value) async {
@@ -975,7 +989,8 @@ class _ScreenTimeSettingsScreenState
                 flaggedCount > 0
                     ? '$flaggedCount Flagged Upload(s) Awaiting Review'
                     : 'All Uploads Approved & Safe',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
               subtitle: Text(
                 flaggedCount > 0

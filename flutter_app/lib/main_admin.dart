@@ -65,11 +65,11 @@ class _AdminAppState extends ConsumerState<_AdminApp> {
   void _initNotifications(router) {
     unawaited(
       ref.read(notificationServiceProvider).initialize(
-            onTap: (RemoteMessage message) {
-              final path = deepLinkFor(message.data);
-              if (path != null) router.go(path);
-            },
-          ),
+        onTap: (RemoteMessage message) {
+          final path = deepLinkFor(message.data);
+          if (path != null) router.go(path);
+        },
+      ),
     );
   }
 }

@@ -106,9 +106,9 @@ void main() {
     expect(find.text('Which organelle is the site of photosynthesis?'),
         findsOneWidget);
     expect(find.text('Chloroplast'), findsOneWidget);
-    expect(find.text('15:00'), findsOneWidget);
+    expect(find.text('04:00'), findsOneWidget);
     expect(
-      tester.getCenter(find.text('15:00')).dx,
+      tester.getCenter(find.text('04:00')).dx,
       greaterThan(tester.getCenter(find.text('0 XP')).dx),
     );
   });

@@ -48,7 +48,7 @@ class RecallService {
     try {
       timeMap = jsonDecode(rawTimeSpent) as Map<String, dynamic>;
     } catch (_) {}
-    
+
     final currentVal = timeMap[topic] as int? ?? 0;
     timeMap[topic] = currentVal + seconds;
     await prefs.setString(_timeSpentKey, jsonEncode(timeMap));
@@ -60,7 +60,7 @@ class RecallService {
     required int durationMs,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     // Increment total questions answered count
     final count = prefs.getInt(_questionsCountKey) ?? 0;
     await prefs.setInt(_questionsCountKey, count + 1);
@@ -72,7 +72,7 @@ class RecallService {
     try {
       timeMap = jsonDecode(rawTimeSpent) as Map<String, dynamic>;
     } catch (_) {}
-    
+
     final currentVal = timeMap[topic] as int? ?? 0;
     timeMap[topic] = currentVal + seconds;
     await prefs.setString(_timeSpentKey, jsonEncode(timeMap));
@@ -84,7 +84,8 @@ class RecallService {
     final List<String> rawScores = prefs.getStringList(_recallScoresKey) ?? [];
     if (rawScores.isEmpty) return 85; // Default average fallback
 
-    final sum = rawScores.fold<int>(0, (prev, element) => prev + (int.tryParse(element) ?? 0));
+    final sum = rawScores.fold<int>(
+        0, (prev, element) => prev + (int.tryParse(element) ?? 0));
     return (sum / rawScores.length).round();
   }
 
@@ -93,7 +94,8 @@ class RecallService {
     final prefs = await SharedPreferences.getInstance();
     final String rawTimeSpent = prefs.getString(_timeSpentKey) ?? '{}';
     try {
-      final Map<String, dynamic> decoded = jsonDecode(rawTimeSpent) as Map<String, dynamic>;
+      final Map<String, dynamic> decoded =
+          jsonDecode(rawTimeSpent) as Map<String, dynamic>;
       return decoded.map((key, value) => MapEntry(key, value as int));
     } catch (_) {
       return {};

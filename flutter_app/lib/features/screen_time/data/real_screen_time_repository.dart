@@ -12,7 +12,8 @@ class RealScreenTimeRepository implements ScreenTimeRepository {
   static const _apiPrefix = '/api/v1';
 
   @override
-  Future<ScreenTimeSettings> fetchSettings({required String workspaceId}) async {
+  Future<ScreenTimeSettings> fetchSettings(
+      {required String workspaceId}) async {
     final response = await dio.get<Map<String, dynamic>>(
       '$_apiPrefix/workspaces/$workspaceId/screen-time/settings',
     );

@@ -51,23 +51,19 @@ class LoginScreen extends ConsumerWidget {
             return const LoadingIndicator(message: 'Entering dashboard…');
           },
           orElse: () => _LoginBody(
-            onMicrosoftSignIn: () => ref
-                .read(authNotifierProvider.notifier)
-                .signInWithMicrosoft(),
-            onGoogleSignIn: () => ref
-                .read(authNotifierProvider.notifier)
-                .signInWithGoogle(),
+            onMicrosoftSignIn: () =>
+                ref.read(authNotifierProvider.notifier).signInWithMicrosoft(),
+            onGoogleSignIn: () =>
+                ref.read(authNotifierProvider.notifier).signInWithGoogle(),
           ),
         ),
         loading: () => const LoadingIndicator(message: 'Signing you in…'),
         error: (error, _) => _LoginBody(
           errorMessage: error.toString().replaceFirst('Exception: ', ''),
-          onMicrosoftSignIn: () => ref
-              .read(authNotifierProvider.notifier)
-              .signInWithMicrosoft(),
-          onGoogleSignIn: () => ref
-              .read(authNotifierProvider.notifier)
-              .signInWithGoogle(),
+          onMicrosoftSignIn: () =>
+              ref.read(authNotifierProvider.notifier).signInWithMicrosoft(),
+          onGoogleSignIn: () =>
+              ref.read(authNotifierProvider.notifier).signInWithGoogle(),
         ),
       ),
     );
@@ -88,8 +84,10 @@ class _LoginBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleColor = isDark ? const Color(0xFFF8FAFC) : const Color(0xFF1E1B4B);
-    final subtitleColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF4B5563);
+    final titleColor =
+        isDark ? const Color(0xFFF8FAFC) : const Color(0xFF1E1B4B);
+    final subtitleColor =
+        isDark ? const Color(0xFF94A3B8) : const Color(0xFF4B5563);
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
@@ -107,63 +105,71 @@ class _LoginBody extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                  Center(
-                    child: AppLogo(
-                      size: 80,
-                      shadows: [
-                        BoxShadow(
-                          color: isDark
-                              ? const Color(0x66000000)
-                              : const Color(0x260F172A),
-                          blurRadius: 14,
-                          offset: Offset(0, 5),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Welcome to Social Studying',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: titleColor),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Sign in to continue learning.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 15, color: subtitleColor),
-                  ),
-                  if (errorMessage != null && errorMessage!.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.info_outline, color: Colors.red, size: 20),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              errorMessage!,
-                              style: const TextStyle(
-                                color: Colors.red,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
+                          Center(
+                            child: AppLogo(
+                              size: 80,
+                              shadows: [
+                                BoxShadow(
+                                  color: isDark
+                                      ? const Color(0x66000000)
+                                      : const Color(0x260F172A),
+                                  blurRadius: 14,
+                                  offset: Offset(0, 5),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 32),
-                  _MicrosoftSignInButton(onPressed: onMicrosoftSignIn),
-                  const SizedBox(height: 12),
-                  _GoogleSignInButton(onPressed: onGoogleSignIn),
+                          const SizedBox(height: 20),
+                          Text(
+                            'Welcome to Social Studying',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w800,
+                                color: titleColor),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Sign in to continue learning.',
+                            textAlign: TextAlign.center,
+                            style:
+                                TextStyle(fontSize: 15, color: subtitleColor),
+                          ),
+                          if (errorMessage != null &&
+                              errorMessage!.isNotEmpty) ...[
+                            const SizedBox(height: 20),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                    color: Colors.red.withValues(alpha: 0.3)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.info_outline,
+                                      color: Colors.red, size: 20),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      errorMessage!,
+                                      style: const TextStyle(
+                                        color: Colors.red,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 32),
+                          _MicrosoftSignInButton(onPressed: onMicrosoftSignIn),
+                          const SizedBox(height: 12),
+                          _GoogleSignInButton(onPressed: onGoogleSignIn),
                         ],
                       ),
                     ),
@@ -175,17 +181,20 @@ class _LoginBody extends StatelessWidget {
                   onPrivacyTap: () => context.push(AppRoutes.privacy),
                   isDark: isDark,
                 ),
-                ],
-              ),
+              ],
             ),
           ),
+        ),
       ),
     );
   }
 }
 
 class _LegalFooter extends StatelessWidget {
-  const _LegalFooter({required this.onTermsTap, required this.onPrivacyTap, required this.isDark});
+  const _LegalFooter(
+      {required this.onTermsTap,
+      required this.onPrivacyTap,
+      required this.isDark});
 
   final VoidCallback onTermsTap;
   final VoidCallback onPrivacyTap;
@@ -197,7 +206,10 @@ class _LegalFooter extends StatelessWidget {
           Text(
             'By continuing, you agree to our',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF6B7280)),
+            style: TextStyle(
+                fontSize: 12,
+                color:
+                    isDark ? const Color(0xFF94A3B8) : const Color(0xFF6B7280)),
           ),
           Wrap(
             alignment: WrapAlignment.center,
@@ -207,17 +219,24 @@ class _LegalFooter extends StatelessWidget {
                 onPressed: onTermsTap,
                 style: TextButton.styleFrom(
                   minimumSize: Size.zero,
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
                 child: const Text('Terms & Conditions'),
               ),
-              Text('and', style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF6B7280))),
+              Text('and',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF6B7280))),
               TextButton(
                 onPressed: onPrivacyTap,
                 style: TextButton.styleFrom(
                   minimumSize: Size.zero,
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
                 child: const Text('Privacy Policy'),
@@ -227,8 +246,6 @@ class _LegalFooter extends StatelessWidget {
         ],
       );
 }
-
-
 
 class _MicrosoftSignInButton extends StatelessWidget {
   const _MicrosoftSignInButton({required this.onPressed});

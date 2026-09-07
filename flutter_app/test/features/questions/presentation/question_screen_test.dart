@@ -74,7 +74,8 @@ AnswerFeedback _feedback({bool correct = true}) => AnswerFeedback(
 Widget _wrap(_MockRepo repo) => ProviderScope(
       overrides: [
         questionsRepositoryProvider.overrideWithValue(repo),
-        appThemeModeProvider.overrideWith((ref) => AppThemeModeNotifier()..state = AppThemeMode.kids),
+        appThemeModeProvider.overrideWith(
+            (ref) => AppThemeModeNotifier()..state = AppThemeMode.kids),
       ],
       child: MaterialApp(
         theme: AppTheme.light,

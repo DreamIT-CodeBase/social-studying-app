@@ -48,9 +48,8 @@ class DocumentsListScreen extends ConsumerWidget {
           child: docsAsync.when(
             data: (docs) => docs.isEmpty
                 ? _EmptyState(
-                    onUpload: isUploading
-                        ? null
-                        : () => _handleUpload(context, ref),
+                    onUpload:
+                        isUploading ? null : () => _handleUpload(context, ref),
                   )
                 : _DocsList(
                     docs: docs,
@@ -61,8 +60,9 @@ class DocumentsListScreen extends ConsumerWidget {
             loading: () => const LoadingIndicator(),
             error: (error, _) => ErrorView(
               message: error.toString(),
-              onRetry: () =>
-                  ref.read(documentsListProvider(workspaceId).notifier).refresh(),
+              onRetry: () => ref
+                  .read(documentsListProvider(workspaceId).notifier)
+                  .refresh(),
             ),
           ),
         ),
@@ -183,9 +183,8 @@ class DocumentsListScreen extends ConsumerWidget {
     final message = switch (error) {
       EmptyUploadException() => 'That file is empty.',
       UploadTooLargeException() => error.message,
-      UnsupportedFileTypeException() =>
-        'That file type isn\'t supported. '
-            'Try a PDF, DOCX, image, or plain text file.',
+      UnsupportedFileTypeException() => 'That file type isn\'t supported. '
+          'Try a PDF, DOCX, image, or plain text file.',
       _ => 'Upload failed: $error',
     };
     ScaffoldMessenger.of(context)
@@ -216,8 +215,7 @@ class _EmptyState extends StatelessWidget {
           child: EmptyStateView(
             icon: Icons.description_rounded,
             title: 'No documents yet',
-            subtitle:
-                'Upload PDFs, Word documents, or images to generate '
+            subtitle: 'Upload PDFs, Word documents, or images to generate '
                 'AI-powered study questions.',
             action: FilledButton.icon(
               onPressed: onUpload,
@@ -365,8 +363,7 @@ class _DocRowState extends ConsumerState<_DocRow> {
               FilledButton.icon(
                 style: FilledButton.styleFrom(
                   backgroundColor: Theme.of(dialogContext).colorScheme.error,
-                  foregroundColor:
-                      Theme.of(dialogContext).colorScheme.onError,
+                  foregroundColor: Theme.of(dialogContext).colorScheme.onError,
                 ),
                 onPressed: () => Navigator.of(dialogContext).pop(true),
                 icon: const Icon(Icons.delete_forever_rounded),
@@ -441,7 +438,6 @@ class _DocTypeIcon extends StatelessWidget {
     );
   }
 }
-
 
 enum _UploadSource { camera, gallery, file, website }
 

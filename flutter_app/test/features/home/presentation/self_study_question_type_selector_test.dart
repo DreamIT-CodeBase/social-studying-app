@@ -14,8 +14,10 @@ void main() {
     container.read(selfStudyQuestionTypeProvider.notifier).state = 'mcq';
     expect(container.read(selfStudyQuestionTypeProvider), equals('mcq'));
 
-    container.read(selfStudyQuestionTypeProvider.notifier).state = 'short_answer';
-    expect(container.read(selfStudyQuestionTypeProvider), equals('short_answer'));
+    container.read(selfStudyQuestionTypeProvider.notifier).state =
+        'short_answer';
+    expect(
+        container.read(selfStudyQuestionTypeProvider), equals('short_answer'));
 
     container.read(selfStudyQuestionTypeProvider.notifier).state = null;
     expect(container.read(selfStudyQuestionTypeProvider), isNull);

@@ -91,21 +91,18 @@ void main() {
   });
 
   test('build returns idle', () {
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final state = container.read(revisionSessionNotifierProvider(_wsId));
     expect(state, isA<RevisionSessionIdle>());
   });
 
-  test('start builds an alternating plan and fetches the first item',
-      () async {
+  test('start builds an alternating plan and fetches the first item', () async {
     when(() => qRepo.next(
           workspaceId: any(named: 'workspaceId'),
           revision: any(named: 'revision'),
         )).thenAnswer((_) async => _mcq());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     await container
         .read(revisionSessionNotifierProvider(_wsId).notifier)
         .start(itemCount: 4);
@@ -116,8 +113,7 @@ void main() {
     expect(state.progress.total, 4);
   });
 
-  test('alternating plan: Q → graded → advance fetches a flashcard',
-      () async {
+  test('alternating plan: Q → graded → advance fetches a flashcard', () async {
     when(() => qRepo.next(
           workspaceId: any(named: 'workspaceId'),
           revision: any(named: 'revision'),
@@ -131,8 +127,7 @@ void main() {
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start(itemCount: 4);
@@ -169,8 +164,7 @@ void main() {
           submission: any(named: 'submission'),
         )).thenAnswer((_) async => _rateResponse(FlashcardRating.easy));
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start(itemCount: 2);
@@ -188,7 +182,8 @@ void main() {
     await notifier.rate(FlashcardRating.easy);
     final state = container.read(revisionSessionNotifierProvider(_wsId));
     expect(state, isA<RevisionSessionFlashcardRated>());
-    expect((state as RevisionSessionFlashcardRated).rating, FlashcardRating.easy);
+    expect(
+        (state as RevisionSessionFlashcardRated).rating, FlashcardRating.easy);
   });
 
   test('advancing past the last item transitions to complete with tallies',
@@ -211,8 +206,7 @@ void main() {
           submission: any(named: 'submission'),
         )).thenAnswer((_) async => _rateResponse(FlashcardRating.medium));
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start(itemCount: 2);
@@ -248,8 +242,7 @@ void main() {
           revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback(correct: false));
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start(itemCount: 1);
@@ -270,8 +263,7 @@ void main() {
           revision: any(named: 'revision'),
         )).thenThrow(const NoTopicsAvailableException());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     await container
         .read(revisionSessionNotifierProvider(_wsId).notifier)
         .start();
@@ -295,8 +287,7 @@ void main() {
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenThrow(const NoFlashcardTopicsException());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start(itemCount: 2);
@@ -316,8 +307,7 @@ void main() {
           revision: any(named: 'revision'),
         )).thenThrow(const QuestionGenerationUnavailableException());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     await container
         .read(revisionSessionNotifierProvider(_wsId).notifier)
         .start();
@@ -333,8 +323,7 @@ void main() {
           revision: any(named: 'revision'),
         )).thenThrow(Exception('network down'));
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     await container
         .read(revisionSessionNotifierProvider(_wsId).notifier)
         .start();
@@ -359,8 +348,7 @@ void main() {
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start(itemCount: 2);
@@ -381,8 +369,7 @@ void main() {
           revision: any(named: 'revision'),
         )).thenAnswer((_) async => _mcq());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start();
@@ -400,8 +387,7 @@ void main() {
           revision: any(named: 'revision'),
         )).thenAnswer((_) async => _mcq());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start(itemCount: 5);

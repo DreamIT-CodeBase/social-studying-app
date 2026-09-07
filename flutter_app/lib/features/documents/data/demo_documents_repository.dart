@@ -169,7 +169,8 @@ class DemoDocumentsRepository implements DocumentsRepository {
   /// would in production.
   Document _nextSnapshot(Document current) {
     return switch (current.status) {
-      DocumentStatus.pending => current.copyWith(status: DocumentStatus.extracting),
+      DocumentStatus.pending =>
+        current.copyWith(status: DocumentStatus.extracting),
       DocumentStatus.extracting => current.copyWith(
           status: DocumentStatus.textExtracted,
           pageCount: 12,
@@ -201,11 +202,14 @@ class DemoDocumentsRepository implements DocumentsRepository {
             ),
           ],
         ),
-      DocumentStatus.topicsExtracted => current.copyWith(status: DocumentStatus.chunking),
+      DocumentStatus.topicsExtracted =>
+        current.copyWith(status: DocumentStatus.chunking),
       DocumentStatus.chunking =>
         current.copyWith(status: DocumentStatus.chunked, chunkCount: 9),
-      DocumentStatus.chunked => current.copyWith(status: DocumentStatus.vectorizing),
-      DocumentStatus.vectorizing => current.copyWith(status: DocumentStatus.ready),
+      DocumentStatus.chunked =>
+        current.copyWith(status: DocumentStatus.vectorizing),
+      DocumentStatus.vectorizing =>
+        current.copyWith(status: DocumentStatus.ready),
       // Terminal — caller should not advance these. Return unchanged so
       // we don't accidentally unroll a terminal state.
       DocumentStatus.ready ||
@@ -268,7 +272,8 @@ class EmptyUploadException implements Exception {
 
 class UploadTooLargeException implements Exception {
   const UploadTooLargeException([
-    this.message = 'This document is larger than the supported processing limit.',
+    this.message =
+        'This document is larger than the supported processing limit.',
   ]);
 
   final String message;

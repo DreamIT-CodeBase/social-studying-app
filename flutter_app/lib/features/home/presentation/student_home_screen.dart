@@ -329,12 +329,14 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
                 return GestureDetector(
                   onTap: () {
                     if (workspaceId != null && index == 1) {
-                      final activeSubject = isSelfLearningWorkspaceId(workspaceId)
-                          ? ref.read(selfStudySubjectProvider)
-                          : null;
-                      final activeSubcat = isSelfLearningWorkspaceId(workspaceId)
-                          ? ref.read(selfStudySubcategoryProvider)
-                          : null;
+                      final activeSubject =
+                          isSelfLearningWorkspaceId(workspaceId)
+                              ? ref.read(selfStudySubjectProvider)
+                              : null;
+                      final activeSubcat =
+                          isSelfLearningWorkspaceId(workspaceId)
+                              ? ref.read(selfStudySubcategoryProvider)
+                              : null;
                       final activeType = isSelfLearningWorkspaceId(workspaceId)
                           ? ref.read(selfStudyQuestionTypeProvider)
                           : null;
@@ -347,23 +349,27 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
                       final typeQuery = activeType != null
                           ? '&question_type=${Uri.encodeComponent(activeType)}'
                           : '';
-                      context.push('/student/session/$workspaceId?mode=study$subjectQuery$subcatQuery$typeQuery');
+                      context.push(
+                          '/student/session/$workspaceId?mode=study$subjectQuery$subcatQuery$typeQuery');
                       return;
                     }
                     if (workspaceId != null && index == 2) {
-                      final activeSubject = isSelfLearningWorkspaceId(workspaceId)
-                          ? ref.read(selfStudySubjectProvider)
-                          : null;
-                      final activeSubcat = isSelfLearningWorkspaceId(workspaceId)
-                          ? ref.read(selfStudySubcategoryProvider)
-                          : null;
+                      final activeSubject =
+                          isSelfLearningWorkspaceId(workspaceId)
+                              ? ref.read(selfStudySubjectProvider)
+                              : null;
+                      final activeSubcat =
+                          isSelfLearningWorkspaceId(workspaceId)
+                              ? ref.read(selfStudySubcategoryProvider)
+                              : null;
                       final subjectQuery = activeSubject != null
                           ? '&subject=${Uri.encodeComponent(activeSubject)}'
                           : '';
                       final subcatQuery = activeSubcat != null
                           ? '&subcategory=${Uri.encodeComponent(activeSubcat)}'
                           : '';
-                      context.push('/student/session/$workspaceId?mode=flashcard$subjectQuery$subcatQuery');
+                      context.push(
+                          '/student/session/$workspaceId?mode=flashcard$subjectQuery$subcatQuery');
                       return;
                     }
                     ref.read(studentHomeTabProvider.notifier).state = index;
@@ -825,10 +831,14 @@ class _HomeTab extends ConsumerWidget {
 
     // Standard Study Center contents
     Widget buildStudyCenterContent(BuildContext context, Widget hero) {
-      final isSelfStudy = workspaceId != null && isSelfLearningWorkspaceId(workspaceId!);
-      final activeSubject = isSelfStudy ? ref.watch(selfStudySubjectProvider) : null;
-      final activeSubcategory = isSelfStudy ? ref.watch(selfStudySubcategoryProvider) : null;
-      final activeQuestionType = isSelfStudy ? ref.watch(selfStudyQuestionTypeProvider) : null;
+      final isSelfStudy =
+          workspaceId != null && isSelfLearningWorkspaceId(workspaceId!);
+      final activeSubject =
+          isSelfStudy ? ref.watch(selfStudySubjectProvider) : null;
+      final activeSubcategory =
+          isSelfStudy ? ref.watch(selfStudySubcategoryProvider) : null;
+      final activeQuestionType =
+          isSelfStudy ? ref.watch(selfStudyQuestionTypeProvider) : null;
 
       return ListView(
         padding: const EdgeInsets.only(bottom: 100),
@@ -854,7 +864,9 @@ class _HomeTab extends ConsumerWidget {
                           Icon(
                             Icons.tune_rounded,
                             size: 13,
-                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                            color: isDark
+                                ? const Color(0xFF94A3B8)
+                                : const Color(0xFF64748B),
                           ),
                           const SizedBox(width: 5),
                           Text(
@@ -863,7 +875,9 @@ class _HomeTab extends ConsumerWidget {
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
                               letterSpacing: -0.2,
-                              color: isDark ? Colors.white70 : const Color(0xFF475569),
+                              color: isDark
+                                  ? Colors.white70
+                                  : const Color(0xFF475569),
                             ),
                           ),
                         ],
@@ -871,7 +885,9 @@ class _HomeTab extends ConsumerWidget {
                       _QuestionTypeDropdownSelector(
                         selectedType: activeQuestionType,
                         onChanged: (newType) {
-                          ref.read(selfStudyQuestionTypeProvider.notifier).state = newType;
+                          ref
+                              .read(selfStudyQuestionTypeProvider.notifier)
+                              .state = newType;
                         },
                         isDark: isDark,
                       ),
@@ -889,7 +905,8 @@ class _HomeTab extends ConsumerWidget {
                 const SizedBox(height: 12),
 
                 // Secondary action pills: Quick Revision + Manage Study in a balanced row
-                if (onStartRevision != null || (canManageStudy && onManageStudy != null)) ...[
+                if (onStartRevision != null ||
+                    (canManageStudy && onManageStudy != null)) ...[
                   Row(
                     children: [
                       if (onStartRevision != null)
@@ -911,7 +928,9 @@ class _HomeTab extends ConsumerWidget {
                             ),
                           ),
                         ),
-                      if (onStartRevision != null && canManageStudy && onManageStudy != null)
+                      if (onStartRevision != null &&
+                          canManageStudy &&
+                          onManageStudy != null)
                         const SizedBox(width: 10),
                       if (canManageStudy && onManageStudy != null)
                         Expanded(
@@ -1664,11 +1683,19 @@ class _QuestionTypeDropdownSelector extends StatelessWidget {
     final isFiltered = selectedType != null;
     const accentColor = Color(0xFF6366F1);
     final bgColor = isDark
-        ? (isFiltered ? accentColor.withValues(alpha: 0.2) : const Color(0xFF1E293B))
-        : (isFiltered ? accentColor.withValues(alpha: 0.1) : const Color(0xFFF1F5F9));
+        ? (isFiltered
+            ? accentColor.withValues(alpha: 0.2)
+            : const Color(0xFF1E293B))
+        : (isFiltered
+            ? accentColor.withValues(alpha: 0.1)
+            : const Color(0xFFF1F5F9));
     final borderColor = isDark
-        ? (isFiltered ? accentColor.withValues(alpha: 0.6) : const Color(0xFF334155))
-        : (isFiltered ? accentColor.withValues(alpha: 0.4) : const Color(0xFFE2E8F0));
+        ? (isFiltered
+            ? accentColor.withValues(alpha: 0.6)
+            : const Color(0xFF334155))
+        : (isFiltered
+            ? accentColor.withValues(alpha: 0.4)
+            : const Color(0xFFE2E8F0));
     final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
 
     return Container(
@@ -1696,7 +1723,9 @@ class _QuestionTypeDropdownSelector extends StatelessWidget {
                             ? Icons.article_rounded
                             : Icons.tune_rounded))),
             size: 15,
-            color: isFiltered ? accentColor : (isDark ? Colors.white60 : const Color(0xFF64748B)),
+            color: isFiltered
+                ? accentColor
+                : (isDark ? Colors.white60 : const Color(0xFF64748B)),
           ),
           const SizedBox(width: 6),
           DropdownButtonHideUnderline(
@@ -1705,7 +1734,9 @@ class _QuestionTypeDropdownSelector extends StatelessWidget {
               isDense: true,
               icon: Icon(
                 Icons.keyboard_arrow_down_rounded,
-                color: isFiltered ? accentColor : (isDark ? Colors.white60 : const Color(0xFF64748B)),
+                color: isFiltered
+                    ? accentColor
+                    : (isDark ? Colors.white60 : const Color(0xFF64748B)),
                 size: 18,
               ),
               dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
@@ -1713,7 +1744,9 @@ class _QuestionTypeDropdownSelector extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: isFiltered ? FontWeight.w700 : FontWeight.w600,
-                color: isFiltered ? (isDark ? Colors.white : accentColor) : textColor,
+                color: isFiltered
+                    ? (isDark ? Colors.white : accentColor)
+                    : textColor,
               ),
               onChanged: onChanged,
               items: const [
@@ -1809,7 +1842,8 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
     final isMature = themeMode == AppThemeMode.mature;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final customColor = widget.subject != null ? subjectColor(widget.subject) : null;
+    final customColor =
+        widget.subject != null ? subjectColor(widget.subject) : null;
     final gradient = customColor != null
         ? LinearGradient(
             colors: [customColor, customColor.withOpacity(0.8)],
@@ -1981,20 +2015,24 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
                               height: 1.15,
                             ),
                           ),
-                          if (widget.subject != null || widget.subcategory != null || widget.questionType != null) ...[
+                          if (widget.subject != null ||
+                              widget.subcategory != null ||
+                              widget.questionType != null) ...[
                             const SizedBox(height: 2),
                             FittedBox(
                               fit: BoxFit.scaleDown,
                               alignment: Alignment.centerLeft,
                               child: Text(
                                 () {
-                                  final formatSuffix = widget.questionType == 'mcq'
+                                  final formatSuffix = widget.questionType ==
+                                          'mcq'
                                       ? ' • MCQ Only'
                                       : (widget.questionType == 'short_answer'
                                           ? ' • Short Answer'
                                           : (widget.questionType == 'true_false'
                                               ? ' • True / False'
-                                              : (widget.questionType == 'long_answer'
+                                              : (widget.questionType ==
+                                                      'long_answer'
                                                   ? ' • Long Answer'
                                                   : '')));
                                   if (widget.subcategory != null) {

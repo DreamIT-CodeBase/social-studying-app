@@ -51,7 +51,7 @@ void main() {
 
     test('saves and loads wallet data correctly', () async {
       final service = ScreenTimeService();
-      
+
       final wallet = ScreenTimeWallet(
         availableMinutes: 15,
         consumedMinutes: 20,
@@ -77,7 +77,7 @@ void main() {
 
     test('handles default configurations correctly', () async {
       final service = ScreenTimeService();
-      
+
       final ratio = await service.getXpToMinuteRatio();
       final enableBlocking = await service.getEnableBlocking();
       final blockedApps = await service.getBlockedPackages();
@@ -93,7 +93,7 @@ void main() {
 
     test('updates configurations correctly', () async {
       final service = ScreenTimeService();
-      
+
       await service.saveXpToMinuteRatio(20);
       await service.saveEnableBlocking(false);
       await service.saveBlockedPackages(['com.custom.app']);
@@ -109,7 +109,7 @@ void main() {
 
     test('handles distinct user-specific wallets correctly', () async {
       final service = ScreenTimeService();
-      
+
       final walletA = ScreenTimeWallet(
         availableMinutes: 10,
         consumedMinutes: 5,

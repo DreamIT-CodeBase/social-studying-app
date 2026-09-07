@@ -355,8 +355,9 @@ class _ConfettiPainter extends CustomPainter {
       final y = -50 + (size.height + 100) * (t * t * 0.5 + t * 0.5);
 
       // Fade in/out at the edges of the timeline.
-      final opacity =
-          (t < 0.15) ? (t / 0.15) : (t > 0.85 ? (1.0 - (t - 0.85) / 0.15) : 1.0);
+      final opacity = (t < 0.15)
+          ? (t / 0.15)
+          : (t > 0.85 ? (1.0 - (t - 0.85) / 0.15) : 1.0);
       paint.color = _palette[p.colorIndex].withAlpha((opacity * 230).round());
 
       canvas.save();

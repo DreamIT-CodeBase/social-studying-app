@@ -51,8 +51,7 @@ class ActiveWorkspaceId extends _$ActiveWorkspaceId {
     // This prevents an auth refresh from overriding the user's explicit choice
     // (e.g., switching to Self Study workspace and reloading stays on Self Study).
     final savedId = SessionPersistenceService.instance.getWorkspaceSync();
-    if (savedId != null &&
-        memberships.any((m) => m.workspaceId == savedId)) {
+    if (savedId != null && memberships.any((m) => m.workspaceId == savedId)) {
       return savedId;
     }
 
@@ -70,22 +69,25 @@ class ActiveWorkspaceId extends _$ActiveWorkspaceId {
 
   void setWorkspaceId(String workspaceId) {
     state = workspaceId;
-    SessionPersistenceService.instance.saveWorkspace(workspaceId).catchError((_) {});
+    SessionPersistenceService.instance
+        .saveWorkspace(workspaceId)
+        .catchError((_) {});
   }
 }
 
 @riverpod
-WorkspaceMembership? activeWorkspaceMembership(ActiveWorkspaceMembershipRef ref) {
+WorkspaceMembership? activeWorkspaceMembership(
+    ActiveWorkspaceMembershipRef ref) {
   final authState = ref.watch(authNotifierProvider).valueOrNull;
   final user = authState?.maybeWhen(
     authenticated: (u) => u,
     orElse: () => null,
   );
   if (user == null) return null;
-  
+
   final activeId = ref.watch(activeWorkspaceIdProvider);
   if (activeId == null) return null;
-  
+
   for (final membership in effectiveStudentMemberships(user)) {
     if (membership.workspaceId == activeId) {
       return membership;
@@ -98,7 +100,8 @@ WorkspaceMembership? activeWorkspaceMembership(ActiveWorkspaceMembershipRef ref)
 bool isActiveWorkspaceAdmin(IsActiveWorkspaceAdminRef ref) {
   final membership = ref.watch(activeWorkspaceMembershipProvider);
   if (membership == null) return false;
-  return membership.role == UserRole.workspaceAdmin || membership.role == UserRole.tenantAdmin;
+  return membership.role == UserRole.workspaceAdmin ||
+      membership.role == UserRole.tenantAdmin;
 }
 
 @riverpod
@@ -113,7 +116,7 @@ Workspace? activeStudentWorkspace(ActiveStudentWorkspaceRef ref) {
   final workspacesAsync = ref.watch(studentWorkspacesProvider);
   final activeId = ref.watch(activeWorkspaceIdProvider);
   if (activeId == null) return null;
-  
+
   final list = workspacesAsync.valueOrNull ?? [];
   for (final w in list) {
     if (w.id == activeId) {

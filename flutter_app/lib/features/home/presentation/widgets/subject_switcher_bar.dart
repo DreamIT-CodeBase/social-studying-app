@@ -23,7 +23,8 @@ class SubjectSwitcherBar extends ConsumerWidget {
     final activeSubject = ref.watch(selfStudySubjectProvider);
     final activeSubcategory = ref.watch(selfStudySubcategoryProvider);
     final subjects = ref.watch(selfStudyAvailableSubjectsProvider(workspaceId));
-    final subcategories = ref.watch(selfStudyAvailableSubcategoriesProvider(workspaceId));
+    final subcategories =
+        ref.watch(selfStudyAvailableSubcategoriesProvider(workspaceId));
     final counts = ref.watch(selfStudySubjectCountsProvider(workspaceId));
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -120,14 +121,15 @@ class SubjectSwitcherBar extends ConsumerWidget {
                   accentColor: const Color(0xFF6366F1),
                   onTap: () {
                     ref.read(selfStudySubjectProvider.notifier).state = null;
-                    ref.read(selfStudySubcategoryProvider.notifier).state = null;
+                    ref.read(selfStudySubcategoryProvider.notifier).state =
+                        null;
                   },
                 ),
                 const SizedBox(width: 8),
                 // Subject Chips
                 ...subjects.map((subject) {
-                  final isSelected = activeSubject?.toLowerCase() ==
-                      subject.toLowerCase();
+                  final isSelected =
+                      activeSubject?.toLowerCase() == subject.toLowerCase();
                   final count = counts[subject] ?? 0;
                   final color = subjectColor(subject);
                   final emoji = subjectEmoji(subject);
@@ -143,7 +145,8 @@ class SubjectSwitcherBar extends ConsumerWidget {
                       onTap: () {
                         ref.read(selfStudySubjectProvider.notifier).state =
                             isSelected ? null : subject;
-                        ref.read(selfStudySubcategoryProvider.notifier).state = null;
+                        ref.read(selfStudySubcategoryProvider.notifier).state =
+                            null;
                       },
                     ),
                   );
@@ -160,7 +163,9 @@ class SubjectSwitcherBar extends ConsumerWidget {
                   Icon(
                     Icons.tune_rounded,
                     size: 13,
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF64748B),
                   ),
                   const SizedBox(width: 5),
                   Text(
@@ -170,21 +175,26 @@ class SubjectSwitcherBar extends ConsumerWidget {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF64748B),
                     ),
                   ),
                   const Spacer(),
                   if (activeSubcategory != null)
                     GestureDetector(
                       onTap: () {
-                        ref.read(selfStudySubcategoryProvider.notifier).state = null;
+                        ref.read(selfStudySubcategoryProvider.notifier).state =
+                            null;
                       },
                       child: Text(
                         'Clear Focus',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: isDark ? const Color(0xFF818CF8) : const Color(0xFF4F46E5),
+                          color: isDark
+                              ? const Color(0xFF818CF8)
+                              : const Color(0xFF4F46E5),
                         ),
                       ),
                     ),
@@ -205,14 +215,18 @@ class SubjectSwitcherBar extends ConsumerWidget {
                     isSelected: activeSubcategory == null,
                     accentColor: activeSubject != null
                         ? subjectColor(activeSubject)
-                        : (isDark ? const Color(0xFF818CF8) : const Color(0xFF4F46E5)),
+                        : (isDark
+                            ? const Color(0xFF818CF8)
+                            : const Color(0xFF4F46E5)),
                     onTap: () {
-                      ref.read(selfStudySubcategoryProvider.notifier).state = null;
+                      ref.read(selfStudySubcategoryProvider.notifier).state =
+                          null;
                     },
                   ),
                   const SizedBox(width: 6),
                   ...subcategories.map((subcat) {
-                    final isSubSelected = activeSubcategory?.toLowerCase() == subcat.toLowerCase();
+                    final isSubSelected = activeSubcategory?.toLowerCase() ==
+                        subcat.toLowerCase();
                     return Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: _SubcategoryChip(
@@ -220,10 +234,13 @@ class SubjectSwitcherBar extends ConsumerWidget {
                         isSelected: isSubSelected,
                         accentColor: activeSubject != null
                             ? subjectColor(activeSubject)
-                            : (isDark ? const Color(0xFF818CF8) : const Color(0xFF4F46E5)),
+                            : (isDark
+                                ? const Color(0xFF818CF8)
+                                : const Color(0xFF4F46E5)),
                         onTap: () {
-                          ref.read(selfStudySubcategoryProvider.notifier).state =
-                              isSubSelected ? null : subcat;
+                          ref
+                              .read(selfStudySubcategoryProvider.notifier)
+                              .state = isSubSelected ? null : subcat;
                         },
                       ),
                     );
@@ -240,7 +257,9 @@ class SubjectSwitcherBar extends ConsumerWidget {
                 style: TextStyle(
                   fontSize: 11,
                   fontStyle: FontStyle.italic,
-                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
                 ),
               ),
             ),
@@ -378,7 +397,9 @@ class _SubcategoryChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: isSelected
             ? accentColor.withValues(alpha: 0.22)
-            : (isDark ? const Color(0xFF1E293B).withValues(alpha: 0.6) : const Color(0xFFF1F5F9)),
+            : (isDark
+                ? const Color(0xFF1E293B).withValues(alpha: 0.6)
+                : const Color(0xFFF1F5F9)),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isSelected
@@ -423,4 +444,3 @@ class _SubcategoryChip extends StatelessWidget {
     );
   }
 }
-

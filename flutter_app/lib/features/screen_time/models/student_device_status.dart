@@ -14,8 +14,7 @@ class StudentDeviceStatus {
     return StudentDeviceStatus(
       studentId: json['student_id'] as String,
       displayName: json['display_name'] as String,
-      usageAccessPermission:
-          json['usage_access_permission'] as bool? ?? false,
+      usageAccessPermission: json['usage_access_permission'] as bool? ?? false,
       overlayPermission: json['overlay_permission'] as bool? ?? false,
       notificationAccess: json['notification_access'] as bool? ?? false,
       accessibilityService: json['accessibility_service'] as bool? ?? false,

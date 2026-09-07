@@ -26,11 +26,11 @@ void main() {
     expect(subjectForTopic('AP US History Reconstruction'), 'History');
     expect(subjectForTopic('US Government and Constitution'),
         'Government & Politics');
-    expect(
-        subjectForTopic('Principles of Microeconomics: Supply and Demand'),
+    expect(subjectForTopic('Principles of Microeconomics: Supply and Demand'),
         'Economics');
     expect(
-        subjectForTopic('AP Psychology: Cognitive Neuroscience and Conditioning'),
+        subjectForTopic(
+            'AP Psychology: Cognitive Neuroscience and Conditioning'),
         'Psychology');
     expect(subjectForTopic('English Literature and Rhetorical Analysis'),
         'English & Literature');
@@ -38,8 +38,8 @@ void main() {
         'Earth & Space Science');
     expect(subjectForTopic('Introduction to Sociology and Social Structures'),
         'Sociology & Anthropology');
-    expect(subjectForTopic('Introduction to Philosophy and Ethics'),
-        'Philosophy');
+    expect(
+        subjectForTopic('Introduction to Philosophy and Ethics'), 'Philosophy');
     expect(subjectForTopic('Business Administration and Marketing Strategy'),
         'Business');
     expect(subjectForTopic('AP Art History and Music Theory'), 'Art & Music');
@@ -64,7 +64,8 @@ void main() {
 
     // French
     expect(subjectForTopic('Physique quantique et thermodynamique'), 'Physics');
-    expect(subjectForTopic('Mathématiques équations différentielles'), 'Mathematics');
+    expect(subjectForTopic('Mathématiques équations différentielles'),
+        'Mathematics');
     expect(subjectForTopic('Chimie organique et molécules'), 'Chemistry');
   });
 

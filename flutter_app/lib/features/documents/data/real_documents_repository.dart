@@ -173,9 +173,9 @@ class RealDocumentsRepository implements DocumentsRepository {
                 : file.sizeBytes,
           ).then((_) {
             // Report cumulative progress after each block completes.
-            final blockEnd = (blockIds.indexOf(blockIds[index]) + 1) * blockSize;
-            bytesStaged =
-                blockEnd < file.sizeBytes ? blockEnd : file.sizeBytes;
+            final blockEnd =
+                (blockIds.indexOf(blockIds[index]) + 1) * blockSize;
+            bytesStaged = blockEnd < file.sizeBytes ? blockEnd : file.sizeBytes;
             onProgress?.call(bytesStaged, file.sizeBytes);
           }),
       ]);
@@ -236,15 +236,17 @@ class RealDocumentsRepository implements DocumentsRepository {
     return uri.replace(queryParameters: {...uri.queryParameters, ...additions});
   }
 
-  Future<void> _retryStorageRequest(Future<Response<void>> Function() operation) async {
+  Future<void> _retryStorageRequest(
+      Future<Response<void>> Function() operation) async {
     const retryableStatuses = {408, 429, 500, 502, 503, 504};
-    for (var attempt = 0; ; attempt++) {
+    for (var attempt = 0;; attempt++) {
       try {
         await operation();
         return;
       } on DioException catch (error) {
         final status = error.response?.statusCode;
-        final isRetryable = status == null || retryableStatuses.contains(status);
+        final isRetryable =
+            status == null || retryableStatuses.contains(status);
         if (!isRetryable || attempt == 3) rethrow;
         await Future<void>.delayed(
           Duration(milliseconds: 300 * (1 << attempt)),

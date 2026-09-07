@@ -768,7 +768,8 @@ class _EditableTopicRow extends StatelessWidget {
       builder: (context, candidate, _) {
         final highlighted = candidate.isNotEmpty;
         return Padding(
-          padding: EdgeInsets.only(left: row.depth * (context.isMobile ? 10.0 : 20.0)),
+          padding: EdgeInsets.only(
+              left: row.depth * (context.isMobile ? 10.0 : 20.0)),
           child: LongPressDraggable<CanonicalTopic>(
             data: row.topic,
             delay: const Duration(milliseconds: 250),

@@ -82,8 +82,7 @@ void main() {
     repo = _MockProgressRepo();
   });
 
-  testWidgets('shows loading state while the snapshot fetches',
-      (tester) async {
+  testWidgets('shows loading state while the snapshot fetches', (tester) async {
     final completer = Completer<StudentProgress>();
     when(() => repo.fetch(
           workspaceId: any(named: 'workspaceId'),

@@ -11,9 +11,7 @@ part 'moderation_notifier.g.dart';
 class ModerationQueue extends _$ModerationQueue {
   @override
   Future<List<FlaggedItem>> build(String workspaceId) {
-    return ref
-        .read(moderationRepositoryProvider)
-        .listFlagged(workspaceId);
+    return ref.read(moderationRepositoryProvider).listFlagged(workspaceId);
   }
 
   /// Re-fetch the queue. Used by pull-to-refresh.

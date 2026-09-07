@@ -55,7 +55,8 @@ class DocumentUpload {
 
   factory DocumentUpload.fromBytes(Uint8List bytes) => DocumentUpload(
         sizeBytes: bytes.length,
-        readRange: (start, end) async => Uint8List.sublistView(bytes, start, end),
+        readRange: (start, end) async =>
+            Uint8List.sublistView(bytes, start, end),
       );
 
   final int sizeBytes;

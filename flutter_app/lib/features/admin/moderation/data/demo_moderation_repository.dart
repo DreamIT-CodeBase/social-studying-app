@@ -30,8 +30,7 @@ class DemoModerationRepository implements ModerationRepository {
       id: 'mod_demo_001',
       contentKind: FlaggedContentKind.question,
       topic: 'Cellular Respiration',
-      excerpt:
-          'Which process violently destroys the cell to release energy?',
+      excerpt: 'Which process violently destroys the cell to release energy?',
       reason: 'Violence',
       severity: 2,
       flaggedAt: '2026-05-22T08:30:00Z',

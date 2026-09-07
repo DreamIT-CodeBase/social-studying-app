@@ -144,18 +144,21 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
           completed: (_, __, ___) {
             _sessionTimer?.cancel();
             ref.read(notificationServiceProvider).showCompletionNotification(
-                  title: 'Flashcard session complete',
-                  body: 'Great work! Your flashcard progress has been saved.',
-                  payload: {
-                    'type': 'study_reminder',
-                    'workspace_id': widget.workspaceId,
-                  },
-                ).ignore();
-            ref.read(notificationTokenRepositoryProvider).sendActivityPush(
+              title: 'Flashcard session complete',
+              body: 'Great work! Your flashcard progress has been saved.',
+              payload: {
+                'type': 'study_reminder',
+                'workspace_id': widget.workspaceId,
+              },
+            ).ignore();
+            ref
+                .read(notificationTokenRepositoryProvider)
+                .sendActivityPush(
                   title: 'Flashcard session complete',
                   body: 'Your flashcard progress and XP have been saved.',
                   workspaceId: widget.workspaceId,
-                ).ignore();
+                )
+                .ignore();
           },
           rated: (_, response) {
             _playCelebrations(context, response);

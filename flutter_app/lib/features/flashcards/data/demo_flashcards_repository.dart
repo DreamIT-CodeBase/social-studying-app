@@ -115,8 +115,7 @@ class DemoFlashcardsRepository implements FlashcardsRepository {
       topic: 'Photosynthesis',
       front: 'What pigment captures light energy during photosynthesis?',
       back: 'Chlorophyll.',
-      explanation:
-          'Chlorophyll, housed in chloroplasts, absorbs red and blue '
+      explanation: 'Chlorophyll, housed in chloroplasts, absorbs red and blue '
           'light and reflects green — which is why leaves look green.',
     ),
     Flashcard(
@@ -124,8 +123,7 @@ class DemoFlashcardsRepository implements FlashcardsRepository {
       topic: 'Cell Biology',
       front: 'Which organelle is the "powerhouse of the cell"?',
       back: 'The mitochondrion.',
-      explanation:
-          'Mitochondria produce ATP through cellular respiration, '
+      explanation: 'Mitochondria produce ATP through cellular respiration, '
           'supplying most of the cell\'s usable energy.',
     ),
     Flashcard(

@@ -493,7 +493,8 @@ class _UserMenu extends ConsumerWidget {
         color: context.colorScheme.onSurfaceVariant,
       ),
       onSelected: (action) => switch (action) {
-        _UserAction.promote => _changeRole(context, ref, UserRole.workspaceAdmin),
+        _UserAction.promote =>
+          _changeRole(context, ref, UserRole.workspaceAdmin),
         _UserAction.demote => _changeRole(context, ref, UserRole.student),
         _UserAction.remove => _confirmRemove(context, ref),
         _UserAction.delete => _confirmDelete(context, ref),
@@ -529,8 +530,10 @@ class _UserMenu extends ConsumerWidget {
           PopupMenuItem(
             value: _UserAction.delete,
             child: ListTile(
-              leading: Icon(Icons.delete_forever_rounded, color: context.colorScheme.error),
-              title: Text('Delete student', style: TextStyle(color: context.colorScheme.error)),
+              leading: Icon(Icons.delete_forever_rounded,
+                  color: context.colorScheme.error),
+              title: Text('Delete student',
+                  style: TextStyle(color: context.colorScheme.error)),
               contentPadding: EdgeInsets.zero,
             ),
           ),

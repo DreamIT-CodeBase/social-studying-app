@@ -4,16 +4,14 @@ import 'package:social_study_app/shared/models/user.dart';
 
 void main() {
   group('DemoUsersRepository.listWorkspaceUsers', () {
-    test('returns the three seeded members of the demo workspace',
-        () async {
+    test('returns the three seeded members of the demo workspace', () async {
       final repo = DemoUsersRepository();
       final users = await repo.listWorkspaceUsers('wsp_demo_001');
       expect(users, hasLength(3));
       expect(users.map((u) => u.displayName), contains('Maya Chen'));
     });
 
-    test('returns an empty list for a workspace with no members',
-        () async {
+    test('returns an empty list for a workspace with no members', () async {
       final repo = DemoUsersRepository();
       expect(await repo.listWorkspaceUsers('wsp_other'), isEmpty);
     });

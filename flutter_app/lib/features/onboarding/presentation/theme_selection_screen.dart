@@ -12,7 +12,8 @@ class ThemeSelectionScreen extends ConsumerStatefulWidget {
   const ThemeSelectionScreen({super.key});
 
   @override
-  ConsumerState<ThemeSelectionScreen> createState() => _ThemeSelectionScreenState();
+  ConsumerState<ThemeSelectionScreen> createState() =>
+      _ThemeSelectionScreenState();
 }
 
 class _ThemeSelectionScreenState extends ConsumerState<ThemeSelectionScreen> {
@@ -58,7 +59,7 @@ class _ThemeSelectionScreenState extends ConsumerState<ThemeSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
@@ -72,18 +73,21 @@ class _ThemeSelectionScreenState extends ConsumerState<ThemeSelectionScreen> {
         ),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: Spacing.xl, vertical: Spacing.lg),
+            padding: const EdgeInsets.symmetric(
+                horizontal: Spacing.xl, vertical: Spacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Spacer(flex: 2),
-                
+
                 // Sparkle Badge
                 Center(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF8B5CF6).withOpacity(isDark ? 0.15 : 0.08),
+                      color: const Color(0xFF8B5CF6)
+                          .withOpacity(isDark ? 0.15 : 0.08),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
                         color: const Color(0xFF8B5CF6).withOpacity(0.2),
@@ -92,7 +96,8 @@ class _ThemeSelectionScreenState extends ConsumerState<ThemeSelectionScreen> {
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.auto_awesome_rounded, color: Color(0xFF8B5CF6), size: 14),
+                        Icon(Icons.auto_awesome_rounded,
+                            color: Color(0xFF8B5CF6), size: 14),
                         SizedBox(width: 6),
                         Text(
                           'EXPERIENCE SELECTOR',
@@ -123,10 +128,12 @@ class _ThemeSelectionScreenState extends ConsumerState<ThemeSelectionScreen> {
                   'Tailor the study environment to fit your age and focus goals.',
                   textAlign: TextAlign.center,
                   style: context.textTheme.bodyMedium?.copyWith(
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF64748B),
                   ),
                 ),
-                
+
                 const Spacer(flex: 2),
 
                 // Theme Card Options
@@ -135,10 +142,13 @@ class _ThemeSelectionScreenState extends ConsumerState<ThemeSelectionScreen> {
                   mode: AppThemeMode.kids,
                   title: 'Kids Mode',
                   subtitle: 'Playful & Colorful',
-                  description: 'Learn with Bronto the dinosaur mascot! Gamified rewards, fun celebrations, and cheerful illustrations.',
+                  description:
+                      'Learn with Bronto the dinosaur mascot! Gamified rewards, fun celebrations, and cheerful illustrations.',
                   icon: Icons.child_care_rounded,
                   iconColor: const Color(0xFF10B981),
-                  cardBg: isDark ? const Color(0xFF064E3B).withOpacity(0.1) : const Color(0xFFECFDF5),
+                  cardBg: isDark
+                      ? const Color(0xFF064E3B).withOpacity(0.1)
+                      : const Color(0xFFECFDF5),
                   borderColor: const Color(0xFF10B981),
                 ),
                 const SizedBox(height: Spacing.lg),
@@ -147,10 +157,13 @@ class _ThemeSelectionScreenState extends ConsumerState<ThemeSelectionScreen> {
                   mode: AppThemeMode.mature,
                   title: 'Teen & College Mode',
                   subtitle: 'Matured & Productive',
-                  description: 'Clean design focused purely on stats, streaks, and subject mastery. Subtle professional layout without mascots.',
+                  description:
+                      'Clean design focused purely on stats, streaks, and subject mastery. Subtle professional layout without mascots.',
                   icon: Icons.school_rounded,
                   iconColor: const Color(0xFF8B5CF6),
-                  cardBg: isDark ? const Color(0xFF2E1065).withOpacity(0.1) : const Color(0xFFF5F3FF),
+                  cardBg: isDark
+                      ? const Color(0xFF2E1065).withOpacity(0.1)
+                      : const Color(0xFFF5F3FF),
                   borderColor: const Color(0xFF8B5CF6),
                 ),
 
@@ -200,10 +213,14 @@ class _ThemeSelectionScreenState extends ConsumerState<ThemeSelectionScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        color: isSelected ? cardBg : (isDark ? const Color(0xFF1E293B) : Colors.white),
+        color: isSelected
+            ? cardBg
+            : (isDark ? const Color(0xFF1E293B) : Colors.white),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isSelected ? borderColor : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+          color: isSelected
+              ? borderColor
+              : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
           width: isSelected ? 2.5 : 1.5,
         ),
         boxShadow: isSelected
@@ -226,7 +243,8 @@ class _ThemeSelectionScreenState extends ConsumerState<ThemeSelectionScreen> {
           },
           borderRadius: BorderRadius.circular(20),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: Spacing.lg, vertical: Spacing.lg),
+            padding: const EdgeInsets.symmetric(
+                horizontal: Spacing.lg, vertical: Spacing.lg),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -237,17 +255,23 @@ class _ThemeSelectionScreenState extends ConsumerState<ThemeSelectionScreen> {
                   decoration: BoxDecoration(
                     color: isSelected
                         ? iconColor.withOpacity(0.16)
-                        : (isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9)),
+                        : (isDark
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFFF1F5F9)),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     icon,
                     size: 26,
-                    color: isSelected ? iconColor : (isDark ? const Color(0xFF64748B) : const Color(0xFF475569)),
+                    color: isSelected
+                        ? iconColor
+                        : (isDark
+                            ? const Color(0xFF64748B)
+                            : const Color(0xFF475569)),
                   ),
                 ),
                 const SizedBox(width: Spacing.md),
-                
+
                 // Content Column
                 Expanded(
                   child: Column(
@@ -260,7 +284,9 @@ class _ThemeSelectionScreenState extends ConsumerState<ThemeSelectionScreen> {
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : const Color(0xFF1E1B4B),
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF1E1B4B),
                             ),
                           ),
                           const Spacer(),
@@ -271,7 +297,11 @@ class _ThemeSelectionScreenState extends ConsumerState<ThemeSelectionScreen> {
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: isSelected ? borderColor : (isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1)),
+                                color: isSelected
+                                    ? borderColor
+                                    : (isDark
+                                        ? const Color(0xFF475569)
+                                        : const Color(0xFFCBD5E1)),
                                 width: isSelected ? 6.5 : 1.5,
                               ),
                             ),
@@ -284,7 +314,11 @@ class _ThemeSelectionScreenState extends ConsumerState<ThemeSelectionScreen> {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: isSelected ? iconColor : (isDark ? const Color(0xFF64748B) : const Color(0xFF475569)),
+                          color: isSelected
+                              ? iconColor
+                              : (isDark
+                                  ? const Color(0xFF64748B)
+                                  : const Color(0xFF475569)),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -293,7 +327,9 @@ class _ThemeSelectionScreenState extends ConsumerState<ThemeSelectionScreen> {
                         style: TextStyle(
                           fontSize: 11.5,
                           height: 1.4,
-                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF475569),
                         ),
                       ),
                     ],

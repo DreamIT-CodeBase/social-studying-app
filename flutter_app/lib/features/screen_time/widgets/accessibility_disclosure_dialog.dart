@@ -10,7 +10,8 @@ Future<bool?> showAccessibilityProminentDisclosureDialog(
   final isDark = Theme.of(context).brightness == Brightness.dark;
   final surfaceColor = isDark ? const Color(0xFF1E293B) : Colors.white;
   final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
-  final subtextColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569);
+  final subtextColor =
+      isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569);
 
   return showDialog<bool>(
     context: context,
@@ -63,9 +64,8 @@ Future<bool?> showAccessibilityProminentDisclosureDialog(
             Container(
               padding: const EdgeInsets.all(Spacing.md),
               decoration: BoxDecoration(
-                color: isDark
-                    ? const Color(0xFF0F172A)
-                    : const Color(0xFFF1F5F9),
+                color:
+                    isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: AppColors.primary.withValues(alpha: 0.25),

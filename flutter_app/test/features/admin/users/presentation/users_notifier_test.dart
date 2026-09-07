@@ -28,7 +28,8 @@ Future<ProviderContainer> _container(UsersRepository repo) async {
     overrides: [
       authRepositoryProvider.overrideWithValue(authRepo),
       usersRepositoryProvider.overrideWithValue(repo),
-      workspacesRepositoryProvider.overrideWithValue(DemoWorkspacesRepository()),
+      workspacesRepositoryProvider
+          .overrideWithValue(DemoWorkspacesRepository()),
     ],
   );
   addTearDown(container.dispose);
@@ -47,8 +48,7 @@ void main() {
 
     test('createUser adds a row the refreshed roster reflects', () async {
       final container = await _container(DemoUsersRepository());
-      await container
-          .read(workspaceUsersListProvider('wsp_demo_001').future);
+      await container.read(workspaceUsersListProvider('wsp_demo_001').future);
 
       await container
           .read(workspaceUsersListProvider('wsp_demo_001').notifier)
@@ -66,8 +66,7 @@ void main() {
     test('createUser rethrows an email conflict for inline form errors',
         () async {
       final container = await _container(DemoUsersRepository());
-      await container
-          .read(workspaceUsersListProvider('wsp_demo_001').future);
+      await container.read(workspaceUsersListProvider('wsp_demo_001').future);
 
       expect(
         () => container
@@ -81,11 +80,9 @@ void main() {
       );
     });
 
-    test('deactivateUser drops the row from the refreshed roster',
-        () async {
+    test('deactivateUser drops the row from the refreshed roster', () async {
       final container = await _container(DemoUsersRepository());
-      await container
-          .read(workspaceUsersListProvider('wsp_demo_001').future);
+      await container.read(workspaceUsersListProvider('wsp_demo_001').future);
 
       await container
           .read(workspaceUsersListProvider('wsp_demo_001').notifier)
@@ -98,8 +95,7 @@ void main() {
 
     test('changeRole updates the role in the refreshed roster', () async {
       final container = await _container(DemoUsersRepository());
-      await container
-          .read(workspaceUsersListProvider('wsp_demo_001').future);
+      await container.read(workspaceUsersListProvider('wsp_demo_001').future);
 
       await container
           .read(workspaceUsersListProvider('wsp_demo_001').notifier)

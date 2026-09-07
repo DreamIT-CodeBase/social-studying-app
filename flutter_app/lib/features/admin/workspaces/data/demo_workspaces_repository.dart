@@ -137,11 +137,8 @@ class DemoWorkspacesRepository implements WorkspacesRepository {
 
   // ── Internals ───────────────────────────────────────────────────────────
 
-  bool _nameTaken(String name, {required String? exceptId}) =>
-      _workspaces.any(
-        (w) =>
-            w.id != exceptId &&
-            w.name.toLowerCase() == name.toLowerCase(),
+  bool _nameTaken(String name, {required String? exceptId}) => _workspaces.any(
+        (w) => w.id != exceptId && w.name.toLowerCase() == name.toLowerCase(),
       );
 
   /// 8-char uppercase code — matches the backend's
@@ -156,6 +153,4 @@ class DemoWorkspacesRepository implements WorkspacesRepository {
 
   Future<void> _latency() =>
       Future<void>.delayed(const Duration(milliseconds: 200));
-
-
 }

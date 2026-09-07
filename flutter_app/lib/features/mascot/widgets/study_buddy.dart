@@ -50,17 +50,28 @@ class StudyBuddy extends ConsumerWidget {
         // Continuous gentle float up and down
         return mascotImage
             .animate(onPlay: (controller) => controller.repeat(reverse: true))
-            .moveY(begin: -4, end: 4, duration: 1600.ms, curve: Curves.easeInOut);
+            .moveY(
+                begin: -4, end: 4, duration: 1600.ms, curve: Curves.easeInOut);
 
       case MascotState.happy:
         // Bounce up and scale pulse
         return mascotImage
             .animate()
-            .moveY(begin: 0, end: -12, duration: 250.ms, curve: Curves.easeOutQuad)
-            .scaleXY(begin: 1.0, end: 1.15, duration: 250.ms, curve: Curves.easeOutQuad)
+            .moveY(
+                begin: 0, end: -12, duration: 250.ms, curve: Curves.easeOutQuad)
+            .scaleXY(
+                begin: 1.0,
+                end: 1.15,
+                duration: 250.ms,
+                curve: Curves.easeOutQuad)
             .then()
-            .moveY(begin: -12, end: 0, duration: 250.ms, curve: Curves.easeInQuad)
-            .scaleXY(begin: 1.15, end: 1.0, duration: 250.ms, curve: Curves.easeInQuad)
+            .moveY(
+                begin: -12, end: 0, duration: 250.ms, curve: Curves.easeInQuad)
+            .scaleXY(
+                begin: 1.15,
+                end: 1.0,
+                duration: 250.ms,
+                curve: Curves.easeInQuad)
             .then()
             .shake(hz: 3, duration: 300.ms);
 
@@ -77,23 +88,44 @@ class StudyBuddy extends ConsumerWidget {
         // High energetic bounce + shimmer/glow loop
         return mascotImage
             .animate(onPlay: (controller) => controller.repeat(reverse: true))
-            .moveY(begin: 0, end: -20, duration: 400.ms, curve: Curves.easeOutQuad)
-            .scaleXY(begin: 1.0, end: 1.2, duration: 400.ms, curve: Curves.easeOutQuad)
+            .moveY(
+                begin: 0, end: -20, duration: 400.ms, curve: Curves.easeOutQuad)
+            .scaleXY(
+                begin: 1.0,
+                end: 1.2,
+                duration: 400.ms,
+                curve: Curves.easeOutQuad)
             .then()
-            .moveY(begin: -20, end: 0, duration: 400.ms, curve: Curves.easeInQuad)
-            .scaleXY(begin: 1.2, end: 0.95, duration: 300.ms, curve: Curves.easeInQuad)
+            .moveY(
+                begin: -20, end: 0, duration: 400.ms, curve: Curves.easeInQuad)
+            .scaleXY(
+                begin: 1.2,
+                end: 0.95,
+                duration: 300.ms,
+                curve: Curves.easeInQuad)
             .then()
             .scaleXY(begin: 0.95, end: 1.0, duration: 150.ms)
             .animate(onPlay: (controller) => controller.repeat())
-            .shimmer(delay: 500.ms, duration: 1200.ms, color: Colors.white.withOpacity(0.5));
+            .shimmer(
+                delay: 500.ms,
+                duration: 1200.ms,
+                color: Colors.white.withOpacity(0.5));
 
       case MascotState.loading:
         // Scaling breathe + rotating indicator feel
         return mascotImage
             .animate(onPlay: (controller) => controller.repeat(reverse: true))
-            .scaleXY(begin: 0.85, end: 1.05, duration: 1000.ms, curve: Curves.easeInOut)
+            .scaleXY(
+                begin: 0.85,
+                end: 1.05,
+                duration: 1000.ms,
+                curve: Curves.easeInOut)
             .animate(onPlay: (controller) => controller.repeat())
-            .rotate(begin: -0.04, end: 0.04, duration: 1200.ms, curve: Curves.easeInOut);
+            .rotate(
+                begin: -0.04,
+                end: 0.04,
+                duration: 1200.ms,
+                curve: Curves.easeInOut);
     }
   }
 }

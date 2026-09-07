@@ -44,8 +44,7 @@ class AuthSessionService {
       'com.googleusercontent.apps.140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb:/oauth2redirect';
   static const _googleAuthEndpoint =
       'https://accounts.google.com/o/oauth2/v2/auth';
-  static const _googleTokenEndpoint =
-      'https://oauth2.googleapis.com/token';
+  static const _googleTokenEndpoint = 'https://oauth2.googleapis.com/token';
 
   bool _loaded = false;
   Map<String, String> _storedValues = {};

@@ -140,21 +140,25 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
     ref.listen(
       revisionSessionNotifierProvider(widget.workspaceId),
       (prev, next) {
-        if (next is RevisionSessionComplete && prev is! RevisionSessionComplete) {
+        if (next is RevisionSessionComplete &&
+            prev is! RevisionSessionComplete) {
           _timer?.cancel();
           ref.read(notificationServiceProvider).showCompletionNotification(
-                title: 'Revision session complete',
-                body: 'Great job! Your revision progress has been saved.',
-                payload: {
-                  'type': 'study_reminder',
-                  'workspace_id': widget.workspaceId,
-                },
-              ).ignore();
-          ref.read(notificationTokenRepositoryProvider).sendActivityPush(
+            title: 'Revision session complete',
+            body: 'Great job! Your revision progress has been saved.',
+            payload: {
+              'type': 'study_reminder',
+              'workspace_id': widget.workspaceId,
+            },
+          ).ignore();
+          ref
+              .read(notificationTokenRepositoryProvider)
+              .sendActivityPush(
                 title: 'Revision session complete',
                 body: 'Great job! Your revision progress has been saved.',
                 workspaceId: widget.workspaceId,
-              ).ignore();
+              )
+              .ignore();
         }
       },
     );

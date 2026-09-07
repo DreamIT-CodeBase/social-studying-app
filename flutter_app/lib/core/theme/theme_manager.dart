@@ -3,7 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 enum AppThemeMode { kids, mature }
 
-final appThemeModeProvider = StateNotifierProvider<AppThemeModeNotifier, AppThemeMode>((ref) {
+final appThemeModeProvider =
+    StateNotifierProvider<AppThemeModeNotifier, AppThemeMode>((ref) {
   return AppThemeModeNotifier();
 });
 

@@ -91,7 +91,9 @@ class Document with _$Document {
     @JsonKey(name: 'doc_type') required DocumentType docType,
     required DocumentStatus status,
     @JsonKey(name: 'chunk_count') @Default(0) int chunkCount,
-    @JsonKey(name: 'topic_tags') @Default(<TopicTag>[]) List<TopicTag> topicTags,
+    @JsonKey(name: 'topic_tags')
+    @Default(<TopicTag>[])
+    List<TopicTag> topicTags,
     @JsonKey(name: 'moderation_flagged') @Default(false) bool moderationFlagged,
     @JsonKey(name: 'created_at') required String createdAt,
     @JsonKey(name: 'page_count') int? pageCount,
