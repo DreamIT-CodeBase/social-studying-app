@@ -81,6 +81,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.workspace_premium_rounded, size: 18),
+            label: const Text('Admin Plan'),
+            onPressed: () => context.push(AppRoutes.adminSubscription),
+          ),
           IconButton(
             tooltip: 'Sign Out',
             icon: const Icon(Icons.logout_rounded),

@@ -31,6 +31,7 @@
 			<string>ai.socialstudying.app</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>socialstudy</string>
 				<string>msauth.$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 				<string>com.googleusercontent.apps.140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb</string>
 			</array>
@@ -42,6 +43,11 @@
 	<string>140186450317-vbdvuerjbgqtt0eslqjvoeofc8p3ccgb.apps.googleusercontent.com</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>https</string>
+		<string>http</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>We need access to the camera so you can capture images.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

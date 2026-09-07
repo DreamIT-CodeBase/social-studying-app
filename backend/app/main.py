@@ -21,6 +21,7 @@ from app.api import (
     notifications,
     questions,
     screen_time,
+    subscriptions,
     taxonomy,
     tenants,
     users,
@@ -206,6 +207,10 @@ _OPENAPI_TAGS = [
         "description": "Admin review of flagged content.",
     },
     {
+        "name": "subscriptions",
+        "description": "Stripe checkout, subscription management, and admin workspace gating.",
+    },
+    {
         "name": "meta",
         "description": ("Discovery + version metadata. Stable across API versions."),
     },
@@ -322,6 +327,7 @@ app.include_router(notifications.users_router, prefix="/api/v1")
 app.include_router(notifications.admin_router, prefix="/api/v1")
 app.include_router(screen_time.router, prefix="/api/v1")
 app.include_router(device_management.router, prefix="/api/v1")
+app.include_router(subscriptions.router, prefix="/api/v1")
 
 
 @app.get("/health")

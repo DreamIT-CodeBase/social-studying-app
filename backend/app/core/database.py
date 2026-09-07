@@ -76,6 +76,7 @@ NOTIFICATION_DISPATCHES = "notification_dispatches"  # Sprint 5.7 — append-onl
 SCREEN_TIME_SETTINGS = "screen_time_settings"  # Cloud-backed workspace blocking config
 SCREEN_TIME_WALLETS = "screen_time_wallets"  # Cloud-backed per-student usage wallet
 RAG_EVALUATIONS = "rag_evaluations"  # End-to-end RAG trace and evaluation records
+SUBSCRIPTIONS = "subscriptions"  # Stripe customer & subscription records
 
 
 # Parental / Device Control

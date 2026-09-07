@@ -196,5 +196,14 @@ class Settings(BaseSettings):
     notification_hub_connection_string: str = ""
     notification_hub_name: str = ""
 
+    # Stripe Payment Gateway & Subscriptions
+    stripe_secret_key: str = ""
+    stripe_publishable_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_id_monthly: str = ""
+    stripe_price_id_annual: str = ""
+    stripe_app_redirect_scheme: str = "socialstudy"
+
 
 settings = Settings()
+

@@ -29,6 +29,9 @@ import 'package:social_study_app/features/taxonomy/presentation/taxonomy_viewer_
 import 'package:social_study_app/features/screen_time/screens/screen_time_settings_screen.dart';
 import 'package:social_study_app/features/study_sessions/domain/adaptive_session_models.dart';
 import 'package:social_study_app/features/study_sessions/presentation/adaptive_session_screen.dart';
+import 'package:social_study_app/features/subscription/presentation/payment_cancelled_screen.dart';
+import 'package:social_study_app/features/subscription/presentation/payment_success_screen.dart';
+import 'package:social_study_app/features/subscription/presentation/subscription_paywall_screen.dart';
 
 part 'router.g.dart';
 
@@ -68,13 +71,17 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
         final isOnLogin = state.matchedLocation == AppRoutes.login;
         final isOnAdminOnboarding =
             state.matchedLocation == AppRoutes.adminOnboarding;
-        // Legal pages are publicly accessible — no auth required.
+        // Legal pages and payment returns are accessible.
         final isOnLegal = state.matchedLocation == AppRoutes.terms ||
             state.matchedLocation == AppRoutes.privacy;
+        final isOnPayment = state.matchedLocation == AppRoutes.paymentSuccess ||
+            state.matchedLocation == AppRoutes.paymentCancelled ||
+            state.matchedLocation == AppRoutes.adminSubscription;
         return authState.when(
           unauthenticated: () =>
-              (isOnLogin || isOnLegal) ? null : AppRoutes.login,
+              (isOnLogin || isOnLegal || isOnPayment) ? null : AppRoutes.login,
           authenticated: (user) {
+            if (isOnPayment) return null;
             if (currentFlavor == AppFlavor.student) {
               if (isOnLogin) {
                 return AppRoutes.studentHome;
@@ -160,6 +167,20 @@ GoRouter router(RouterRef ref) {
       GoRoute(
         path: AppRoutes.adminOnboarding,
         builder: (_, __) => const OnboardingScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.adminSubscription,
+        builder: (_, __) => const SubscriptionPaywallScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.paymentSuccess,
+        builder: (_, state) => PaymentSuccessScreen(
+          sessionId: state.uri.queryParameters['session_id'],
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.paymentCancelled,
+        builder: (_, __) => const PaymentCancelledScreen(),
       ),
       GoRoute(
         path: AppRoutes.adminDocumentPolling,

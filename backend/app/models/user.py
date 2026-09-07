@@ -28,6 +28,7 @@ class User(CosmosDocument):
     b2c_object_id: str | None = None  # populated once B2C auth is wired
     role: UserRole
     workspace_memberships: list[WorkspaceMembership] = Field(default_factory=list)
+    subscription_id: str | None = None
     last_login_at: str | None = None
     is_active: bool = True
 
@@ -48,6 +49,7 @@ class UserResponse(CosmosDocument.__base__):
     display_name: str
     role: UserRole
     workspace_memberships: list[WorkspaceMembership] = Field(default_factory=list)
+    subscription_id: str | None = None
     is_active: bool
     created_at: str
 
@@ -60,6 +62,8 @@ class UserResponse(CosmosDocument.__base__):
             display_name=doc.display_name,
             role=doc.role,
             workspace_memberships=doc.workspace_memberships,
+            subscription_id=doc.subscription_id,
             is_active=doc.is_active,
             created_at=doc.created_at,
         )
+

@@ -70,4 +70,11 @@ abstract final class AppRoutes {
   /// memberships. The redirect stops firing the moment the first
   /// workspace exists, so the wizard truly only appears on day 1.
   static const String adminOnboarding = '/admin/onboarding';
+
+  /// Stripe Admin subscription paywall & plan selection
+  static const String adminSubscription = '/admin/subscription';
+
+  /// Deep linking return destination from Stripe checkout
+  static const String paymentSuccess = '/payment-success';
+  static const String paymentCancelled = '/payment-cancelled';
 }
