@@ -329,8 +329,8 @@ async def test_handle_content_safety_flagged_sets_status_flagged_and_logs():
     with (
         patch("app.workers.document_ingestion.get_collection", side_effect=route),
         patch(
-            "app.workers.document_ingestion.blob_storage.download_document",
-            AsyncMock(return_value=b"%PDF-1.4 fake"),
+            "app.workers.document_ingestion.blob_storage.create_blob_read_url",
+            return_value="https://example.com/blob.pdf",
         ),
         patch(
             "app.workers.document_ingestion.document_intelligence.extract_text_from_url",
@@ -387,8 +387,8 @@ async def test_handle_content_safety_transient_error_propagates():
     with (
         patch("app.workers.document_ingestion.get_collection", side_effect=route),
         patch(
-            "app.workers.document_ingestion.blob_storage.download_document",
-            AsyncMock(return_value=b"%PDF-1.4 fake"),
+            "app.workers.document_ingestion.blob_storage.create_blob_read_url",
+            return_value="https://example.com/blob.pdf",
         ),
         patch(
             "app.workers.document_ingestion.document_intelligence.extract_text_from_url",
@@ -425,8 +425,8 @@ async def test_handle_moderation_log_write_failure_does_not_crash():
     with (
         patch("app.workers.document_ingestion.get_collection", side_effect=route),
         patch(
-            "app.workers.document_ingestion.blob_storage.download_document",
-            AsyncMock(return_value=b"%PDF-1.4 fake"),
+            "app.workers.document_ingestion.blob_storage.create_blob_read_url",
+            return_value="https://example.com/blob.pdf",
         ),
         patch(
             "app.workers.document_ingestion.document_intelligence.extract_text_from_url",

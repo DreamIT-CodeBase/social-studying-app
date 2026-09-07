@@ -83,7 +83,9 @@ jobs:
           sudo xcode-select -s "$XCODE_APP/Contents/Developer"
           export DEVELOPER_DIR="$XCODE_APP/Contents/Developer"
           echo "DEVELOPER_DIR=$XCODE_APP/Contents/Developer" >> "$GITHUB_ENV"
+          sudo xcodebuild -license accept || true
           sudo xcodebuild -runFirstLaunch || true
+          sudo xcodebuild -downloadPlatform iOS || true
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
 
@@ -105,6 +107,15 @@ jobs:
 
       - name: Install Flutter dependencies
         run: flutter pub get
+
+      - name: Generate baseline Flutter xcconfig
+        run: |
+          cat <<EOF > ios/Flutter/Generated.xcconfig
+          FLUTTER_ROOT=$FLUTTER_ROOT
+          FLUTTER_APPLICATION_PATH=$PWD
+          COCOAPODS_PARALLEL_CODE_SIGN=true
+          EOF
+          touch ios/Flutter/flutter_export_environment.sh
 
       - name: Install Apple signing credentials
         env:
@@ -188,6 +199,9 @@ jobs:
       - name: Build signed IPA
         if: env.SKIP_BUILD != 'true'
         run: |
+          touch ios/Flutter/Generated.xcconfig
+          touch ios/Flutter/flutter_export_environment.sh
+
           signing_config="ios/Flutter/CI-signing.xcconfig"
           {
             printf 'CODE_SIGN_STYLE=Manual\n'
@@ -198,10 +212,10 @@ jobs:
               printf 'CODE_SIGN_ENTITLEMENTS=Runner/Runner.entitlements\n'
             fi
           } > "$signing_config"
-          printf '\n#include "CI-signing.xcconfig"\n' >> "ios/Flutter/Release-$APP_FLAVOR.xcconfig"
 
           build_number=$((10000 + GITHUB_RUN_NUMBER))
           flutter build ipa \
+            --verbose \
             --release \
             --flavor "$APP_FLAVOR" \
             --target "$APP_TARGET" \
@@ -234,7 +248,9 @@ jobs:
           else
             printf '%b\n' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$key_file"
           fi
-          chmod 600 "$key_file"
+          mkdir -p "$HOME/.private_keys"
+          cp "$key_file" "$HOME/.private_keys/AuthKey_${KEY_ID}.p8"
+          chmod 600 "$key_file" "$HOME/.private_keys/AuthKey_${KEY_ID}.p8"
 
       - name: Upload to TestFlight
         if: (github.event_name == 'push' || inputs.upload_to_testflight) && env.SKIP_BUILD != 'true'
@@ -258,4 +274,4 @@ jobs:
         if: always()
         run: |
           security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" 2>/dev/null || true
-          rm -rf "$HOME/.appstoreconnect/private_keys"
+          rm -rf "$HOME/.appstoreconnect/private_keys" "$HOME/.private_keys"
