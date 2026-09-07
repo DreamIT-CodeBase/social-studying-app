@@ -40,13 +40,22 @@ class _PermissionOnboardingScreenState
   bool _sequenceActive = true;
   bool _waitingForAndroidSettings = false;
 
-  static const _permissionOrder = <_PermissionKind>[
-    _PermissionKind.notifications,
-    _PermissionKind.accessibility,
-    _PermissionKind.usageAccess,
-    _PermissionKind.overlay,
-    _PermissionKind.battery,
-  ];
+  List<_PermissionKind> get _permissionOrder {
+    if (Platform.isIOS) {
+      return const [
+        _PermissionKind.notifications,
+        _PermissionKind.screenTime,
+        _PermissionKind.selectApps,
+      ];
+    }
+    return const [
+      _PermissionKind.notifications,
+      _PermissionKind.accessibility,
+      _PermissionKind.usageAccess,
+      _PermissionKind.overlay,
+      _PermissionKind.battery,
+    ];
+  }
 
   @override
   void initState() {
@@ -174,7 +183,27 @@ class _PermissionOnboardingScreenState
     await _requestPermission(permission);
   }
 
-  Future<void> _requestPermission(_PermissionKind permission) async {
+    if (Platform.isIOS) {
+      try {
+        switch (permission) {
+          case _PermissionKind.notifications:
+            await _screenTimeService.requestNotificationPermission();
+            break;
+          case _PermissionKind.screenTime:
+            await _screenTimeService.requestScreenTimeAuthorization();
+            break;
+          case _PermissionKind.selectApps:
+            await _screenTimeService.presentFamilyActivityPicker();
+            break;
+          default:
+            break;
+        }
+      } catch (_) {}
+      await _refreshStatus();
+      _scheduleNextDialog();
+      return;
+    }
+
     if (!Platform.isAndroid) {
       await _refreshStatus();
       _scheduleNextDialog();
@@ -248,6 +277,8 @@ class _PermissionOnboardingScreenState
       _PermissionKind.usageAccess => _status.usageAccess,
       _PermissionKind.overlay => _status.overlay,
       _PermissionKind.battery => _status.batteryExempt,
+      _PermissionKind.screenTime => _status.iosScreenTimeAuthorized,
+      _PermissionKind.selectApps => _status.iosHasSelectedApps,
     };
   }
 
@@ -333,7 +364,9 @@ class _PermissionOnboardingScreenState
                   ),
                   const SizedBox(height: Spacing.sm),
                   Text(
-                    'Android will show its own permission controls one at a time. Return to Social Studying after enabling each switch.',
+                    Platform.isIOS
+                        ? 'Apple Screen Time keeps you focused by shielding selected social apps when study minutes run out.'
+                        : 'Android will show its own permission controls one at a time. Return to Social Studying after enabling each switch.',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
@@ -359,7 +392,9 @@ class _PermissionOnboardingScreenState
                   if (!requiredReady && !_sequenceActive) ...[
                     const SizedBox(height: Spacing.md),
                     Text(
-                      'Accessibility and Usage Access are required for automatic blocking.',
+                      Platform.isIOS
+                          ? 'Screen Time permission and app selection are required for social app shielding.'
+                          : 'Accessibility and Usage Access are required for automatic blocking.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.error,
@@ -395,7 +430,7 @@ class _PermissionOnboardingScreenState
                         : const Icon(Icons.arrow_forward_rounded),
                     label: Text(
                       _sequenceActive
-                          ? 'Complete the Android prompt'
+                          ? (Platform.isIOS ? 'Complete the prompt' : 'Complete the Android prompt')
                           : requiredReady
                               ? 'Finish setup'
                               : 'Continue permission setup',
@@ -460,11 +495,18 @@ enum _PermissionKind {
   accessibility,
   usageAccess,
   overlay,
-  battery;
+  battery,
+  screenTime,
+  selectApps;
 
-  bool get isRequired =>
-      this == _PermissionKind.accessibility ||
-      this == _PermissionKind.usageAccess;
+  bool get isRequired {
+    if (Platform.isIOS) {
+      return this == _PermissionKind.screenTime ||
+             this == _PermissionKind.selectApps;
+    }
+    return this == _PermissionKind.accessibility ||
+           this == _PermissionKind.usageAccess;
+  }
 
   String get shortTitle => switch (this) {
         _PermissionKind.notifications => 'Notifications',
@@ -472,6 +514,8 @@ enum _PermissionKind {
         _PermissionKind.usageAccess => 'Usage Access',
         _PermissionKind.overlay => 'Display over apps',
         _PermissionKind.battery => 'Battery optimization',
+        _PermissionKind.screenTime => 'Screen Time permission',
+        _PermissionKind.selectApps => 'Select apps to shield',
       };
 
   String get title => switch (this) {
@@ -480,6 +524,8 @@ enum _PermissionKind {
         _PermissionKind.usageAccess => 'Allow Usage Access?',
         _PermissionKind.overlay => 'Allow display over other apps?',
         _PermissionKind.battery => 'Keep app blocking responsive?',
+        _PermissionKind.screenTime => 'Allow Screen Time access?',
+        _PermissionKind.selectApps => 'Choose apps to shield',
       };
 
   String get description => switch (this) {
@@ -493,6 +539,10 @@ enum _PermissionKind {
           'This optional fallback lets the study lock remain visible on phones with stricter window behavior.',
         _PermissionKind.battery =>
           'This optional setting helps Android keep the blocking service responsive when the phone is idle.',
+        _PermissionKind.screenTime =>
+          'Apple Screen Time allows Social Studying to securely shield social media apps when earned study minutes run out.',
+        _PermissionKind.selectApps =>
+          'Pick the social media apps, categories, or websites you want Social Studying to shield during study sessions.',
       };
 
   String get actionLabel => switch (this) {
@@ -501,6 +551,8 @@ enum _PermissionKind {
         _PermissionKind.usageAccess => 'Open Android settings',
         _PermissionKind.overlay => 'Open Android settings',
         _PermissionKind.battery => 'Continue',
+        _PermissionKind.screenTime => 'Allow',
+        _PermissionKind.selectApps => 'Select apps',
       };
 
   IconData get icon => switch (this) {
@@ -509,5 +561,7 @@ enum _PermissionKind {
         _PermissionKind.usageAccess => Icons.insights_rounded,
         _PermissionKind.overlay => Icons.layers_rounded,
         _PermissionKind.battery => Icons.battery_saver_rounded,
+        _PermissionKind.screenTime => Icons.hourglass_top_rounded,
+        _PermissionKind.selectApps => Icons.app_blocking_rounded,
       };
 }

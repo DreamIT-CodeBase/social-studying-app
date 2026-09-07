@@ -204,5 +204,20 @@ void main() {
       expect(status.requiredPermissionsGranted, isTrue);
       expect(status.allRecommendedPermissionsGranted, isTrue);
     });
+
+    test('supports iOS screen time permission status properties', () {
+      const status = DevicePermissionStatus(
+        usageAccess: true,
+        overlay: true,
+        notifications: true,
+        accessibility: true,
+        batteryExempt: true,
+        iosScreenTimeAuthorized: true,
+        iosHasSelectedApps: true,
+      );
+
+      expect(status.iosScreenTimeAuthorized, isTrue);
+      expect(status.iosHasSelectedApps, isTrue);
+    });
   });
 }

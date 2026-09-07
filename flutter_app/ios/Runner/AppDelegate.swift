@@ -44,5 +44,57 @@ import UserNotifications
       }
     }
 
+    let screenTimeChannel = FlutterMethodChannel(
+      name: "com.socialstudyapp.app/screen_time",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    screenTimeChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "isScreenTimeAuthorized":
+        result(ScreenTimeManager.shared.isAuthorized())
+      case "requestScreenTimeAuthorization":
+        ScreenTimeManager.shared.requestAuthorization { approved, error in
+          if let error = error {
+            result(FlutterError(code: "SCREEN_TIME_ERROR", message: error, details: nil))
+          } else {
+            result(approved)
+          }
+        }
+      case "presentFamilyActivityPicker":
+        ScreenTimeManager.shared.presentAppPicker { success, error in
+          if let error = error {
+            result(FlutterError(code: "PICKER_ERROR", message: error, details: nil))
+          } else {
+            result(success)
+          }
+        }
+      case "hasSelectedBlockedApps":
+        result(ScreenTimeManager.shared.hasSelectedApps())
+      case "syncScreenTimeBalance":
+        guard let args = call.arguments as? [String: Any],
+              let minutes = args["availableMinutes"] as? Int,
+              let enableBlocking = args["enableBlocking"] as? Bool else {
+          result(FlutterError(code: "INVALID_ARGS", message: "Invalid syncScreenTimeBalance arguments", details: nil))
+          return
+        }
+        ScreenTimeManager.shared.syncScreenTimeBalance(availableMinutes: minutes, enableBlocking: enableBlocking)
+        result(true)
+      case "getIOSPermissionStatus":
+        let authorized = ScreenTimeManager.shared.isAuthorized()
+        let hasApps = ScreenTimeManager.shared.hasSelectedApps()
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+          let notificationsGranted = (settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional)
+          DispatchQueue.main.async {
+            result([
+              "screenTimeAuthorized": authorized,
+              "hasSelectedApps": hasApps,
+              "notifications": notificationsGranted
+            ])
+          }
+        }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 }

@@ -301,6 +301,24 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
     await _service.openAccessibilitySettings();
   }
 
+  Future<bool> isScreenTimeAuthorized() async {
+    return _service.isScreenTimeAuthorized();
+  }
+
+  Future<bool> requestScreenTimeAuthorization() async {
+    return _service.requestScreenTimeAuthorization();
+  }
+
+  Future<bool> presentFamilyActivityPicker() async {
+    final result = await _service.presentFamilyActivityPicker();
+    await refreshWallet();
+    return result;
+  }
+
+  Future<bool> hasSelectedBlockedApps() async {
+    return _service.hasSelectedBlockedApps();
+  }
+
   Future<void> updateEnableSocialQuestions(bool enable) async {
     await _service.saveEnableSocialQuestions(enable);
     ref.invalidate(enableSocialQuestionsProvider);

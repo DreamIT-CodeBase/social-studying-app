@@ -25,6 +25,8 @@ class _ScreenTimeSettingsScreenState
     with WidgetsBindingObserver {
   bool _isAccessibilityEnabled = false;
   bool _isLoadingAccessibility = true;
+  bool _isIOSScreenTimeAuthorized = false;
+  bool _hasIOSSelectedApps = false;
 
   final Map<String, (String name, IconData icon)> _availableApps = {
     'com.instagram.android': ('Instagram', Icons.camera_alt_outlined),
@@ -61,6 +63,24 @@ class _ScreenTimeSettingsScreenState
   }
 
   Future<void> _checkAccessibilityStatus() async {
+    if (Platform.isIOS) {
+      setState(() => _isLoadingAccessibility = true);
+      final authorized = await ref
+          .read(screenTimeNotifierProvider.notifier)
+          .isScreenTimeAuthorized();
+      final hasApps = await ref
+          .read(screenTimeNotifierProvider.notifier)
+          .hasSelectedBlockedApps();
+      if (mounted) {
+        setState(() {
+          _isIOSScreenTimeAuthorized = authorized;
+          _hasIOSSelectedApps = hasApps;
+          _isLoadingAccessibility = false;
+        });
+      }
+      return;
+    }
+
     if (!Platform.isAndroid) {
       setState(() {
         _isAccessibilityEnabled = false;
@@ -124,6 +144,10 @@ class _ScreenTimeSettingsScreenState
                 ),
                 const SizedBox(height: Spacing.lg),
               ],
+              if (Platform.isIOS) ...[
+                _buildIOSScreenTimeCard(),
+                const SizedBox(height: Spacing.lg),
+              ],
               if (Platform.isAndroid && currentFlavor == AppFlavor.student) ...[
                 _buildAccessibilityStatusCard(),
                 const SizedBox(height: Spacing.lg),
@@ -133,10 +157,17 @@ class _ScreenTimeSettingsScreenState
               _buildBlockingControlCard(enableBlocking, isEditable),
               const SizedBox(height: Spacing.lg),
               if (enableBlocking) ...[
-                _buildSectionTitle('Apps to Control'),
-                const SizedBox(height: Spacing.sm),
-                _buildAppSelectorCard(blockedPackages, isEditable),
-                const SizedBox(height: Spacing.lg),
+                if (Platform.isIOS) ...[
+                  _buildSectionTitle('Shielded Apps & Categories'),
+                  const SizedBox(height: Spacing.sm),
+                  _buildIOSAppPickerCard(),
+                  const SizedBox(height: Spacing.lg),
+                ] else ...[
+                  _buildSectionTitle('Apps to Control'),
+                  const SizedBox(height: Spacing.sm),
+                  _buildAppSelectorCard(blockedPackages, isEditable),
+                  const SizedBox(height: Spacing.lg),
+                ],
               ],
               _buildSectionTitle('Social Media Question Rules & Reoccurring Timeframe'),
               const SizedBox(height: Spacing.sm),
@@ -450,6 +481,169 @@ class _ScreenTimeSettingsScreenState
                   style: TextStyle(fontSize: 12),
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIOSScreenTimeCard() {
+    final statusColor =
+        _isIOSScreenTimeAuthorized ? Colors.green : Colors.orange;
+    final statusText =
+        _isIOSScreenTimeAuthorized ? 'Authorized' : 'Permission needed';
+    final statusIcon = _isIOSScreenTimeAuthorized
+        ? Icons.check_circle
+        : Icons.warning_amber_rounded;
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(Spacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Apple Screen Time Protection',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(statusIcon, color: statusColor, size: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Status: $statusText',
+                            style: TextStyle(
+                              color: statusColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                if (_isLoadingAccessibility)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: Spacing.md),
+            const Text(
+              'Social Studying uses Apple Family Controls and Screen Time to securely shield selected social media apps when study minutes reach 0.',
+              style: TextStyle(fontSize: 13, color: AppColors.onSurfaceVariant),
+            ),
+            if (!_isIOSScreenTimeAuthorized) ...[
+              const SizedBox(height: Spacing.md),
+              FilledButton.icon(
+                onPressed: () async {
+                  await ref
+                      .read(screenTimeNotifierProvider.notifier)
+                      .requestScreenTimeAuthorization();
+                  await _checkAccessibilityStatus();
+                },
+                icon: const Icon(Icons.shield_rounded),
+                label: const Text('Authorize Screen Time'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIOSAppPickerCard() {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(Spacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  _hasIOSSelectedApps
+                      ? Icons.verified_rounded
+                      : Icons.app_blocking_rounded,
+                  color:
+                      _hasIOSSelectedApps ? Colors.green : AppColors.primary,
+                  size: 28,
+                ),
+                const SizedBox(width: Spacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Apps & Categories to Shield',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _hasIOSSelectedApps
+                            ? 'Social apps and domains configured'
+                            : 'No apps selected yet',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: _hasIOSSelectedApps
+                              ? Colors.green
+                              : AppColors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: Spacing.md),
+            const Text(
+              'Tap below to open Apple’s native app picker and choose which social networking apps, categories, or websites to lock.',
+              style: TextStyle(fontSize: 13, color: AppColors.onSurfaceVariant),
+            ),
+            const SizedBox(height: Spacing.md),
+            OutlinedButton.icon(
+              onPressed: () async {
+                if (!_isIOSScreenTimeAuthorized) {
+                  final authorized = await ref
+                      .read(screenTimeNotifierProvider.notifier)
+                      .requestScreenTimeAuthorization();
+                  if (!authorized) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Please authorize Screen Time first.'),
+                        ),
+                      );
+                    }
+                    return;
+                  }
+                }
+                await ref
+                    .read(screenTimeNotifierProvider.notifier)
+                    .presentFamilyActivityPicker();
+                await _checkAccessibilityStatus();
+              },
+              icon: const Icon(Icons.touch_app_rounded),
+              label: Text(_hasIOSSelectedApps
+                  ? 'Edit Shielded Apps'
+                  : 'Choose Apps to Shield'),
             ),
           ],
         ),

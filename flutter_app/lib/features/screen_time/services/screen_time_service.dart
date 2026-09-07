@@ -103,6 +103,14 @@ class ScreenTimeService {
         wallet.lastSyncTime?.millisecondsSinceEpoch ?? 0);
     await prefs.setInt('$_keyConsumedToday$suffix', wallet.consumedToday);
     await prefs.setString('$_keyWeekStartDate$suffix', _currentWeekStart());
+
+    if (Platform.isIOS) {
+      final enableBlocking = prefs.getBool(_keyEnableBlocking) ?? true;
+      await syncScreenTimeBalance(
+        availableMinutes: wallet.availableMinutes,
+        enableBlocking: enableBlocking,
+      );
+    }
   }
 
   /// Expires locally cached social time on Monday even while the device is
@@ -155,6 +163,13 @@ class ScreenTimeService {
   Future<void> saveEnableBlocking(bool enable) async {
     final prefs = await _getPrefs();
     await prefs.setBool(_keyEnableBlocking, enable);
+    if (Platform.isIOS) {
+      final wallet = await loadWallet(prefs.getString(_keyCurrentUserId));
+      await syncScreenTimeBalance(
+        availableMinutes: wallet.availableMinutes,
+        enableBlocking: enable,
+      );
+    }
   }
 
   Future<List<String>> getBlockedPackages() async {
@@ -255,6 +270,59 @@ class ScreenTimeService {
     }
   }
 
+  // MARK: - iOS Screen Time Methods
+
+  Future<bool> isScreenTimeAuthorized() async {
+    if (!Platform.isIOS) return false;
+    try {
+      return await _channel.invokeMethod<bool>('isScreenTimeAuthorized') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> requestScreenTimeAuthorization() async {
+    if (!Platform.isIOS) return false;
+    try {
+      return await _channel.invokeMethod<bool>('requestScreenTimeAuthorization') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> presentFamilyActivityPicker() async {
+    if (!Platform.isIOS) return false;
+    try {
+      return await _channel.invokeMethod<bool>('presentFamilyActivityPicker') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> hasSelectedBlockedApps() async {
+    if (!Platform.isIOS) return false;
+    try {
+      return await _channel.invokeMethod<bool>('hasSelectedBlockedApps') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> syncScreenTimeBalance({
+    required int availableMinutes,
+    required bool enableBlocking,
+  }) async {
+    if (!Platform.isIOS) return;
+    try {
+      await _channel.invokeMethod<void>('syncScreenTimeBalance', {
+        'availableMinutes': availableMinutes,
+        'enableBlocking': enableBlocking,
+      });
+    } catch (_) {}
+  }
+
+  // MARK: - Android Accessibility Methods
+
   Future<bool> isAccessibilityServiceEnabled() async {
     if (!Platform.isAndroid) return false;
     try {
@@ -266,6 +334,34 @@ class ScreenTimeService {
   }
 
   Future<DevicePermissionStatus> getPermissionStatus() async {
+    if (Platform.isIOS) {
+      try {
+        final map = await _channel.invokeMapMethod<String, dynamic>('getIOSPermissionStatus');
+        final screenTimeAuth = map?['screenTimeAuthorized'] as bool? ?? false;
+        final hasSelectedApps = map?['hasSelectedApps'] as bool? ?? false;
+        final notifications = map?['notifications'] as bool? ?? false;
+        return DevicePermissionStatus(
+          usageAccess: true,
+          overlay: true,
+          notifications: notifications,
+          accessibility: true,
+          batteryExempt: true,
+          iosScreenTimeAuthorized: screenTimeAuth,
+          iosHasSelectedApps: hasSelectedApps,
+        );
+      } catch (_) {
+        return const DevicePermissionStatus(
+          usageAccess: true,
+          overlay: true,
+          notifications: false,
+          accessibility: true,
+          batteryExempt: true,
+          iosScreenTimeAuthorized: false,
+          iosHasSelectedApps: false,
+        );
+      }
+    }
+
     if (!Platform.isAndroid) return DevicePermissionStatus.notRequired();
 
     Future<bool> check(String method) async {
@@ -322,6 +418,8 @@ class DevicePermissionStatus {
     required this.notifications,
     required this.accessibility,
     required this.batteryExempt,
+    this.iosScreenTimeAuthorized = true,
+    this.iosHasSelectedApps = true,
   });
 
   factory DevicePermissionStatus.notRequired() => const DevicePermissionStatus(
@@ -330,6 +428,8 @@ class DevicePermissionStatus {
         notifications: true,
         accessibility: true,
         batteryExempt: true,
+        iosScreenTimeAuthorized: true,
+        iosHasSelectedApps: true,
       );
 
   final bool usageAccess;
@@ -337,9 +437,20 @@ class DevicePermissionStatus {
   final bool notifications;
   final bool accessibility;
   final bool batteryExempt;
+  final bool iosScreenTimeAuthorized;
+  final bool iosHasSelectedApps;
 
-  bool get requiredPermissionsGranted => usageAccess && accessibility;
+  bool get requiredPermissionsGranted {
+    if (Platform.isIOS) {
+      return iosScreenTimeAuthorized && iosHasSelectedApps;
+    }
+    return usageAccess && accessibility;
+  }
 
-  bool get allRecommendedPermissionsGranted =>
-      requiredPermissionsGranted && overlay && notifications && batteryExempt;
+  bool get allRecommendedPermissionsGranted {
+    if (Platform.isIOS) {
+      return requiredPermissionsGranted && notifications;
+    }
+    return requiredPermissionsGranted && overlay && notifications && batteryExempt;
+  }
 }

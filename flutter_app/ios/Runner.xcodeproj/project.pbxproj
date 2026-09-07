@@ -18,6 +18,7 @@
 		E02BC826C72DC088F2BEC23B /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 17004F284465C62091B29654 /* Pods_RunnerTests.framework */; };
 		F145D0A9ED4FE52A7EBB1D59 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4C52EBEC4B316431E7729335 /* Pods_Runner.framework */; };
 		EA1000000000000000000001 /* NativeEntraAuthCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA2000000000000000000001 /* NativeEntraAuthCoordinator.swift */; };
+		ST1000000000000000000001 /* ScreenTimeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = ST2000000000000000000001 /* ScreenTimeManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -87,6 +88,7 @@
 		F9424BFC611C746D9D7F3AD2 /* Pods-RunnerTests.release-admin.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release-admin.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release-admin.xcconfig"; sourceTree = "<group>"; };
 		FAE6836AABD476299B608B93 /* Pods-RunnerTests.release-student.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release-student.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release-student.xcconfig"; sourceTree = "<group>"; };
 		EA2000000000000000000001 /* NativeEntraAuthCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeEntraAuthCoordinator.swift; sourceTree = "<group>"; };
+		ST2000000000000000000001 /* ScreenTimeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenTimeManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -201,6 +203,7 @@
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				EA2000000000000000000001 /* NativeEntraAuthCoordinator.swift */,
+				ST2000000000000000000001 /* ScreenTimeManager.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
 			path = Runner;
@@ -440,6 +443,7 @@
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				EA1000000000000000000001 /* NativeEntraAuthCoordinator.swift in Sources */,
+				ST1000000000000000000001 /* ScreenTimeManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
