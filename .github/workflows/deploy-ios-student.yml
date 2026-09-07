@@ -231,28 +231,9 @@ jobs:
 
           # Inject the extension provisioning profile specifier into the pbxproj build settings
           if [[ -n "${IOS_EXT_PROFILE_NAME:-}" ]]; then
-            python3 - <<'PYEOF'
-import re, os, sys
-
-pbxproj = 'ios/Runner.xcodeproj/project.pbxproj'
-with open(pbxproj, 'r') as f:
-    content = f.read()
-
-ext_profile = os.environ['IOS_EXT_PROFILE_NAME']
-
-# Inject PROVISIONING_PROFILE_SPECIFIER into each ScreenTimeExtension build config block
-# We target lines that set PRODUCT_BUNDLE_IDENTIFIER for the extension and inject after them
-new_content = re.sub(
-    r'(PRODUCT_BUNDLE_IDENTIFIER = "ai\.socialstudying\.app\.ScreenTimeExtension";)',
-    rf'\1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "{ext_profile}";',
-    content
-)
-
-with open(pbxproj, 'w') as f:
-    f.write(new_content)
-
-print(f"Injected PROVISIONING_PROFILE_SPECIFIER = {ext_profile} into ScreenTimeExtension build configs")
-PYEOF
+            EXT_PROFILE_ESCAPED=$(echo "$IOS_EXT_PROFILE_NAME" | sed 's/[&/\]/\\&/g')
+            sed -i '' "s|PRODUCT_BUNDLE_IDENTIFIER = \"ai\.socialstudying\.app\.ScreenTimeExtension\";|PRODUCT_BUNDLE_IDENTIFIER = \"ai.socialstudying.app.ScreenTimeExtension\";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${EXT_PROFILE_ESCAPED}\";|g" ios/Runner.xcodeproj/project.pbxproj
+            echo "Injected PROVISIONING_PROFILE_SPECIFIER = $IOS_EXT_PROFILE_NAME"
           fi
 
           flutter build ipa \
