@@ -16,6 +16,8 @@ import DeviceActivity
 
 #if canImport(SwiftUI)
 import SwiftUI
+#endif
+
 #if canImport(DeviceActivity)
 @available(iOS 16.0, *)
 extension DeviceActivityName {
