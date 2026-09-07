@@ -53,17 +53,14 @@ jobs:
       - name: Select Xcode 16 toolchain
         run: |
           set -euo pipefail
+          ls -ld /Applications/Xcode* || true
+
           XCODE_APP=""
-          # Prioritize stable Xcode 16.2 / 16.1 installations with pre-installed iOS platform runtimes.
-          # Avoid Xcode 16.3+ beta/preview installations that lack the bundled iOS 18.4 platform runtime.
+          # Prioritize Xcode 16.4+ or runner default Xcode.app meeting Apple App Store SDK requirements
           for candidate in \
-            "/Applications/Xcode_16.2.app" \
-            "/Applications/Xcode_16.1.1.app" \
-            "/Applications/Xcode_16.1.app" \
-            "/Applications/Xcode_16.0.1.app" \
-            "/Applications/Xcode_16.0.app" \
-            "/Applications/Xcode_16.app" \
-            "/Applications/Xcode.app"; do
+            "/Applications/Xcode_16.4.app" \
+            "/Applications/Xcode.app" \
+            "/Applications/Xcode_16.3.app"; do
             if [ -d "$candidate" ]; then
               XCODE_APP="$candidate"
               break
@@ -71,12 +68,12 @@ jobs:
           done
 
           if [ -z "$XCODE_APP" ]; then
-            if [ -d "/Applications/Xcode_16.3.app" ]; then
-              XCODE_APP="/Applications/Xcode_16.3.app"
-            else
-              echo "No Xcode 16 found on runner!" >&2
-              exit 1
-            fi
+            for candidate in /Applications/Xcode*.app; do
+              if [ -d "$candidate" ]; then
+                XCODE_APP="$candidate"
+                break
+              fi
+            done
           fi
 
           echo "Selected: $XCODE_APP"
@@ -85,6 +82,7 @@ jobs:
           echo "DEVELOPER_DIR=$XCODE_APP/Contents/Developer" >> "$GITHUB_ENV"
           sudo xcodebuild -license accept || true
           sudo xcodebuild -runFirstLaunch || true
+          xcrun simctl list > /dev/null 2>&1 || true
           sudo xcodebuild -downloadPlatform iOS || true
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
