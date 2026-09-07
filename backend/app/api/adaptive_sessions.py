@@ -57,7 +57,13 @@ from app.models.adaptive_session import (
 )
 from app.models.base import utc_now
 from app.models.flashcard import Flashcard, FlashcardRatingEvent, FlashcardStatus
-from app.models.question import AnswerSubmission, DifficultyLevel, Question, QuestionStatus
+from app.models.question import (
+    AnswerSubmission,
+    DifficultyLevel,
+    Question,
+    QuestionStatus,
+    QuestionType,
+)
 from app.models.user import User, UserRole
 from app.services import (
     answer_evaluation,
@@ -683,8 +689,6 @@ async def _prepare_questions(
         target = 5
 
     # In self-study workspace, always generate all 5 questions freshly for every session.
-    is_fresh_self_study = _is_self_study(workspace_id) and not revision
-
     # Revision deliberately retains history so incorrect questions can be re-practiced.
     if revision:
         eligible = available
@@ -2004,10 +2008,7 @@ async def prepare_adaptive_session(
     ranges = (
         _FLASHCARD_RANGES if request.mode == AdaptiveSessionMode.flashcard else _QUESTION_RANGES
     )
-    if _is_self_study(workspace_id):
-        target = 5
-    else:
-        target = _adaptive_count(mastery, level, ranges[level])
+    target = 5 if _is_self_study(workspace_id) else _adaptive_count(mastery, level, ranges[level])
 
     # Self-study bounds each material snapshot to a fixed number of
     # non-repeating sessions per mode.

@@ -9,7 +9,7 @@ and German.
 from __future__ import annotations
 
 import unicodedata
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.models.document import Document

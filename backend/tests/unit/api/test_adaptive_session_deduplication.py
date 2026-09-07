@@ -757,7 +757,7 @@ async def test_prepare_questions_self_study_question_type_strict_filtering():
                 )
             ),
         ),
-        patch("app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch", AsyncMock(return_value=[])) as mock_gen,
+        patch("app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch", AsyncMock(return_value=[])),
     ):
         # Requesting only mcq questions
         prepared = await _prepare_questions(

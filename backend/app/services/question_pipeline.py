@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Sequence
 from typing import Any
 from uuid import uuid4
 
@@ -417,7 +418,7 @@ async def _generate_and_persist_batch(
 
         safety_results = await asyncio.gather(*[_check_safety(item) for item in candidate_items])
 
-        for (gq, candidate_obj, document_id, source_chunk_ids, all_retrieved_chunks, norm_body), is_approved in zip(candidate_items, safety_results):
+        for (gq, candidate_obj, document_id, source_chunk_ids, all_retrieved_chunks, norm_body), is_approved in zip(candidate_items, safety_results, strict=True):
             if not is_approved:
                 continue
 

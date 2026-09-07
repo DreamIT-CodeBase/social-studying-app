@@ -338,7 +338,9 @@ async def test_true_false_rejects_non_boolean_string():
         "explanation": "...",
     }
     patched, _ = _mock_chat_json(response)
-    with patched, pytest.raises(QuestionShapeError, match="exactly 'true' or 'false'"):
+    with patched, pytest.raises(
+        QuestionShapeError, match=r"must be boolean or 'true'/'false'"
+    ):
         await generate_question(
             topic="Photosynthesis",
             difficulty=DifficultyLevel.beginner,

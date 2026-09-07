@@ -483,7 +483,6 @@ async def get_admin_activity_feed(
         xp = row.get("xp_gained")
         if xp is None and "xp_gained" in summary_data:
             xp = summary_data.get("xp_gained")
-        completed_count = row.get("completed_count") or summary_data.get("completed_count") or 0
 
         acc_str = f"{int(accuracy)}%" if accuracy is not None else ""
         xp_str = f"+{xp} XP" if xp else ""

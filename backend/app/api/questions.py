@@ -96,7 +96,6 @@ from app.services import (
 from app.services import (
     gamification as gamification_service,
 )
-from app.services.subject_classifier import classify_subject_from_text
 from app.services import (
     knowledge_state as knowledge_state_service,
 )
@@ -113,6 +112,7 @@ from app.services.question_generation import (
     InsufficientSource,
 )
 from app.services.question_safety import QuestionReview, ReviewVerdict
+from app.services.subject_classifier import classify_subject_from_text
 
 logger = logging.getLogger(__name__)
 
