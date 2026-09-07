@@ -72,13 +72,26 @@ class ScreenTimeService {
       // We catch and swallow to maintain stability.
     }
     await _resetExpiredWeeklyBalance(prefs, suffix);
-    final availableMinutes = prefs.getInt('$_keyAvailableMinutes$suffix') ?? 0;
-    final consumedMinutes = prefs.getInt('$_keyConsumedMinutes$suffix') ?? 0;
+    int availableMinutes = prefs.getInt('$_keyAvailableMinutes$suffix') ?? 0;
+    int consumedMinutes = prefs.getInt('$_keyConsumedMinutes$suffix') ?? 0;
     final totalEarnedMinutes =
         prefs.getInt('$_keyTotalEarnedMinutes$suffix') ?? 0;
     final lastKnownXp = prefs.getInt('$_keyLastKnownXp$suffix') ?? 0;
     final lastSyncMs = prefs.getInt('$_keyLastSyncTime$suffix') ?? 0;
-    final consumedToday = prefs.getInt('$_keyConsumedToday$suffix') ?? 0;
+    int consumedToday = prefs.getInt('$_keyConsumedToday$suffix') ?? 0;
+
+    if (Platform.isIOS) {
+      final nativeMinutes = await getIOSAvailableMinutes();
+      if (nativeMinutes != null && nativeMinutes < availableMinutes) {
+        final consumedDelta = availableMinutes - nativeMinutes;
+        availableMinutes = nativeMinutes;
+        consumedMinutes += consumedDelta;
+        consumedToday += consumedDelta;
+        await prefs.setInt('$_keyAvailableMinutes$suffix', availableMinutes);
+        await prefs.setInt('$_keyConsumedMinutes$suffix', consumedMinutes);
+        await prefs.setInt('$_keyConsumedToday$suffix', consumedToday);
+      }
+    }
 
     return ScreenTimeWallet(
       studentId: userId ?? '',
@@ -359,6 +372,16 @@ class ScreenTimeService {
     try {
       await _channel.invokeMethod<void>('reapplyShields');
     } catch (_) {}
+  }
+
+  /// Fetches the remaining available minutes cached on iOS by ScreenTimeManager.
+  Future<int?> getIOSAvailableMinutes() async {
+    if (!Platform.isIOS) return null;
+    try {
+      return await _channel.invokeMethod<int>('getAvailableMinutes');
+    } catch (_) {
+      return null;
+    }
   }
 
   // MARK: - Notifications (cross-platform)

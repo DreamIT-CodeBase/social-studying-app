@@ -16,6 +16,16 @@ import DeviceActivity
 
 #if canImport(SwiftUI)
 import SwiftUI
+#if canImport(DeviceActivity)
+@available(iOS 16.0, *)
+extension DeviceActivityName {
+  static let dailyMonitoring = DeviceActivityName("ai.socialstudying.screentime.daily")
+}
+
+@available(iOS 16.0, *)
+extension DeviceActivityEvent.Name {
+  static let socialTimeExhausted = DeviceActivityEvent.Name("ai.socialstudying.screentime.exhausted")
+}
 #endif
 
 // MARK: - ScreenTimeManager
@@ -192,7 +202,7 @@ import SwiftUI
   /// Safe to call from AppDelegate, scene delegate, and the extension.
   @objc func reapplyShields() {
     let minutes = userDefaults.integer(forKey: availableMinutesKey)
-    let enabled = userDefaults.bool(forKey: blockingEnabledKey)
+    let enabled = (userDefaults.object(forKey: blockingEnabledKey) as? Bool) ?? true
     if #available(iOS 16.0, *) {
       #if canImport(ManagedSettings) && canImport(FamilyControls)
       applyShieldsInternal(availableMinutes: minutes, enableBlocking: enabled)
@@ -206,30 +216,63 @@ import SwiftUI
     let store = managedStore
 
     guard enableBlocking else {
-      // Blocking turned off — remove all shields
+      // Blocking turned off — remove all shields and stop monitoring
       store.shield.applications = nil
       store.shield.applicationCategories = nil
       store.shield.webDomains = nil
+      #if canImport(DeviceActivity)
+      DeviceActivityCenter().stopMonitoring([.dailyMonitoring])
+      #endif
+      return
+    }
+
+    guard let selection = loadSelection(), hasSelectedApps() else {
+      // No apps selected yet — remove shields
+      store.shield.applications = nil
+      store.shield.applicationCategories = nil
+      store.shield.webDomains = nil
+      #if canImport(DeviceActivity)
+      DeviceActivityCenter().stopMonitoring([.dailyMonitoring])
+      #endif
       return
     }
 
     if availableMinutes <= 0 {
-      // Time exhausted — apply all configured shields
-      guard let selection = loadSelection(), hasSelectedApps() else {
-        // No apps selected yet — remove shields
-        store.shield.applications = nil
-        store.shield.applicationCategories = nil
-        store.shield.webDomains = nil
-        return
-      }
+      // Time exhausted — stop monitoring and apply all configured shields immediately
+      #if canImport(DeviceActivity)
+      DeviceActivityCenter().stopMonitoring([.dailyMonitoring])
+      #endif
       store.shield.applications        = selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
       store.shield.webDomains          = selection.webDomainTokens.isEmpty   ? nil : selection.webDomainTokens
       store.shield.applicationCategories = selection.categoryTokens.isEmpty   ? nil : .specific(selection.categoryTokens)
     } else {
-      // Time available — remove shields
+      // Time available — remove shields and schedule threshold monitoring
       store.shield.applications = nil
       store.shield.applicationCategories = nil
       store.shield.webDomains = nil
+
+      #if canImport(DeviceActivity)
+      let schedule = DeviceActivitySchedule(
+        intervalStart: DateComponents(hour: 0, minute: 0, second: 0),
+        intervalEnd: DateComponents(hour: 23, minute: 59, second: 59),
+        repeats: true
+      )
+      let event = DeviceActivityEvent(
+        applications: selection.applicationTokens,
+        categories: selection.categoryTokens,
+        webDomains: selection.webDomainTokens,
+        threshold: DateComponents(minute: max(1, availableMinutes))
+      )
+      do {
+        try DeviceActivityCenter().startMonitoring(
+          .dailyMonitoring,
+          during: schedule,
+          events: [.socialTimeExhausted: event]
+        )
+      } catch {
+        NSLog("[ScreenTimeManager] Failed to start DeviceActivity monitoring: %@", error.localizedDescription)
+      }
+      #endif
     }
     #endif
   }

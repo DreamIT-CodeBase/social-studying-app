@@ -154,7 +154,7 @@ class IOSPermissionSetupScreen extends ConsumerWidget {
       iconColor: Color(0xFFEF4444),
       title: 'Choose Apps\nto Shield',
       subtitle:
-          'Pick the social media apps (Instagram, TikTok, YouTube, etc.) that should be blocked when study time is exhausted.',
+          'On iPhone, Apple locks apps with the official Screen Time Shield when time expires. Tap below to choose which apps to restrict.',
       primaryLabel: 'Choose Apps',
     ),
     _StepData(
@@ -171,7 +171,7 @@ class IOSPermissionSetupScreen extends ConsumerWidget {
       iconColor: Color(0xFF23E6A0),
       title: 'All Set!',
       subtitle:
-          'Social Studying will now shield your selected apps whenever study minutes drop to zero. Complete a study session to unlock them.',
+          'Social Studying will now enforce your limits. When screen time runs out, Apple displays the Screen Time Shield over social media. Complete study sessions to unlock more time!',
       primaryLabel: 'Go to App',
     ),
   ];
@@ -265,11 +265,12 @@ class IOSPermissionSetupScreen extends ConsumerWidget {
                 ),
               ],
               if (stepIndex == 2) ...[
-                const SizedBox(height: Spacing.md),
+                const SizedBox(height: Spacing.sm),
                 _StatusBadge(
                   label: 'Apps Selected',
                   status: state.hasSelectedApps ? 'approved' : 'notDetermined',
                 ),
+                const _CoveredAppsCard(),
               ],
 
               // ── Error message ──────────────────────────────────────────────
@@ -545,6 +546,125 @@ class _ErrorCard extends StatelessWidget {
                 fontSize: 12.5,
                 height: 1.4,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CoveredAppsCard extends StatelessWidget {
+  const _CoveredAppsCard();
+
+  static const _apps = [
+    'Instagram',
+    'YouTube',
+    'Snapchat',
+    'Facebook',
+    'X (Twitter)',
+    'Reddit',
+    'TikTok',
+    'Pinterest',
+    'Threads',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: Spacing.sm),
+      padding: const EdgeInsets.all(Spacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(14),
+        border:
+            Border.all(color: AppColors.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3674FF).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'India & US Popular Apps',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF3674FF),
+                  ),
+                ),
+              ),
+              const Spacer(),
+              const Icon(Icons.flash_on_rounded,
+                  size: 14, color: Color(0xFFF59E0B)),
+              const SizedBox(width: 2),
+              const Text(
+                '1-Tap Shortcut',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFF59E0B),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Spacing.sm),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: _apps
+                .map(
+                  (app) => Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: AppColors.outlineVariant.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Text(
+                      app,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: Spacing.sm),
+          Container(
+            padding: const EdgeInsets.all(Spacing.xs + 2),
+            decoration: BoxDecoration(
+              color: Colors.blue.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.touch_app_rounded,
+                    size: 16, color: Color(0xFF3674FF)),
+                SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'In the Apple popup, switch to Categories and tap Social. This automatically covers all of these apps at once!',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: Color(0xFF1E3A8A),
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

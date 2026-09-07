@@ -617,6 +617,35 @@ class _ScreenTimeSettingsScreenState
               'Tap below to open Apple’s native app picker and choose which social networking apps, categories, or websites to lock.',
               style: TextStyle(fontSize: 13, color: AppColors.onSurfaceVariant),
             ),
+            const SizedBox(height: Spacing.sm),
+            Container(
+              padding: const EdgeInsets.all(Spacing.sm),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: Colors.blue.withValues(alpha: 0.2),
+                ),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.lightbulb_outline_rounded,
+                      size: 16, color: Color(0xFF3674FF)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '1-Tap Shortcut: Under "Categories", select "Social" to shield all top apps in India & US (Instagram, YouTube, TikTok, Snapchat, Facebook, X, Reddit) at once!',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF1E3A8A),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: Spacing.md),
             OutlinedButton.icon(
               onPressed: () async {

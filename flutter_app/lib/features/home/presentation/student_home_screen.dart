@@ -29,6 +29,7 @@ import 'package:social_study_app/shared/services/session_persistence_service.dar
 import 'package:social_study_app/features/screen_time/services/telemetry_service.dart';
 import 'package:social_study_app/features/home/presentation/widgets/subject_switcher_bar.dart';
 import 'package:social_study_app/features/home/providers/self_study_subject_providers.dart';
+import 'package:social_study_app/features/screen_time/providers/screen_time_providers.dart';
 
 final studentHomeTabProvider = StateProvider<int>((ref) {
   final saved = SessionPersistenceService.instance.getTabSync() ?? 0;
@@ -78,6 +79,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
       // Admins can add this student while the app is backgrounded. Refresh the
       // server profile so the switcher merges that membership with Self Study.
       ref.read(authNotifierProvider.notifier).refresh();
+      ref.read(screenTimeNotifierProvider.notifier).refreshWallet();
     }
   }
 

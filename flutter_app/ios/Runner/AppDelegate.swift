@@ -120,6 +120,13 @@ import FamilyControls
         ScreenTimeManager.shared.reapplyShields()
         result(true)
 
+      case "getAvailableMinutes":
+        if let val = ScreenTimeManager.shared.userDefaults.object(forKey: ScreenTimeManager.shared.availableMinutesKey) as? Int {
+          result(val)
+        } else {
+          result(nil)
+        }
+
       // ── Permission Status ──────────────────────────────────────────────────
       case "getIOSPermissionStatus":
         let authorized  = ScreenTimeManager.shared.isAuthorized()
