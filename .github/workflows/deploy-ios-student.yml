@@ -118,6 +118,7 @@ jobs:
           CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
           STUDENT_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
           ADMIN_PROFILE_BASE64: ${{ secrets.IOS_ADMIN_PROVISIONING_PROFILE_BASE64 }}
+          EXTENSION_PROFILE_BASE64: ${{ secrets.IOS_SCREENTIME_PROVISIONING_PROFILE_BASE64 }}
           KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
@@ -180,6 +181,21 @@ jobs:
           cp "$profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
           echo "IOS_PROFILE_NAME=$profile_name" >> "$GITHUB_ENV"
 
+          if [[ "$APP_FLAVOR" == "student" && -n "$EXTENSION_PROFILE_BASE64" ]]; then
+            echo "Installing ScreenTimeExtension provisioning profile..."
+            ext_profile_path="$RUNNER_TEMP/extension.mobileprovision"
+            printf '%s' "$EXTENSION_PROFILE_BASE64" | tr -d '\r\n ' | base64 -D > "$ext_profile_path"
+            if [[ -s "$ext_profile_path" ]]; then
+              ext_profile_plist="$RUNNER_TEMP/ext-profile.plist"
+              security cms -D -i "$ext_profile_path" > "$ext_profile_plist"
+              ext_profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$ext_profile_plist")
+              ext_profile_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$ext_profile_plist")
+              cp "$ext_profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$ext_profile_uuid.mobileprovision"
+              echo "IOS_EXT_PROFILE_NAME=$ext_profile_name" >> "$GITHUB_ENV"
+              echo "Installed extension profile '$ext_profile_name' ($ext_profile_uuid)"
+            fi
+          fi
+
       - name: Create App Store export configuration
         if: env.SKIP_BUILD != 'true'
         run: |
@@ -190,6 +206,9 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :uploadSymbols bool true' "$RUNNER_TEMP/ExportOptions.plist"
           /usr/libexec/PlistBuddy -c 'Add :provisioningProfiles dict' "$RUNNER_TEMP/ExportOptions.plist"
           /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$APP_BUNDLE_ID string $IOS_PROFILE_NAME" "$RUNNER_TEMP/ExportOptions.plist"
+          if [[ -n "${IOS_EXT_PROFILE_NAME:-}" ]]; then
+            /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$APP_BUNDLE_ID.ScreenTimeExtension string $IOS_EXT_PROFILE_NAME" "$RUNNER_TEMP/ExportOptions.plist"
+          fi
 
       - name: Build signed IPA
         if: env.SKIP_BUILD != 'true'
@@ -209,6 +228,13 @@ jobs:
           } > "$signing_config"
 
           build_number=$((10000 + GITHUB_RUN_NUMBER))
+
+          if [[ -n "${IOS_EXT_PROFILE_NAME:-}" ]]; then
+            # Force Manual signing and inject the extension provisioning profile specifier into the pbxproj
+            sed -i '' "s/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g" ios/Runner.xcodeproj/project.pbxproj
+            sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = \"ai.socialstudying.app.ScreenTimeExtension\";/PRODUCT_BUNDLE_IDENTIFIER = \"ai.socialstudying.app.ScreenTimeExtension\"; PROVISIONING_PROFILE_SPECIFIER = \"$IOS_EXT_PROFILE_NAME\";/g" ios/Runner.xcodeproj/project.pbxproj
+          fi
+
           flutter build ipa \
             --verbose \
             --release \
