@@ -229,6 +229,13 @@ jobs:
 
           build_number=$((10000 + GITHUB_RUN_NUMBER))
 
+          # For admin flavor, remove ScreenTimeExtension from Runner target dependencies and embed phase
+          if [[ "$APP_FLAVOR" == "admin" ]]; then
+            sed -i '' '/STX50000000000000000001/d' ios/Runner.xcodeproj/project.pbxproj
+            sed -i '' '/STXD0000000000000000001/d' ios/Runner.xcodeproj/project.pbxproj
+            echo "Removed ScreenTimeExtension dependency and embed phase for admin build"
+          fi
+
           # Inject the extension provisioning profile specifier into the pbxproj build settings
           if [[ -n "${IOS_EXT_PROFILE_NAME:-}" ]]; then
             EXT_PROFILE_ESCAPED=$(echo "$IOS_EXT_PROFILE_NAME" | sed 's/[&/\]/\\&/g')
