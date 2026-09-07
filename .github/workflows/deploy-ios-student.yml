@@ -231,8 +231,14 @@ jobs:
 
           # For admin flavor, remove ScreenTimeExtension from Runner target dependencies and embed phase
           if [[ "$APP_FLAVOR" == "admin" ]]; then
-            sed -i '' '/STX50000000000000000001/d' ios/Runner.xcodeproj/project.pbxproj
-            sed -i '' '/STXD0000000000000000001/d' ios/Runner.xcodeproj/project.pbxproj
+            python3 -c "
+with open('ios/Runner.xcodeproj/project.pbxproj', 'r') as f:
+    s = f.read()
+s = s.replace('\t\t\t\tSTX50000000000000000001 /* Embed App Extensions */,\n', '')
+s = s.replace('\t\t\t\tSTXD0000000000000000001 /* PBXTargetDependency */,\n', '')
+with open('ios/Runner.xcodeproj/project.pbxproj', 'w') as f:
+    f.write(s)
+"
             echo "Removed ScreenTimeExtension dependency and embed phase for admin build"
           fi
 
