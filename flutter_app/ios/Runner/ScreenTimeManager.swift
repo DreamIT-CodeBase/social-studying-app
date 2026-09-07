@@ -216,18 +216,15 @@ import SwiftUI
     if availableMinutes <= 0 {
       // Time exhausted — apply all configured shields
       guard let selection = loadSelection(), hasSelectedApps() else {
-        // No apps selected yet; shield the Social Networking category as a safe default
-        store.shield.applicationCategories = .specific([.socialNetworking])
+        // No apps selected yet — remove shields
+        store.shield.applications = nil
+        store.shield.applicationCategories = nil
+        store.shield.webDomains = nil
         return
       }
       store.shield.applications        = selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
       store.shield.webDomains          = selection.webDomainTokens.isEmpty   ? nil : selection.webDomainTokens
-      if !selection.categoryTokens.isEmpty {
-        store.shield.applicationCategories = .specific(selection.categoryTokens)
-      } else {
-        // Always shield Social Networking category even if only specific apps were chosen
-        store.shield.applicationCategories = .specific([.socialNetworking])
-      }
+      store.shield.applicationCategories = selection.categoryTokens.isEmpty   ? nil : .specific(selection.categoryTokens)
     } else {
       // Time available — remove shields
       store.shield.applications = nil

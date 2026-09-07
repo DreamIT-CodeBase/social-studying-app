@@ -131,7 +131,8 @@ class SubscriptionNotifier extends StateNotifier<SubscriptionState> {
       state = state.copyWith(isCheckingOut: false);
 
       final uri = Uri.parse(session.checkoutUrl);
-      if (await canLaunchUrl(uri) || defaultTargetPlatform != TargetPlatform.windows) {
+      if (await canLaunchUrl(uri) ||
+          defaultTargetPlatform != TargetPlatform.windows) {
         final launched = await launchUrl(
           uri,
           mode: LaunchMode.externalApplication,
@@ -139,7 +140,8 @@ class SubscriptionNotifier extends StateNotifier<SubscriptionState> {
         return launched;
       } else {
         state = state.copyWith(
-          error: 'Could not launch browser for checkout URL: ${session.checkoutUrl}',
+          error:
+              'Could not launch browser for checkout URL: ${session.checkoutUrl}',
         );
         return false;
       }

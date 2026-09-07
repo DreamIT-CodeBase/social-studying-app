@@ -29,9 +29,7 @@ class _PaymentSuccessScreenState extends ConsumerState<PaymentSuccessScreen> {
   Future<void> _verifyPayment() async {
     final id = widget.sessionId;
     if (id != null && id.isNotEmpty) {
-      await ref
-          .read(subscriptionNotifierProvider.notifier)
-          .verifySession(id);
+      await ref.read(subscriptionNotifierProvider.notifier).verifySession(id);
     } else {
       // Refresh auth anyway to pick up background webhook promotions
       await ref.read(authNotifierProvider.notifier).refresh();
@@ -117,8 +115,7 @@ class _PaymentSuccessScreenState extends ConsumerState<PaymentSuccessScreen> {
                           decoration: BoxDecoration(
                             color: Theme.of(context).cardColor,
                             borderRadius: BorderRadius.circular(16),
-                            border:
-                                Border.all(color: AppColors.outlineVariant),
+                            border: Border.all(color: AppColors.outlineVariant),
                           ),
                           child: Column(
                             children: [
@@ -154,8 +151,7 @@ class _PaymentSuccessScreenState extends ConsumerState<PaymentSuccessScreen> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 16),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),

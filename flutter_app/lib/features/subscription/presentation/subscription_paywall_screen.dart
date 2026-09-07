@@ -129,15 +129,15 @@ class SubscriptionPaywallScreen extends ConsumerWidget {
                       badge: 'SAVE 17% • 2 MONTHS FREE',
                       price: r'$190 / year',
                       subtitle: r'Billed annually ($15.83/mo). Best value.',
-                      isSelected:
-                          state.selectedPlan == SubscriptionPlan.annual,
+                      isSelected: state.selectedPlan == SubscriptionPlan.annual,
                       onTap: () => notifier.selectPlan(SubscriptionPlan.annual),
                     ),
                     const SizedBox(height: Spacing.sm),
                     _PlanCard(
                       title: 'Monthly Plan',
                       price: r'$19 / month',
-                      subtitle: 'Flexible month-to-month billing. Cancel anytime.',
+                      subtitle:
+                          'Flexible month-to-month billing. Cancel anytime.',
                       isSelected:
                           state.selectedPlan == SubscriptionPlan.monthly,
                       onTap: () =>
@@ -329,8 +329,7 @@ class _PlanCard extends StatelessWidget {
             if (badge != null) ...[
               Container(
                 margin: const EdgeInsets.only(bottom: 6),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: AppColors.tertiary,
                   borderRadius: BorderRadius.circular(6),

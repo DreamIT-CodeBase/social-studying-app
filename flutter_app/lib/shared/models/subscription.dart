@@ -73,7 +73,8 @@ class PlanOption {
 
   String get formattedPrice {
     final dollars = (amount / 100).toStringAsFixed(amount % 100 == 0 ? 0 : 2);
-    final sym = currency.toLowerCase() == 'usd' ? '\$' : '${currency.toUpperCase()} ';
+    final sym =
+        currency.toLowerCase() == 'usd' ? '\$' : '${currency.toUpperCase()} ';
     return '$sym$dollars / $interval';
   }
 }
@@ -155,7 +156,8 @@ class SubscriptionMeResponse {
                 json['subscription'] as Map<String, dynamic>)
             : null,
         availablePlans: (json['available_plans'] as List<dynamic>?)
-                ?.map((item) => PlanOption.fromJson(item as Map<String, dynamic>))
+                ?.map(
+                    (item) => PlanOption.fromJson(item as Map<String, dynamic>))
                 .toList() ??
             const [],
       );

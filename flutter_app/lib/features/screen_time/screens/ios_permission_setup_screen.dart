@@ -7,8 +7,8 @@ import 'package:social_study_app/features/screen_time/services/screen_time_servi
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
-final iosPermissionSetupProvider =
-    StateNotifierProvider.autoDispose<IOSPermissionSetupNotifier, IOSPermissionSetupState>(
+final iosPermissionSetupProvider = StateNotifierProvider.autoDispose<
+    IOSPermissionSetupNotifier, IOSPermissionSetupState>(
   (ref) => IOSPermissionSetupNotifier(),
 );
 
@@ -51,7 +51,8 @@ class IOSPermissionSetupState {
       );
 }
 
-class IOSPermissionSetupNotifier extends StateNotifier<IOSPermissionSetupState> {
+class IOSPermissionSetupNotifier
+    extends StateNotifier<IOSPermissionSetupState> {
   IOSPermissionSetupNotifier() : super(const IOSPermissionSetupState()) {
     _refresh();
   }
@@ -115,7 +116,8 @@ class IOSPermissionSetupNotifier extends StateNotifier<IOSPermissionSetupState> 
   }
 
   void nextStep() => state = state.copyWith(step: state.step + 1);
-  void prevStep() => state = state.copyWith(step: (state.step - 1).clamp(0, 10));
+  void prevStep() =>
+      state = state.copyWith(step: (state.step - 1).clamp(0, 10));
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────

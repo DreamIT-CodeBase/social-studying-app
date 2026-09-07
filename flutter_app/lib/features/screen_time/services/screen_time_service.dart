@@ -277,7 +277,8 @@ class ScreenTimeService {
   Future<bool> isScreenTimeAuthorized() async {
     if (!Platform.isIOS) return false;
     try {
-      return await _channel.invokeMethod<bool>('isScreenTimeAuthorized') ?? false;
+      return await _channel.invokeMethod<bool>('isScreenTimeAuthorized') ??
+          false;
     } catch (_) {
       return false;
     }
@@ -322,7 +323,8 @@ class ScreenTimeService {
   Future<bool> presentFamilyActivityPicker() async {
     if (!Platform.isIOS) return false;
     try {
-      return await _channel.invokeMethod<bool>('presentFamilyActivityPicker') ?? false;
+      return await _channel.invokeMethod<bool>('presentFamilyActivityPicker') ??
+          false;
     } catch (_) {
       return false;
     }
@@ -331,7 +333,8 @@ class ScreenTimeService {
   Future<bool> hasSelectedBlockedApps() async {
     if (!Platform.isIOS) return false;
     try {
-      return await _channel.invokeMethod<bool>('hasSelectedBlockedApps') ?? false;
+      return await _channel.invokeMethod<bool>('hasSelectedBlockedApps') ??
+          false;
     } catch (_) {
       return false;
     }
@@ -377,7 +380,8 @@ class ScreenTimeService {
   Future<bool> isAccessibilityServiceEnabled() async {
     if (!Platform.isAndroid) return false;
     try {
-      return await _channel.invokeMethod<bool>('isAccessibilityEnabled') ?? false;
+      return await _channel.invokeMethod<bool>('isAccessibilityEnabled') ??
+          false;
     } catch (_) {
       return false;
     }
