@@ -440,6 +440,10 @@ async def test_handle_moderation_log_write_failure_does_not_crash():
             "app.workers.document_ingestion.content_safety.analyze_extracted_text",
             AsyncMock(return_value=_clean_verdict()),
         ),
+        patch(
+            "app.workers.document_ingestion.publish_topic_message",
+            AsyncMock(),
+        ),
     ):
         await document_ingestion._handle(msg)  # must not raise
 
