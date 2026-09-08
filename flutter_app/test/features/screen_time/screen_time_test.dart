@@ -222,8 +222,10 @@ void main() {
   });
 
   group('Self-Study Screen Time Initialization', () {
-    test('effectiveStudentMemberships resolves personal workspace for empty memberships', () {
-      final selfWorkspaceId = 'wsp_self_user_999';
+    test(
+        'effectiveStudentMemberships resolves personal workspace for empty memberships',
+        () {
+      const selfWorkspaceId = 'wsp_self_user_999';
       expect(selfWorkspaceId, startsWith('wsp_self_'));
     });
   });

@@ -42,8 +42,8 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
       return ScreenTimeWallet.initial();
     }
 
-    final workspaceId = ref.watch(activeWorkspaceIdProvider) ??
-        memberships.first.workspaceId;
+    final workspaceId =
+        ref.watch(activeWorkspaceIdProvider) ?? memberships.first.workspaceId;
     final key = (workspaceId: workspaceId, userId: user.id);
 
     await _service.setCurrentUserId(user.id);
@@ -75,10 +75,35 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
   void _startPeriodicShieldSync() {
     _shieldSyncTimer?.cancel();
-    _shieldSyncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+    // Sync every 60 seconds so the used-time meter updates minute-by-minute.
+    _shieldSyncTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
       _service.reapplyShields();
+      // Re-read wallet from native side to pick up consumption changes
+      // made by the DeviceActivity extension in the background.
+      await _refreshWalletFromNative();
     });
     ref.onDispose(() => _shieldSyncTimer?.cancel());
+  }
+
+  /// Reads the latest wallet from native iOS (shared UserDefaults) and
+  /// updates the Flutter state so the used-time meter reflects actual usage.
+  Future<void> _refreshWalletFromNative() async {
+    final authState = ref.read(authNotifierProvider).valueOrNull;
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    if (user == null) return;
+    try {
+      final wallet = await _service.loadWallet(user.id);
+      final current = state.valueOrNull;
+      // Only update if consumption actually changed to avoid unnecessary rebuilds
+      if (current == null ||
+          current.availableMinutes != wallet.availableMinutes ||
+          current.consumedToday != wallet.consumedToday) {
+        state = AsyncData(wallet);
+      }
+    } catch (_) {
+      // Swallowed: best effort refresh
+    }
   }
 
   Future<ScreenTimeWallet> _syncWalletAndSettings(
@@ -134,8 +159,8 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
     final memberships = effectiveStudentMemberships(user);
     if (memberships.isEmpty) return;
-    final workspaceId = ref.read(activeWorkspaceIdProvider) ??
-        memberships.first.workspaceId;
+    final workspaceId =
+        ref.read(activeWorkspaceIdProvider) ?? memberships.first.workspaceId;
 
     state = await AsyncValue.guard(() async {
       final wallet = await _syncWalletAndSettings(user.id, workspaceId);
@@ -152,8 +177,8 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
     final memberships = effectiveStudentMemberships(user);
     if (memberships.isEmpty) return;
-    final workspaceId = ref.read(activeWorkspaceIdProvider) ??
-        memberships.first.workspaceId;
+    final workspaceId =
+        ref.read(activeWorkspaceIdProvider) ?? memberships.first.workspaceId;
     final currentWallet = state.valueOrNull;
 
     try {
@@ -199,8 +224,8 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
     final memberships = effectiveStudentMemberships(user);
     if (memberships.isEmpty) return;
-    final workspaceId = ref.read(activeWorkspaceIdProvider) ??
-        memberships.first.workspaceId;
+    final workspaceId =
+        ref.read(activeWorkspaceIdProvider) ?? memberships.first.workspaceId;
 
     try {
       final updatedSettings =
@@ -225,8 +250,8 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
     final memberships = effectiveStudentMemberships(user);
     if (memberships.isEmpty) return;
-    final workspaceId = ref.read(activeWorkspaceIdProvider) ??
-        memberships.first.workspaceId;
+    final workspaceId =
+        ref.read(activeWorkspaceIdProvider) ?? memberships.first.workspaceId;
 
     try {
       final updatedSettings =
@@ -248,8 +273,8 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
     final memberships = effectiveStudentMemberships(user);
     if (memberships.isEmpty) return;
-    final workspaceId = ref.read(activeWorkspaceIdProvider) ??
-        memberships.first.workspaceId;
+    final workspaceId =
+        ref.read(activeWorkspaceIdProvider) ?? memberships.first.workspaceId;
 
     try {
       final updatedSettings =
@@ -271,8 +296,8 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
     final memberships = effectiveStudentMemberships(user);
     if (memberships.isEmpty) return;
-    final workspaceId = ref.read(activeWorkspaceIdProvider) ??
-        memberships.first.workspaceId;
+    final workspaceId =
+        ref.read(activeWorkspaceIdProvider) ?? memberships.first.workspaceId;
 
     try {
       final serverWallet =

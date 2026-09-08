@@ -81,6 +81,7 @@ class ScreenTimeService {
     int consumedToday = prefs.getInt('$_keyConsumedToday$suffix') ?? 0;
 
     if (Platform.isIOS) {
+      // Read native-side available minutes (may have been set to 0 by extension)
       final nativeMinutes = await getIOSAvailableMinutes();
       if (nativeMinutes != null && nativeMinutes < availableMinutes) {
         final consumedDelta = availableMinutes - nativeMinutes;
@@ -91,6 +92,22 @@ class ScreenTimeService {
         await prefs.setInt('$_keyConsumedMinutes$suffix', consumedMinutes);
         await prefs.setInt('$_keyConsumedToday$suffix', consumedToday);
       }
+
+      // Check if shields are active (time fully exhausted by extension)
+      final shieldsActive = await areIOSShieldsActive();
+      if (shieldsActive && availableMinutes > 0) {
+        // Extension says time is up but our local wallet disagrees —
+        // trust the extension since it has the real usage data.
+        consumedToday += availableMinutes;
+        consumedMinutes += availableMinutes;
+        availableMinutes = 0;
+        await prefs.setInt('$_keyAvailableMinutes$suffix', 0);
+        await prefs.setInt('$_keyConsumedMinutes$suffix', consumedMinutes);
+        await prefs.setInt('$_keyConsumedToday$suffix', consumedToday);
+      }
+
+      // Write consumed_today back to native for display consistency
+      await setIOSConsumedToday(consumedToday);
     }
 
     return ScreenTimeWallet(
@@ -389,6 +406,36 @@ class ScreenTimeService {
       return await _channel.invokeMethod<int>('getAvailableMinutes');
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Fetches the consumed-today value from iOS native ScreenTimeManager.
+  Future<int> getIOSConsumedToday() async {
+    if (!Platform.isIOS) return 0;
+    try {
+      return await _channel.invokeMethod<int>('getConsumedToday') ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Writes consumed-today back to iOS native for display consistency.
+  Future<void> setIOSConsumedToday(int minutes) async {
+    if (!Platform.isIOS) return;
+    try {
+      await _channel.invokeMethod<void>('setConsumedToday', {
+        'minutes': minutes,
+      });
+    } catch (_) {}
+  }
+
+  /// Returns true if iOS shields are currently active (blocking apps).
+  Future<bool> areIOSShieldsActive() async {
+    if (!Platform.isIOS) return false;
+    try {
+      return await _channel.invokeMethod<bool>('areShieldsActive') ?? false;
+    } catch (_) {
+      return false;
     }
   }
 

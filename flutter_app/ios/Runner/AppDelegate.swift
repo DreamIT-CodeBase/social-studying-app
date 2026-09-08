@@ -25,6 +25,12 @@ import FamilyControls
   override func applicationDidBecomeActive(_ application: UIApplication) {
     super.applicationDidBecomeActive(application)
     ScreenTimeManager.shared.reapplyShields()
+    ScreenTimeManager.shared.startForegroundTracking()
+  }
+
+  override func applicationWillResignActive(_ application: UIApplication) {
+    super.applicationWillResignActive(application)
+    ScreenTimeManager.shared.stopForegroundTracking()
   }
 
   override func application(
@@ -122,6 +128,22 @@ import FamilyControls
         } else {
           result(nil)
         }
+
+      // ── Consumed Minutes (NEW) ─────────────────────────────────────────────
+      case "getConsumedToday":
+        result(ScreenTimeManager.shared.getConsumedToday())
+
+      case "setConsumedToday":
+        if let args = call.arguments as? [String: Any],
+           let minutes = args["minutes"] as? Int {
+          ScreenTimeManager.shared.setConsumedToday(minutes)
+          result(true)
+        } else {
+          result(FlutterError(code: "INVALID_ARGS", message: "setConsumedToday requires 'minutes' (Int)", details: nil))
+        }
+
+      case "areShieldsActive":
+        result(ScreenTimeManager.shared.areShieldsActive())
 
       // ── Permission Status ──────────────────────────────────────────────────
       case "getIOSPermissionStatus":

@@ -40,6 +40,11 @@ extension DeviceActivityEvent.Name {
   let selectionStorageKey = "saved_family_activity_selection"
   let blockingEnabledKey  = "is_screen_time_blocking_enabled"
   let availableMinutesKey = "cached_available_minutes"
+  let consumedTodayKey    = "ios_consumed_today_minutes"
+  let shieldsActiveKey    = "shields_are_active"
+  let lastShieldApplyKey  = "last_shield_apply_timestamp"
+  let trackingStartKey    = "foreground_tracking_start_time"
+  let lastDeductionKey    = "last_deduction_timestamp"
 
   // Named store — MUST match the name used in the DeviceActivityMonitor
   // extension. It keeps the policy active when the Flutter process exits.
@@ -55,6 +60,11 @@ extension DeviceActivityEvent.Name {
   var userDefaults: UserDefaults {
     UserDefaults(suiteName: appGroupIdentifier) ?? UserDefaults.standard
   }
+
+  // Foreground usage tracking timer — decrements available minutes
+  // while the app is in the foreground and a blocked app was recently used.
+  private var usageTrackingTimer: Timer?
+  private var isTrackingUsage = false
 
   private override init() {
     super.init()
@@ -190,6 +200,9 @@ extension DeviceActivityEvent.Name {
     userDefaults.set(availableMinutes,  forKey: availableMinutesKey)
     userDefaults.synchronize()
 
+    NSLog("[ScreenTimeManager] syncScreenTimeBalance — available=%d, blocking=%@",
+          availableMinutes, enableBlocking ? "YES" : "NO")
+
     if #available(iOS 16.0, *) {
       #if canImport(ManagedSettings) && canImport(FamilyControls)
       applyShieldsInternal(availableMinutes: availableMinutes, enableBlocking: enableBlocking)
@@ -202,6 +215,10 @@ extension DeviceActivityEvent.Name {
   @objc func reapplyShields() {
     let minutes = userDefaults.integer(forKey: availableMinutesKey)
     let enabled = (userDefaults.object(forKey: blockingEnabledKey) as? Bool) ?? true
+
+    NSLog("[ScreenTimeManager] reapplyShields — available=%d, blocking=%@",
+          minutes, enabled ? "YES" : "NO")
+
     if #available(iOS 16.0, *) {
       #if canImport(ManagedSettings) && canImport(FamilyControls)
       applyShieldsInternal(availableMinutes: minutes, enableBlocking: enabled)
@@ -216,29 +233,40 @@ extension DeviceActivityEvent.Name {
 
     guard enableBlocking else {
       clearShieldsAndStopMonitoring(from: store)
+      userDefaults.set(false, forKey: shieldsActiveKey)
+      userDefaults.synchronize()
       return
     }
 
     guard let selection = loadSelection(), hasSelectedApps() else {
       clearShieldsAndStopMonitoring(from: store)
+      userDefaults.set(false, forKey: shieldsActiveKey)
+      userDefaults.synchronize()
       return
     }
 
     if availableMinutes <= 0 {
       // Time exhausted — stop monitoring and apply all configured shields immediately
+      NSLog("[ScreenTimeManager] TIME EXHAUSTED — applying shields NOW")
       #if canImport(DeviceActivity)
       DeviceActivityCenter().stopMonitoring([.dailyMonitoring])
       #endif
       applyShields(selection, to: store)
+      userDefaults.set(true, forKey: shieldsActiveKey)
+      userDefaults.set(Date().timeIntervalSince1970, forKey: lastShieldApplyKey)
+      userDefaults.synchronize()
     } else {
       // Time available — remove shields and schedule threshold monitoring
       clearShields(from: store)
+      userDefaults.set(false, forKey: shieldsActiveKey)
+      userDefaults.synchronize()
 
       #if canImport(DeviceActivity)
       let schedule = DeviceActivitySchedule(
         intervalStart: DateComponents(hour: 0, minute: 0, second: 0),
         intervalEnd: DateComponents(hour: 23, minute: 59, second: 59),
-        repeats: true
+        repeats: true,
+        warningTime: DateComponents(minute: 5)
       )
       let event = DeviceActivityEvent(
         applications: selection.applicationTokens,
@@ -256,8 +284,15 @@ extension DeviceActivityEvent.Name {
           during: schedule,
           events: [.socialTimeExhausted: event]
         )
+        NSLog("[ScreenTimeManager] DeviceActivity monitoring started — threshold=%d min", availableMinutes)
       } catch {
         NSLog("[ScreenTimeManager] Failed to start DeviceActivity monitoring: %@", error.localizedDescription)
+        // Fallback: if monitoring fails and minutes are low, apply shields defensively
+        if availableMinutes <= 1 {
+          applyShields(selection, to: store)
+          userDefaults.set(true, forKey: shieldsActiveKey)
+          userDefaults.synchronize()
+        }
       }
       #endif
     }
@@ -295,6 +330,72 @@ extension DeviceActivityEvent.Name {
     #if canImport(DeviceActivity)
     DeviceActivityCenter().stopMonitoring([.dailyMonitoring])
     #endif
+  }
+
+  // MARK: - Foreground Usage Tracking
+  //
+  // iOS does not allow apps to monitor foreground usage of other apps the
+  // way Android's Accessibility Service does. The DeviceActivityMonitor
+  // extension handles background enforcement.
+  //
+  // This timer runs ONLY while the Social Study app itself is foregrounded.
+  // Every 60 seconds it checks whether shields should be re-applied and
+  // decrements available minutes based on the extension's tracking.
+  // The primary purpose is to keep the Flutter UI meter updated.
+
+  @objc func startForegroundTracking() {
+    guard usageTrackingTimer == nil else { return }
+    NSLog("[ScreenTimeManager] startForegroundTracking")
+
+    // Immediately sync state
+    reapplyShields()
+    syncConsumedFromActivity()
+
+    // Start a timer that ticks every 30 seconds
+    usageTrackingTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+      guard let self = self else { return }
+      self.syncConsumedFromActivity()
+      self.reapplyShields()
+    }
+  }
+
+  @objc func stopForegroundTracking() {
+    NSLog("[ScreenTimeManager] stopForegroundTracking")
+    usageTrackingTimer?.invalidate()
+    usageTrackingTimer = nil
+  }
+
+  /// Reads the current available minutes from shared UserDefaults (which the
+  /// DeviceActivity extension may have set to 0) and computes consumed minutes
+  /// for the Flutter UI to display.
+  private func syncConsumedFromActivity() {
+    let originalAvailable = userDefaults.integer(forKey: availableMinutesKey)
+    let shieldsActive = userDefaults.bool(forKey: shieldsActiveKey)
+
+    // If the extension has set available to 0 and shields are active,
+    // the user's time is fully consumed.
+    if shieldsActive && originalAvailable <= 0 {
+      NSLog("[ScreenTimeManager] syncConsumedFromActivity — shields active, time fully consumed")
+    }
+  }
+
+  // MARK: - Consumed Minutes API (for Flutter)
+
+  /// Returns the current consumed-today value from App Group UserDefaults.
+  @objc func getConsumedToday() -> Int {
+    return userDefaults.integer(forKey: consumedTodayKey)
+  }
+
+  /// Sets consumed-today in the App Group UserDefaults (called from Flutter
+  /// after it computes consumption from its own wallet delta tracking).
+  @objc func setConsumedToday(_ minutes: Int) {
+    userDefaults.set(minutes, forKey: consumedTodayKey)
+    userDefaults.synchronize()
+  }
+
+  /// Returns whether shields are currently active (blocking apps).
+  @objc func areShieldsActive() -> Bool {
+    return userDefaults.bool(forKey: shieldsActiveKey)
   }
 
   // MARK: - Helpers
