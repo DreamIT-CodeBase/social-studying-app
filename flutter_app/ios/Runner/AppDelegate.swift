@@ -81,10 +81,6 @@ import FamilyControls
           }
         }
 
-      case "openScreenTimeSettings":
-        ScreenTimeManager.shared.openScreenTimeSettings()
-        result(nil)
-
       // ── App Picker ─────────────────────────────────────────────────────────
       case "presentFamilyActivityPicker":
         ScreenTimeManager.shared.presentAppPicker { success, error in

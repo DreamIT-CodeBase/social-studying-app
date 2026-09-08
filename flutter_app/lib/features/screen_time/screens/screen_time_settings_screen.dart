@@ -635,7 +635,7 @@ class _ScreenTimeSettingsScreenState
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '1-Tap Shortcut: Under "Categories", select "Social" to shield all top apps in India & US (Instagram, YouTube, TikTok, Snapchat, Facebook, X, Reddit) at once!',
+                      'Quick setup: choose the Social category to cover apps Apple classifies as social. Also select YouTube or any other app you want to block, because Apple controls category membership.',
                       style: TextStyle(
                         fontSize: 12,
                         color: Color(0xFF1E3A8A),

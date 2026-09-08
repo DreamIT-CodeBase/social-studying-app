@@ -91,13 +91,6 @@ class IOSPermissionSetupNotifier
     }
   }
 
-  Future<void> openScreenTimeSettings() async {
-    await _service.openScreenTimeSettings();
-    // Delay a little then re-check (user might have enabled in Settings)
-    await Future.delayed(const Duration(seconds: 3));
-    await _refresh();
-  }
-
   Future<void> openAppPicker() async {
     state = state.copyWith(isLoading: true, clearError: true);
     final success = await _service.presentFamilyActivityPicker();
@@ -147,7 +140,6 @@ class IOSPermissionSetupScreen extends ConsumerWidget {
       subtitle:
           'Apple\'s Screen Time API lets Social Studying shield distracting apps when study minutes run out. Tap below and approve the dialog.',
       primaryLabel: 'Enable Screen Time',
-      secondaryLabel: 'Open Settings Instead',
     ),
     _StepData(
       icon: Icons.app_blocking_rounded,
@@ -369,11 +361,7 @@ class IOSPermissionSetupScreen extends ConsumerWidget {
       case 0:
         notifier.nextStep();
       case 1:
-        if (state.screenTimeStatus == 'denied') {
-          notifier.openScreenTimeSettings();
-        } else {
-          notifier.requestScreenTime();
-        }
+        notifier.requestScreenTime();
       case 2:
         notifier.openAppPicker();
       case 3:
@@ -387,7 +375,7 @@ class IOSPermissionSetupScreen extends ConsumerWidget {
   void _handleSecondary(int stepIndex, IOSPermissionSetupNotifier notifier) {
     switch (stepIndex) {
       case 1:
-        notifier.openScreenTimeSettings();
+        notifier.requestScreenTime();
       case 3:
         notifier.nextStep(); // Skip notifications
       default:
@@ -478,7 +466,7 @@ class _StatusBadge extends StatelessWidget {
       'denied' => (
           Colors.red,
           Icons.cancel_rounded,
-          'Denied — tap "Open Settings" below',
+          'Denied — try again',
         ),
       _ => (
           Colors.orange,
@@ -656,7 +644,7 @@ class _CoveredAppsCard extends StatelessWidget {
                 SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'In the Apple popup, switch to Categories and tap Social. This automatically covers all of these apps at once!',
+                    'In the Apple popup, you can select individual apps or the Social category. Add YouTube and any other apps you want restricted, because Apple controls category membership.',
                     style: TextStyle(
                       fontSize: 11.5,
                       color: Color(0xFF1E3A8A),

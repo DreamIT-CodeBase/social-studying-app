@@ -325,9 +325,8 @@ class ScreenTimeService {
     }
   }
 
-  /// Request Screen Time authorization. Returns true if approved.
-  /// On iOS 17.4+ personal devices this may fail — if so, [errorMessage]
-  /// will contain instructions to open Settings manually.
+  /// Request Screen Time authorization. Returns true when the device owner
+  /// approves the system Face ID or Touch ID prompt.
   Future<({bool approved, String? errorMessage})>
       requestScreenTimeAuthorization() async {
     if (!Platform.isIOS) return (approved: false, errorMessage: null);
@@ -340,14 +339,6 @@ class ScreenTimeService {
     } catch (_) {
       return (approved: false, errorMessage: null);
     }
-  }
-
-  /// Opens the Screen Time section in iOS Settings.
-  Future<void> openScreenTimeSettings() async {
-    if (!Platform.isIOS) return;
-    try {
-      await _channel.invokeMethod<void>('openScreenTimeSettings');
-    } catch (_) {}
   }
 
   Future<bool> presentFamilyActivityPicker() async {

@@ -41,6 +41,8 @@ class ScreenTimeExtensionHandler: DeviceActivityMonitor {
 
   // Called when a DeviceActivity interval STARTS.
   override func intervalDidStart(for activity: DeviceActivityName) {
+    super.intervalDidStart(for: activity)
+    guard activity == .dailyMonitoring else { return }
     let minutes = userDefaults.integer(forKey: availableMinutesKey)
     if minutes <= 0 {
       applyShields()
@@ -49,6 +51,8 @@ class ScreenTimeExtensionHandler: DeviceActivityMonitor {
 
   // Called when a DeviceActivity interval ENDS.
   override func intervalDidEnd(for activity: DeviceActivityName) {
+    super.intervalDidEnd(for: activity)
+    guard activity == .dailyMonitoring else { return }
     let minutes = userDefaults.integer(forKey: availableMinutesKey)
     if minutes <= 0 {
       applyShields()
@@ -60,6 +64,10 @@ class ScreenTimeExtensionHandler: DeviceActivityMonitor {
     _ event: DeviceActivityEvent.Name,
     activity: DeviceActivityName
   ) {
+    super.eventDidReachThreshold(event, activity: activity)
+    guard activity == .dailyMonitoring, event == .socialTimeExhausted else {
+      return
+    }
     // 1. Mark remaining minutes as 0 in shared App Group
     userDefaults.set(0, forKey: availableMinutesKey)
     userDefaults.synchronize()
@@ -73,9 +81,7 @@ class ScreenTimeExtensionHandler: DeviceActivityMonitor {
   private func applyShields() {
     let enabled = (userDefaults.object(forKey: blockingEnabledKey) as? Bool) ?? true
     guard enabled else {
-      store.shield.applications = nil
-      store.shield.applicationCategories = nil
-      store.shield.webDomains = nil
+      clearShields()
       return
     }
 
@@ -84,8 +90,20 @@ class ScreenTimeExtensionHandler: DeviceActivityMonitor {
       return
     }
 
-    store.shield.applications = selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
-    store.shield.applicationCategories = selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens)
-    store.shield.webDomains = selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens
+    store.shield.applications =
+      selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
+    store.shield.applicationCategories =
+      selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens)
+    store.shield.webDomains =
+      selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens
+    store.shield.webDomainCategories =
+      selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens)
+  }
+
+  private func clearShields() {
+    store.shield.applications = nil
+    store.shield.applicationCategories = nil
+    store.shield.webDomains = nil
+    store.shield.webDomainCategories = nil
   }
 }

@@ -41,9 +41,8 @@ extension DeviceActivityEvent.Name {
   let blockingEnabledKey  = "is_screen_time_blocking_enabled"
   let availableMinutesKey = "cached_available_minutes"
 
-  // Named store — MUST match the name used in the DeviceActivityMonitor extension.
-  // Using a named store makes shields persist until explicitly cleared, even
-  // across app restarts, unlike the anonymous ManagedSettingsStore().
+  // Named store — MUST match the name used in the DeviceActivityMonitor
+  // extension. It keeps the policy active when the Flutter process exits.
   @available(iOS 16.0, *)
   private var managedStore: ManagedSettingsStore {
     #if canImport(ManagedSettings)
@@ -101,9 +100,7 @@ extension DeviceActivityEvent.Name {
           let approved = AuthorizationCenter.shared.authorizationStatus == .approved
           completion(approved, nil)
         } catch {
-          // iOS 17.4+ may reject .individual on non-managed devices.
-          // Instruct the user to enable Screen Time in Settings manually.
-          let msg = "Unable to authorize automatically. Please go to Settings → Screen Time and enable it, then return to this app.\n\nOriginal error: \(error.localizedDescription)"
+          let msg = "Screen Time authorization was not approved. Please try again and authenticate with Face ID or Touch ID.\n\nOriginal error: \(error.localizedDescription)"
           completion(false, msg)
         }
       }
@@ -218,24 +215,12 @@ extension DeviceActivityEvent.Name {
     let store = managedStore
 
     guard enableBlocking else {
-      // Blocking turned off — remove all shields and stop monitoring
-      store.shield.applications = nil
-      store.shield.applicationCategories = nil
-      store.shield.webDomains = nil
-      #if canImport(DeviceActivity)
-      DeviceActivityCenter().stopMonitoring([.dailyMonitoring])
-      #endif
+      clearShieldsAndStopMonitoring(from: store)
       return
     }
 
     guard let selection = loadSelection(), hasSelectedApps() else {
-      // No apps selected yet — remove shields
-      store.shield.applications = nil
-      store.shield.applicationCategories = nil
-      store.shield.webDomains = nil
-      #if canImport(DeviceActivity)
-      DeviceActivityCenter().stopMonitoring([.dailyMonitoring])
-      #endif
+      clearShieldsAndStopMonitoring(from: store)
       return
     }
 
@@ -244,14 +229,10 @@ extension DeviceActivityEvent.Name {
       #if canImport(DeviceActivity)
       DeviceActivityCenter().stopMonitoring([.dailyMonitoring])
       #endif
-      store.shield.applications        = selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
-      store.shield.webDomains          = selection.webDomainTokens.isEmpty   ? nil : selection.webDomainTokens
-      store.shield.applicationCategories = selection.categoryTokens.isEmpty   ? nil : .specific(selection.categoryTokens)
+      applyShields(selection, to: store)
     } else {
       // Time available — remove shields and schedule threshold monitoring
-      store.shield.applications = nil
-      store.shield.applicationCategories = nil
-      store.shield.webDomains = nil
+      clearShields(from: store)
 
       #if canImport(DeviceActivity)
       let schedule = DeviceActivitySchedule(
@@ -266,7 +247,11 @@ extension DeviceActivityEvent.Name {
         threshold: DateComponents(minute: max(1, availableMinutes))
       )
       do {
-        try DeviceActivityCenter().startMonitoring(
+        let center = DeviceActivityCenter()
+        // A monitor cannot be overwritten in-place. Stop the previous monitor
+        // before starting a new one so newly earned minutes update its threshold.
+        center.stopMonitoring([.dailyMonitoring])
+        try center.startMonitoring(
           .dailyMonitoring,
           during: schedule,
           events: [.socialTimeExhausted: event]
@@ -279,22 +264,37 @@ extension DeviceActivityEvent.Name {
     #endif
   }
 
-  // MARK: - Open Settings
+  @available(iOS 16.0, *)
+  private func applyShields(
+    _ selection: FamilyActivitySelection,
+    to store: ManagedSettingsStore
+  ) {
+    store.shield.applications =
+      selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
+    store.shield.webDomains =
+      selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens
+    store.shield.applicationCategories =
+      selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens)
+    // Categories can also include web domains. Mirror the category policy so
+    // selecting Social applies to supported social websites as well as apps.
+    store.shield.webDomainCategories =
+      selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens)
+  }
 
-  @objc func openScreenTimeSettings() {
-    DispatchQueue.main.async {
-      // Deep-link into Screen Time in Settings
-      if let url = URL(string: "App-prefs:SCREEN_TIME") {
-        if UIApplication.shared.canOpenURL(url) {
-          UIApplication.shared.open(url)
-          return
-        }
-      }
-      // Fallback for older iOS
-      if let url = URL(string: UIApplication.openSettingsURLString) {
-        UIApplication.shared.open(url)
-      }
-    }
+  @available(iOS 16.0, *)
+  private func clearShields(from store: ManagedSettingsStore) {
+    store.shield.applications = nil
+    store.shield.applicationCategories = nil
+    store.shield.webDomains = nil
+    store.shield.webDomainCategories = nil
+  }
+
+  @available(iOS 16.0, *)
+  private func clearShieldsAndStopMonitoring(from store: ManagedSettingsStore) {
+    clearShields(from: store)
+    #if canImport(DeviceActivity)
+    DeviceActivityCenter().stopMonitoring([.dailyMonitoring])
+    #endif
   }
 
   // MARK: - Helpers
