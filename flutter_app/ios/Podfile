@@ -50,6 +50,16 @@ post_install do |installer|
       config.build_settings['OTHER_SWIFT_FLAGS'] ||= ['$(inherited)']
       config.build_settings['OTHER_SWIFT_FLAGS'] << '-enable-experimental-feature'
       config.build_settings['OTHER_SWIFT_FLAGS'] << 'AccessLevelOnImport'
+
+      # Xcode 16 Clang compatibility: suppress incompatible-pointer-types errors in third-party Pods
+      config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
+      config.build_settings['CLANG_WARN_STRICT_PROTOTYPES'] = 'NO'
+      config.build_settings['WARNING_CFLAGS'] ||= ['$(inherited)']
+      config.build_settings['WARNING_CFLAGS'] << '-Wno-incompatible-pointer-types'
+      config.build_settings['WARNING_CFLAGS'] << '-Wno-error=incompatible-pointer-types'
+      config.build_settings['OTHER_CFLAGS'] ||= ['$(inherited)']
+      config.build_settings['OTHER_CFLAGS'] << '-Wno-incompatible-pointer-types'
+      config.build_settings['OTHER_CFLAGS'] << '-Wno-error=incompatible-pointer-types'
     end
   end
 
@@ -60,6 +70,21 @@ post_install do |installer|
     if content.include?('sending State')
       File.write(lock_file, content.gsub('sending State', 'State'))
       puts '[Podfile] Successfully patched FIRAllocatedUnfairLock.swift for Swift 5 compiler compatibility.'
+    end
+  end
+
+  # Patch file_picker for Xcode 16 incompatible pointer types (NSMutableArray vs NSArray)
+  pub_cache = ENV['PUB_CACHE'] || File.join(Dir.home, '.pub-cache')
+  file_picker_candidates = Dir.glob(File.join(installer.sandbox.root, '**', 'FilePickerPlugin.m')) +
+                           Dir.glob(File.join(installer.sandbox.root, '..', '.symlinks', '**', 'FilePickerPlugin.m')) +
+                           Dir.glob(File.join(pub_cache, '**', 'file_picker*', '**', 'FilePickerPlugin.m'))
+  file_picker_candidates.uniq.each do |file|
+    if File.exist?(file)
+      content = File.read(file)
+      if content.include?('newUrls = urls;')
+        File.write(file, content.gsub('newUrls = urls;', 'newUrls = [urls mutableCopy];'))
+        puts "[Podfile] Successfully patched #{file} for Xcode 16 compatibility."
+      end
     end
   end
 end

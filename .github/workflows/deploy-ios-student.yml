@@ -103,6 +103,12 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
+      - name: Patch dependencies for Xcode 16
+        run: |
+          echo "Patching file_picker FilePickerPlugin.m in pub-cache if present..."
+          find "$HOME/.pub-cache" -name "FilePickerPlugin.m" -exec sed -i '' 's/newUrls = urls;/newUrls = [urls mutableCopy];/g' {} + || true
+          find "$HOME/.pub-cache" -name "FilePickerPlugin.m" -exec grep -H "newUrls = " {} + || true
+
       - name: Generate baseline Flutter xcconfig
         run: |
           cat <<EOF > ios/Flutter/Generated.xcconfig
