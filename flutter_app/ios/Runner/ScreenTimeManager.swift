@@ -249,8 +249,8 @@ extension DeviceActivityEvent.Name {
       DeviceActivityCenter().stopMonitoring([.dailyMonitoring])
       #endif
 
-      if let sel = selection, hasCustomSelection {
-        applyShields(sel, to: store)
+      if let selection = selection, hasCustomSelection {
+        applyShields(selection, to: store)
       } else {
         // Internal default shielding: block all non-essential third-party application categories and web domains
         store.shield.applicationCategories = .all()
@@ -274,7 +274,7 @@ extension DeviceActivityEvent.Name {
       userDefaults.set(false, forKey: shieldsActiveKey)
       userDefaults.synchronize()
 
-      guard let sel = selection, hasCustomSelection else {
+      guard let selection = selection, hasCustomSelection else {
         // No custom selection to monitor threshold on; shields cleared while time > 0
         return
       }
