@@ -293,18 +293,19 @@ void main() {
     expect(find.byType(TextField), findsOneWidget);
     // Instruction banner
     expect(find.textContaining('Fill both blanks:'), findsOneWidget);
-    expect(find.textContaining('Separate your answers with a comma'), findsOneWidget);
+    expect(find.textContaining('Separate your answers with a comma'),
+        findsOneWidget);
     // Comma hint text in TextField
     expect(find.text('e.g. answer 1, answer 2'), findsOneWidget);
     // Dynamic comma indicator before comma
-    expect(
-        find.text('Enter answer 1, then a comma, then answer 2'), findsOneWidget);
+    expect(find.text('Enter answer 1, then a comma, then answer 2'),
+        findsOneWidget);
 
     // Type answer without comma
     await tester.enterText(find.byType(TextField), 'water');
     await tester.pumpAndSettle();
-    expect(
-        find.text('Enter answer 1, then a comma, then answer 2'), findsOneWidget);
+    expect(find.text('Enter answer 1, then a comma, then answer 2'),
+        findsOneWidget);
 
     // Type answer with comma
     await tester.enterText(find.byType(TextField), 'water, carbon dioxide');

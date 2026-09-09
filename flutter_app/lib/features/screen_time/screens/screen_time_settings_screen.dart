@@ -812,7 +812,8 @@ class _ScreenTimeSettingsScreenState
           if (customApps.isNotEmpty) ...[
             const Divider(height: 1),
             Padding(
-              padding: const EdgeInsets.fromLTRB(Spacing.lg, Spacing.md, Spacing.lg, Spacing.xs),
+              padding: const EdgeInsets.fromLTRB(
+                  Spacing.lg, Spacing.md, Spacing.lg, Spacing.xs),
               child: Text(
                 'Custom Blocked Apps & URLs',
                 style: TextStyle(

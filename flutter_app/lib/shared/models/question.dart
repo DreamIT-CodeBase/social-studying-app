@@ -178,7 +178,8 @@ bool hasMultipleBlanks(String body) {
   final count = countQuestionBlanks(body);
   if (count >= 2) return true;
   final lower = body.toLowerCase();
-  if ((lower.contains('two blanks') || lower.contains('both blanks')) && count >= 1) {
+  if ((lower.contains('two blanks') || lower.contains('both blanks')) &&
+      count >= 1) {
     return true;
   }
   return false;

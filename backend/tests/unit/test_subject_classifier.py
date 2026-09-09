@@ -1,9 +1,12 @@
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from app.models.document import Document, DocumentStatus, DocumentType, TopicTag
 from app.services.subject_classifier import (
     classify_document_subject,
     classify_subject_from_text,
+    classify_subject_with_llm,
 )
 
 
@@ -109,9 +112,6 @@ def test_classify_document_subject():
 
 @pytest.mark.asyncio
 async def test_classify_subject_with_llm():
-    from unittest.mock import AsyncMock, patch
-    from app.services.subject_classifier import classify_subject_with_llm
-
     with patch("app.services.azure_openai.chat_json", AsyncMock(return_value={"subject": "To Kill a Mockingbird"})):
         res = await classify_subject_with_llm("Atticus Finch was a lawyer in Maycomb...", "tkam.txt")
         assert res == "To Kill a Mockingbird"

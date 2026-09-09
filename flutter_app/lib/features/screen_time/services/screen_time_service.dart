@@ -453,6 +453,12 @@ class ScreenTimeService {
 
   // MARK: - Notifications (cross-platform)
 
+  /// Returns whether notification permission has been granted on iOS.
+  Future<bool> isNotificationPermissionGranted() async {
+    final status = await getPermissionStatus();
+    return status.notifications;
+  }
+
   /// Request notification permission on iOS (Android uses the system dialog).
   Future<bool> requestNotificationPermissionIOS() async {
     if (!Platform.isIOS) return false;

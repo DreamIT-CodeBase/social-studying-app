@@ -2048,8 +2048,9 @@ class _TextAnswerInputState extends State<_TextAnswerInput> {
                 Icon(
                   Icons.edit_note_rounded,
                   size: 20,
-                  color:
-                      isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                  color: isDark
+                      ? const Color(0xFF60A5FA)
+                      : const Color(0xFF2563EB),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -2092,7 +2093,9 @@ class _TextAnswerInputState extends State<_TextAnswerInput> {
           textCapitalization: widget.monospace
               ? TextCapitalization.none
               : TextCapitalization.sentences,
-          style: widget.monospace ? const TextStyle(fontFamily: 'monospace') : null,
+          style: widget.monospace
+              ? const TextStyle(fontFamily: 'monospace')
+              : null,
           decoration: InputDecoration(
             hintText: widget.hintText,
             hintStyle: theme.textTheme.bodyMedium?.copyWith(

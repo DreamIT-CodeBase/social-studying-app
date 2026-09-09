@@ -10,7 +10,6 @@ import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/notifications/presentation/notification_service.dart';
 import 'package:social_study_app/features/screen_time/data/screen_time_repository.dart';
 import 'package:social_study_app/features/screen_time/providers/screen_time_providers.dart';
-import 'package:social_study_app/features/screen_time/screens/ios_permission_setup_screen.dart';
 import 'package:social_study_app/features/screen_time/services/screen_time_service.dart';
 import 'package:social_study_app/shared/services/session_persistence_service.dart';
 

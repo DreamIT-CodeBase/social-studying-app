@@ -160,13 +160,18 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
       });
     });
 
-    ref.listen<AsyncValue<ScreenTimeWallet>>(screenTimeNotifierProvider, (previous, next) {
+    ref.listen<AsyncValue<ScreenTimeWallet>>(screenTimeNotifierProvider,
+        (previous, next) {
       final prevMinutes = previous?.valueOrNull?.availableMinutes;
       final nextMinutes = next.valueOrNull?.availableMinutes;
-      if (nextMinutes != null && nextMinutes <= 0 && (prevMinutes == null || prevMinutes > 0)) {
+      if (nextMinutes != null &&
+          nextMinutes <= 0 &&
+          (prevMinutes == null || prevMinutes > 0)) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          ref.read(notificationServiceProvider).showSocialTimeExhaustedNotification();
+          ref
+              .read(notificationServiceProvider)
+              .showSocialTimeExhaustedNotification();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               behavior: SnackBarBehavior.floating,

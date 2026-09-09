@@ -265,10 +265,11 @@ async def extract_topics_and_subject(text: str) -> tuple[list[TopicTag], str | N
         raise ValueError("Topic extraction response missing 'topics' list")
 
     judged_subject = response.get("subject")
-    if isinstance(judged_subject, str):
-        judged_subject = judged_subject.strip() or None
-    else:
-        judged_subject = None
+    judged_subject = (
+        judged_subject.strip() or None
+        if isinstance(judged_subject, str)
+        else None
+    )
 
     global _LAST_EXTRACTED_SUBJECT
     _LAST_EXTRACTED_SUBJECT = judged_subject
