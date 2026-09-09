@@ -2,6 +2,7 @@ import Foundation
 import DeviceActivity
 import ManagedSettings
 import FamilyControls
+import UserNotifications
 
 @available(iOS 16.0, *)
 extension DeviceActivityName {
@@ -58,7 +59,7 @@ class ScreenTimeExtensionHandler: DeviceActivityMonitor {
     guard activity == .dailyMonitoring else { return }
     NSLog("[ScreenTimeExt] intervalDidEnd — re-applying shields")
     // When a daily interval ends, re-apply shields so they persist
-    // into the next day until new time is earned.
+    // into the next day until fresh study minutes are recorded.
     enforceShieldsIfNeeded()
   }
 
@@ -103,6 +104,9 @@ class ScreenTimeExtensionHandler: DeviceActivityMonitor {
 
     // 3. Lock apps immediately
     applyShields()
+
+    // 4. Send notification alerting the student
+    sendExhaustedNotification()
   }
 
   // Called ~5 minutes before threshold is reached.
@@ -135,10 +139,35 @@ class ScreenTimeExtensionHandler: DeviceActivityMonitor {
 
     if minutes <= 0 {
       NSLog("[ScreenTimeExt] enforceShieldsIfNeeded — minutes=%d, applying shields", minutes)
+      let wasActive = userDefaults.bool(forKey: shieldsActiveKey)
       applyShields()
       userDefaults.set(true, forKey: shieldsActiveKey)
       userDefaults.set(Date().timeIntervalSince1970, forKey: lastShieldApplyKey)
       userDefaults.synchronize()
+      if !wasActive {
+        sendExhaustedNotification()
+      }
+    }
+  }
+
+  private func sendExhaustedNotification() {
+    let content = UNMutableNotificationContent()
+    content.title = "Time's Up!"
+    content.body = "You have consumed your all time for social media."
+    content.sound = .default
+
+    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+    let request = UNNotificationRequest(
+      identifier: "ai.socialstudying.screentime.exhausted",
+      content: content,
+      trigger: trigger
+    )
+    UNUserNotificationCenter.current().add(request) { error in
+      if let error = error {
+        NSLog("[ScreenTimeExt] Failed to schedule exhausted notification: %@", error.localizedDescription)
+      } else {
+        NSLog("[ScreenTimeExt] Exhausted notification scheduled successfully")
+      }
     }
   }
 

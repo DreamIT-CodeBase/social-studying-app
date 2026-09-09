@@ -269,7 +269,7 @@ async def _generate_and_persist_batch(
         docs_raw = await cosmos_retry(lambda: cursor_doc.to_list(length=200))
         for doc_raw in docs_raw:
             filename = doc_raw.get("filename", "")
-            doc_subj = classify_subject_from_text(filename)
+            doc_subj = (doc_raw.get("category") or "").strip() or classify_subject_from_text(filename)
             tags = doc_raw.get("topic_tags") or []
             if subject:
                 if not doc_subj or doc_subj.casefold() == "study":

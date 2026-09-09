@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
@@ -104,6 +105,7 @@ class ScreenTimeService {
         await prefs.setInt('$_keyAvailableMinutes$suffix', 0);
         await prefs.setInt('$_keyConsumedMinutes$suffix', consumedMinutes);
         await prefs.setInt('$_keyConsumedToday$suffix', consumedToday);
+        unawaited(sendTimeExhaustedNotification());
       }
 
       // Write consumed_today back to native for display consistency
@@ -439,6 +441,16 @@ class ScreenTimeService {
     }
   }
 
+  /// Triggers a local notification on iOS informing the user that social time is exhausted.
+  Future<void> sendTimeExhaustedNotification() async {
+    if (!Platform.isIOS) return;
+    try {
+      await _channel.invokeMethod('sendTimeExhaustedNotification');
+    } catch (_) {
+      // Swallowed: best-effort notification
+    }
+  }
+
   // MARK: - Notifications (cross-platform)
 
   /// Request notification permission on iOS (Android uses the system dialog).
@@ -575,7 +587,7 @@ class DevicePermissionStatus {
 
   bool get requiredPermissionsGranted {
     if (Platform.isIOS) {
-      return iosScreenTimeAuthorized && iosHasSelectedApps;
+      return iosScreenTimeAuthorized;
     }
     return usageAccess && accessibility;
   }

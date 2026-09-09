@@ -26,7 +26,7 @@ final activeWorkspaceProvider = AutoDisposeProvider<Workspace?>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ActiveWorkspaceRef = AutoDisposeProviderRef<Workspace?>;
-String _$selectedWorkspaceHash() => r'5aa364542e69e90a3e18252cc5ff273d2dec3341';
+String _$selectedWorkspaceHash() => r'82474a000cf365680b4e8e8279dd4f99ca695cef';
 
 /// Tracks the currently selected workspace ID.
 ///

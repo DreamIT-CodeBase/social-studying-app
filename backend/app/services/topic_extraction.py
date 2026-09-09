@@ -37,6 +37,12 @@ _PROMPT_NAME = "topic_extraction_v1"
 # Cached because read_text + split is pure I/O — we never need to re-read
 # the prompt mid-process. Cleared by tests that monkeypatch the prompt.
 _PROMPT_CACHE: tuple[str, str] | None = None
+_LAST_EXTRACTED_SUBJECT: str | None = None
+
+
+def get_last_extracted_subject() -> str | None:
+    """Return the subject evaluated by the most recent topic extraction call."""
+    return _LAST_EXTRACTED_SUBJECT
 
 
 def _system_user() -> tuple[str, str]:
@@ -214,12 +220,11 @@ def _get_extraction_guidance(char_count: int) -> str:
         )
 
 
-async def extract_topics(text: str) -> list[TopicTag]:
-    """Extract a list of topics from a document's extracted text.
+async def extract_topics_and_subject(text: str) -> tuple[list[TopicTag], str | None]:
+    """Extract a list of topics and an LLM-evaluated subject/novel/book title.
 
-    Empty or whitespace-only text returns an empty list without an OpenAI
-    call — matches the prompt's "return []" contract and saves money on
-    blank documents (cover pages, admin uploads with no body content).
+    Empty or whitespace-only text returns an empty list and None subject
+    without an OpenAI call.
 
     Raises:
         ServiceUnavailableError: model not reachable / not configured.
@@ -227,7 +232,7 @@ async def extract_topics(text: str) -> list[TopicTag]:
     """
     if not text or not text.strip():
         logger.info("Topic extraction: empty text, returning []")
-        return []
+        return [], None
 
     system_template, user_template = _system_user()
     char_count = len(text.strip())
@@ -259,14 +264,30 @@ async def extract_topics(text: str) -> list[TopicTag]:
         )
         raise ValueError("Topic extraction response missing 'topics' list")
 
+    judged_subject = response.get("subject")
+    if isinstance(judged_subject, str):
+        judged_subject = judged_subject.strip() or None
+    else:
+        judged_subject = None
+
+    global _LAST_EXTRACTED_SUBJECT
+    _LAST_EXTRACTED_SUBJECT = judged_subject
+
     parsed = [t for t in (_coerce_topic(r) for r in raw_topics if isinstance(r, dict)) if t]
     deduped = _dedupe(parsed)
     logger.info(
-        "Topic extraction (%d chars, mode=%s): %d raw → %d parsed → %d deduped",
+        "Topic extraction (%d chars, mode=%s, subject=%s): %d raw → %d parsed → %d deduped",
         char_count,
         "short_granular" if char_count < 2000 else ("long_main" if char_count > 3000 else "medium"),
+        judged_subject,
         len(raw_topics),
         len(parsed),
         len(deduped),
     )
-    return deduped
+    return deduped, judged_subject
+
+
+async def extract_topics(text: str) -> list[TopicTag]:
+    """Extract a list of topics from a document's extracted text (backwards compatible)."""
+    topics, _ = await extract_topics_and_subject(text)
+    return topics

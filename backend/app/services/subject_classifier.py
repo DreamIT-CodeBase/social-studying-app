@@ -286,8 +286,12 @@ def classify_subject_from_text(text: str) -> str:
 
 
 def classify_document_subject(doc: Document) -> str:
-    """Classify the subject of a document using filename and topic tags."""
-    # 1. Test filename first
+    """Classify the subject of a document using LLM-evaluated category, filename, and topic tags."""
+    # 0. Test LLM-evaluated category first (e.g. novel name, Bible, specific book/subject)
+    if doc.category and doc.category.strip():
+        return doc.category.strip()
+
+    # 1. Test filename
     from_filename = classify_subject_from_text(doc.filename)
     if from_filename != "Study":
         return from_filename
@@ -300,3 +304,44 @@ def classify_document_subject(doc: Document) -> str:
                 return from_tag
 
     return "Study"
+
+
+async def classify_subject_with_llm(text: str, filename: str = "") -> str:
+    """Judge the subject, novel title, or book name using LLM.
+
+    If the material is a novel (e.g. 'The Great Gatsby', 'To Kill a Mockingbird'),
+    religious text (e.g. 'The Holy Bible'), or specific work, the LLM will return
+    the exact title as the subject name.
+    """
+    if not text and not filename:
+        return "Study"
+
+    try:
+        from app.services import azure_openai
+
+        snippet = text[:4000] if text else ""
+        system_prompt = (
+            "You are an expert curriculum and literature analyst. Identify and judge the exact overarching "
+            "Subject or Book/Novel/Text Title of this study material (e.g. 'The Great Gatsby', 'The Holy Bible', "
+            "'To Kill a Mockingbird', 'Organic Chemistry', 'World History'). If it is a novel, religious text, "
+            "or literary work, return the specific title as the subject. "
+            "Output strict JSON matching: {\"subject\": \"Title or Subject\"}"
+        )
+        user_prompt = f"Filename: {filename}\n\nContent snippet:\n{snippet}\n\nIdentify the subject or novel/book title."
+        resp = await azure_openai.chat_json(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_output_tokens=100,
+        )
+        subject = resp.get("subject")
+        if isinstance(subject, str) and subject.strip():
+            return subject.strip()
+    except Exception:
+        pass
+
+    # Fallback to static matching
+    from_fn = classify_subject_from_text(filename)
+    if from_fn != "Study":
+        return from_fn
+    return classify_subject_from_text(text)
+

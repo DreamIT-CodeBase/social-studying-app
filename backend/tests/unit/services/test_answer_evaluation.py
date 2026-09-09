@@ -166,6 +166,20 @@ async def test_short_answer_collapses_internal_whitespace():
     assert (await evaluate(q, "two   words")).is_correct is True
 
 
+async def test_short_answer_two_blanks_comma_spacing_normalizes():
+    q = _question(question_type=QuestionType.short_answer, answer="oxygen, glucose")
+    assert (await evaluate(q, "oxygen,glucose")).is_correct is True
+    assert (await evaluate(q, "oxygen , glucose")).is_correct is True
+    assert (await evaluate(q, "oxygen,  glucose")).is_correct is True
+
+
+async def test_short_answer_two_blanks_symmetric_order_allowed():
+    q = _question(question_type=QuestionType.short_answer, answer="oxygen, glucose")
+    assert (await evaluate(q, "glucose, oxygen")).is_correct is True
+    assert (await evaluate(q, "glucose,oxygen")).is_correct is True
+    assert (await evaluate(q, "nitrogen, oxygen")).is_correct is False
+
+
 @patch("app.services.answer_evaluation.azure_openai.chat_json")
 async def test_short_answer_accepts_semantic_synonyms(mock_chat):
     """If exact substring / normalisation fails, semantic grading kicks in.

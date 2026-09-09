@@ -11,6 +11,7 @@ A "topic" is a self-contained concept with a recognizable name (e.g.
 Output STRICT JSON matching this schema:
 
 {
+  "subject": "Judged Subject, Novel Title, Book Name, or Field of Study",
   "topics": [
     {
       "name": "Topic Name in Title Case (2 to 6 words)",
@@ -22,6 +23,7 @@ Output STRICT JSON matching this schema:
 }
 
 Field rules:
+- subject: Concisely identify and judge the overarching subject or work title. If the study material is a novel (e.g., 'The Great Gatsby', 'To Kill a Mockingbird'), a religious text (e.g., 'The Holy Bible'), or a specific literary work/book, the subject MUST be the exact novel/book title. If it is an academic subject (e.g., 'Organic Chemistry', 'Calculus', 'World History'), use the specific discipline name.
 - name: Unique, concise Title Case name (2 to 6 words).
 - description: Exactly 1 clear, complete sentence. No bullet lists.
 - complexity_level: Integer 1 to 5 (1 = introductory, 5 = advanced).
@@ -29,7 +31,7 @@ Field rules:
 
 Content rules:
 {{extraction_guidance}}
-- If empty or purely administrative, return {"topics": []}.
+- If empty or purely administrative, return {"subject": "Study", "topics": []}.
 - The first character of your response MUST be `{` and the last MUST be `}`.
 
 [USER]

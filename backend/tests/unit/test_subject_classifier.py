@@ -1,3 +1,5 @@
+import pytest
+
 from app.models.document import Document, DocumentStatus, DocumentType, TopicTag
 from app.services.subject_classifier import (
     classify_document_subject,
@@ -75,3 +77,42 @@ def test_classify_document_subject():
         topic_tags=[TopicTag(name="Quadratic Equations")],
     )
     assert classify_document_subject(doc_math_topics) == "Mathematics"
+
+    doc_novel = Document(
+        id="doc_3",
+        tenant_id="t1",
+        workspace_id="w1",
+        uploaded_by="u1",
+        filename="chapter_1.pdf",
+        blob_url="https://blob/doc.pdf",
+        file_size_bytes=1000,
+        doc_type=DocumentType.pdf,
+        status=DocumentStatus.ready,
+        category="The Great Gatsby",
+    )
+    assert classify_document_subject(doc_novel) == "The Great Gatsby"
+
+    doc_bible = Document(
+        id="doc_4",
+        tenant_id="t1",
+        workspace_id="w1",
+        uploaded_by="u1",
+        filename="genesis_exodus.pdf",
+        blob_url="https://blob/doc.pdf",
+        file_size_bytes=1000,
+        doc_type=DocumentType.pdf,
+        status=DocumentStatus.ready,
+        category="The Holy Bible",
+    )
+    assert classify_document_subject(doc_bible) == "The Holy Bible"
+
+
+@pytest.mark.asyncio
+async def test_classify_subject_with_llm():
+    from unittest.mock import AsyncMock, patch
+    from app.services.subject_classifier import classify_subject_with_llm
+
+    with patch("app.services.azure_openai.chat_json", AsyncMock(return_value={"subject": "To Kill a Mockingbird"})):
+        res = await classify_subject_with_llm("Atticus Finch was a lawyer in Maycomb...", "tkam.txt")
+        assert res == "To Kill a Mockingbird"
+

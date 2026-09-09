@@ -125,42 +125,28 @@ class _StudentAppState extends ConsumerState<_StudentApp>
   Future<void> _checkAndShowIOSPermissionSetup() async {
     if (!Platform.isIOS) return;
     if (_iosSetupShown) return;
-    // Small delay so the router is fully ready
-    await Future.delayed(const Duration(milliseconds: 800));
+    _iosSetupShown = true;
+
+    // Brief delay so the initial frame and navigation are ready
+    await Future.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
 
     final service = ScreenTimeService();
-    final status = await service.getIOSAuthorizationStatus();
-    final hasApps = await service.hasSelectedBlockedApps();
 
-    // If already fully set up, just re-apply shields and bail.
-    if (status == 'approved' && hasApps) {
-      unawaited(service.reapplyShields());
-      return;
+    // 1. Native Push Notification permission popup
+    final notificationGranted = await service.isNotificationPermissionGranted();
+    if (!notificationGranted) {
+      await service.requestNotificationPermissionIOS();
     }
 
-    _iosSetupShown = true;
-    if (!mounted) return;
+    // 2. Native Screen Time authorization popup (Face ID / Passcode prompt)
+    final status = await service.getIOSAuthorizationStatus();
+    if (status != 'approved') {
+      await service.requestScreenTimeAuthorization();
+    }
 
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      isDismissible: false,
-      enableDrag: false,
-      useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => SizedBox(
-        height: MediaQuery.of(context).size.height * 0.92,
-        child: IOSPermissionSetupScreen(
-          onComplete: () {
-            Navigator.of(context, rootNavigator: true).pop();
-            unawaited(service.reapplyShields());
-          },
-        ),
-      ),
-    );
+    // Internally re-apply shields based on admin policy
+    unawaited(service.reapplyShields());
   }
 
   /// Fire-and-forget the notification subsystem init. Failures land

@@ -100,6 +100,8 @@ class Document with _$Document {
     @JsonKey(name: 'text_char_count') int? textCharCount,
     @Default(<String>[]) List<String> languages,
     @JsonKey(name: 'processing_error') String? processingError,
+    String? category,
+    String? subcategory,
   }) = _Document;
 
   factory Document.fromJson(Map<String, dynamic> json) =>

@@ -156,17 +156,16 @@ class _ScreenTimeSettingsScreenState
               _buildBlockingControlCard(enableBlocking, isEditable),
               const SizedBox(height: Spacing.lg),
               if (enableBlocking) ...[
-                if (Platform.isIOS) ...[
+                if (Platform.isIOS && isEditable) ...[
                   _buildSectionTitle('Shielded Apps & Categories'),
                   const SizedBox(height: Spacing.sm),
                   _buildIOSAppPickerCard(),
                   const SizedBox(height: Spacing.lg),
-                ] else ...[
-                  _buildSectionTitle('Apps to Control'),
-                  const SizedBox(height: Spacing.sm),
-                  _buildAppSelectorCard(blockedPackages, isEditable),
-                  const SizedBox(height: Spacing.lg),
                 ],
+                _buildSectionTitle('Controlled Apps & URLs'),
+                const SizedBox(height: Spacing.sm),
+                _buildAppSelectorCard(blockedPackages, isEditable),
+                const SizedBox(height: Spacing.lg),
               ],
               _buildSectionTitle(
                   'Social Media Question Rules & Reoccurring Timeframe'),
@@ -710,39 +709,260 @@ class _ScreenTimeSettingsScreenState
   }
 
   Widget _buildAppSelectorCard(List<String> blockedPackages, bool isAdmin) {
+    final customApps = blockedPackages
+        .where((pkg) => !_availableApps.containsKey(pkg))
+        .toList();
+
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Column(
-        children: _availableApps.entries.map((entry) {
-          final pkg = entry.key;
-          final (name, icon) = entry.value;
-          final isBlocked = blockedPackages.contains(pkg);
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!isAdmin) ...[
+            Padding(
+              padding: const EdgeInsets.all(Spacing.md),
+              child: Container(
+                padding: const EdgeInsets.all(Spacing.md),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.blue.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.shield_outlined,
+                        size: 22, color: AppColors.primary),
+                    SizedBox(width: Spacing.sm),
+                    Expanded(
+                      child: Text(
+                        'Managed by Administrator. Blocked apps and URLs are configured by your administrator and enforced automatically.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF1E3A8A),
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          ..._availableApps.entries.map((entry) {
+            final pkg = entry.key;
+            final (name, icon) = entry.value;
+            final isBlocked = blockedPackages.contains(pkg);
 
-          return CheckboxListTile(
-            title:
-                Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-            secondary:
-                Icon(icon, color: isBlocked ? AppColors.primary : Colors.grey),
-            value: isBlocked,
-            activeColor: AppColors.primary,
-            onChanged: isAdmin
-                ? (bool? checked) async {
-                    final newList = List<String>.from(blockedPackages);
-                    if (checked == true) {
-                      newList.add(pkg);
-                    } else {
-                      newList.remove(pkg);
-                    }
-                    final updated = await _runPolicyUpdate(
-                      () => ref
-                          .read(screenTimeNotifierProvider.notifier)
-                          .updateBlockedPackages(newList),
-                    );
-                    if (updated) ref.invalidate(blockedPackagesProvider);
-                  }
-                : null,
-          );
-        }).toList(),
+            if (!isAdmin) {
+              // Students see standard apps in read-only mode
+              return ListTile(
+                leading: Icon(icon,
+                    color: isBlocked ? AppColors.primary : Colors.grey),
+                title: Text(name,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                trailing: isBlocked
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Blocked',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      )
+                    : const Text(
+                        'Allowed',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+              );
+            }
+
+            return CheckboxListTile(
+              title: Text(name,
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              secondary: Icon(icon,
+                  color: isBlocked ? AppColors.primary : Colors.grey),
+              value: isBlocked,
+              activeColor: AppColors.primary,
+              onChanged: (bool? checked) async {
+                final newList = List<String>.from(blockedPackages);
+                if (checked == true) {
+                  newList.add(pkg);
+                } else {
+                  newList.remove(pkg);
+                }
+                final updated = await _runPolicyUpdate(
+                  () => ref
+                      .read(screenTimeNotifierProvider.notifier)
+                      .updateBlockedPackages(newList),
+                );
+                if (updated) ref.invalidate(blockedPackagesProvider);
+              },
+            );
+          }),
+          if (customApps.isNotEmpty) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(Spacing.lg, Spacing.md, Spacing.lg, Spacing.xs),
+              child: Text(
+                'Custom Blocked Apps & URLs',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: context.colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+            ),
+            ...customApps.map((item) {
+              final isUrl = item.contains('.') && !item.startsWith('com.');
+              return ListTile(
+                leading: Icon(
+                  isUrl ? Icons.public_rounded : Icons.apps_rounded,
+                  color: AppColors.primary,
+                ),
+                title: Text(
+                  item,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                trailing: isAdmin
+                    ? IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded,
+                            color: Colors.red),
+                        tooltip: 'Remove from blocked list',
+                        onPressed: () async {
+                          final newList = List<String>.from(blockedPackages)
+                            ..remove(item);
+                          final updated = await _runPolicyUpdate(
+                            () => ref
+                                .read(screenTimeNotifierProvider.notifier)
+                                .updateBlockedPackages(newList),
+                          );
+                          if (updated) ref.invalidate(blockedPackagesProvider);
+                        },
+                      )
+                    : Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Blocked',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+              );
+            }),
+          ],
+          if (isAdmin) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(Spacing.md),
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 44),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () => _showAddCustomAppDialog(blockedPackages),
+                icon: const Icon(Icons.add_link_rounded),
+                label: const Text('Add App or Website URL to Block'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _showAddCustomAppDialog(List<String> currentBlocked) {
+    final controller = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.add_link_rounded, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text(
+              'Block App or Website URL',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter an application URL or package identifier to block (e.g. tiktok.com, https://instagram.com, com.example.app):',
+              style: TextStyle(fontSize: 13, color: AppColors.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'e.g. tiktok.com or com.snapchat.android',
+                prefixIcon: const Icon(Icons.link_rounded),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              var input = controller.text.trim();
+              if (input.isEmpty) return;
+
+              // Clean / normalize URL or package name
+              if (input.startsWith('https://')) input = input.substring(8);
+              if (input.startsWith('http://')) input = input.substring(7);
+              if (input.startsWith('www.')) input = input.substring(4);
+              if (input.contains('/')) {
+                input = input.split('/').first;
+              }
+              input = input.toLowerCase().trim();
+
+              if (input.isNotEmpty && !currentBlocked.contains(input)) {
+                final newList = List<String>.from(currentBlocked)..add(input);
+                Navigator.of(dialogCtx).pop();
+                final updated = await _runPolicyUpdate(
+                  () => ref
+                      .read(screenTimeNotifierProvider.notifier)
+                      .updateBlockedPackages(newList),
+                );
+                if (updated) ref.invalidate(blockedPackagesProvider);
+              } else {
+                Navigator.of(dialogCtx).pop();
+              }
+            },
+            child: const Text('Block'),
+          ),
+        ],
       ),
     );
   }

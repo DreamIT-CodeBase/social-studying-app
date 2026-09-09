@@ -7,7 +7,7 @@ part of 'workspace_providers.dart';
 // **************************************************************************
 
 String _$activeWorkspaceMembershipHash() =>
-    r'68509e5e0a238e9be8c9d329bd5bca252363668b';
+    r'971a5542d1df1ec01d65e6263f9ff27db9f48b0f';
 
 /// See also [activeWorkspaceMembership].
 @ProviderFor(activeWorkspaceMembership)
@@ -80,7 +80,7 @@ final activeStudentWorkspaceProvider = AutoDisposeProvider<Workspace?>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ActiveStudentWorkspaceRef = AutoDisposeProviderRef<Workspace?>;
-String _$activeWorkspaceIdHash() => r'b492f321b6ce08da946e0b6d992565fe30dd7852';
+String _$activeWorkspaceIdHash() => r'2789d6902fe705a06092af8eb8f327ad32600cd4';
 
 /// See also [ActiveWorkspaceId].
 @ProviderFor(ActiveWorkspaceId)

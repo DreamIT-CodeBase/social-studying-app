@@ -45,7 +45,6 @@ class _PermissionOnboardingScreenState
       return const [
         _PermissionKind.notifications,
         _PermissionKind.screenTime,
-        _PermissionKind.selectApps,
       ];
     }
     return const [

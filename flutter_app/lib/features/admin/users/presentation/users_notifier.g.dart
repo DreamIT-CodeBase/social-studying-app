@@ -7,7 +7,7 @@ part of 'users_notifier.dart';
 // **************************************************************************
 
 String _$workspaceUsersListHash() =>
-    r'022eede5a16fca5fa817775ab28c08549c2cb6c1';
+    r'73688a984a4b13a98e178afc60d40c688b73a511';
 
 /// Copied from Dart SDK
 class _SystemHash {

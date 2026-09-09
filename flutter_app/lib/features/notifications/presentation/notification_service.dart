@@ -219,6 +219,16 @@ class NotificationService {
     _localReady = true;
   }
 
+  /// Displays an immediate alert informing the student that all allotted
+  /// social media time has been consumed and their apps are blocked.
+  Future<void> showSocialTimeExhaustedNotification() async {
+    await showCompletionNotification(
+      title: "Time's Up!",
+      body: 'You have consumed your all time for social media.',
+      payload: {'type': 'screen_time_exhausted'},
+    );
+  }
+
   /// Immediately display completion feedback with sound while the app is open.
   /// The backend push covers background and terminated app states.
   Future<void> showCompletionNotification({

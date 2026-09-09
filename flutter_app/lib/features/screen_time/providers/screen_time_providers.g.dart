@@ -6,7 +6,7 @@ part of 'screen_time_providers.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$xpToMinuteRatioHash() => r'39d95120ce860b9e5e3ac46bf76d65f7671837c8';
+String _$xpToMinuteRatioHash() => r'81be2034b5f0f9937b531684d871b4de3358f2e5';
 
 /// See also [xpToMinuteRatio].
 @ProviderFor(xpToMinuteRatio)
@@ -23,7 +23,7 @@ final xpToMinuteRatioProvider = AutoDisposeFutureProvider<int>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef XpToMinuteRatioRef = AutoDisposeFutureProviderRef<int>;
-String _$enableBlockingHash() => r'269acaf148559ec59af58488a9a7d73b280ad851';
+String _$enableBlockingHash() => r'a7804551446ddd0d980050e2bc78c49c1614ddb1';
 
 /// See also [enableBlocking].
 @ProviderFor(enableBlocking)
@@ -40,7 +40,7 @@ final enableBlockingProvider = AutoDisposeFutureProvider<bool>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef EnableBlockingRef = AutoDisposeFutureProviderRef<bool>;
-String _$blockedPackagesHash() => r'05e86e4aca921760d40f87a12a824daf53d63458';
+String _$blockedPackagesHash() => r'd403e9693022044994ddd4e5a59db67497995844';
 
 /// See also [blockedPackages].
 @ProviderFor(blockedPackages)
@@ -59,7 +59,7 @@ final blockedPackagesProvider =
 // ignore: unused_element
 typedef BlockedPackagesRef = AutoDisposeFutureProviderRef<List<String>>;
 String _$screenTimeNotifierHash() =>
-    r'882924508e06c40d0e48d133662795f488233554';
+    r'1850df6943842cfecaceeb057ef8adc69393b1fb';
 
 /// See also [ScreenTimeNotifier].
 @ProviderFor(ScreenTimeNotifier)

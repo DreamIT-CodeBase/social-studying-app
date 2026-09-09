@@ -204,6 +204,7 @@ async def _handle_inner(msg: ReceivedTopicMessage) -> None:
     #    ServiceUnavailableError → transient (let SB redeliver).
     try:
         topics = await topic_extraction.extract_topics(text)
+        judged_subject = getattr(topic_extraction, "get_last_extracted_subject", lambda: None)()
     except ValueError as exc:
         await _mark_failed(payload, f"Topic extraction prompt failure: {exc}")
         await msg.dead_letter("PromptFailure", str(exc))
@@ -272,21 +273,26 @@ async def _handle_inner(msg: ReceivedTopicMessage) -> None:
             )
 
     # 5. Persist topics + advance status.
+    extra_payload: dict[str, object] = {
+        "topic_tags": _serialize_topics(topics),
+        "processing_completed_at": utc_now(),
+        "processing_error": None,
+    }
+    if judged_subject:
+        extra_payload["category"] = judged_subject
+
     await _set_status(
         tenant_id=payload.tenant_id,
         workspace_id=payload.workspace_id,
         document_id=payload.document_id,
         status=DocumentStatus.topics_extracted,
-        extra={
-            "topic_tags": _serialize_topics(topics),
-            "processing_completed_at": utc_now(),
-            "processing_error": None,
-        },
+        extra=extra_payload,
     )
     logger.info(
-        "Extracted topics doc=%s count=%d",
+        "Extracted topics doc=%s count=%d judged_subject=%s",
         payload.document_id,
         len(topics),
+        judged_subject,
     )
 
     # 6. Hand off to the chunking worker. The caller retries this whole

@@ -1850,9 +1850,12 @@ class AnswerInput extends StatelessWidget {
           initialValue: draftAnswer,
           enabled: enabled,
           onChanged: onChanged,
-          hintText: 'Type your answer',
+          hintText: question.hasMultipleBlanksQuestion
+              ? 'e.g. answer 1, answer 2'
+              : 'Type your answer',
           minLines: 1,
           maxLines: 2,
+          hasMultipleBlanks: question.hasMultipleBlanksQuestion,
         ),
       QuestionType.longAnswer => _TextAnswerInput(
           initialValue: draftAnswer,
@@ -1972,6 +1975,7 @@ class _TextAnswerInput extends StatefulWidget {
     required this.minLines,
     required this.maxLines,
     this.monospace = false,
+    this.hasMultipleBlanks = false,
   });
 
   final String? initialValue;
@@ -1981,6 +1985,7 @@ class _TextAnswerInput extends StatefulWidget {
   final int minLines;
   final int maxLines;
   final bool monospace;
+  final bool hasMultipleBlanks;
 
   @override
   State<_TextAnswerInput> createState() => _TextAnswerInputState();
@@ -1996,6 +2001,15 @@ class _TextAnswerInputState extends State<_TextAnswerInput> {
   }
 
   @override
+  void didUpdateWidget(covariant _TextAnswerInput oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialValue != oldWidget.initialValue &&
+        widget.initialValue != _controller.text) {
+      _controller.text = widget.initialValue ?? '';
+    }
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     super.dispose();
@@ -2005,55 +2019,168 @@ class _TextAnswerInputState extends State<_TextAnswerInput> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final currentText = _controller.text;
+    final hasComma = currentText.contains(',');
 
-    return TextField(
-      controller: _controller,
-      enabled: widget.enabled,
-      minLines: widget.minLines,
-      maxLines: widget.maxLines,
-      autocorrect: !widget.monospace,
-      textCapitalization: widget.monospace
-          ? TextCapitalization.none
-          : TextCapitalization.sentences,
-      style: widget.monospace ? const TextStyle(fontFamily: 'monospace') : null,
-      decoration: InputDecoration(
-        hintText: widget.hintText,
-        hintStyle: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant.withAlpha(120),
-        ),
-        filled: true,
-        fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(
-            color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0),
-            width: 1.5,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (widget.hasMultipleBlanks) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xFF1E3A8A).withValues(alpha: 0.25)
+                  : const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isDark
+                    ? const Color(0xFF3B82F6).withValues(alpha: 0.35)
+                    : const Color(0xFFBFDBFE),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.edit_note_rounded,
+                  size: 20,
+                  color:
+                      isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      text: 'Fill both blanks: ',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: isDark
+                            ? const Color(0xFF93C5FD)
+                            : const Color(0xFF1E40AF),
+                      ),
+                      children: [
+                        TextSpan(
+                          text:
+                              'Separate your answers with a comma (e.g., answer 1, answer 2)',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.9)
+                                : const Color(0xFF1E293B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(
-            color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0),
-            width: 1.5,
+        ],
+        TextField(
+          controller: _controller,
+          enabled: widget.enabled,
+          minLines: widget.minLines,
+          maxLines: widget.maxLines,
+          autocorrect: !widget.monospace,
+          textCapitalization: widget.monospace
+              ? TextCapitalization.none
+              : TextCapitalization.sentences,
+          style: widget.monospace ? const TextStyle(fontFamily: 'monospace') : null,
+          decoration: InputDecoration(
+            hintText: widget.hintText,
+            hintStyle: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant.withAlpha(120),
+            ),
+            filled: true,
+            fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(
+                color:
+                    isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0),
+                width: 1.5,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(
+                color:
+                    isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0),
+                width: 1.5,
+              ),
+            ),
+            disabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(
+                color:
+                    isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                width: 1.5,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(
+                color: theme.colorScheme.primary,
+                width: 2.0,
+              ),
+            ),
+            alignLabelWithHint: true,
           ),
+          onChanged: (val) {
+            setState(() {});
+            widget.onChanged(val);
+          },
         ),
-        disabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(
-            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-            width: 1.5,
+        if (widget.hasMultipleBlanks && widget.enabled) ...[
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                Icon(
+                  hasComma
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.info_outline_rounded,
+                  size: 14,
+                  color: hasComma
+                      ? (isDark
+                          ? const Color(0xFF4ADE80)
+                          : const Color(0xFF16A34A))
+                      : (isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF64748B)),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    hasComma
+                        ? 'Answers separated by comma'
+                        : 'Enter answer 1, then a comma, then answer 2',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: hasComma ? FontWeight.w600 : FontWeight.w500,
+                      color: hasComma
+                          ? (isDark
+                              ? const Color(0xFF4ADE80)
+                              : const Color(0xFF16A34A))
+                          : (isDark
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF64748B)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(
-            color: theme.colorScheme.primary,
-            width: 2.0,
-          ),
-        ),
-        alignLabelWithHint: true,
-      ),
-      onChanged: widget.onChanged,
+        ],
+      ],
     );
   }
 }

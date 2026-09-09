@@ -7,7 +7,7 @@ part of 'revision_session_notifier.dart';
 // **************************************************************************
 
 String _$revisionSessionNotifierHash() =>
-    r'9d343263360c2c9e16ce78253ad239d4bb288eda';
+    r'0ce6215c8191343fe1ee8bdd7173dc76ae154125';
 
 /// Copied from Dart SDK
 class _SystemHash {

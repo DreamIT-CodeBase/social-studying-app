@@ -74,7 +74,7 @@ Format Rules:
 - 'question_type' must be exactly one of: "mcq", "true_false", "short_answer", "long_answer", "mathematical".
 - For 'mcq': options list must have exactly 4 items with keys A, B, C, D and exactly one correct.
 - For 'true_false': answer must be 'true' or 'false' (lowercase strings).
-- For 'short_answer': acceptable_variants must contain acceptable spelling/wording variants (or [] if none).
+- For 'short_answer': acceptable_variants must contain acceptable spelling/wording variants (or [] if none). If generating a question with two blanks (e.g. '_______ and _______'), format the canonical answer with a comma separating the two answers (e.g. 'oxygen, carbon dioxide') and include order variations in acceptable_variants.
 - For 'long_answer': key_points must contain at least 3 distinct scoring rubric points (strings).
 - For 'mathematical': solution_steps must contain at least 2 steps (strings).
 

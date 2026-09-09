@@ -158,7 +158,8 @@ async def _evaluate_short_answer(question: Question, submitted: str) -> Evaluati
     norm_submitted = _normalize_short(submitted)
     candidates = [question.answer, *question.grading_hints]
     for candidate in candidates:
-        if _normalize_short(candidate) == norm_submitted:
+        norm_candidate = _normalize_short(candidate)
+        if norm_candidate == norm_submitted or _comma_parts_match(norm_candidate, norm_submitted):
             return EvaluationResult(
                 is_correct=True,
                 canonical_answer=question.answer,
@@ -171,6 +172,9 @@ async def _evaluate_short_answer(question: Question, submitted: str) -> Evaluati
         "along with any acceptable variations (grading hints). Determine if "
         "the student's answer is semantically equivalent, synonymous, or "
         "conceptually identical to the expected answer in context. If the "
+        "question has multiple blank spaces and asks for answers separated by "
+        "a comma (or 'and'), evaluate if each answer is correct (allowing "
+        "for either order if the blanks are symmetric/interchangeable). If the "
         "student provided a correct synonym (for example, 'spirilla' versus "
         "'spirochetes'), mark it correct. If the answer is conceptually wrong, "
         "unrelated, or too vague, mark it incorrect. "
@@ -178,6 +182,7 @@ async def _evaluate_short_answer(question: Question, submitted: str) -> Evaluati
     )
     acceptable = ", ".join(question.grading_hints) if question.grading_hints else "None"
     user_prompt = (
+        f"Question: {question.body}\n"
         f"Expected answer: {question.answer}\n"
         f"Acceptable variations: {acceptable}\n"
         f"Student answer: {submitted}"
@@ -385,8 +390,24 @@ def _normalize_short(text: str) -> str:
     lowered = no_diacritics.lower().strip()
     lowered = _SHORT_LEADING_PUNCT.sub("", lowered)
     lowered = _SHORT_TRAILING_PUNCT.sub("", lowered)
+    # Standardize comma spacing so "a,b", "a, b", and "a , b" normalize identically.
+    lowered = re.sub(r"\s*,\s*", ", ", lowered)
     # Collapse internal whitespace runs so "two  words" matches "two words".
     return re.sub(r"\s+", " ", lowered)
+
+
+def _comma_parts_match(candidate: str, submitted: str) -> bool:
+    """True if both candidate and submitted have comma-separated parts that match.
+
+    Supports both ordered and symmetric (e.g. 'A, B' vs 'B, A') answers.
+    """
+    if "," not in candidate or "," not in submitted:
+        return False
+    c_parts = [p.strip() for p in candidate.split(",") if p.strip()]
+    s_parts = [p.strip() for p in submitted.split(",") if p.strip()]
+    if len(c_parts) == len(s_parts) and len(c_parts) >= 2:
+        return c_parts == s_parts or sorted(c_parts) == sorted(s_parts)
+    return False
 
 
 _MATH_STRIP_CHARS = re.compile(r"[\s${}\\]+")

@@ -548,8 +548,13 @@ String subjectForTopic(String topic) {
   return bestSubject;
 }
 
-/// Derives the primary subject of a Document from its filename or topic tags.
+/// Derives the primary subject of a Document from its LLM evaluated category, filename, or topic tags.
 String subjectForDocument(Document doc) {
+  // 0. Use LLM-evaluated category first (e.g. novel name, Bible, specific book/subject)
+  if (doc.category != null && doc.category!.trim().isNotEmpty) {
+    return doc.category!.trim();
+  }
+
   // 1. Check filename
   final fromFilename = subjectForTopic(doc.filename);
   if (fromFilename != 'Study') {
@@ -570,7 +575,34 @@ String subjectForDocument(Document doc) {
 /// Returns a friendly icon/emoji for the subject.
 String subjectEmoji(String? subject) {
   if (subject == null) return '📚';
-  switch (subject.toLowerCase()) {
+  final lower = subject.toLowerCase().trim();
+
+  // Religious texts & scriptures
+  if (lower.contains('bible') ||
+      lower.contains('scripture') ||
+      lower.contains('testament') ||
+      lower.contains('quran') ||
+      lower.contains('koran') ||
+      lower.contains('gita') ||
+      lower.contains('torah')) {
+    return '📜';
+  }
+
+  // Novels, stories & literature
+  if (lower.contains('novel') ||
+      lower.contains('gatsby') ||
+      lower.contains('mockingbird') ||
+      lower.contains('odyssey') ||
+      lower.contains('iliad') ||
+      lower.contains('hamlet') ||
+      lower.contains('frankenstein') ||
+      lower.contains('story') ||
+      lower.contains('tales') ||
+      lower.contains('chronicles')) {
+    return '📖';
+  }
+
+  switch (lower) {
     case 'physics':
       return '⚛️';
     case 'mathematics':
@@ -626,10 +658,34 @@ String subjectEmoji(String? subject) {
   }
 }
 
+/// Palette of refined accent colors for novel and custom subjects.
+const List<Color> _customSubjectPalette = [
+  Color(0xFF6366F1), // Indigo
+  Color(0xFF8B5CF6), // Violet
+  Color(0xFFEC4899), // Pink
+  Color(0xFFF59E0B), // Amber
+  Color(0xFF10B981), // Emerald
+  Color(0xFF06B6D4), // Cyan
+  Color(0xFF3B82F6), // Blue
+  Color(0xFFD97706), // Bronze
+  Color(0xFF0D9488), // Teal
+  Color(0xFFE11D48), // Rose
+  Color(0xFF7C3AED), // Deep Purple
+];
+
 /// Returns an accent color for the subject.
 Color subjectColor(String? subject) {
   if (subject == null) return const Color(0xFF6366F1); // Indigo
-  switch (subject.toLowerCase()) {
+  final lower = subject.toLowerCase().trim();
+
+  // Religious texts & scriptures
+  if (lower.contains('bible') ||
+      lower.contains('scripture') ||
+      lower.contains('testament')) {
+    return const Color(0xFFB45309); // Reverent Warm Amber/Gold
+  }
+
+  switch (lower) {
     case 'physics':
       return const Color(0xFF8B5CF6); // Violet / Purple
     case 'mathematics':
@@ -681,6 +737,8 @@ Color subjectColor(String? subject) {
     case 'foreign languages':
       return const Color(0xFF059669); // Green
     default:
-      return const Color(0xFF6366F1); // Indigo
+      // Deterministically pick a curated accent color for custom novel/book names
+      final hash = lower.codeUnits.fold(0, (prev, elem) => prev + elem);
+      return _customSubjectPalette[hash % _customSubjectPalette.length];
   }
 }

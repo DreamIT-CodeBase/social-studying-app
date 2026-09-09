@@ -90,15 +90,42 @@ void main() {
       topicTags: [TopicTag(name: 'Quadratic Equations')],
     );
     expect(subjectForDocument(docMath), 'Mathematics');
+
+    const docNovel = Document(
+      id: 'doc_3',
+      workspaceId: 'w1',
+      filename: 'gatsby_ch1.pdf',
+      docType: DocumentType.pdf,
+      status: DocumentStatus.ready,
+      createdAt: '2026-05-14T00:00:00Z',
+      category: 'The Great Gatsby',
+    );
+    expect(subjectForDocument(docNovel), 'The Great Gatsby');
+
+    const docBible = Document(
+      id: 'doc_4',
+      workspaceId: 'w1',
+      filename: 'scriptures.pdf',
+      docType: DocumentType.pdf,
+      status: DocumentStatus.ready,
+      createdAt: '2026-05-14T00:00:00Z',
+      category: 'The Holy Bible',
+    );
+    expect(subjectForDocument(docBible), 'The Holy Bible');
   });
 
-  test('provides appropriate emojis and colors', () {
+  test('provides appropriate emojis and colors including novels and Bible', () {
     expect(subjectEmoji('Physics'), '⚛️');
     expect(subjectEmoji('Mathematics'), '📐');
     expect(subjectEmoji('Chemistry'), '🧪');
     expect(subjectEmoji('Biology'), '🧬');
     expect(subjectEmoji('Computer Science'), '💻');
+    expect(subjectEmoji('The Great Gatsby'), '📖');
+    expect(subjectEmoji('The Holy Bible'), '📜');
     expect(subjectEmoji('Study'), '📖');
     expect(subjectEmoji(null), '📚');
+
+    expect(subjectColor('The Holy Bible'), isNotNull);
+    expect(subjectColor('The Great Gatsby'), isNotNull);
   });
 }

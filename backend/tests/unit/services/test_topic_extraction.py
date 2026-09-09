@@ -349,3 +349,28 @@ async def test_medium_file_between_2k_and_3k_chars_uses_balanced_guidance():
 
     assert "BALANCED EXTRACTION" in captured["system_prompt"]
     assert "2,000 - 3,000 characters" in captured["system_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_extract_topics_and_subject_returns_judged_subject():
+    text = "In my younger and more vulnerable years my father gave me some advice..."
+    with patch(
+        "app.services.topic_extraction.azure_openai.chat_json",
+        AsyncMock(return_value={
+            "subject": "The Great Gatsby",
+            "topics": [
+                {
+                    "name": "The American Dream in 1920s",
+                    "description": "Exploration of wealth and ambition in post-war America.",
+                    "complexity_level": 2,
+                    "page_refs": [1],
+                }
+            ],
+        }),
+    ):
+        topics, subject = await topic_extraction.extract_topics_and_subject(text)
+        assert subject == "The Great Gatsby"
+        assert len(topics) == 1
+        assert topics[0].name == "The American Dream in 1920s"
+        assert topic_extraction.get_last_extracted_subject() == "The Great Gatsby"
+

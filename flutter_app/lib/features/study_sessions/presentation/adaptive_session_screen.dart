@@ -16,6 +16,8 @@ import 'package:social_study_app/features/gamification/presentation/widgets/cele
 import 'package:social_study_app/features/study_sessions/data/adaptive_session_repository.dart';
 import 'package:social_study_app/features/study_sessions/domain/adaptive_session_models.dart';
 import 'package:social_study_app/features/study_sessions/presentation/adaptive_session_legacy_ui.dart';
+import 'package:social_study_app/shared/models/question.dart'
+    show hasMultipleBlanks;
 import 'package:social_study_app/shared/models/workspace.dart'
     show isSelfLearningWorkspaceId;
 import 'package:social_study_app/shared/services/dio_client.dart';
@@ -719,21 +721,112 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
         ],
       );
     }
-    return TextField(
-      controller: _answerController,
-      enabled: !_answerRevealed,
-      minLines: question.questionType == 'long_answer' ? 5 : 2,
-      maxLines: question.questionType == 'long_answer' ? 8 : 4,
-      maxLength: 4000,
-      textCapitalization: TextCapitalization.sentences,
-      onChanged: (value) => setState(() => _draftAnswer = value),
-      decoration: InputDecoration(
-        hintText: question.questionType == 'mathematical'
-            ? 'Enter your answer'
-            : 'Write your answer here',
-        filled: true,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(18)),
-      ),
+    final multiBlanks = question.questionType == 'short_answer' &&
+        hasMultipleBlanks(question.body);
+    final hasComma = _draftAnswer.contains(',');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (multiBlanks) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFBFDBFE), width: 1),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.edit_note_rounded,
+                  size: 20,
+                  color: Color(0xFF2563EB),
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      text: 'Fill both blanks: ',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1E40AF),
+                      ),
+                      children: [
+                        TextSpan(
+                          text:
+                              'Separate your answers with a comma (e.g., answer 1, answer 2)',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF1E293B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        TextField(
+          controller: _answerController,
+          enabled: !_answerRevealed,
+          minLines: question.questionType == 'long_answer' ? 5 : 2,
+          maxLines: question.questionType == 'long_answer' ? 8 : 4,
+          maxLength: 4000,
+          textCapitalization: TextCapitalization.sentences,
+          onChanged: (value) => setState(() => _draftAnswer = value),
+          decoration: InputDecoration(
+            hintText: multiBlanks
+                ? 'e.g. answer 1, answer 2'
+                : (question.questionType == 'mathematical'
+                    ? 'Enter your answer'
+                    : 'Write your answer here'),
+            filled: true,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(18)),
+          ),
+        ),
+        if (multiBlanks && !_answerRevealed) ...[
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                Icon(
+                  hasComma
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.info_outline_rounded,
+                  size: 14,
+                  color: hasComma
+                      ? const Color(0xFF16A34A)
+                      : const Color(0xFF64748B),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    hasComma
+                        ? 'Answers separated by comma'
+                        : 'Enter answer 1, then a comma, then answer 2',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: hasComma ? FontWeight.w600 : FontWeight.w500,
+                      color: hasComma
+                          ? const Color(0xFF16A34A)
+                          : const Color(0xFF64748B),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 

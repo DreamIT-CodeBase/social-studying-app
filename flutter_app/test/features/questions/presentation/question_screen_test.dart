@@ -45,6 +45,15 @@ Question _short() => const Question(
       body: 'What gas do plants release during photosynthesis?',
     );
 
+Question _twoBlanks() => const Question(
+      id: 'q_two_blanks',
+      topic: 'Cell Biology',
+      questionType: QuestionType.shortAnswer,
+      difficulty: DifficultyLevel.intermediate,
+      body:
+          'Photosynthesis converts _______ and _______ into glucose and oxygen.',
+    );
+
 Question _long() => const Question(
       id: 'q_long',
       topic: 'Photosynthesis',
@@ -270,6 +279,37 @@ void main() {
 
     expect(find.byType(TextField), findsOneWidget);
     expect(find.text('Type your answer'), findsOneWidget);
+  });
+
+  testWidgets(
+      'renders a two-blank short-answer question with comma instructions and dynamic guidance',
+      (tester) async {
+    when(() => repo.next(workspaceId: any(named: 'workspaceId')))
+        .thenAnswer((_) async => _twoBlanks());
+
+    await tester.pumpWidget(_wrap(repo));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TextField), findsOneWidget);
+    // Instruction banner
+    expect(find.textContaining('Fill both blanks:'), findsOneWidget);
+    expect(find.textContaining('Separate your answers with a comma'), findsOneWidget);
+    // Comma hint text in TextField
+    expect(find.text('e.g. answer 1, answer 2'), findsOneWidget);
+    // Dynamic comma indicator before comma
+    expect(
+        find.text('Enter answer 1, then a comma, then answer 2'), findsOneWidget);
+
+    // Type answer without comma
+    await tester.enterText(find.byType(TextField), 'water');
+    await tester.pumpAndSettle();
+    expect(
+        find.text('Enter answer 1, then a comma, then answer 2'), findsOneWidget);
+
+    // Type answer with comma
+    await tester.enterText(find.byType(TextField), 'water, carbon dioxide');
+    await tester.pumpAndSettle();
+    expect(find.text('Answers separated by comma'), findsOneWidget);
   });
 
   testWidgets('renders a long-answer question with a text field',

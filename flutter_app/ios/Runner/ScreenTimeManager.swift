@@ -1,6 +1,7 @@
 import Flutter
 import Foundation
 import UIKit
+import UserNotifications
 
 #if canImport(FamilyControls)
 import FamilyControls
@@ -238,28 +239,45 @@ extension DeviceActivityEvent.Name {
       return
     }
 
-    guard let selection = loadSelection(), hasSelectedApps() else {
-      clearShieldsAndStopMonitoring(from: store)
-      userDefaults.set(false, forKey: shieldsActiveKey)
-      userDefaults.synchronize()
-      return
-    }
+    let selection = loadSelection()
+    let hasCustomSelection = selection != nil && hasSelectedApps()
 
     if availableMinutes <= 0 {
-      // Time exhausted — stop monitoring and apply all configured shields immediately
+      // Time exhausted — stop monitoring and apply shields immediately
       NSLog("[ScreenTimeManager] TIME EXHAUSTED — applying shields NOW")
       #if canImport(DeviceActivity)
       DeviceActivityCenter().stopMonitoring([.dailyMonitoring])
       #endif
-      applyShields(selection, to: store)
+
+      if let sel = selection, hasCustomSelection {
+        applyShields(sel, to: store)
+      } else {
+        // Internal default shielding: block all non-essential third-party application categories and web domains
+        store.shield.applicationCategories = .all()
+        store.shield.webDomainCategories = .all()
+      }
+
+      let wasActive = userDefaults.bool(forKey: shieldsActiveKey)
       userDefaults.set(true, forKey: shieldsActiveKey)
       userDefaults.set(Date().timeIntervalSince1970, forKey: lastShieldApplyKey)
       userDefaults.synchronize()
+
+      let lastNotif = userDefaults.double(forKey: "last_exhausted_notification_timestamp")
+      let now = Date().timeIntervalSince1970
+      if !wasActive || (now - lastNotif > 60) {
+        userDefaults.set(now, forKey: "last_exhausted_notification_timestamp")
+        sendExhaustedNotification()
+      }
     } else {
       // Time available — remove shields and schedule threshold monitoring
       clearShields(from: store)
       userDefaults.set(false, forKey: shieldsActiveKey)
       userDefaults.synchronize()
+
+      guard let sel = selection, hasCustomSelection else {
+        // No custom selection to monitor threshold on; shields cleared while time > 0
+        return
+      }
 
       #if canImport(DeviceActivity)
       let schedule = DeviceActivitySchedule(
@@ -399,6 +417,27 @@ extension DeviceActivityEvent.Name {
   }
 
   // MARK: - Helpers
+
+  @objc func sendExhaustedNotification() {
+    let content = UNMutableNotificationContent()
+    content.title = "Time's Up!"
+    content.body = "You have consumed your all time for social media."
+    content.sound = .default
+
+    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+    let request = UNNotificationRequest(
+      identifier: "ai.socialstudying.screentime.exhausted",
+      content: content,
+      trigger: trigger
+    )
+    UNUserNotificationCenter.current().add(request) { error in
+      if let error = error {
+        NSLog("[ScreenTimeManager] Failed to schedule notification: %@", error.localizedDescription)
+      } else {
+        NSLog("[ScreenTimeManager] Exhausted notification scheduled successfully")
+      }
+    }
+  }
 
   private func findTopViewController() -> UIViewController? {
     let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
