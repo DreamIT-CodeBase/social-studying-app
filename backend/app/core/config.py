@@ -11,7 +11,13 @@ class Settings(BaseSettings):
     )
 
     environment: str = "development"
-    allowed_origins: list[str] = ["http://localhost:3000"]
+    allowed_origins: list[str] = [
+        "https://socialstudying.ai",
+        "https://www.socialstudying.ai",
+        "https://lively-plant-080413600.7.azurestaticapps.net",
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ]
 
     # Flutter web (`flutter run -d chrome`) binds a *random* localhost port on
     # every run, so a fixed allowed_origins entry can't keep up. In non-prod we
