@@ -55,4 +55,18 @@ class SubscriptionRepository {
     );
     return Subscription.fromJson(response.data as Map<String, dynamic>);
   }
+
+  /// Check student 7-day free trial & subscription status.
+  Future<StudentSubscriptionStatus> getStudentStatus() async {
+    final response = await _dio.get('/api/v1/subscriptions/student/status');
+    return StudentSubscriptionStatus.fromJson(
+        response.data as Map<String, dynamic>);
+  }
+
+  /// Generate secure short-lived handoff token for mobile -> website checkout.
+  Future<HandoffTokenResult> getHandoffToken() async {
+    final response = await _dio.post('/api/v1/subscriptions/handoff-token');
+    return HandoffTokenResult.fromJson(
+        response.data as Map<String, dynamic>);
+  }
 }

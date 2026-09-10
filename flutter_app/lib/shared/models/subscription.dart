@@ -30,17 +30,20 @@ enum SubscriptionStatus {
 enum SubscriptionPlan {
   monthly,
   annual,
-  proAdmin;
+  proAdmin,
+  studentMonthly;
 
   static SubscriptionPlan fromWire(String? value) => switch (value) {
         'annual' => SubscriptionPlan.annual,
         'pro_admin' => SubscriptionPlan.proAdmin,
+        'student_monthly' => SubscriptionPlan.studentMonthly,
         _ => SubscriptionPlan.monthly,
       };
 
   String get wire => switch (this) {
         SubscriptionPlan.annual => 'annual',
         SubscriptionPlan.proAdmin => 'pro_admin',
+        SubscriptionPlan.studentMonthly => 'student_monthly',
         SubscriptionPlan.monthly => 'monthly',
       };
 }
@@ -178,3 +181,60 @@ class CheckoutSessionResponse {
         sessionId: json['session_id'] as String? ?? '',
       );
 }
+
+class StudentSubscriptionStatus {
+  const StudentSubscriptionStatus({
+    required this.isActive,
+    required this.isTrial,
+    required this.isTrialExpired,
+    required this.daysRemaining,
+    this.trialEndsAt,
+    this.subscriptionStatus,
+    this.planId,
+    required this.canAccessStudy,
+    required this.message,
+  });
+
+  final bool isActive;
+  final bool isTrial;
+  final bool isTrialExpired;
+  final int daysRemaining;
+  final String? trialEndsAt;
+  final String? subscriptionStatus;
+  final String? planId;
+  final bool canAccessStudy;
+  final String message;
+
+  factory StudentSubscriptionStatus.fromJson(Map<String, dynamic> json) =>
+      StudentSubscriptionStatus(
+        isActive: json['is_active'] as bool? ?? false,
+        isTrial: json['is_trial'] as bool? ?? true,
+        isTrialExpired: json['is_trial_expired'] as bool? ?? false,
+        daysRemaining: (json['days_remaining'] as num?)?.toInt() ?? 7,
+        trialEndsAt: json['trial_ends_at'] as String?,
+        subscriptionStatus: json['subscription_status'] as String?,
+        planId: json['plan_id'] as String?,
+        canAccessStudy: json['can_access_study'] as bool? ?? true,
+        message: json['message'] as String? ?? '',
+      );
+}
+
+class HandoffTokenResult {
+  const HandoffTokenResult({
+    required this.handoffToken,
+    required this.redirectUrl,
+    required this.expiresInSeconds,
+  });
+
+  final String handoffToken;
+  final String redirectUrl;
+  final int expiresInSeconds;
+
+  factory HandoffTokenResult.fromJson(Map<String, dynamic> json) =>
+      HandoffTokenResult(
+        handoffToken: json['handoff_token'] as String? ?? '',
+        redirectUrl: json['redirect_url'] as String? ?? '',
+        expiresInSeconds: (json['expires_in_seconds'] as num?)?.toInt() ?? 900,
+      );
+}
+

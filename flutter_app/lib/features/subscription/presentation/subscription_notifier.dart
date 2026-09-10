@@ -154,6 +154,28 @@ class SubscriptionNotifier extends StateNotifier<SubscriptionState> {
     }
   }
 
+  /// Launch website subscription flow in external mobile browser.
+  Future<bool> openWebsiteOnboarding() async {
+    state = state.copyWith(isCheckingOut: true, clearError: true);
+    try {
+      final handoff = await _repository.getHandoffToken();
+      state = state.copyWith(isCheckingOut: false);
+      final uri = Uri.parse(handoff.redirectUrl);
+      return await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      final user = _ref.read(authNotifierProvider).valueOrNull?.maybeWhen(
+            authenticated: (u) => u,
+            orElse: () => null,
+          );
+      final emailParam = user?.email != null
+          ? '?email=${Uri.encodeComponent(user!.email)}'
+          : '';
+      final uri = Uri.parse('https://socialstudying.ai/subscribe$emailParam');
+      state = state.copyWith(isCheckingOut: false);
+      return await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
   /// Verifies checkout session, upgrades role, and refreshes auth user state.
   Future<Subscription?> verifySession(String sessionId) async {
     state = state.copyWith(isVerifying: true, clearError: true);

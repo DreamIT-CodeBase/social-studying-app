@@ -32,6 +32,8 @@ import 'package:social_study_app/features/home/providers/self_study_subject_prov
 import 'package:social_study_app/features/screen_time/providers/screen_time_providers.dart';
 import 'package:social_study_app/features/screen_time/models/screen_time_wallet.dart';
 import 'package:social_study_app/features/notifications/presentation/notification_service.dart';
+import 'package:social_study_app/features/subscription/data/subscription_repository.dart';
+import 'package:social_study_app/features/subscription/presentation/student_paywall_dialog.dart';
 
 final studentHomeTabProvider = StateProvider<int>((ref) {
   final saved = SessionPersistenceService.instance.getTabSync() ?? 0;
@@ -48,6 +50,7 @@ class StudentHomeScreen extends ConsumerStatefulWidget {
 class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
     with WidgetsBindingObserver {
   bool _restoring = true;
+  bool _paywallDialogShown = false;
 
   static const _tabs = [
     (icon: Icons.home_rounded, label: 'Home'),
@@ -65,6 +68,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
         TelemetryService.instance.initialize(ref);
         _restoreSession();
         ref.read(authNotifierProvider.notifier).refresh();
+        _checkStudentSubscription();
       }
     });
   }
@@ -82,6 +86,25 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
       // server profile so the switcher merges that membership with Self Study.
       ref.read(authNotifierProvider.notifier).refresh();
       ref.read(screenTimeNotifierProvider.notifier).refreshWallet();
+      _checkStudentSubscription();
+    }
+  }
+
+  Future<void> _checkStudentSubscription() async {
+    try {
+      final status =
+          await ref.read(subscriptionRepositoryProvider).getStudentStatus();
+      if (!mounted) return;
+      if (status.isTrialExpired && !status.isActive && !_paywallDialogShown) {
+        _paywallDialogShown = true;
+        await StudentPaywallDialog.show(
+          context,
+          daysRemaining: status.daysRemaining,
+          isExpired: true,
+        );
+      }
+    } catch (_) {
+      // Swallowed silently
     }
   }
 

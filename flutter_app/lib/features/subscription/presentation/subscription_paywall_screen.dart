@@ -225,12 +225,13 @@ class SubscriptionPaywallScreen extends ConsumerWidget {
                       onPressed: state.isCheckingOut
                           ? null
                           : () async {
-                              final success = await notifier.startCheckout();
+                              final success =
+                                  await notifier.openWebsiteOnboarding();
                               if (!success && context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(state.error ??
-                                        'Unable to open Stripe checkout'),
+                                        'Unable to open website onboarding flow'),
                                     backgroundColor: AppColors.error,
                                   ),
                                 );
@@ -248,10 +249,10 @@ class SubscriptionPaywallScreen extends ConsumerWidget {
                           : const Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.lock_outline_rounded, size: 20),
+                                Icon(Icons.open_in_browser_rounded, size: 20),
                                 SizedBox(width: 8),
                                 Text(
-                                  'Continue to Stripe Checkout',
+                                  'Continue to Website Checkout',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,

@@ -20,6 +20,7 @@ class SubscriptionPlan(StrEnum):
     monthly = "monthly"
     annual = "annual"
     pro_admin = "pro_admin"
+    student_monthly = "student_monthly"
 
 
 class Subscription(CosmosDocument):
@@ -48,6 +49,17 @@ class CreateCheckoutSessionRequest(BaseModel):
     cancel_url: str | None = None
 
 
+class PublicCheckoutSessionRequest(BaseModel):
+    plan_id: SubscriptionPlan = SubscriptionPlan.monthly
+    email: str
+    full_name: str | None = None
+    phone: str | None = None
+    organization: str | None = None
+    verification_token: str | None = None
+    success_url: str | None = None
+    cancel_url: str | None = None
+
+
 class CheckoutSessionResponse(BaseModel):
     checkout_url: str
     session_id: str
@@ -55,6 +67,53 @@ class CheckoutSessionResponse(BaseModel):
 
 class VerifySessionRequest(BaseModel):
     session_id: str
+
+
+class PublicVerifySessionResponse(BaseModel):
+    is_active: bool
+    status: str
+    plan_id: str | None = None
+    email: str | None = None
+    role: str | None = None
+    message: str
+
+
+class SendEmailOtpRequest(BaseModel):
+    email: str
+
+
+class SendEmailOtpResponse(BaseModel):
+    message: str
+    expires_in_seconds: int = 600
+
+
+class VerifyEmailOtpRequest(BaseModel):
+    email: str
+    otp: str
+
+
+class VerifyEmailOtpResponse(BaseModel):
+    verified: bool
+    verification_token: str
+    message: str
+
+
+class HandoffTokenResponse(BaseModel):
+    handoff_token: str
+    redirect_url: str
+    expires_in_seconds: int = 900
+
+
+class StudentSubscriptionStatusResponse(BaseModel):
+    is_active: bool
+    is_trial: bool
+    is_trial_expired: bool
+    days_remaining: int
+    trial_ends_at: str | None = None
+    subscription_status: str | None = None
+    plan_id: str | None = None
+    can_access_study: bool
+    message: str
 
 
 class SubscriptionResponse(BaseModel):

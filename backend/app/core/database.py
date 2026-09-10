@@ -77,6 +77,7 @@ SCREEN_TIME_SETTINGS = "screen_time_settings"  # Cloud-backed workspace blocking
 SCREEN_TIME_WALLETS = "screen_time_wallets"  # Cloud-backed per-student usage wallet
 RAG_EVALUATIONS = "rag_evaluations"  # End-to-end RAG trace and evaluation records
 SUBSCRIPTIONS = "subscriptions"  # Stripe customer & subscription records
+EMAIL_OTPS = "email_otps"  # Single-use hashed email verification OTPs
 
 
 # Parental / Device Control

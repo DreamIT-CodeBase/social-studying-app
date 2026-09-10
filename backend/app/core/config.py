@@ -202,7 +202,9 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     stripe_price_id_monthly: str = ""
     stripe_price_id_annual: str = ""
+    stripe_price_id_student_monthly: str = ""
     stripe_app_redirect_scheme: str = "socialstudy"
+    website_base_url: str = "https://socialstudying.ai"
 
 
 settings = Settings()

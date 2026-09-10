@@ -4,8 +4,9 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -328,6 +329,18 @@ app.include_router(notifications.admin_router, prefix="/api/v1")
 app.include_router(screen_time.router, prefix="/api/v1")
 app.include_router(device_management.router, prefix="/api/v1")
 app.include_router(subscriptions.router, prefix="/api/v1")
+
+
+@app.post("/api/stripe/webhook", tags=["subscriptions"])
+async def direct_stripe_webhook(
+    request: Request,
+    stripe_signature: str | None = Header(None, alias="stripe-signature"),
+) -> dict[str, Any]:
+    """Public Stripe webhook endpoint at /api/stripe/webhook."""
+    from app.services import stripe_service
+
+    payload = await request.body()
+    return await stripe_service.handle_webhook_event(payload, stripe_signature)
 
 
 @app.get("/health")
