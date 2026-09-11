@@ -54,6 +54,16 @@ enum DocumentStatus {
         DocumentStatus.vectorizing =>
           false,
       };
+
+  /// Returns true if document is ready or has topics/chunks available for study sessions.
+  bool get isUsableForStudy => switch (this) {
+        DocumentStatus.ready ||
+        DocumentStatus.vectorizing ||
+        DocumentStatus.chunked ||
+        DocumentStatus.topicsExtracted =>
+          true,
+        _ => false,
+      };
 }
 
 enum DocumentType {

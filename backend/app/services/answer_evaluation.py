@@ -37,7 +37,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from app.models.question import Question, QuestionType
-from app.services import azure_openai
+from app.services import azure_openai, symbolic_math
 
 logger = logging.getLogger(__name__)
 
@@ -336,6 +336,43 @@ async def _evaluate_mathematical(question: Question, submitted: str) -> Evaluati
             canonical_answer=question.answer,
             rubric_score=1.0,
         )
+
+    # Deterministic symbolic equivalence check (algebraic, trigonometric, polynomial)
+    if symbolic_math.are_expressions_equivalent(submitted, question.answer):
+        return EvaluationResult(
+            is_correct=True,
+            canonical_answer=question.answer,
+            rubric_score=1.0,
+        )
+
+    # Check for calculus problems (derivatives, integrals)
+    calc_prob = symbolic_math.detect_calculus_or_advanced_problem(question.body)
+    if calc_prob is not None:
+        cand_ans = re.sub(r"^[a-zA-Z]'(?:\([a-zA-Z]\))?\s*=\s*", "", submitted.strip())
+        cand_ans = re.sub(r"^[a-zA-Z]\s*=\s*", "", cand_ans)
+        is_symbolic_correct = False
+        if calc_prob.problem_type == "derivative":
+            is_symbolic_correct = symbolic_math.check_derivative(
+                calc_prob.expression, calc_prob.variable, cand_ans
+            )
+        elif calc_prob.problem_type == "indefinite_integral":
+            is_symbolic_correct = symbolic_math.check_integral(
+                calc_prob.expression, calc_prob.variable, cand_ans
+            )
+        elif calc_prob.problem_type == "definite_integral":
+            is_symbolic_correct = symbolic_math.check_integral(
+                calc_prob.expression,
+                calc_prob.variable,
+                cand_ans,
+                lower_limit_str=calc_prob.lower_limit,
+                upper_limit_str=calc_prob.upper_limit,
+            )
+        if is_symbolic_correct:
+            return EvaluationResult(
+                is_correct=True,
+                canonical_answer=question.answer,
+                rubric_score=1.0,
+            )
 
     system_prompt = (
         "You are an exact mathematical grader. Decide whether the student's "

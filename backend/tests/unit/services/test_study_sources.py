@@ -45,5 +45,9 @@ async def test_current_sources_keep_latest_ready_version_per_filename():
     assert sources.document_ids == frozenset({"doc_new_scrape", "doc_pdf"})
     assert sources.topic_names == ("Microbiology", "Cells")
     collection.find.assert_called_once_with(
-        {"workspace_id": "wsp_a", "status": "ready", "deleted_at": None}
+        {
+            "workspace_id": "wsp_a",
+            "status": {"$in": ["ready", "vectorizing", "chunked", "topics_extracted"]},
+            "deleted_at": None,
+        }
     )

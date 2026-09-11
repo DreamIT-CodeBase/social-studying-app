@@ -20,15 +20,28 @@ class CurrentStudySources:
     topic_names: tuple[str, ...]
 
 
+USABLE_DOCUMENT_STATUSES = ["ready", "vectorizing", "chunked", "topics_extracted"]
+
+
 async def current_study_sources(*, tenant_id: str, workspace_id: str) -> CurrentStudySources:
-    cursor = get_collection(tenant_id, DOCUMENTS).find(
+    col = get_collection(tenant_id, DOCUMENTS)
+    cursor = col.find(
         {
             "workspace_id": workspace_id,
-            "status": "ready",
+            "status": {"$in": USABLE_DOCUMENT_STATUSES},
             "deleted_at": None,
         }
     )
     rows = await cursor.to_list(length=1000)
+    if not rows:
+        cursor = col.find(
+            {
+                "workspace_id": workspace_id,
+                "status": {"$nin": ["failed", "flagged"]},
+                "deleted_at": None,
+            }
+        )
+        rows = await cursor.to_list(length=1000)
     rows.sort(key=lambda row: str(row.get("created_at", "")), reverse=True)
 
     selected: list[dict] = []

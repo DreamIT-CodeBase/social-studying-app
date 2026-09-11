@@ -26,7 +26,7 @@ from app.api.adaptive_sessions import (
     complete_adaptive_session,
     prepare_adaptive_session,
 )
-from app.core.exceptions import ConflictError, ServiceUnavailableError
+from app.core.exceptions import ConflictError
 from app.models.adaptive_session import (
     AdaptiveLevel,
     AdaptiveSessionMode,
@@ -199,36 +199,33 @@ async def test_prepare_thin_material_exhausts_after_first_session():
 
 
 @pytest.mark.asyncio
-async def test_prepare_first_session_empty_with_content_is_retryable_503():
+async def test_prepare_first_session_empty_with_content_returns_guaranteed_plan_in_one_go():
     background = BackgroundTasks()
     with _prepare_env(used=0, prepared=[], pool_has_content=True):
-        with pytest.raises(ServiceUnavailableError) as exc_info:
-            await _prepare(AdaptiveSessionMode.study, background)
+        plan = await _prepare(AdaptiveSessionMode.study, background)
 
-    assert exc_info.value.status_code == 503
-    assert "being generated" in exc_info.value.detail
+    assert plan is not None
+    assert plan.item_count > 0
 
 
 @pytest.mark.asyncio
-async def test_prepare_first_session_empty_without_content_reports_processing():
+async def test_prepare_first_session_empty_without_content_returns_guaranteed_plan_in_one_go():
     background = BackgroundTasks()
     with _prepare_env(used=0, prepared=[], pool_has_content=False):
-        with pytest.raises(ServiceUnavailableError) as exc_info:
-            await _prepare(AdaptiveSessionMode.study, background)
+        plan = await _prepare(AdaptiveSessionMode.study, background)
 
-    assert exc_info.value.status_code == 503
-    assert "still being processed" in exc_info.value.detail
+    assert plan is not None
+    assert plan.item_count > 0
 
 
 @pytest.mark.asyncio
-async def test_prepare_unexpected_generation_error_becomes_retryable_503():
+async def test_prepare_unexpected_generation_error_returns_guaranteed_plan_in_one_go():
     background = BackgroundTasks()
     with _prepare_env(used=0, prepare_error=RuntimeError("foundry timeout")):
-        with pytest.raises(ServiceUnavailableError) as exc_info:
-            await _prepare(AdaptiveSessionMode.study, background)
+        plan = await _prepare(AdaptiveSessionMode.study, background)
 
-    assert exc_info.value.status_code == 503
-    assert "being prepared" in exc_info.value.detail
+    assert plan is not None
+    assert plan.item_count > 0
 
 
 @pytest.mark.asyncio
@@ -548,7 +545,7 @@ async def test_prepare_enforces_daily_session_limit_of_8():
     from fastapi import HTTPException
 
     # 1. When student has 7 sessions today, 8th is allowed
-    with _prepare_env(daily_count=7, prepared=[_question("qst_allowed")]) as env:
+    with _prepare_env(daily_count=7, prepared=[_question("qst_allowed")]):
         plan = await prepare_adaptive_session(
             workspace_id=SELF_WS,
             request=PrepareAdaptiveSessionRequest(mode=AdaptiveSessionMode.study),
@@ -559,7 +556,7 @@ async def test_prepare_enforces_daily_session_limit_of_8():
         assert plan.item_count == 1
 
     # 2. When student already has 8 sessions today, 9th attempt raises 429
-    with _prepare_env(daily_count=8, prepared=[_question("qst_blocked")]) as env:
+    with _prepare_env(daily_count=8, prepared=[_question("qst_blocked")]):
         with pytest.raises(HTTPException) as exc_info:
             await prepare_adaptive_session(
                 workspace_id=SELF_WS,

@@ -56,11 +56,7 @@ enum _SessionPhase {
 
 class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
   static const _preparationRetryDelays = <Duration>[
-    Duration(seconds: 1),
-    Duration(seconds: 1),
-    Duration(seconds: 2),
-    Duration(seconds: 2),
-    Duration(seconds: 3),
+    Duration(milliseconds: 500),
   ];
   final TextEditingController _answerController = TextEditingController();
   final List<SessionQuestionAttempt> _questionAttempts = [];
@@ -128,7 +124,7 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
       _flashcardAttempts.clear();
       _preparationAttempt = 0;
     });
-    const maxAttempts = 8;
+    const maxAttempts = 2;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         final isSelfStudy = isSelfLearningWorkspaceId(widget.workspaceId);

@@ -14,7 +14,6 @@ from app.api.adaptive_sessions import (
     _unique_flashcards,
     _unique_questions,
 )
-from app.core.exceptions import ServiceUnavailableError
 from app.mcp_tools.retrieve_content import RetrieveContentOutput, RetrievedChunk
 from app.models.adaptive_session import AdaptiveLevel, PreparedFlashcard
 from app.models.flashcard import Flashcard, FlashcardStatus
@@ -636,7 +635,7 @@ async def test_prepare_questions_self_study_topic_strict_filtering():
 
 
 @pytest.mark.asyncio
-async def test_prepare_questions_self_study_raises_503_never_fallback():
+async def test_prepare_questions_self_study_returns_guaranteed_plan_in_one_go():
     student = make_user(user_id="stu_a", role=UserRole.student, workspace_ids=["wsp_self_stu_a"])
     queue = MagicMock()
     queue.find.return_value = _Cursor([])
@@ -656,18 +655,17 @@ async def test_prepare_questions_self_study_raises_503_never_fallback():
         ),
         patch("app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch", AsyncMock(return_value=[])),
     ):
-        with pytest.raises(ServiceUnavailableError) as exc_info:
-            await _prepare_questions(
-                user=student,
-                workspace_id="wsp_self_stu_a",
-                target=3,
-                level=AdaptiveLevel.beginner,
-                revision=False,
-                subcategory="Kinematics",
-            )
+        prepared = await _prepare_questions(
+            user=student,
+            workspace_id="wsp_self_stu_a",
+            target=3,
+            level=AdaptiveLevel.beginner,
+            revision=False,
+            subcategory="Kinematics",
+        )
 
-    assert exc_info.value.status_code == 503
-    assert "prepared from your study material" in exc_info.value.detail
+    assert len(prepared) > 0
+    assert prepared[0].body
 
 
 @pytest.mark.asyncio
@@ -714,7 +712,7 @@ async def test_prepare_flashcards_self_study_topic_strict_filtering():
 
 
 @pytest.mark.asyncio
-async def test_prepare_flashcards_self_study_raises_503_never_fallback():
+async def test_prepare_flashcards_self_study_returns_guaranteed_plan_in_one_go():
     student = make_user(user_id="stu_a", role=UserRole.student, workspace_ids=["wsp_self_stu_a"])
     empty_col = MagicMock()
     empty_col.find.return_value = _Cursor([])
@@ -734,17 +732,16 @@ async def test_prepare_flashcards_self_study_raises_503_never_fallback():
         ),
         patch("app.api.adaptive_sessions._generate_flashcard_batch", AsyncMock(return_value=[])),
     ):
-        with pytest.raises(ServiceUnavailableError) as exc_info:
-            await _prepare_flashcards(
-                user=student,
-                workspace_id="wsp_self_stu_a",
-                target=3,
-                level=AdaptiveLevel.beginner,
-                subcategory="Kinematics",
-            )
+        prepared = await _prepare_flashcards(
+            user=student,
+            workspace_id="wsp_self_stu_a",
+            target=3,
+            level=AdaptiveLevel.beginner,
+            subcategory="Kinematics",
+        )
 
-    assert exc_info.value.status_code == 503
-    assert "prepared from your study material" in exc_info.value.detail
+    assert len(prepared) > 0
+    assert prepared[0].front
 
 
 @pytest.mark.asyncio

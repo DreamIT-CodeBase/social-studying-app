@@ -20,7 +20,7 @@ final selfStudySubjectCountsProvider =
   final docs = docsAsync.valueOrNull ?? const <Document>[];
   final counts = <String, int>{};
   for (final doc in docs) {
-    if (doc.status == DocumentStatus.ready) {
+    if (doc.status.isUsableForStudy) {
       final subject = subjectForDocument(doc);
       counts[subject] = (counts[subject] ?? 0) + 1;
     }
@@ -47,7 +47,7 @@ final selfStudyAvailableSubcategoriesProvider =
   final extractedTopics = <String>{};
 
   for (final doc in docs) {
-    if (doc.status != DocumentStatus.ready) continue;
+    if (!doc.status.isUsableForStudy) continue;
 
     final matchesSubject = activeSubject == null ||
         subjectForDocument(doc).toLowerCase() == activeSubject.toLowerCase();

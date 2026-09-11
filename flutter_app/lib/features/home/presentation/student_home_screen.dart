@@ -183,47 +183,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
       });
     });
 
-    ref.listen<AsyncValue<ScreenTimeWallet>>(screenTimeNotifierProvider,
-        (previous, next) {
-      final prevMinutes = previous?.valueOrNull?.availableMinutes;
-      final nextMinutes = next.valueOrNull?.availableMinutes;
-      if (nextMinutes != null &&
-          nextMinutes <= 0 &&
-          (prevMinutes == null || prevMinutes > 0)) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          ref
-              .read(notificationServiceProvider)
-              .showSocialTimeExhaustedNotification();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: const Color(0xFF1E1B4B),
-              duration: const Duration(seconds: 6),
-              content: Row(
-                children: const [
-                  Icon(Icons.timer_off_rounded, color: Colors.amberAccent),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'You have consumed your all time for social media.\nStudy more to unlock apps!',
-                      style: TextStyle(color: Colors.white, fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
-              action: SnackBarAction(
-                label: 'Study Now',
-                textColor: Colors.greenAccent,
-                onPressed: () {
-                  ref.read(studentHomeTabProvider.notifier).state = 0;
-                },
-              ),
-            ),
-          );
-        });
-      }
-    });
+
 
     final authValue = ref.watch(authNotifierProvider).valueOrNull;
     final displayName = authValue?.maybeWhen(

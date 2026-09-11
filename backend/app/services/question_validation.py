@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.mcp_tools.retrieve_content import RetrievedChunk
 from app.models.question import McqOption, QuestionType
+from app.services import symbolic_math
 
 if TYPE_CHECKING:
     from app.services.question_generation import GeneratedQuestion
@@ -95,79 +96,134 @@ def safe_evaluate_math_expr(expr: str, var_name: str, var_val: float) -> float |
         return None
 
 
+def clean_equation_text(text: str) -> str:
+    """Strip problem numbering, prefixes, and command phrases from question text."""
+    s = text.replace("\n", " ").strip()
+    # Strip leading problem numbers like "1. ", "121. ", "56. ", "#1: ", "Problem 1: "
+    s = re.sub(r"^\s*(?:(?:problem|question|#)\s*)?\d{1,3}[\.\)\:]\s*", "", s, flags=re.IGNORECASE)
+    # Strip embedded problem labels like "Problem 81: ", "#55: "
+    s = re.sub(r"\b(?:problem|question|#)\s*\d{1,3}\s*[\:\.]?\s*", "", s, flags=re.IGNORECASE)
+    # Strip directives like "Solve for x:", "Find x:", "Solve:"
+    s = re.sub(r"\b(?:solve|find)\s+(?:for\s+[a-zA-Z]\s*)?[\:\,]?\s*", "", s, flags=re.IGNORECASE)
+    return s.strip()
+
+
 def extract_equation(text: str) -> tuple[str, str, str] | None:
     """Extract (var_name, lhs, rhs) from a question stem containing an equation.
 
     Examples:
     - 'What is the value of x in the equation 8x = 40?' -> ('x', '8x', '40')
     - 'What is the solution to the equation 2(x + 3) = 16?' -> ('x', '2(x + 3)', '16')
+    - '1. x + 9 = 32' -> ('x', 'x + 9', '32')
     - 'Solve: x / 3 = -2' -> ('x', 'x / 3', '-2')
+    - '181. 2(x + 1) - 3 = 23' -> ('x', '2(x + 1) - 3', '23')
     """
     if "=" not in text:
         return None
 
-    # Find each '=' in text
-    for eq_match in re.finditer(r"=", text):
-        eq_idx = eq_match.start()
-        left_sub = text[:eq_idx]
-        right_sub = text[eq_idx + 1:]
-
-        # Walk backward from '=' to extract LHS math tokens
-        # Stop at word boundaries of words with length > 1 (English words like 'equation', 'solve', etc.)
-        lhs_chars: list[str] = []
-        for word in reversed(left_sub.split()):
-            w = word.strip("?.!,;:()")
-            if len(w) > 1 and w.isalpha():
-                break
-            lhs_chars.insert(0, word)
-
-        lhs_str = " ".join(lhs_chars).strip()
-        # Clean leading non-math characters
-        lhs_str = re.sub(r"^[^a-zA-Z0-9\(\+\-]+", "", lhs_str).strip()
-
-        # Walk forward from '=' to extract RHS math tokens
-        # Stop at English words, punctuation like ?, !, ;, etc.
-        rhs_chars: list[str] = []
-        for word in right_sub.split():
-            clean_word = word.rstrip("?.!,;:")
-            if len(clean_word) > 1 and clean_word.isalpha():
-                break
-            rhs_chars.append(clean_word)
-            if any(p in word for p in ("?", "!", ";")):
-                break
-
-        rhs_str = " ".join(rhs_chars).strip()
-        rhs_str = re.sub(r"[^a-zA-Z0-9\)\+\-]+$", "", rhs_str).strip()
-
-        if not lhs_str or not rhs_str:
+    cleaned_text = clean_equation_text(text)
+    # Try matching against cleaned text first, then original text
+    for target in (cleaned_text, text):
+        if "=" not in target:
             continue
+        for eq_match in re.finditer(r"=", target):
+            eq_idx = eq_match.start()
+            left_sub = target[:eq_idx]
+            right_sub = target[eq_idx + 1:]
 
-        # Look for single-letter variables in LHS and RHS
-        lhs_vars = re.findall(r"\b([a-zA-Z])\b", lhs_str)
-        # Also catch variables attached to numbers, like 8x
-        lhs_attached_vars = re.findall(r"\d+([a-zA-Z])", lhs_str)
-        all_lhs_vars = set(lhs_vars + lhs_attached_vars)
+            # Walk backward from '=' to extract LHS math tokens
+            lhs_chars: list[str] = []
+            for word in reversed(left_sub.split()):
+                w = word.strip("?.!,;:()")
+                if len(w) > 1 and w.isalpha():
+                    break
+                lhs_chars.insert(0, word)
 
-        rhs_vars = re.findall(r"\b([a-zA-Z])\b", rhs_str)
-        rhs_attached_vars = re.findall(r"\d+([a-zA-Z])", rhs_str)
-        all_rhs_vars = set(rhs_vars + rhs_attached_vars)
+            lhs_str = " ".join(lhs_chars).strip()
+            # Clean leading problem numbers or directive symbols from lhs_str
+            lhs_str = re.sub(r"^\s*(?:(?:problem|question|#)\s*)?\d{1,3}[\.\)\:]\s*", "", lhs_str, flags=re.IGNORECASE)
+            lhs_str = re.sub(r"^[a-zA-Z]\s*:\s*", "", lhs_str)
+            lhs_str = re.sub(r"^[^a-zA-Z0-9\(\+\-]+", "", lhs_str).strip()
 
-        all_vars = (all_lhs_vars | all_rhs_vars)
-        valid_vars = [v for v in all_vars if v.lower() in ("x", "y", "z", "n", "m", "t", "a", "b", "c", "k", "p", "r")]
+            # Walk forward from '=' to extract RHS math tokens
+            rhs_chars: list[str] = []
+            for word in right_sub.split():
+                clean_word = word.rstrip("?.!,;:")
+                if len(clean_word) > 1 and clean_word.isalpha():
+                    break
+                rhs_chars.append(clean_word)
+                if any(p in word for p in ("?", "!", ";")):
+                    break
 
-        if len(valid_vars) == 1:
-            var_name = valid_vars[0]
-            # Ensure both sides can be evaluated safely
-            if safe_evaluate_math_expr(lhs_str, var_name, 1.0) is not None and \
-               safe_evaluate_math_expr(rhs_str, var_name, 1.0) is not None:
-                return var_name, lhs_str, rhs_str
+            rhs_str = " ".join(rhs_chars).strip()
+            rhs_str = re.sub(r"[^a-zA-Z0-9\)\+\-]+$", "", rhs_str).strip()
+
+            if not lhs_str or not rhs_str:
+                continue
+
+            # Look for single-letter variables in LHS and RHS
+            lhs_vars = re.findall(r"\b([a-zA-Z])\b", lhs_str)
+            lhs_attached_vars = re.findall(r"\d+([a-zA-Z])", lhs_str)
+            all_lhs_vars = set(lhs_vars + lhs_attached_vars)
+
+            rhs_vars = re.findall(r"\b([a-zA-Z])\b", rhs_str)
+            rhs_attached_vars = re.findall(r"\d+([a-zA-Z])", rhs_str)
+            all_rhs_vars = set(rhs_vars + rhs_attached_vars)
+
+            all_vars = all_lhs_vars | all_rhs_vars
+            valid_vars = [
+                v
+                for v in all_vars
+                if v.lower()
+                in (
+                    "x",
+                    "y",
+                    "z",
+                    "n",
+                    "m",
+                    "t",
+                    "a",
+                    "b",
+                    "c",
+                    "k",
+                    "p",
+                    "r",
+                    "theta",
+                )
+            ]
+
+            if len(valid_vars) == 1:
+                var_name = valid_vars[0]
+                # Ensure both sides can be evaluated safely or parsed symbolically
+                lhs_valid = (
+                    safe_evaluate_math_expr(lhs_str, var_name, 1.0) is not None
+                    or symbolic_math.parse_symbolic_expression(lhs_str) is not None
+                )
+                rhs_valid = (
+                    safe_evaluate_math_expr(rhs_str, var_name, 1.0) is not None
+                    or symbolic_math.parse_symbolic_expression(rhs_str) is not None
+                )
+                if lhs_valid and rhs_valid:
+                    return var_name, lhs_str, rhs_str
 
     return None
 
 
 def parse_candidate_value(text: str) -> float | None:
-    """Extract numeric value from option text like 'x = 5', '5', '-6', 'x = -2.5'."""
+    """Extract numeric value from option text like 'x = 5', '5', '-6', 'x = -2.5', '3/4'."""
     clean = text.strip()
+
+    # Match fraction like 'x = 3/4' or '3/4' or '-1/2'
+    m_frac = re.search(r"(?:=\s*)?([+-]?\d+)\s*/\s*([+-]?\d+)", clean)
+    if m_frac:
+        try:
+            num = float(m_frac.group(1))
+            den = float(m_frac.group(2))
+            if abs(den) > 1e-9:
+                return num / den
+        except ValueError:
+            pass
+
     # Match 'x = 5' or 'x = -5.2'
     m_eq = re.search(r"=\s*([+-]?\d+(?:\.\d+)?)", clean)
     if m_eq:
@@ -195,13 +251,16 @@ def parse_candidate_value(text: str) -> float | None:
     return None
 
 
-def _check_equation_satisfaction(lhs: str, rhs: str, var_name: str, val: float) -> bool:
-    """Return True if val satisfies lhs = rhs within float tolerance."""
-    lhs_res = safe_evaluate_math_expr(lhs, var_name, val)
-    rhs_res = safe_evaluate_math_expr(rhs, var_name, val)
-    if lhs_res is None or rhs_res is None:
-        return False
-    return abs(lhs_res - rhs_res) < 1e-5
+def _check_equation_satisfaction(lhs: str, rhs: str, var_name: str, val: float | str) -> bool:
+    """Return True if val satisfies lhs = rhs within float tolerance or symbolic check."""
+    if isinstance(val, (int, float)):
+        lhs_res = safe_evaluate_math_expr(lhs, var_name, float(val))
+        rhs_res = safe_evaluate_math_expr(rhs, var_name, float(val))
+        if lhs_res is not None and rhs_res is not None and abs(lhs_res - rhs_res) < 1e-5:
+            return True
+
+    # Check via symbolic math engine
+    return symbolic_math.check_equation_solution(lhs, rhs, var_name, val)
 
 
 def _extract_rubric_solutions(grounding_chunks: list[RetrievedChunk]) -> dict[str, str]:
@@ -248,17 +307,139 @@ def validate_and_sanitize_question(
         if len(set(norm_texts)) != 4:
             return None
 
-        # Check if question has an algebraic equation
+        # 1.1 Check if question is a calculus (derivative/integral) or trigonometry problem
+        calc_prob = symbolic_math.detect_calculus_or_advanced_problem(gq.body)
+        if calc_prob is not None:
+            logger.debug(
+                "Validating calculus question type=%s expr=%s var=%s",
+                calc_prob.problem_type,
+                calc_prob.expression,
+                calc_prob.variable,
+            )
+            valid_keys: list[str] = []
+            for opt in gq.options:
+                opt_expr = opt.text.strip()
+                opt_expr = re.sub(r"^[a-zA-Z]'(?:\([a-zA-Z]\))?\s*=\s*", "", opt_expr)
+                opt_expr = re.sub(r"^[a-zA-Z]\s*=\s*", "", opt_expr)
+
+                is_valid = False
+                if calc_prob.problem_type == "derivative":
+                    is_valid = symbolic_math.check_derivative(
+                        calc_prob.expression, calc_prob.variable, opt_expr
+                    )
+                elif calc_prob.problem_type == "indefinite_integral":
+                    is_valid = symbolic_math.check_integral(
+                        calc_prob.expression, calc_prob.variable, opt_expr
+                    )
+                elif calc_prob.problem_type == "definite_integral":
+                    is_valid = symbolic_math.check_integral(
+                        calc_prob.expression,
+                        calc_prob.variable,
+                        opt_expr,
+                        lower_limit_str=calc_prob.lower_limit,
+                        upper_limit_str=calc_prob.upper_limit,
+                    )
+                elif calc_prob.problem_type == "trig_identity":
+                    is_valid = symbolic_math.are_expressions_equivalent(
+                        calc_prob.expression, opt_expr, var_str=calc_prob.variable
+                    )
+
+                if is_valid:
+                    valid_keys.append(opt.key)
+
+            if len(valid_keys) == 1:
+                correct_key = valid_keys[0]
+                correct_opt = next(o for o in gq.options if o.key == correct_key)
+                current_marked = [o.key for o in gq.options if o.is_correct]
+                if current_marked != [correct_key] or gq.answer != correct_key:
+                    logger.warning(
+                        "Auto-correcting calculus question (%s on '%s'): changing correct answer from %s to %s (%s)",
+                        calc_prob.problem_type,
+                        calc_prob.expression,
+                        gq.answer,
+                        correct_key,
+                        correct_opt.text,
+                    )
+                    new_options = [
+                        McqOption(
+                            key=o.key,
+                            text=o.text,
+                            is_correct=(o.key == correct_key),
+                        )
+                        for o in gq.options
+                    ]
+                    if calc_prob.problem_type == "derivative":
+                        true_deriv = symbolic_math.compute_derivative(
+                            calc_prob.expression, calc_prob.variable
+                        )
+                        new_exp = (
+                            f"The derivative of {calc_prob.expression} with respect to {calc_prob.variable} is {true_deriv}. "
+                            f"Therefore, the correct option is {correct_key} ({correct_opt.text})."
+                        )
+                    elif calc_prob.problem_type == "indefinite_integral":
+                        true_int = symbolic_math.compute_indefinite_integral(
+                            calc_prob.expression, calc_prob.variable
+                        )
+                        new_exp = (
+                            f"The indefinite integral of {calc_prob.expression} with respect to {calc_prob.variable} is {true_int} + C. "
+                            f"Therefore, the correct option is {correct_key} ({correct_opt.text})."
+                        )
+                    elif calc_prob.problem_type == "definite_integral":
+                        true_val = symbolic_math.compute_definite_integral(
+                            calc_prob.expression,
+                            calc_prob.variable,
+                            calc_prob.lower_limit or "0",
+                            calc_prob.upper_limit or "0",
+                        )
+                        new_exp = (
+                            f"The definite integral of {calc_prob.expression} from {calc_prob.lower_limit} to {calc_prob.upper_limit} evaluates to {true_val}. "
+                            f"Therefore, the correct option is {correct_key} ({correct_opt.text})."
+                        )
+                    else:
+                        new_exp = (
+                            f"Simplifying the expression {calc_prob.expression} gives {correct_opt.text}. "
+                            f"Therefore, the correct option is {correct_key}."
+                        )
+
+                    return gq.__class__(
+                        body=gq.body,
+                        answer=correct_key,
+                        explanation=new_exp,
+                        question_type=gq.question_type,
+                        difficulty=gq.difficulty,
+                        prompt_version=gq.prompt_version,
+                        options=new_options,
+                        grading_hints=gq.grading_hints,
+                    )
+            elif len(valid_keys) == 0:
+                logger.warning(
+                    "Rejecting calculus question: no option satisfies %s for '%s' in body '%s'",
+                    calc_prob.problem_type,
+                    calc_prob.expression,
+                    gq.body,
+                )
+                return None
+            else:
+                logger.warning(
+                    "Rejecting calculus question: multiple options %s satisfy %s for '%s'",
+                    valid_keys,
+                    calc_prob.problem_type,
+                    calc_prob.expression,
+                )
+                return None
+
+        # 1.2 Check if question has an algebraic equation
         eq_info = extract_equation(gq.body)
         if eq_info is not None:
             var_name, lhs, rhs = eq_info
             logger.debug("Validating equation %s: %s = %s", var_name, lhs, rhs)
 
             # Test each option against the equation
-            valid_keys: list[str] = []
+            valid_keys = []
             for opt in gq.options:
                 val = parse_candidate_value(opt.text)
-                if val is not None and _check_equation_satisfaction(lhs, rhs, var_name, val):
+                candidate_to_check = val if val is not None else opt.text
+                if _check_equation_satisfaction(lhs, rhs, var_name, candidate_to_check):
                     valid_keys.append(opt.key)
 
             if len(valid_keys) == 1:
@@ -282,7 +463,7 @@ def validate_and_sanitize_question(
                         for o in gq.options
                     ]
                     # Update explanation to guarantee it states the verified answer
-                    clean_val_str = f"{int(correct_val)}" if correct_val is not None and correct_val.is_integer() else str(correct_val)
+                    clean_val_str = f"{int(correct_val)}" if correct_val is not None and correct_val.is_integer() else str(correct_val or correct_opt.text)
                     new_explanation = (
                         f"Solving the equation {lhs} = {rhs} gives {var_name} = {clean_val_str}. "
                         f"Substituting {var_name} = {clean_val_str} into the equation confirms {lhs} = {rhs}."
@@ -393,12 +574,49 @@ def validate_and_sanitize_question(
 
     # 2. General validation for non-MCQ mathematical questions
     elif gq.question_type == QuestionType.mathematical:
-        eq_info = extract_equation(gq.body)
-        if eq_info is not None:
-            var_name, lhs, rhs = eq_info
-            ans_val = parse_candidate_value(gq.answer)
-            if ans_val is not None:
-                if not _check_equation_satisfaction(lhs, rhs, var_name, ans_val):
+        calc_prob = symbolic_math.detect_calculus_or_advanced_problem(gq.body)
+        if calc_prob is not None:
+            ans_expr = gq.answer.strip()
+            ans_expr = re.sub(r"^[a-zA-Z]'(?:\([a-zA-Z]\))?\s*=\s*", "", ans_expr)
+            ans_expr = re.sub(r"^[a-zA-Z]\s*=\s*", "", ans_expr)
+
+            is_valid = False
+            if calc_prob.problem_type == "derivative":
+                is_valid = symbolic_math.check_derivative(
+                    calc_prob.expression, calc_prob.variable, ans_expr
+                )
+            elif calc_prob.problem_type == "indefinite_integral":
+                is_valid = symbolic_math.check_integral(
+                    calc_prob.expression, calc_prob.variable, ans_expr
+                )
+            elif calc_prob.problem_type == "definite_integral":
+                is_valid = symbolic_math.check_integral(
+                    calc_prob.expression,
+                    calc_prob.variable,
+                    ans_expr,
+                    lower_limit_str=calc_prob.lower_limit,
+                    upper_limit_str=calc_prob.upper_limit,
+                )
+            elif calc_prob.problem_type == "trig_identity":
+                is_valid = symbolic_math.are_expressions_equivalent(
+                    calc_prob.expression, ans_expr, var_str=calc_prob.variable
+                )
+
+            if not is_valid:
+                logger.warning(
+                    "Rejecting mathematical question: answer '%s' does not satisfy %s for '%s'",
+                    gq.answer,
+                    calc_prob.problem_type,
+                    calc_prob.expression,
+                )
+                return None
+        else:
+            eq_info = extract_equation(gq.body)
+            if eq_info is not None:
+                var_name, lhs, rhs = eq_info
+                ans_val = parse_candidate_value(gq.answer)
+                candidate_to_check = ans_val if ans_val is not None else gq.answer
+                if not _check_equation_satisfaction(lhs, rhs, var_name, candidate_to_check):
                     logger.warning(
                         "Rejecting mathematical question: answer %s does not satisfy %s = %s",
                         gq.answer, lhs, rhs

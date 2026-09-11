@@ -1,7 +1,5 @@
 """Unit tests for the question validation and accuracy service."""
 
-import pytest
-
 from app.mcp_tools.retrieve_content import RetrievedChunk
 from app.models.question import DifficultyLevel, McqOption, QuestionType
 from app.services.question_generation import GeneratedQuestion

@@ -321,14 +321,24 @@ async def test_mathematical_strips_latex_delimiters_and_spaces():
     assert (await evaluate(q, "2x+3")).is_correct is True
 
 
-@patch("app.services.answer_evaluation.azure_openai.chat_json")
-async def test_mathematical_accepts_semantic_equivalence(mock_chat):
-    mock_chat.return_value = {"is_correct": True}
+async def test_mathematical_symbolic_equivalence_deterministic():
+    """Algebraic equivalence like 3 + 2x vs $2x + 3$ matches deterministically via SymPy."""
     q = _question(
         question_type=QuestionType.mathematical,
         answer="$2x + 3$",
     )
     assert (await evaluate(q, "3 + 2x")).is_correct is True
+
+
+@patch("app.services.answer_evaluation.azure_openai.chat_json")
+async def test_mathematical_accepts_semantic_equivalence(mock_chat):
+    """Verbal or natural language phrasing falls back to semantic AI grading."""
+    mock_chat.return_value = {"is_correct": True}
+    q = _question(
+        question_type=QuestionType.mathematical,
+        answer="$2x + 3$",
+    )
+    assert (await evaluate(q, "two x plus three")).is_correct is True
     mock_chat.assert_called_once()
 
 

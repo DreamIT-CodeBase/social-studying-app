@@ -34,7 +34,6 @@ from app.core.exceptions import (
     ConflictError,
     ForbiddenError,
     NotFoundError,
-    ServiceUnavailableError,
 )
 from app.mcp_tools.retrieve_content import (
     RetrieveContentInput,
@@ -730,11 +729,6 @@ async def _prepare_questions(
     # A normal study session is fresh-only. Previously answered questions and
     # questions delivered in prior session plans (even unanswered) and questions
     # allocated to another unfinished session are not eligible.
-    if _is_self_study(workspace_id):
-        target = 5
-
-    # In self-study workspace, always generate all 5 questions freshly for every session.
-    # Revision deliberately retains history so incorrect questions can be re-practiced.
     if revision:
         eligible = available
     else:
@@ -831,7 +825,7 @@ async def _prepare_questions(
     if not selected:
         if available and not _is_self_study(workspace_id):
             selected = available[:target]
-        elif not _is_self_study(workspace_id):
+        else:
             fb_plan = _build_guaranteed_fallback_plan(
                 workspace_id=workspace_id,
                 user_id=user.id,
@@ -843,12 +837,8 @@ async def _prepare_questions(
                 subcategory=subcategory,
             )
             return fb_plan.questions
-        else:
-            raise ServiceUnavailableError(
-                "Your study questions are being prepared from your study material. Please retry in a moment."
-            )
 
-    return [
+    prepared_selected = [
         PreparedQuestion(
             id=question.id,
             topic=question.topic,
@@ -864,6 +854,7 @@ async def _prepare_questions(
         )
         for question in selected
     ]
+    return prepared_selected[:target]
 
 
 async def _generate_flashcard_batch(
@@ -1353,10 +1344,18 @@ async def _prepare_flashcards(
                 random.shuffle(unseen)
                 selected = unseen[:target]
             else:
-                raise ServiceUnavailableError(
-                    "Your flashcards are being prepared from your study material. Please retry in a moment."
+                fb_plan = _build_guaranteed_fallback_plan(
+                    workspace_id=workspace_id,
+                    user_id=user.id,
+                    tenant_id=user.tenant_id,
+                    mode=AdaptiveSessionMode.flashcard,
+                    level=level,
+                    mastery=0.0,
+                    subject=subject,
+                    subcategory=subcategory,
                 )
-    return selected
+                return fb_plan.flashcards
+    return selected[:target]
 
 
 def _build_guaranteed_fallback_plan(
@@ -2086,10 +2085,19 @@ async def prepare_adaptive_session(
             workspace_id=workspace_id,
         )
         if not sources.document_ids:
-            raise ConflictError(
-                "No ready study material is available yet. Upload a document or wait "
-                "for the latest upload to finish processing, then try again."
-            )
+            doc_col = get_collection(current_user.tenant_id, DOCUMENTS)
+            any_doc = await doc_col.find_one({"workspace_id": workspace_id, "deleted_at": None})
+            if any_doc:
+                sources = study_sources.CurrentStudySources(
+                    document_ids=frozenset({str(any_doc["_id"])}),
+                    topic_names=tuple(
+                        str(t.get("name", "")) for t in any_doc.get("topic_tags") or [] if isinstance(t, dict)
+                    ),
+                )
+            else:
+                raise ConflictError(
+                    "No study material has been uploaded yet. Please upload study material to begin."
+                )
         snapshot = _source_snapshot(sources, subject=request.subject, subcategory=request.subcategory)
         has_custom_selection = bool(request.subject or request.subcategory or request.question_type)
         if _is_self_study(workspace_id) and has_custom_selection:
@@ -2154,21 +2162,9 @@ async def prepare_adaptive_session(
                 question_type=request.question_type,
             )
     except Exception as exc:
-        if capped:
-            # Self-study never serves generic filler. Surface real client errors
-            # (no material, forbidden) verbatim; turn anything unexpected into a
-            # retryable 503 so the client's silent retry recovers once the pool
-            # warms, instead of showing an internal error.
-            if isinstance(
-                exc, ConflictError | ForbiddenError | NotFoundError | ServiceUnavailableError
-            ):
-                raise
-            logger.exception("Self-study prepare failed; returning retryable 503")
-            raise ServiceUnavailableError(
-                "Your study session is being prepared. Please retry in a moment."
-            ) from exc
-        # Non-self-study preserves the guaranteed-filler contract on any failure.
-        logger.exception("Adaptive session prepare fallback activated")
+        if isinstance(exc, (ConflictError, ForbiddenError, NotFoundError)):
+            raise
+        logger.exception("Adaptive session prepare error; generating guaranteed plan in one go")
         plan = _build_guaranteed_fallback_plan(
             workspace_id=workspace_id,
             user_id=current_user.id,
@@ -2195,25 +2191,31 @@ async def prepare_adaptive_session(
 
     if capped and item_count == 0:
         if used == 0:
-            # The very first session for this material produced nothing: a
-            # transient generation/ingest hiccup rather than exhaustion. 503 so
-            # the client's silent retry recovers once the pool warms.
-            has_content = await _pool_has_content(
+            logger.info(
+                "Pool empty on first prepare for workspace=%s; serving guaranteed plan in one go",
+                workspace_id,
+            )
+            plan = _build_guaranteed_fallback_plan(
+                workspace_id=workspace_id,
+                user_id=current_user.id,
+                tenant_id=current_user.tenant_id,
+                mode=request.mode,
+                level=level,
+                mastery=mastery,
+                subject=request.subject,
+                subcategory=request.subcategory,
+            )
+            await _persist_prepared_session(
                 tenant_id=current_user.tenant_id,
                 workspace_id=workspace_id,
-                current_document_ids=sources.document_ids if sources else frozenset(),
+                student_id=current_user.id,
+                mode=request.mode,
+                level=level,
+                mastery=mastery,
+                plan=plan,
+                snapshot=snapshot,
             )
-            if not has_content:
-                logger.info(
-                    "Pool empty on first prepare for workspace=%s, raising 503",
-                    workspace_id,
-                )
-                raise ServiceUnavailableError(
-                    "Your study material is still being processed. Please retry in a few seconds."
-                )
-            raise ServiceUnavailableError(
-                "Your study session questions are being generated. Please retry in a few seconds."
-            )
+            return plan
         # Material genuinely exhausted: cap reached or thin material gave what it could.
         return _build_exhausted_plan(mode=request.mode, level=level, mastery=mastery, subject=request.subject, subcategory=request.subcategory)
 

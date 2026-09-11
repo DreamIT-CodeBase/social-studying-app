@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
+import 'package:social_study_app/core/utils/subject_classifier.dart';
 import 'package:social_study_app/features/documents/data/demo_documents_repository.dart'
     show DocumentNotFoundException;
 import 'package:social_study_app/features/documents/presentation/document_polling_notifier.dart';
@@ -84,6 +86,10 @@ class _Body extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _CurrentStageHero(doc: doc),
+          if (doc.status.isUsableForStudy) ...[
+            const SizedBox(height: Spacing.lg),
+            _StudyActionsCard(doc: doc),
+          ],
           const SizedBox(height: Spacing.xl),
           Card(
             child: Padding(
@@ -414,3 +420,114 @@ String _formatNumber(int n) {
   }
   return buffer.toString();
 }
+
+class _StudyActionsCard extends StatelessWidget {
+  const _StudyActionsCard({required this.doc});
+
+  final Document doc;
+
+  @override
+  Widget build(BuildContext context) {
+    final subject = subjectForDocument(doc);
+    final subjectParam =
+        subject.isNotEmpty ? '&subject=${Uri.encodeComponent(subject)}' : '';
+
+    return Container(
+      padding: const EdgeInsets.all(Spacing.lg),
+      decoration: BoxDecoration(
+        color: context.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: context.colorScheme.primary.withAlpha(40),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: context.colorScheme.primary.withAlpha(15),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.withAlpha(30),
+                  shape: BoxShape.circle,
+                ),
+                child:
+                    const Icon(Icons.bolt_rounded, color: Colors.green, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Material Ready for Study!',
+                      style: context.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      'Launch an adaptive session directly from this content in one go.',
+                      style: context.textTheme.bodySmall?.copyWith(
+                        color: context.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Spacing.md),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  key: const Key('start_study_session_button'),
+                  onPressed: () {
+                    context.push(
+                        '/student/session/${doc.workspaceId}?mode=study$subjectParam');
+                  },
+                  icon: const Icon(Icons.school_rounded, size: 18),
+                  label: const Text('Start Study'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: Spacing.md),
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('review_flashcards_button'),
+                  onPressed: () {
+                    context.push(
+                        '/student/session/${doc.workspaceId}?mode=flashcard$subjectParam');
+                  },
+                  icon: const Icon(Icons.style_rounded, size: 18),
+                  label: const Text('Flashcards'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+

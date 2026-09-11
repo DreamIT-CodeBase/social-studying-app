@@ -22,6 +22,7 @@ dependencies = [
     "python-jose[cryptography]>=3.3",  # JWT validation for B2C tokens
     "python-multipart>=0.0.9",
     "stripe>=9.0.0",
+    "sympy>=1.14.0",
 ]
 
 [project.optional-dependencies]

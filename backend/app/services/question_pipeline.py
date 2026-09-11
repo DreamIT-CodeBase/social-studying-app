@@ -217,6 +217,7 @@ async def _generate_and_persist_batch(
     # Fetch student context and seen/queued question bodies
     context = await _fetch_student_context(tenant_id, workspace_id, student_id)
     all_seen_bodies = await _fetch_all_seen_and_queued_bodies(tenant_id, workspace_id, student_id)
+    redis_seen = await redis.smembers(seen_key) or []
 
     # Get seen bodies from Redis temporary set to prevent repetition within current session
     def _body_fingerprint(s: str) -> str:
