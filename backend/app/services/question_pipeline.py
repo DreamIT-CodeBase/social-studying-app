@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Sequence
 from typing import Any
 from uuid import uuid4
@@ -31,7 +32,13 @@ from app.mcp_tools.retrieve_student_context import (
 )
 from app.models.question import Question, QuestionStatus, QuestionType
 from app.models.user import User
-from app.services import question_generation, question_safety, rag_evaluation, study_sources
+from app.services import (
+    question_generation,
+    question_safety,
+    question_validation,
+    rag_evaluation,
+    study_sources,
+)
 from app.services.difficulty import calibrate_difficulty
 from app.services.learning_path import (
     TopicScore,
@@ -212,10 +219,18 @@ async def _generate_and_persist_batch(
     all_seen_bodies = await _fetch_all_seen_and_queued_bodies(tenant_id, workspace_id, student_id)
 
     # Get seen bodies from Redis temporary set to prevent repetition within current session
-    redis_seen = await redis.smembers(seen_key) or []
-    local_seen_normalized = {s.strip().lower().rstrip("?.!") for s in redis_seen}
-    db_seen_normalized = {s.strip().lower().rstrip("?.!") for s in all_seen_bodies}
-    extra_normalized = {s.strip().lower().rstrip("?.!") for s in (extra_seen_bodies or []) if s}
+    def _body_fingerprint(s: str) -> str:
+        eq_info = question_validation.extract_equation(s)
+        if eq_info is not None:
+            var_name, lhs, rhs = eq_info
+            clean_lhs = re.sub(r"\s+", "", lhs.casefold())
+            clean_rhs = re.sub(r"\s+", "", rhs.casefold())
+            return f"eq:{clean_lhs}={clean_rhs}"
+        return s.strip().lower().rstrip("?.!")
+
+    local_seen_normalized = {_body_fingerprint(s) for s in redis_seen}
+    db_seen_normalized = {_body_fingerprint(s) for s in all_seen_bodies}
+    extra_normalized = {_body_fingerprint(s) for s in (extra_seen_bodies or []) if s}
     combined_seen = local_seen_normalized.union(db_seen_normalized).union(extra_normalized)
 
     current_sources = await study_sources.current_study_sources(
@@ -387,14 +402,24 @@ async def _generate_and_persist_batch(
 
         candidate_items = []
         for gq, candidate_obj, document_id, source_chunk_ids, all_retrieved_chunks in batch:
-            # 1. Duplicate check: Question text stem similarity & exact normalization match
-            norm_body = gq.body.strip().lower().rstrip("?.!")
-            if norm_body in combined_seen:
+            # 1. Accuracy validation and auto-correction
+            clean_gq = question_validation.validate_and_sanitize_question(
+                gq,
+                grounding_chunks=all_retrieved_chunks,
+            )
+            if clean_gq is None:
+                continue
+
+            # 2. Duplicate check: Question text stem & canonical equation match
+            fp = _body_fingerprint(clean_gq.body)
+            norm_body = clean_gq.body.strip().lower().rstrip("?.!")
+            if fp in combined_seen or norm_body in combined_seen:
                 continue  # duplicate detected, skip
 
+            combined_seen.add(fp)
             combined_seen.add(norm_body)
             candidate_items.append(
-                (gq, candidate_obj, document_id, source_chunk_ids, all_retrieved_chunks, norm_body)
+                (clean_gq, candidate_obj, document_id, source_chunk_ids, all_retrieved_chunks, norm_body)
             )
 
         if not candidate_items:

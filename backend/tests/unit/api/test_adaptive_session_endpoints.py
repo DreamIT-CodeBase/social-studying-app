@@ -66,6 +66,7 @@ def _prepare_env(
     sources: CurrentStudySources | None = None,
     existing: dict | None = None,
     used: int = 0,
+    daily_count: int = 0,
     prepared: list | None = None,
     prepare_error: BaseException | None = None,
     pool_has_content: bool = True,
@@ -82,6 +83,7 @@ def _prepare_env(
     )
     existing_mock = AsyncMock(return_value=existing)
     count_mock = AsyncMock(return_value=used)
+    daily_count_mock = AsyncMock(return_value=daily_count)
     questions_mock = AsyncMock(**gen_kwargs)
     flashcards_mock = AsyncMock(**gen_kwargs)
     persist_mock = AsyncMock()
@@ -99,6 +101,7 @@ def _prepare_env(
             patch("app.api.adaptive_sessions._existing_open_session", existing_mock)
         )
         stack.enter_context(patch("app.api.adaptive_sessions._snapshot_session_count", count_mock))
+        stack.enter_context(patch("app.api.adaptive_sessions._daily_session_count", daily_count_mock))
         stack.enter_context(patch("app.api.adaptive_sessions._prepare_questions", questions_mock))
         stack.enter_context(patch("app.api.adaptive_sessions._prepare_flashcards", flashcards_mock))
         stack.enter_context(
@@ -537,5 +540,34 @@ async def test_prepare_self_study_custom_selection_bypasses_cached_open_session(
     assert len(plan.questions) == 1
     assert plan.questions[0].id == "qst_fresh_new"
     env.questions.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_prepare_enforces_daily_session_limit_of_8():
+    """Verify that attempting to prepare a 9th session in a single day raises HTTP 429."""
+    from fastapi import HTTPException
+
+    # 1. When student has 7 sessions today, 8th is allowed
+    with _prepare_env(daily_count=7, prepared=[_question("qst_allowed")]) as env:
+        plan = await prepare_adaptive_session(
+            workspace_id=SELF_WS,
+            request=PrepareAdaptiveSessionRequest(mode=AdaptiveSessionMode.study),
+            background_tasks=BackgroundTasks(),
+            current_user=STUDENT,
+        )
+        assert plan is not None
+        assert plan.item_count == 1
+
+    # 2. When student already has 8 sessions today, 9th attempt raises 429
+    with _prepare_env(daily_count=8, prepared=[_question("qst_blocked")]) as env:
+        with pytest.raises(HTTPException) as exc_info:
+            await prepare_adaptive_session(
+                workspace_id=SELF_WS,
+                request=PrepareAdaptiveSessionRequest(mode=AdaptiveSessionMode.study),
+                background_tasks=BackgroundTasks(),
+                current_user=STUDENT,
+            )
+        assert exc_info.value.status_code == 429
+        assert "Daily session limit reached" in exc_info.value.detail
 
 

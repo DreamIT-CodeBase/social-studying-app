@@ -8,6 +8,7 @@ import logging
 import re
 import unicodedata
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -69,6 +70,7 @@ from app.services import (
     answer_evaluation,
     flashcard_generation,
     question_pipeline,
+    question_validation,
     study_sources,
 )
 from app.services import gamification as gamification_service
@@ -123,6 +125,7 @@ _CAPPED_MODES = frozenset({AdaptiveSessionMode.study, AdaptiveSessionMode.flashc
 _QUESTION_TOPUP_MIN = 12
 _QUESTION_TOPUP_MAX = 25
 _FLASHCARD_TOPUP_MIN = 8
+_MAX_DAILY_SESSIONS_PER_USER = 8
 
 
 def _is_self_study(workspace_id: str) -> bool:
@@ -312,17 +315,60 @@ async def _history(
     return interactions, weak_topics
 
 
+_COMMON_QUESTION_TEMPLATES = (
+    "which of the following is the solution to the equation",
+    "which of the following is the solution to",
+    "which of the following is the value of",
+    "which of the following is",
+    "what is the solution to the equation",
+    "what is the solution to",
+    "what is the value of x in the equation",
+    "what is the value of x in",
+    "what is the value of",
+    "what is the value of x",
+    "solve for x in the equation",
+    "solve for x in",
+    "solve the equation",
+    "solve for x",
+    "find the value of x in the equation",
+    "find the value of x in",
+    "find the value of x",
+    "find the value of",
+    "determine the value of x in",
+    "determine the value of x",
+    "determine the solution to",
+    "find the solution to",
+    "find x",
+    "solve",
+)
+
+
 def _question_fingerprint(body: str) -> str:
     """Return a stable comparison key for a question stem.
 
-    IDs are not sufficient for deduplication because historical imports and
-    concurrent generation can create two records with equivalent wording.
-    Normalising Unicode, case, punctuation, and whitespace catches those
-    duplicates without conflating genuinely different questions.
+    Detects mathematical equations and creates a canonical equation signature
+    (e.g. eq:2(x+3)=16, eq:8x=40), and strips conversational question templates
+    so reworded question stems or questions with shuffled options for the same
+    underlying problem are recognized as duplicates.
     """
+    eq_info = question_validation.extract_equation(body)
+    if eq_info is not None:
+        var_name, lhs, rhs = eq_info
+        clean_lhs = re.sub(r"\s+", "", lhs.casefold())
+        clean_rhs = re.sub(r"\s+", "", rhs.casefold())
+        return f"eq:{clean_lhs}={clean_rhs}"
+
     normalized = unicodedata.normalize("NFKC", body).casefold()
     normalized = re.sub(r"[^\w\s]", " ", normalized)
-    return " ".join(normalized.split())
+    normalized = " ".join(normalized.split())
+
+    for tpl in _COMMON_QUESTION_TEMPLATES:
+        if normalized.startswith(tpl):
+            stripped = normalized[len(tpl):].strip()
+            if stripped:
+                return stripped
+
+    return normalized
 
 
 def _unique_questions(items: Iterable[Question]) -> list[Question]:
@@ -461,7 +507,6 @@ async def _question_session_history(
             "workspace_id": workspace_id,
             "student_id": student_id,
             "mode": {"$in": [AdaptiveSessionMode.study.value, AdaptiveSessionMode.revision.value]},
-            "status": {"$ne": "prepared"},  # all completed / exited / timed_out / superseded sessions
         }
     )
     rows = await cursor.to_list(length=500)
@@ -1768,6 +1813,26 @@ async def _snapshot_session_count(
     )
 
 
+async def _daily_session_count(
+    *,
+    tenant_id: str,
+    student_id: str,
+) -> int:
+    """Count sessions started or prepared by this student today (UTC)."""
+    today_start = datetime.now(UTC).strftime("%Y-%m-%dT00:00:00")
+    try:
+        return await get_collection(tenant_id, ADAPTIVE_SESSIONS).count_documents(
+            {
+                "student_id": student_id,
+                "created_at": {"$gte": today_start},
+                "status": {"$in": ["prepared", "in_progress", "completed", "timed_out"]},
+            }
+        )
+    except Exception as exc:
+        logger.warning("Failed to query daily session count for student=%s: %s", student_id, exc)
+        return 0
+
+
 async def _pool_has_content(
     *,
     tenant_id: str,
@@ -2052,6 +2117,18 @@ async def prepare_adaptive_session(
         )
         if used >= _MAX_SELF_STUDY_SESSIONS:
             return _build_exhausted_plan(mode=request.mode, level=level, mastery=mastery, subject=request.subject, subcategory=request.subcategory)
+
+    # Enforce daily session limit: maximum 8 sessions per user per day (UTC)
+    daily_sessions_count = await _daily_session_count(
+        tenant_id=current_user.tenant_id,
+        student_id=current_user.id,
+    )
+    if daily_sessions_count >= _MAX_DAILY_SESSIONS_PER_USER:
+        from fastapi import HTTPException, status
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Daily session limit reached. You can complete up to 8 sessions per day. Please return tomorrow!",
+        )
 
     questions: list[PreparedQuestion] = []
     flashcards: list[PreparedFlashcard] = []

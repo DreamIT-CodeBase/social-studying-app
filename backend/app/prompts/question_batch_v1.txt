@@ -78,6 +78,19 @@ Format Rules:
 - For 'long_answer': key_points must contain at least 3 distinct scoring rubric points (strings).
 - For 'mathematical': solution_steps must contain at least 2 steps (strings).
 
+Accuracy & Rubric Mandate:
+- CRITICAL ACCURACY: Every question and answer must be 100% mathematically and factually correct.
+- SOLVE FIRST: Calculate or verify the exact answer before creating multiple choice options.
+- If the source material contains a solution key, answer rubric, or problem numbers (e.g. '55. x = 5'), you MUST cross-reference the problem with its rubric answer. The correct answer MUST exactly match the rubric.
+- Double check all basic arithmetic (e.g., 40 / 8 = 5, NOT 4). Ensure the explanation logically derives and proves the marked answer.
+- For MCQs: EXACTLY one option must be unambiguously correct. The other 3 distractors must be demonstrably incorrect.
+
+Deduplication & Diversity Mandate:
+- Every question must test a DIFFERENT problem, exercise, equation, or concept from the source material.
+- NEVER generate multiple questions testing the exact same problem or equation (e.g. do not ask about '2(x+3)=16' multiple times with reworded stems or shuffled options).
+- If the material contains a list of exercises or equations, choose a DIFFERENT exercise for each question.
+- Do NOT repeat any question or equation that appears in 'Previously served question stems'.
+
 [USER]
 Generate {{count}} diverse questions on the topic: {{topic}}
 Difficulty: {{difficulty}}

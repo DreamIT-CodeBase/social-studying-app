@@ -156,6 +156,13 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
         return;
       } catch (error) {
         if (!mounted || generation != _prepareGeneration) return;
+        if (error is AdaptiveSessionException && !error.retryable) {
+          setState(() {
+            _phase = _SessionPhase.error;
+            _error = error.message;
+          });
+          return;
+        }
         if (attempt >= maxAttempts - 1) {
           setState(() {
             _phase = _SessionPhase.error;

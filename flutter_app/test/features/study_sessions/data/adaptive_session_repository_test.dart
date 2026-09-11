@@ -89,5 +89,23 @@ void main() {
         ),
       );
     });
+
+    test('does not retry 429 daily session limit reached', () async {
+      final repository = AdaptiveSessionRepository(
+        _dio(429, 'Daily session limit reached. You can complete up to 8 sessions per day. Please return tomorrow!'),
+      );
+
+      expect(
+        () => repository.prepare(
+          workspaceId: 'wsp_self_1',
+          mode: AdaptiveSessionMode.study,
+        ),
+        throwsA(
+          isA<AdaptiveSessionException>()
+              .having((error) => error.retryable, 'retryable', isFalse)
+              .having((error) => error.message, 'message', contains('Daily session limit reached')),
+        ),
+      );
+    });
   });
 }

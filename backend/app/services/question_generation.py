@@ -55,7 +55,7 @@ from typing import Any
 from app.mcp_tools.retrieve_content import RetrievedChunk
 from app.models.question import DifficultyLevel, McqOption, QuestionType
 from app.prompts import load_prompt, render, split_system_user
-from app.services import azure_openai
+from app.services import azure_openai, question_validation
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +238,7 @@ async def generate_question(
         len(grading_hints),
     )
 
-    return GeneratedQuestion(
+    generated = GeneratedQuestion(
         body=body.strip(),
         answer=answer,
         explanation=explanation,
@@ -248,6 +248,17 @@ async def generate_question(
         options=options,
         grading_hints=grading_hints,
     )
+
+    validated = question_validation.validate_and_sanitize_question(
+        generated,
+        grounding_chunks=grounding_chunks,
+    )
+    if validated is None:
+        raise QuestionShapeError(
+            f"Generated question failed accuracy validation for topic={topic!r}."
+        )
+
+    return validated
 
 
 # ── Prompt input formatting ─────────────────────────────────────────────────
@@ -508,18 +519,25 @@ async def generate_batch_questions(
             if not isinstance(body, str) or not body.strip():
                 continue
 
-            results.append(
-                GeneratedQuestion(
-                    body=body.strip(),
-                    answer=answer,
-                    explanation=explanation,
-                    question_type=q_type,
-                    difficulty=difficulty,
-                    prompt_version="question_batch_v1",
-                    options=options,
-                    grading_hints=grading_hints,
-                )
+            candidate_gq = GeneratedQuestion(
+                body=body.strip(),
+                answer=answer,
+                explanation=explanation,
+                question_type=q_type,
+                difficulty=difficulty,
+                prompt_version="question_batch_v1",
+                options=options,
+                grading_hints=grading_hints,
             )
+
+            validated = question_validation.validate_and_sanitize_question(
+                candidate_gq,
+                grounding_chunks=grounding_chunks,
+            )
+            if validated is not None:
+                results.append(validated)
+            else:
+                logger.warning("Question failed accuracy validation in batch; discarded: %s", body)
         except Exception as e:
             logger.warning("Failed to parse question in batch: %s", e)
 

@@ -85,6 +85,27 @@ def test_fingerprint_and_unique_questions_ignore_cosmetic_body_differences():
     ]
 
 
+def test_equation_deduplication_across_reworded_stems():
+    """Equations like 2(x + 3) = 16 must have identical fingerprints regardless of stem phrasing or option changes."""
+    q1 = _question("qst_eq1", "What is the solution to the equation 2(x + 3) = 16?")
+    q2 = _question("qst_eq2", "Which of the following is the solution to the equation 2(x + 3) = 16?")
+    q3 = _question("qst_eq3", "Solve: 2(x + 3) = 16")
+    q_diff = _question("qst_diff", "What is the value of x in the equation 8x = 40?")
+
+    fp1 = _question_fingerprint(q1.body)
+    fp2 = _question_fingerprint(q2.body)
+    fp3 = _question_fingerprint(q3.body)
+    fp_diff = _question_fingerprint(q_diff.body)
+
+    assert fp1 == fp2 == fp3
+    assert fp1 == "eq:2(x+3)=16"
+    assert fp_diff == "eq:8x=40"
+    assert fp1 != fp_diff
+
+    unique = _unique_questions([q1, q2, q3, q_diff])
+    assert [q.id for q in unique] == ["qst_eq1", "qst_diff"]
+
+
 def test_unique_flashcards_compare_the_complete_question_answer_pair():
     first = PreparedFlashcard(
         id="fc_1", topic="Biology", front="What is ATP?", back="Cellular energy"

@@ -37,9 +37,8 @@ Field rules:
 
 Content rules:
 - Use the source material below as the grounding truth for the correct answer.
-- A single sentence, definition, question-answer pair, or bullet point in the
-  source material is FULLY SUFFICIENT to generate a question. Do NOT return
-  {"insufficient_source": true} simply because the source material is short or concise.
+- If the source material contains a solution key, answer rubric, or problem numbers, the correct answer MUST strictly match the rubric answer.
+- SOLVE FIRST: For math or computational problems, calculate the exact solution before writing distractors (e.g. 40 / 8 = 5, NOT 4).
 - The correct option must be unambiguously correct against the source.
 - Distractors must be plausible (related concept, common misconception, or
   superficially similar). You may introduce standard domain terms (e.g., other biological

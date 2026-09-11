@@ -105,8 +105,14 @@ class AdaptiveSessionRepository {
           message.contains('chunk') ||
           message.contains('vector');
     }
-    if (statusCode != null &&
-        (statusCode >= 500 || statusCode == 429 || statusCode == 408)) {
+    if (statusCode == 429) {
+      final message = _message(error).toLowerCase();
+      if (message.contains('daily') || message.contains('limit')) {
+        return false;
+      }
+      return true;
+    }
+    if (statusCode != null && (statusCode >= 500 || statusCode == 408)) {
       return true;
     }
     return error.type == DioExceptionType.connectionError ||
