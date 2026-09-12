@@ -116,7 +116,7 @@ _MAX_GENERATED_FLASHCARDS_PER_PREPARE = 25
 # sessions per mode; once consumed the learner is told to upload more material.
 # Revision is deliberately uncapped — it re-practises previously wrong answers.
 _SELF_STUDY_PREFIX = "wsp_self_"
-_MAX_SELF_STUDY_SESSIONS = 4
+_MAX_SELF_STUDY_SESSIONS = 50
 _CAPPED_MODES = frozenset({AdaptiveSessionMode.study, AdaptiveSessionMode.flashcard})
 # Background top-up sizes — generated after a session is served so the next
 # session reads from a warm pool instead of blocking on generation. Bounded so
@@ -792,8 +792,6 @@ async def _prepare_questions(
                         question_pipeline._generate_and_persist_batch(
                             tenant_id=user.tenant_id,
                             workspace_id=workspace_id,
-                            current_sources=current_sources,
-                            candidate_topics=[],
                             student_id=user.id,
                             user_obj=user,
                             revision=revision,
@@ -836,14 +834,14 @@ async def _prepare_questions(
                 subject=subject,
                 subcategory=subcategory,
             )
-            return fb_plan.questions
+            return fb_plan.questions[:target]
 
-    prepared_selected = [
+    return [
         PreparedQuestion(
             id=question.id,
             topic=question.topic,
             question_type=question.question_type,
-            difficulty=question.difficulty,
+            difficulty=question.difficulty.value if hasattr(question.difficulty, "value") else str(question.difficulty),
             body=question.body,
             options=[
                 PreparedOption(key=option.key, text=option.text) for option in question.options
@@ -853,8 +851,7 @@ async def _prepare_questions(
             grading_hints=question.grading_hints,
         )
         for question in selected
-    ]
-    return prepared_selected[:target]
+    ][:target]
 
 
 async def _generate_flashcard_batch(
@@ -1176,9 +1173,6 @@ async def _prepare_flashcards(
 
             available_cards = [c for c in available_cards if matches_card_subcat(c)]
 
-    if _is_self_study(workspace_id):
-        target = 5
-
     seen_fingerprints = historical_fingerprints | {
         _flashcard_fingerprint(card.front, card.back)
         for card in available_cards
@@ -1191,25 +1185,21 @@ async def _prepare_flashcards(
     # here so sessions never repeat content. When unseen cards run short we top
     # up with source-derived and freshly generated cards rather than recycling
     # what the learner has already studied.
-    is_fresh_self_study_fc = _is_self_study(workspace_id) and bool(subcategory or subject)
-    if is_fresh_self_study_fc:
-        unseen_cards = []
-    else:
-        unseen_cards = _unique_flashcards(
-            card
-            for card in available_cards
-            if card.id not in seen_ids
-            and card.id not in reserved_ids
-            and _flashcard_fingerprint(card.front, card.back) not in seen_fingerprints
-            and _flashcard_fingerprint(card.front, card.back) not in reserved_fingerprints
-        )
-        if not unseen_cards and available_cards and not subcategory:
-            unseen_cards = available_cards
+    unseen_cards = _unique_flashcards(
+        card
+        for card in available_cards
+        if card.id not in seen_ids
+        and card.id not in reserved_ids
+        and _flashcard_fingerprint(card.front, card.back) not in seen_fingerprints
+        and _flashcard_fingerprint(card.front, card.back) not in reserved_fingerprints
+    )
+    if not unseen_cards and available_cards and not subcategory:
+        unseen_cards = available_cards
 
-    if len(unseen_cards) >= target and not is_fresh_self_study_fc:
+    if len(unseen_cards) >= target:
         return unseen_cards[:target]
 
-    cards = unseen_cards if not is_fresh_self_study_fc else []
+    cards = list(unseen_cards)
 
     # Approved questions are valid source-backed recall cards and let a new
     # learner receive a full flashcard session without a chain of AI calls.
@@ -1321,7 +1311,7 @@ async def _prepare_flashcards(
     if not selected:
         if available_cards and not _is_self_study(workspace_id):
             selected = available_cards[:target]
-        elif not _is_self_study(workspace_id):
+        else:
             fb_plan = _build_guaranteed_fallback_plan(
                 workspace_id=workspace_id,
                 user_id=user.id,
@@ -1332,29 +1322,8 @@ async def _prepare_flashcards(
                 subject=subject,
                 subcategory=subcategory,
             )
-            return fb_plan.flashcards
-        else:
-            unseen = [
-                c for c in available_cards
-                if c.id not in seen_ids
-                and _flashcard_fingerprint(c.front, c.back) not in seen_fingerprints
-            ]
-            if unseen:
-                import random
-                random.shuffle(unseen)
-                selected = unseen[:target]
-            else:
-                fb_plan = _build_guaranteed_fallback_plan(
-                    workspace_id=workspace_id,
-                    user_id=user.id,
-                    tenant_id=user.tenant_id,
-                    mode=AdaptiveSessionMode.flashcard,
-                    level=level,
-                    mastery=0.0,
-                    subject=subject,
-                    subcategory=subcategory,
-                )
-                return fb_plan.flashcards
+            return fb_plan.flashcards[:target]
+
     return selected[:target]
 
 
@@ -2094,6 +2063,10 @@ async def prepare_adaptive_session(
                         str(t.get("name", "")) for t in any_doc.get("topic_tags") or [] if isinstance(t, dict)
                     ),
                 )
+                if not request.subject:
+                    request.subject = any_doc.get("category") or classify_subject_from_text(any_doc.get("filename", ""))
+                if not request.subcategory and any_doc.get("subcategory"):
+                    request.subcategory = any_doc.get("subcategory")
             else:
                 raise ConflictError(
                     "No study material has been uploaded yet. Please upload study material to begin."
@@ -2162,7 +2135,7 @@ async def prepare_adaptive_session(
                 question_type=request.question_type,
             )
     except Exception as exc:
-        if isinstance(exc, (ConflictError, ForbiddenError, NotFoundError)):
+        if isinstance(exc, (ForbiddenError, NotFoundError, ConflictError)):
             raise
         logger.exception("Adaptive session prepare error; generating guaranteed plan in one go")
         plan = _build_guaranteed_fallback_plan(
@@ -2189,35 +2162,40 @@ async def prepare_adaptive_session(
 
     item_count = len(flashcards if request.mode == AdaptiveSessionMode.flashcard else questions)
 
-    if capped and item_count == 0:
-        if used == 0:
-            logger.info(
-                "Pool empty on first prepare for workspace=%s; serving guaranteed plan in one go",
-                workspace_id,
-            )
-            plan = _build_guaranteed_fallback_plan(
-                workspace_id=workspace_id,
-                user_id=current_user.id,
-                tenant_id=current_user.tenant_id,
+    if item_count == 0:
+        if capped and used > 0:
+            return _build_exhausted_plan(
                 mode=request.mode,
                 level=level,
                 mastery=mastery,
                 subject=request.subject,
                 subcategory=request.subcategory,
             )
-            await _persist_prepared_session(
-                tenant_id=current_user.tenant_id,
-                workspace_id=workspace_id,
-                student_id=current_user.id,
-                mode=request.mode,
-                level=level,
-                mastery=mastery,
-                plan=plan,
-                snapshot=snapshot,
-            )
-            return plan
-        # Material genuinely exhausted: cap reached or thin material gave what it could.
-        return _build_exhausted_plan(mode=request.mode, level=level, mastery=mastery, subject=request.subject, subcategory=request.subcategory)
+        logger.info(
+            "Item count 0 for workspace=%s; serving guaranteed plan in one go",
+            workspace_id,
+        )
+        plan = _build_guaranteed_fallback_plan(
+            workspace_id=workspace_id,
+            user_id=current_user.id,
+            tenant_id=current_user.tenant_id,
+            mode=request.mode,
+            level=level,
+            mastery=mastery,
+            subject=request.subject,
+            subcategory=request.subcategory,
+        )
+        await _persist_prepared_session(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            student_id=current_user.id,
+            mode=request.mode,
+            level=level,
+            mastery=mastery,
+            plan=plan,
+            snapshot=snapshot,
+        )
+        return plan
 
     xp_min = -item_count + _COMPLETION_BONUSES[request.mode]
     xp_max = item_count + _COMPLETION_BONUSES[request.mode]

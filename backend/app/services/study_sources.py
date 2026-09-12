@@ -42,6 +42,14 @@ async def current_study_sources(*, tenant_id: str, workspace_id: str) -> Current
             }
         )
         rows = await cursor.to_list(length=1000)
+    if not rows:
+        cursor = col.find(
+            {
+                "workspace_id": workspace_id,
+                "deleted_at": None,
+            }
+        )
+        rows = await cursor.to_list(length=1000)
     rows.sort(key=lambda row: str(row.get("created_at", "")), reverse=True)
 
     selected: list[dict] = []

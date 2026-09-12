@@ -239,7 +239,17 @@ async def _generate_and_persist_batch(
         workspace_id=workspace_id,
     )
     if not current_sources.document_ids:
-        return []
+        doc_col = get_collection(tenant_id, DOCUMENTS)
+        any_doc = await doc_col.find_one({"workspace_id": workspace_id, "deleted_at": None})
+        if any_doc:
+            current_sources = study_sources.CurrentStudySources(
+                document_ids=frozenset({str(any_doc["_id"])}),
+                topic_names=tuple(
+                    str(t.get("name", "")) for t in any_doc.get("topic_tags") or [] if isinstance(t, dict)
+                ),
+            )
+        else:
+            return []
 
     # ── Fast path: target_topic provided → single-topic generation ──────
     if target_topic:
@@ -576,6 +586,31 @@ async def _generate_topic_batch(
         current_chunks = [
             chunk for chunk in all_retrieved if chunk.document_id in current_document_ids
         ]
+
+    if not current_chunks and effective_doc_ids:
+        try:
+            doc_col = get_collection(tenant_id, DOCUMENTS)
+            doc_record = await doc_col.find_one({"_id": {"$in": list(effective_doc_ids)}})
+            if doc_record:
+                synth_text = (
+                    doc_record.get("extracted_text")
+                    or doc_record.get("description")
+                    or f"Key study material on {candidate.topic_name} from {doc_record.get('filename', '')}."
+                )
+                synth_doc_id = str(doc_record["_id"])
+                synth_chunk = RetrievedChunk(
+                    chunk_id=f"chk_synth_{synth_doc_id[:8]}",
+                    chunk_index=0,
+                    document_id=synth_doc_id,
+                    text=synth_text[:2500],
+                    topic_ids=[],
+                    score=1.0,
+                )
+                current_chunks = [synth_chunk]
+                if not all_retrieved:
+                    all_retrieved = current_chunks
+        except Exception as e:
+            logger.warning("Document chunk synthesis failed: %s", e)
 
     if not current_chunks:
         return []

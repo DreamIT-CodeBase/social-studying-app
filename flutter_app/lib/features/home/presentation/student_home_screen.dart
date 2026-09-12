@@ -97,11 +97,13 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
       if (!mounted) return;
       if (status.isTrialExpired && !status.isActive && !_paywallDialogShown) {
         _paywallDialogShown = true;
-        await StudentPaywallDialog.show(
-          context,
-          daysRemaining: status.daysRemaining,
-          isExpired: true,
-        );
+        // Hold on pricing for tester onboarding: paywall dialog is hidden
+        // without deleting the underlying code.
+        // await StudentPaywallDialog.show(
+        //   context,
+        //   daysRemaining: status.daysRemaining,
+        //   isExpired: true,
+        // );
       }
     } catch (_) {
       // Swallowed silently
