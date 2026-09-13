@@ -507,6 +507,10 @@ async def _question_session_history(
             "workspace_id": workspace_id,
             "student_id": student_id,
             "mode": {"$in": [AdaptiveSessionMode.study.value, AdaptiveSessionMode.revision.value]},
+            # Only count sessions that have progressed past "prepared". Prepared sessions
+            # are already handled by _reserved_questions. Including them here double-excludes
+            # their questions, causing the same small question set to repeat every session.
+            "status": {"$in": ["in_progress", "completed", "timed_out", "exited", "superseded"]},
         }
     )
     rows = await cursor.to_list(length=500)
