@@ -193,8 +193,8 @@ class _StudentAppState extends ConsumerState<_StudentApp>
     String userId,
     GoRouter router,
   ) async {
-    final isAlreadyComplete =
-        SessionPersistenceService.instance.isPermissionSetupCompleteSync(userId);
+    final isAlreadyComplete = SessionPersistenceService.instance
+        .isPermissionSetupCompleteSync(userId);
     if (!isAlreadyComplete) {
       router.go(AppRoutes.studentOnboarding);
       return;

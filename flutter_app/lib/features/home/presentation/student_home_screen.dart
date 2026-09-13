@@ -185,8 +185,6 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
       });
     });
 
-
-
     final authValue = ref.watch(authNotifierProvider).valueOrNull;
     final displayName = authValue?.maybeWhen(
           authenticated: (user) => user.displayName,

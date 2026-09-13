@@ -45,7 +45,8 @@ class _PermissionOnboardingScreenState
   bool _sequenceActive = true;
   bool _waitingForAndroidSettings = false;
 
-  static const Map<String, (String name, IconData icon)> _availableAndroidApps = {
+  static const Map<String, (String name, IconData icon)> _availableAndroidApps =
+      {
     'com.instagram.android': ('Instagram', Icons.camera_alt_outlined),
     'com.instagram.barcelona': ('Threads', Icons.alternate_email_rounded),
     'com.zhiliaoapp.musically': ('TikTok', Icons.music_note_outlined),
@@ -142,7 +143,8 @@ class _PermissionOnboardingScreenState
       _sequenceActive = false;
       if (mounted) {
         setState(() {
-          _currentStep = 1; // Advance seamlessly to Choose Your Distraction Apps
+          _currentStep =
+              1; // Advance seamlessly to Choose Your Distraction Apps
         });
       }
       return;
@@ -399,7 +401,8 @@ class _PermissionOnboardingScreenState
       } catch (_) {}
       try {
         final currentWallet = await _screenTimeService.loadWallet(user.id);
-        if (currentWallet.availableMinutes == 0 && currentWallet.totalEarnedMinutes == 0) {
+        if (currentWallet.availableMinutes == 0 &&
+            currentWallet.totalEarnedMinutes == 0) {
           await _screenTimeService.saveWallet(
             currentWallet.copyWith(
               availableMinutes: 30,
@@ -754,7 +757,8 @@ class _PermissionOnboardingScreenState
                   ],
 
                   // ── Android Experience ─────────────────────────────────────
-                  if (Platform.isAndroid || (!Platform.isIOS && !Platform.isAndroid)) ...[
+                  if (Platform.isAndroid ||
+                      (!Platform.isIOS && !Platform.isAndroid)) ...[
                     Card(
                       elevation: 0,
                       shape: RoundedRectangleBorder(
@@ -870,7 +874,9 @@ class _PermissionOnboardingScreenState
                       )
                     else
                       FilledButton.icon(
-                        onPressed: _isSubmitting ? null : () => _finishOnboarding(force: true),
+                        onPressed: _isSubmitting
+                            ? null
+                            : () => _finishOnboarding(force: true),
                         style: FilledButton.styleFrom(
                           minimumSize: const Size(double.infinity, 52),
                         ),

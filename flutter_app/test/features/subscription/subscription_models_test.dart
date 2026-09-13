@@ -48,7 +48,8 @@ void main() {
     test('HandoffTokenResult deserializes properly', () {
       final json = {
         'handoff_token': 'test_tok_123',
-        'redirect_url': 'https://socialstudying.ai/student-subscribe?token=test_tok_123',
+        'redirect_url':
+            'https://socialstudying.ai/student-subscribe?token=test_tok_123',
         'expires_in_seconds': 900,
       };
 

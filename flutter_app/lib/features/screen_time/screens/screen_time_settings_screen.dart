@@ -120,7 +120,8 @@ class _ScreenTimeSettingsScreenState
     // Self-learners (independent users) and Family Admins (parents) can customize rules.
     // Teachers in school workspaces do NOT have device-blocking controls (student privacy protection).
     // Students in family workspaces are managed by their parent (read-only).
-    final isEditable = (isFlavorAdmin && !isSchoolWorkspace) || (!isFlavorAdmin && isSelfLearning);
+    final isEditable = (isFlavorAdmin && !isSchoolWorkspace) ||
+        (!isFlavorAdmin && isSelfLearning);
 
     final AsyncValue<List<StudentDeviceStatus>>? deviceStatusesAsync =
         isFlavorAdmin && workspaceId != null
@@ -156,7 +157,8 @@ class _ScreenTimeSettingsScreenState
                 isFlavorAdmin: isFlavorAdmin,
               ),
               const SizedBox(height: Spacing.lg),
-              if (activeWorkspace != null && activeWorkspace.documentCount == 0) ...[
+              if (activeWorkspace != null &&
+                  activeWorkspace.documentCount == 0) ...[
                 _buildNoContentWarningCard(context, activeWorkspace.id),
                 const SizedBox(height: Spacing.lg),
               ],
@@ -321,7 +323,8 @@ class _ScreenTimeSettingsScreenState
           children: [
             Row(
               children: [
-                const Icon(Icons.upload_file_rounded, color: Colors.amber, size: 24),
+                const Icon(Icons.upload_file_rounded,
+                    color: Colors.amber, size: 24),
                 const SizedBox(width: Spacing.sm),
                 Expanded(
                   child: Text(
@@ -402,13 +405,15 @@ class _ScreenTimeSettingsScreenState
                       color: AppColors.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.menu_book_rounded, color: AppColors.primary),
+                    child: const Icon(Icons.menu_book_rounded,
+                        color: AppColors.primary),
                   ),
                   const SizedBox(width: Spacing.sm),
                   const Expanded(
                     child: Text(
                       'How Screen Time & Controls Work',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
@@ -457,7 +462,8 @@ class _ScreenTimeSettingsScreenState
                 },
                 icon: const Icon(Icons.lock_open_rounded, color: Colors.red),
                 label: const Text('Emergency: Instant App Unblock',
-                    style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                    style: TextStyle(
+                        color: Colors.red, fontWeight: FontWeight.bold)),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Colors.red),
                   minimumSize: const Size(double.infinity, 48),
@@ -504,7 +510,8 @@ class _ScreenTimeSettingsScreenState
               children: [
                 Text(
                   title,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -547,7 +554,9 @@ class _ScreenTimeSettingsScreenState
 
     if (confirmed == true && mounted) {
       await _runPolicyUpdate(
-        () => ref.read(screenTimeNotifierProvider.notifier).updateEnableBlocking(false),
+        () => ref
+            .read(screenTimeNotifierProvider.notifier)
+            .updateEnableBlocking(false),
       );
       if (mounted) {
         ref.invalidate(enableBlockingProvider);
@@ -938,7 +947,8 @@ class _ScreenTimeSettingsScreenState
               isEditable
                   ? 'Tap below to open Apple’s native app picker and choose which social networking apps, categories, or websites to lock.'
                   : 'Shielded apps are configured by your family administrator and enforced automatically.',
-              style: const TextStyle(fontSize: 13, color: AppColors.onSurfaceVariant),
+              style: const TextStyle(
+                  fontSize: 13, color: AppColors.onSurfaceVariant),
             ),
             const SizedBox(height: Spacing.sm),
             Container(
@@ -981,7 +991,8 @@ class _ScreenTimeSettingsScreenState
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('Please authorize Screen Time first.'),
+                            content:
+                                Text('Please authorize Screen Time first.'),
                           ),
                         );
                       }
@@ -1013,7 +1024,8 @@ class _ScreenTimeSettingsScreenState
   }) {
     final String subtitle;
     if (isSchoolWorkspace) {
-      subtitle = 'Device blocking is disabled in classroom mode to protect student privacy';
+      subtitle =
+          'Device blocking is disabled in classroom mode to protect student privacy';
     } else if (isEditable) {
       subtitle = isSelfLearning
           ? 'Pause chosen apps when study time runs out'
@@ -1405,11 +1417,13 @@ class _ScreenTimeSettingsScreenState
             leading: const Icon(Icons.shield_rounded, color: Colors.indigo),
             title: const Text(
               'Test App Shields Now (Simulate 0 Min)',
-              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo),
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo),
             ),
             subtitle: const Text(
                 'Sets available minutes to 0 and immediately activates app shields so you can verify social apps are blocked.'),
-            trailing: const Icon(Icons.play_arrow_rounded, color: Colors.indigo),
+            trailing:
+                const Icon(Icons.play_arrow_rounded, color: Colors.indigo),
             onTap: () async {
               await ref
                   .read(screenTimeNotifierProvider.notifier)
@@ -1427,12 +1441,15 @@ class _ScreenTimeSettingsScreenState
           ),
           const Divider(height: 1),
           ListTile(
-            leading: const Icon(Icons.add_circle_outline_rounded, color: Colors.green),
+            leading: const Icon(Icons.add_circle_outline_rounded,
+                color: Colors.green),
             title: const Text(
               'Add 15 Test Minutes (Unblock Apps)',
-              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
             ),
-            subtitle: const Text('Grants 15 minutes to test that app shields release.'),
+            subtitle: const Text(
+                'Grants 15 minutes to test that app shields release.'),
             trailing: const Icon(Icons.add_rounded, color: Colors.green),
             onTap: () async {
               await ref
@@ -1441,7 +1458,8 @@ class _ScreenTimeSettingsScreenState
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Added 15 test minutes! App shields released.'),
+                    content:
+                        Text('Added 15 test minutes! App shields released.'),
                     backgroundColor: Colors.green,
                   ),
                 );
@@ -1453,11 +1471,13 @@ class _ScreenTimeSettingsScreenState
             leading: const Icon(Icons.refresh_rounded, color: Colors.orange),
             title: const Text(
               'Reset Today\'s Screen Time Stats',
-              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
             ),
             subtitle: const Text(
                 'Resets today\'s usage timer to 0 without affecting your earned balance.'),
-            trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.orange),
+            trailing: const Icon(Icons.arrow_forward_ios_rounded,
+                size: 16, color: Colors.orange),
             onTap: () async {
               await ref
                   .read(screenTimeNotifierProvider.notifier)

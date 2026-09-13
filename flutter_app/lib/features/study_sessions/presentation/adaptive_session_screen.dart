@@ -353,11 +353,11 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
             question.questionType == 'short_answer')) {
       try {
         final eval = await _repository.evaluateAnswer(
-              workspaceId: widget.workspaceId,
-              sessionId: plan.sessionId,
-              questionId: question.id,
-              answer: answer,
-            );
+          workspaceId: widget.workspaceId,
+          sessionId: plan.sessionId,
+          questionId: question.id,
+          answer: answer,
+        );
         matched = eval.isCorrect;
       } catch (_) {
         // Fallback gracefully to local evaluation result on network issue
@@ -436,9 +436,32 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
       final lower = submitted.toLowerCase();
       int matchedHints = 0;
       const stopWords = {
-        'the', 'a', 'an', 'and', 'or', 'of', 'in', 'to', 'for', 'with',
-        'on', 'at', 'by', 'from', 'is', 'are', 'was', 'were', 'that', 'this',
-        'as', 'it', 'its', 'be', 'been', 'which'
+        'the',
+        'a',
+        'an',
+        'and',
+        'or',
+        'of',
+        'in',
+        'to',
+        'for',
+        'with',
+        'on',
+        'at',
+        'by',
+        'from',
+        'is',
+        'are',
+        'was',
+        'were',
+        'that',
+        'this',
+        'as',
+        'it',
+        'its',
+        'be',
+        'been',
+        'which'
       };
       for (final hint in question.gradingHints) {
         final hintLower = hint.toLowerCase();

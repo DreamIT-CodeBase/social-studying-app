@@ -580,8 +580,8 @@ class _StudyActionsCard extends StatelessWidget {
                   color: Colors.green.withAlpha(30),
                   shape: BoxShape.circle,
                 ),
-                child:
-                    const Icon(Icons.bolt_rounded, color: Colors.green, size: 22),
+                child: const Icon(Icons.bolt_rounded,
+                    color: Colors.green, size: 22),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -650,4 +650,3 @@ class _StudyActionsCard extends StatelessWidget {
     );
   }
 }
-

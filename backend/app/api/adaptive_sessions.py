@@ -2157,7 +2157,7 @@ def _build_guaranteed_fallback_plan(
                     topic=topic_name,
                     question_type="true_false",
                     difficulty="beginner",
-                    body=f"Regular active recall and testing strengthens long-term memory retention more effectively than passive re-reading.",
+                    body="Regular active recall and testing strengthens long-term memory retention more effectively than passive re-reading.",
                     options=[
                         PreparedOption(key="true", text="True"),
                         PreparedOption(key="false", text="False"),
@@ -2171,7 +2171,7 @@ def _build_guaranteed_fallback_plan(
                     topic=topic_name,
                     question_type="short_answer",
                     difficulty="beginner",
-                    body=f"The practice of testing yourself on key concepts to strengthen memory retention is known as active ________.",
+                    body="The practice of testing yourself on key concepts to strengthen memory retention is known as active ________.",
                     options=[],
                     answer="recall",
                     explanation="Active recall is the process of actively retrieving information from memory.",

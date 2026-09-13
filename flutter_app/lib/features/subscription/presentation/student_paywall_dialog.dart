@@ -71,7 +71,8 @@ class _StudentPaywallDialogState extends ConsumerState<StudentPaywallDialog> {
         );
         if (!launched) {
           setState(() {
-            _errorMessage = 'Could not open subscription page. Please visit socialstudying.ai/student-subscribe';
+            _errorMessage =
+                'Could not open subscription page. Please visit socialstudying.ai/student-subscribe';
           });
         }
       }

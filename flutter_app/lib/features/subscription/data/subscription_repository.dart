@@ -66,7 +66,6 @@ class SubscriptionRepository {
   /// Generate secure short-lived handoff token for mobile -> website checkout.
   Future<HandoffTokenResult> getHandoffToken() async {
     final response = await _dio.post('/api/v1/subscriptions/handoff-token');
-    return HandoffTokenResult.fromJson(
-        response.data as Map<String, dynamic>);
+    return HandoffTokenResult.fromJson(response.data as Map<String, dynamic>);
   }
 }

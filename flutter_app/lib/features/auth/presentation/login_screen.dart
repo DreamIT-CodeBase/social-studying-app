@@ -7,7 +7,6 @@ import 'package:social_study_app/features/auth/domain/auth_state.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/shared/services/session_persistence_service.dart';
 import 'package:social_study_app/shared/widgets/app_logo.dart';
-import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 
 class LoginScreen extends ConsumerWidget {

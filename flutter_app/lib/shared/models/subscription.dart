@@ -237,4 +237,3 @@ class HandoffTokenResult {
         expiresInSeconds: (json['expires_in_seconds'] as num?)?.toInt() ?? 900,
       );
 }
-
