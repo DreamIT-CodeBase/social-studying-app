@@ -658,20 +658,22 @@ async def _fetch_student_context(
 async def _fetch_all_seen_and_queued_bodies(
     tenant_id: str, workspace_id: str, student_id: str
 ) -> list[str]:
-    """Return bodies of recently-seen and queued questions for deduplication.
+    """Return bodies of questions this student has personally answered.
 
-    Limited to the 200 most-recent interactions and 300 queue entries to keep
-    RU consumption low. A small number of very old questions may slip through
-    the dedup filter on busy workspaces, which is an acceptable trade-off vs
-    hitting Cosmos TooManyRequests (429) on every session prepare.
+    Only the student's own interaction history is used for deduplication.
+    Loading all workspace question bodies as "seen" caused regeneration
+    starvation: after 1-2 sessions on a content-rich workspace (e.g., a
+    200-equation algebra document), the full question pool was blacklisted and
+    every subsequent generate attempt fell back to the 2 static fallback
+    questions. Now only questions the student actually answered are excluded.
+    Structural deduplication against the persisted pool still occurs at
+    persist-time (line ~427) to avoid storing bit-identical question bodies.
     """
     col_q = get_collection(tenant_id, QUESTION_QUEUE)
     col_i = get_collection(tenant_id, INTERACTIONS)
 
-    # 1. Fetch interaction question IDs for this student
-    # Cosmos DB requires an explicit index to use .sort("created_at", -1).
-    # To avoid a 400 Bad Request, we fetch without sorting and take the last 200,
-    # which roughly corresponds to the most recent insertions.
+    # Fetch question IDs this student has answered (up to 2000 interactions,
+    # sliced to the 200 most-recent to bound RU consumption).
     cursor_i = col_i.find(
         {"workspace_id": workspace_id, "student_id": student_id},
         {"question_id": 1},
@@ -680,20 +682,11 @@ async def _fetch_all_seen_and_queued_bodies(
     interacted_ids = [doc["question_id"] for doc in docs_i if doc.get("question_id")]
     interacted_ids = interacted_ids[-200:]
 
-    # 2. Fetch up to 300 approved question bodies from this workspace
+    if not interacted_ids:
+        return []
+
     cursor_q = col_q.find(
-        {"workspace_id": workspace_id, "deleted_at": None},
-        {"body": 1},
-    ).limit(300)
-    docs_q = await cosmos_retry(lambda: cursor_q.to_list(length=300))
-    bodies: list[str] = [doc["body"] for doc in docs_q if doc.get("body")]
-
-    # 3. Include bodies of answered questions still in the queue
-    if interacted_ids:
-        cursor_q2 = col_q.find(
-            {"_id": {"$in": interacted_ids}}, {"body": 1}
-        ).limit(200)
-        docs_q2 = await cosmos_retry(lambda: cursor_q2.to_list(length=200))
-        bodies.extend([doc["body"] for doc in docs_q2 if doc.get("body")])
-
-    return list(set(bodies))
+        {"_id": {"$in": interacted_ids}}, {"body": 1}
+    ).limit(200)
+    docs_q = await cosmos_retry(lambda: cursor_q.to_list(length=200))
+    return list({doc["body"] for doc in docs_q if doc.get("body")})
