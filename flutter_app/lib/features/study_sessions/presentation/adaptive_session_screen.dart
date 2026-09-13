@@ -352,9 +352,7 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
         (question.questionType == 'long_answer' ||
             question.questionType == 'short_answer')) {
       try {
-        final eval = await ref
-            .read(adaptiveSessionRepositoryProvider)
-            .evaluateAnswer(
+        final eval = await _repository.evaluateAnswer(
               workspaceId: widget.workspaceId,
               sessionId: plan.sessionId,
               questionId: question.id,
