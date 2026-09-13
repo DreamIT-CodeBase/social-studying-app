@@ -180,31 +180,35 @@ class ScreenTimeExtensionHandler: DeviceActivityMonitor {
 
     guard let data = userDefaults.data(forKey: selectionStorageKey),
           let selection = try? PropertyListDecoder().decode(FamilyActivitySelection.self, from: data) else {
-      NSLog("[ScreenTimeExt] applyShields — no saved selection, cannot shield")
+      NSLog("[ScreenTimeExt] applyShields — no saved selection, ensuring shields are cleared")
+      clearShields()
+      userDefaults.set(false, forKey: shieldsActiveKey)
+      userDefaults.synchronize()
       return
     }
 
     let hasApps = !selection.applicationTokens.isEmpty
-    let hasCats = !selection.categoryTokens.isEmpty
     let hasWebs = !selection.webDomainTokens.isEmpty
 
-    guard hasApps || hasCats || hasWebs else {
-      NSLog("[ScreenTimeExt] applyShields — selection is empty, nothing to shield")
+    guard hasApps || hasWebs else {
+      NSLog("[ScreenTimeExt] applyShields — selection has no apps or webs, ensuring shields are cleared")
+      clearShields()
+      userDefaults.set(false, forKey: shieldsActiveKey)
+      userDefaults.synchronize()
       return
     }
 
     store.shield.applications =
       hasApps ? selection.applicationTokens : nil
-    store.shield.applicationCategories =
-      hasCats ? .specific(selection.categoryTokens) : nil
+    // Exclusively shield specific apps and domains. Do not apply blanket categories
+    // so alarms, home security, and system utilities remain safe.
+    store.shield.applicationCategories = nil
     store.shield.webDomains =
       hasWebs ? selection.webDomainTokens : nil
-    store.shield.webDomainCategories =
-      hasCats ? .specific(selection.categoryTokens) : nil
+    store.shield.webDomainCategories = nil
 
-    NSLog("[ScreenTimeExt] applyShields — shields APPLIED (apps=%d, cats=%d, webs=%d)",
+    NSLog("[ScreenTimeExt] applyShields — shields APPLIED (apps=%d, webs=%d)",
           selection.applicationTokens.count,
-          selection.categoryTokens.count,
           selection.webDomainTokens.count)
   }
 

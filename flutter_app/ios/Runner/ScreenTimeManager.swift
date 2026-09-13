@@ -130,7 +130,6 @@ extension DeviceActivityEvent.Name {
       #if canImport(FamilyControls)
       if let selection = loadSelection() {
         return !selection.applicationTokens.isEmpty ||
-               !selection.categoryTokens.isEmpty   ||
                !selection.webDomainTokens.isEmpty
       }
       #endif
@@ -242,20 +241,23 @@ extension DeviceActivityEvent.Name {
     let selection = loadSelection()
     let hasCustomSelection = selection != nil && hasSelectedApps()
 
+    // Safety guard: only enforce restrictions if user or admin has explicitly selected apps/categories.
+    // Never apply blanket system-wide shields to an unconfigured device.
+    guard let selection = selection, hasCustomSelection else {
+      clearShieldsAndStopMonitoring(from: store)
+      userDefaults.set(false, forKey: shieldsActiveKey)
+      userDefaults.synchronize()
+      return
+    }
+
     if availableMinutes <= 0 {
-      // Time exhausted — stop monitoring and apply shields immediately
-      NSLog("[ScreenTimeManager] TIME EXHAUSTED — applying shields NOW")
+      // Time exhausted — stop monitoring and apply shields immediately to selected apps only
+      NSLog("[ScreenTimeManager] TIME EXHAUSTED — applying shields to selected apps NOW")
       #if canImport(DeviceActivity)
       DeviceActivityCenter().stopMonitoring([.dailyMonitoring])
       #endif
 
-      if let selection = selection, hasCustomSelection {
-        applyShields(selection, to: store)
-      } else {
-        // Internal default shielding: block all non-essential third-party application categories and web domains
-        store.shield.applicationCategories = .all()
-        store.shield.webDomainCategories = .all()
-      }
+      applyShields(selection, to: store)
 
       let wasActive = userDefaults.bool(forKey: shieldsActiveKey)
       userDefaults.set(true, forKey: shieldsActiveKey)
@@ -273,11 +275,6 @@ extension DeviceActivityEvent.Name {
       clearShields(from: store)
       userDefaults.set(false, forKey: shieldsActiveKey)
       userDefaults.synchronize()
-
-      guard let selection = selection, hasCustomSelection else {
-        // No custom selection to monitor threshold on; shields cleared while time > 0
-        return
-      }
 
       #if canImport(DeviceActivity)
       let schedule = DeviceActivitySchedule(
@@ -326,12 +323,12 @@ extension DeviceActivityEvent.Name {
       selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
     store.shield.webDomains =
       selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens
-    store.shield.applicationCategories =
-      selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens)
-    // Categories can also include web domains. Mirror the category policy so
-    // selecting Social applies to supported social websites as well as apps.
-    store.shield.webDomainCategories =
-      selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens)
+    // CRITICAL: We explicitly set applicationCategories to nil. Category-wide shielding
+    // caused home security (Ring, ADT, Nest), alarm clocks, and utilities to be blocked.
+    // By shielding only specific applicationTokens and webDomainTokens, alarms and
+    // security systems remain 100% untouched and safe.
+    store.shield.applicationCategories = nil
+    store.shield.webDomainCategories = nil
   }
 
   @available(iOS 16.0, *)
@@ -470,21 +467,45 @@ private struct FamilyPickerContainerView: View {
 
   var body: some View {
     NavigationView {
-      FamilyActivityPicker(selection: $selection)
-        .navigationTitle("Select Apps to Shield")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-          ToolbarItem(placement: .cancellationAction) {
-            Button("Cancel") { dismiss() }
+      VStack(spacing: 0) {
+        // Prominent Safety Guidance Header
+        VStack(alignment: .leading, spacing: 6) {
+          HStack(spacing: 8) {
+            Image(systemName: "shield.lefthalf.filled")
+              .foregroundColor(.blue)
+              .font(.system(size: 16, weight: .semibold))
+            Text("Select Specific Apps Only")
+              .font(.system(size: 14, weight: .bold))
+              .foregroundColor(.primary)
           }
-          ToolbarItem(placement: .confirmationAction) {
-            Button("Done") {
-              onDismiss(selection)
-              dismiss()
-            }
-            .fontWeight(.bold)
-          }
+          Text("Expand categories to choose individual distraction apps (e.g. Instagram, TikTok). Do NOT select entire categories or system tools, so alarms, home security, and emergency apps stay active.")
+            .font(.system(size: 12))
+            .foregroundColor(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color(UIColor.secondarySystemBackground))
+        .cornerRadius(10)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+
+        FamilyActivityPicker(selection: $selection)
+      }
+      .navigationTitle("Select Apps to Shield")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { dismiss() }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Done") {
+            onDismiss(selection)
+            dismiss()
+          }
+          .fontWeight(.bold)
+        }
+      }
     }
   }
 }

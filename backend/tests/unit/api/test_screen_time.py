@@ -239,3 +239,65 @@ def test_sync_xp_caps_weekly_earned_social_time_at_two_hours(
     payload = response.json()
     assert payload["total_earned_minutes"] == expected_earned
     assert payload["available_minutes"] == expected_available
+
+
+def test_school_workspace_cannot_enable_blocking(client: TestClient) -> None:
+    teacher = make_user(
+        user_id="usr_teacher",
+        role=UserRole.workspace_admin,
+        workspace_ids=["wsp_school_1"],
+    )
+    app.dependency_overrides[get_current_user] = lambda: teacher
+
+    workspaces = MagicMock()
+    workspaces.find_one = AsyncMock(return_value={"_id": "wsp_school_1", "type": "school"})
+
+    def collection_factory(_tenant_id: str, name: str):
+        from app.core.database import WORKSPACES
+        if name == WORKSPACES:
+            return workspaces
+        return MagicMock()
+
+    with patch("app.api.screen_time.get_collection", side_effect=collection_factory):
+        response = client.put(
+            "/api/v1/workspaces/wsp_school_1/screen-time/settings",
+            json={"enable_blocking": True},
+        )
+
+    assert response.status_code == 403
+    assert "School and teacher accounts cannot enforce app blocking" in response.json()["detail"]
+
+
+def test_self_learning_user_can_update_settings(client: TestClient) -> None:
+    student = make_user(
+        user_id="stu_self_1",
+        role=UserRole.student,
+        workspace_ids=[],
+    )
+    app.dependency_overrides[get_current_user] = lambda: student
+
+    workspaces = MagicMock()
+    workspaces.find_one = AsyncMock(return_value={"_id": "wsp_self_stu_self_1", "type": "personal"})
+    settings = MagicMock()
+    settings.find_one = AsyncMock(return_value=None)
+    settings.replace_one = AsyncMock()
+
+    def collection_factory(_tenant_id: str, name: str):
+        from app.core.database import SCREEN_TIME_SETTINGS, WORKSPACES
+        if name == WORKSPACES:
+            return workspaces
+        if name == SCREEN_TIME_SETTINGS:
+            return settings
+        return MagicMock()
+
+    with patch("app.api.screen_time.get_collection", side_effect=collection_factory):
+        response = client.put(
+            "/api/v1/workspaces/wsp_self_stu_self_1/screen-time/settings",
+            json={"enable_blocking": False, "xp_to_minute_ratio": 20},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["enable_blocking"] is False
+    assert payload["xp_to_minute_ratio"] == 20
+

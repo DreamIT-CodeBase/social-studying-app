@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/routing/router.dart';
+import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/core/theme/app_theme.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/notifications/presentation/notification_service.dart';
@@ -91,9 +92,9 @@ class _StudentAppState extends ConsumerState<_StudentApp>
             _initNotifications(router);
             unawaited(ref.read(screenTimeNotifierProvider.future));
             unawaited(_verifyPermissionSetup(user.id, router));
-            // iOS: show permission setup if not yet authorized
+            // iOS: show permission setup if not yet authorized and onboarding completed
             if (Platform.isIOS) {
-              unawaited(_checkAndShowIOSPermissionSetup());
+              unawaited(_checkAndShowIOSPermissionSetup(user.id));
             }
           },
           unauthenticated: () {
@@ -121,8 +122,14 @@ class _StudentAppState extends ConsumerState<_StudentApp>
 
   // ── iOS Permission Setup ─────────────────────────────────────────────────
 
-  Future<void> _checkAndShowIOSPermissionSetup() async {
+  Future<void> _checkAndShowIOSPermissionSetup(String? userId) async {
     if (!Platform.isIOS) return;
+    if (userId != null &&
+        !SessionPersistenceService.instance
+            .isPermissionSetupCompleteSync(userId)) {
+      // User is onboarding; the dedicated onboarding screen handles setup.
+      return;
+    }
     if (_iosSetupShown) return;
     _iosSetupShown = true;
 
@@ -186,14 +193,16 @@ class _StudentAppState extends ConsumerState<_StudentApp>
     String userId,
     GoRouter router,
   ) async {
+    final isAlreadyComplete =
+        SessionPersistenceService.instance.isPermissionSetupCompleteSync(userId);
+    if (!isAlreadyComplete) {
+      router.go(AppRoutes.studentOnboarding);
+      return;
+    }
+
     try {
       final service = ScreenTimeService();
       final status = await service.getPermissionStatus();
-      await SessionPersistenceService.instance.setPermissionSetupComplete(
-        userId,
-        complete: true,
-      );
-
       await ref.read(screenTimeRepositoryProvider).reportPermissionStatus(
             overlayPermission: status.overlay,
             usageAccessPermission: status.usageAccess,

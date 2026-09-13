@@ -871,6 +871,9 @@ class _SettingsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final wsId = workspaceId;
+    final activeWorkspace = ref.watch(activeWorkspaceProvider);
+    final isSchoolWorkspace = activeWorkspace?.type == 'school';
+
     return ListView(
       children: [
         const SizedBox(height: Spacing.sm),
@@ -899,8 +902,10 @@ class _SettingsTab extends ConsumerWidget {
           ),
           _SettingsTile(
             icon: Icons.phonelink_lock_rounded,
-            title: 'Screen Time & Blocking',
-            subtitle: 'Configure app blocking and XP rules',
+            title: 'Screen Time & Device Policy',
+            subtitle: isSchoolWorkspace
+                ? 'Classroom privacy policy: Managed by parents'
+                : 'Configure app blocking and XP rules',
             onTap: () => context.push(
               AppRoutes.studentScreenTimeSettings,
             ),

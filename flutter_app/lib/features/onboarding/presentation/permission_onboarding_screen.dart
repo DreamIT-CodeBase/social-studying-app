@@ -9,6 +9,7 @@ import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/auth/data/auth_repository.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/features/home/providers/workspace_providers.dart';
 import 'package:social_study_app/features/screen_time/data/screen_time_repository.dart';
 import 'package:social_study_app/features/screen_time/services/screen_time_service.dart';
 import 'package:social_study_app/shared/services/session_persistence_service.dart';
@@ -27,6 +28,10 @@ class _PermissionOnboardingScreenState
   final ScreenTimeService _screenTimeService = ScreenTimeService();
   final Set<_PermissionKind> _attempted = {};
 
+  int _currentStep = 0; // 0 = Permissions, 1 = Choose Your Distraction Apps
+  bool _hasIOSSelectedApps = false;
+  Set<String> _selectedAndroidPackages = {};
+
   DevicePermissionStatus _status = const DevicePermissionStatus(
     usageAccess: false,
     overlay: false,
@@ -39,6 +44,18 @@ class _PermissionOnboardingScreenState
   bool _isSubmitting = false;
   bool _sequenceActive = true;
   bool _waitingForAndroidSettings = false;
+
+  static const Map<String, (String name, IconData icon)> _availableAndroidApps = {
+    'com.instagram.android': ('Instagram', Icons.camera_alt_outlined),
+    'com.instagram.barcelona': ('Threads', Icons.alternate_email_rounded),
+    'com.zhiliaoapp.musically': ('TikTok', Icons.music_note_outlined),
+    'com.google.android.youtube': ('YouTube', Icons.play_circle_outline),
+    'com.facebook.katana': ('Facebook', Icons.facebook_outlined),
+    'com.twitter.android': ('X (Twitter)', Icons.alternate_email_outlined),
+    'com.snapchat.android': ('Snapchat', Icons.chat_bubble_outline),
+    'com.reddit.frontpage': ('Reddit', Icons.forum_outlined),
+    'com.pinterest': ('Pinterest', Icons.push_pin_outlined),
+  };
 
   List<_PermissionKind> get _permissionOrder {
     if (Platform.isIOS) {
@@ -90,15 +107,28 @@ class _PermissionOnboardingScreenState
 
   Future<void> _refreshStatus() async {
     final status = await _screenTimeService.getPermissionStatus();
+    final hasIOSApps = Platform.isIOS
+        ? await _screenTimeService.hasSelectedBlockedApps()
+        : false;
+    final blockedAndroid = Platform.isAndroid
+        ? await _screenTimeService.getBlockedPackages()
+        : <String>[];
+
     if (!mounted) return;
     setState(() {
       _status = status;
+      _hasIOSSelectedApps = hasIOSApps;
+      if (_selectedAndroidPackages.isEmpty && blockedAndroid.isNotEmpty) {
+        _selectedAndroidPackages = blockedAndroid.toSet();
+      }
       _isChecking = false;
     });
   }
 
   void _scheduleNextDialog() {
     if (!mounted || !_sequenceActive || _isDialogOpen || _isSubmitting) return;
+
+    if (_currentStep != 0) return;
 
     final next = _permissionOrder.cast<_PermissionKind?>().firstWhere(
           (permission) =>
@@ -110,10 +140,10 @@ class _PermissionOnboardingScreenState
 
     if (next == null) {
       _sequenceActive = false;
-      if (_status.requiredPermissionsGranted) {
-        unawaited(_finishOnboarding());
-      } else if (mounted) {
-        setState(() {});
+      if (mounted) {
+        setState(() {
+          _currentStep = 1; // Advance seamlessly to Choose Your Distraction Apps
+        });
       }
       return;
     }
@@ -193,7 +223,7 @@ class _PermissionOnboardingScreenState
             await _screenTimeService.requestScreenTimeAuthorization();
             break;
           case _PermissionKind.selectApps:
-            await _screenTimeService.presentFamilyActivityPicker();
+            await _pickIOSApps();
             break;
           default:
             break;
@@ -238,8 +268,6 @@ class _PermissionOnboardingScreenState
           break;
       }
 
-      // Some OEM settings panels behave like dialogs and do not emit a full
-      // paused/resumed lifecycle pair. Continue when that happens.
       Future<void>.delayed(const Duration(seconds: 1), () {
         if (!mounted || !_waitingForAndroidSettings) return;
         if (WidgetsBinding.instance.lifecycleState ==
@@ -259,6 +287,66 @@ class _PermissionOnboardingScreenState
       }
       _scheduleNextDialog();
     }
+  }
+
+  Future<void> _pickIOSApps() async {
+    try {
+      if (!_status.iosScreenTimeAuthorized) {
+        final result =
+            await _screenTimeService.requestScreenTimeAuthorization();
+        if (!result.approved) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                    'Please authorize Apple Screen Time first to choose apps.'),
+              ),
+            );
+          }
+          return;
+        }
+      }
+      await _screenTimeService.presentFamilyActivityPicker();
+      final hasApps = await _screenTimeService.hasSelectedBlockedApps();
+      if (mounted) {
+        setState(() {
+          _hasIOSSelectedApps = hasApps;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveAndroidAppsAndFinish() async {
+    try {
+      await _screenTimeService
+          .saveBlockedPackages(_selectedAndroidPackages.toList());
+      final authState = ref.read(authNotifierProvider).valueOrNull;
+      final user =
+          authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+      if (user != null) {
+        final memberships = effectiveStudentMemberships(user);
+        if (memberships.isNotEmpty) {
+          final workspaceId = memberships.first.workspaceId;
+          try {
+            await ref.read(screenTimeRepositoryProvider).updateSettings(
+                  workspaceId: workspaceId,
+                  blockedPackages: _selectedAndroidPackages.toList(),
+                );
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    await _finishOnboarding(force: true);
+  }
+
+  Future<void> _skipAppSelection() async {
+    // Crucial: ensure zero apps are blocked when skipping
+    if (Platform.isAndroid) {
+      try {
+        await _screenTimeService.saveBlockedPackages([]);
+      } catch (_) {}
+    }
+    await _finishOnboarding(force: true);
   }
 
   void _restartSequence([_PermissionKind? only]) {
@@ -281,7 +369,7 @@ class _PermissionOnboardingScreenState
       _PermissionKind.overlay => _status.overlay,
       _PermissionKind.battery => _status.batteryExempt,
       _PermissionKind.screenTime => _status.iosScreenTimeAuthorized,
-      _PermissionKind.selectApps => _status.iosHasSelectedApps,
+      _PermissionKind.selectApps => _hasIOSSelectedApps,
     };
   }
 
@@ -309,6 +397,18 @@ class _PermissionOnboardingScreenState
           complete: true,
         );
       } catch (_) {}
+      try {
+        final currentWallet = await _screenTimeService.loadWallet(user.id);
+        if (currentWallet.availableMinutes == 0 && currentWallet.totalEarnedMinutes == 0) {
+          await _screenTimeService.saveWallet(
+            currentWallet.copyWith(
+              availableMinutes: 30,
+              totalEarnedMinutes: 30,
+            ),
+            user.id,
+          );
+        }
+      } catch (_) {}
       unawaited(_reportPermissionStatus());
     }
 
@@ -334,6 +434,13 @@ class _PermissionOnboardingScreenState
 
   @override
   Widget build(BuildContext context) {
+    if (_currentStep == 1) {
+      return _buildDistractionAppsStep();
+    }
+    return _buildPermissionsStep();
+  }
+
+  Widget _buildPermissionsStep() {
     final requiredReady = _status.requiredPermissionsGranted;
     return Scaffold(
       appBar: AppBar(
@@ -341,8 +448,8 @@ class _PermissionOnboardingScreenState
         actions: [
           TextButton(
             onPressed:
-                _isSubmitting ? null : () => _finishOnboarding(force: true),
-            child: const Text('Skip'),
+                _isSubmitting ? null : () => setState(() => _currentStep = 1),
+            child: const Text('Next'),
           ),
         ],
       ),
@@ -360,7 +467,7 @@ class _PermissionOnboardingScreenState
                   ),
                   const SizedBox(height: Spacing.md),
                   Text(
-                    'Set up social app blocking',
+                    'Set up study protection',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.w800,
@@ -370,7 +477,7 @@ class _PermissionOnboardingScreenState
                   Text(
                     Platform.isIOS
                         ? 'Apple Screen Time keeps you focused by shielding selected social apps when study minutes run out.'
-                        : 'Android will show its own permission controls one at a time. Return to Social Studying after enabling each switch.',
+                        : 'Android will show its permission controls. Return to Social Studying after enabling each switch.',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
@@ -397,7 +504,7 @@ class _PermissionOnboardingScreenState
                     const SizedBox(height: Spacing.md),
                     Text(
                       Platform.isIOS
-                          ? 'Screen Time permission and app selection are required for social app shielding.'
+                          ? 'Screen Time permission is required for social app shielding.'
                           : 'Accessibility and Usage Access are required for automatic blocking.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -416,9 +523,7 @@ class _PermissionOnboardingScreenState
                   FilledButton.icon(
                     onPressed: _isChecking || _isSubmitting || _sequenceActive
                         ? null
-                        : requiredReady
-                            ? _finishOnboarding
-                            : _restartSequence,
+                        : () => setState(() => _currentStep = 1),
                     style: FilledButton.styleFrom(
                       minimumSize: const Size(double.infinity, 52),
                     ),
@@ -437,17 +542,400 @@ class _PermissionOnboardingScreenState
                           ? (Platform.isIOS
                               ? 'Complete the prompt'
                               : 'Complete the Android prompt')
-                          : requiredReady
-                              ? 'Finish setup'
-                              : 'Continue permission setup',
+                          : 'Continue to Choose Apps',
                     ),
                   ),
                   const SizedBox(height: 8),
                   TextButton(
                     onPressed: _isSubmitting
                         ? null
-                        : () => _finishOnboarding(force: true),
-                    child: const Text('Skip for now and continue to app'),
+                        : () => setState(() => _currentStep = 1),
+                    child: const Text('Skip permissions and choose apps'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The dedicated "Choose Your Distraction Apps" screen requested by user
+  Widget _buildDistractionAppsStep() {
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          tooltip: 'Back to Permissions',
+          onPressed: () => setState(() => _currentStep = 0),
+        ),
+        title: const Text(
+          'Focus Setup',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _isSubmitting ? null : _skipAppSelection,
+            child: const Text('Skip'),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(Spacing.lg),
+                children: [
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: const Text(
+                        'STEP 2 OF 2 • APP SHIELDING',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: Spacing.md),
+                  Center(
+                    child: Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.shield_rounded,
+                        size: 40,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: Spacing.md),
+                  Text(
+                    'Choose Your Distraction Apps',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: Spacing.sm),
+                  Text(
+                    'Earn social media time by completing study questions. Select which apps you want to pause when study time runs out.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          height: 1.4,
+                        ),
+                  ),
+                  const SizedBox(height: Spacing.xl),
+
+                  // ── iOS Native Experience ───────────────────────────────────
+                  if (Platform.isIOS) ...[
+                    Card(
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(
+                          color: _hasIOSSelectedApps
+                              ? Colors.green.withValues(alpha: 0.4)
+                              : Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant
+                                  .withValues(alpha: 0.6),
+                        ),
+                      ),
+                      color: _hasIOSSelectedApps
+                          ? Colors.green.withValues(alpha: 0.05)
+                          : Theme.of(context).colorScheme.surface,
+                      child: Padding(
+                        padding: const EdgeInsets.all(Spacing.lg),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  _hasIOSSelectedApps
+                                      ? Icons.check_circle_rounded
+                                      : Icons.apps_rounded,
+                                  color: _hasIOSSelectedApps
+                                      ? Colors.green
+                                      : AppColors.primary,
+                                  size: 26,
+                                ),
+                                const SizedBox(width: Spacing.md),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _hasIOSSelectedApps
+                                            ? 'Distraction Apps Configured'
+                                            : 'No Apps Shielded Yet',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        _hasIOSSelectedApps
+                                            ? 'Apple Screen Time will pause only your chosen apps when study time expires.'
+                                            : 'Tap below to select Instagram, TikTok, YouTube, or categories.',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (_hasIOSSelectedApps) ...[
+                              const SizedBox(height: Spacing.md),
+                              OutlinedButton.icon(
+                                onPressed: _pickIOSApps,
+                                icon: const Icon(Icons.edit_rounded, size: 18),
+                                label: const Text('Change Selected Apps'),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: Spacing.md),
+                    Container(
+                      padding: const EdgeInsets.all(Spacing.md),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.blue.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.shield_outlined,
+                              size: 18, color: Color(0xFF3674FF)),
+                          SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Essential App Safety: Select specific distraction apps (e.g. Instagram, TikTok, YouTube). Do not select whole categories so alarms, home security, and system utilities stay active.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF1E3A8A),
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // ── Android Experience ─────────────────────────────────────
+                  if (Platform.isAndroid || (!Platform.isIOS && !Platform.isAndroid)) ...[
+                    Card(
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outlineVariant
+                              .withValues(alpha: 0.6),
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(Spacing.md),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Select apps to pause:',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      if (_selectedAndroidPackages.length ==
+                                          _availableAndroidApps.length) {
+                                        _selectedAndroidPackages.clear();
+                                      } else {
+                                        _selectedAndroidPackages =
+                                            _availableAndroidApps.keys.toSet();
+                                      }
+                                    });
+                                  },
+                                  child: Text(
+                                    _selectedAndroidPackages.length ==
+                                            _availableAndroidApps.length
+                                        ? 'Deselect All'
+                                        : 'Select All',
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Divider(height: 1),
+                            ..._availableAndroidApps.entries.map((entry) {
+                              final pkg = entry.key;
+                              final (name, icon) = entry.value;
+                              final isSelected =
+                                  _selectedAndroidPackages.contains(pkg);
+                              return CheckboxListTile(
+                                dense: true,
+                                value: isSelected,
+                                activeColor: AppColors.primary,
+                                secondary: Icon(
+                                  icon,
+                                  color: isSelected
+                                      ? AppColors.primary
+                                      : Colors.grey,
+                                ),
+                                title: Text(
+                                  name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                onChanged: (checked) {
+                                  setState(() {
+                                    if (checked == true) {
+                                      _selectedAndroidPackages.add(pkg);
+                                    } else {
+                                      _selectedAndroidPackages.remove(pkg);
+                                    }
+                                  });
+                                },
+                              );
+                            }),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            // ── Primary & Crucial Secondary Buttons ─────────────────────────
+            Padding(
+              padding: const EdgeInsets.all(Spacing.lg),
+              child: Column(
+                children: [
+                  // Primary Action Button
+                  if (Platform.isIOS) ...[
+                    if (!_hasIOSSelectedApps)
+                      FilledButton.icon(
+                        onPressed: _isSubmitting ? null : _pickIOSApps,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 52),
+                        ),
+                        icon: const Icon(Icons.touch_app_rounded),
+                        label: const Text(
+                          'Choose Apps to Shield',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      )
+                    else
+                      FilledButton.icon(
+                        onPressed: _isSubmitting ? null : () => _finishOnboarding(force: true),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 52),
+                        ),
+                        icon: const Icon(Icons.arrow_forward_rounded),
+                        label: const Text(
+                          'Continue to Study App',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ] else ...[
+                    FilledButton.icon(
+                      onPressed: _isSubmitting
+                          ? null
+                          : (_selectedAndroidPackages.isNotEmpty
+                              ? _saveAndroidAppsAndFinish
+                              : () {
+                                  // Pre-select top distraction apps if user clicks without checking
+                                  setState(() {
+                                    _selectedAndroidPackages.addAll([
+                                      'com.instagram.android',
+                                      'com.zhiliaoapp.musically',
+                                      'com.google.android.youtube',
+                                    ]);
+                                  });
+                                }),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 52),
+                      ),
+                      icon: const Icon(Icons.touch_app_rounded),
+                      label: Text(
+                        _selectedAndroidPackages.isNotEmpty
+                            ? 'Save Shielded Apps (${_selectedAndroidPackages.length})'
+                            : 'Choose Apps to Shield',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 8),
+
+                  // Crucial Secondary Button (Skip for Now / Set Up Later)
+                  TextButton(
+                    onPressed: _isSubmitting ? null : _skipAppSelection,
+                    child: const Text(
+                      'Skip for Now / Set Up Later',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Zero apps are blocked if skipped. You can always configure apps in the Profile tab.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -509,8 +997,7 @@ enum _PermissionKind {
 
   bool get isRequired {
     if (Platform.isIOS) {
-      return this == _PermissionKind.screenTime ||
-          this == _PermissionKind.selectApps;
+      return this == _PermissionKind.screenTime;
     }
     return this == _PermissionKind.accessibility ||
         this == _PermissionKind.usageAccess;

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
-import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
@@ -40,7 +39,6 @@ class ProfileScreen extends ConsumerWidget {
         ) ??
         ('User', 'user@example.com');
 
-    final isStudent = currentFlavor == AppFlavor.student;
     // avatar initial
     final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
 
@@ -170,13 +168,12 @@ class ProfileScreen extends ConsumerWidget {
                             );
                           },
                         ),
-                        if (!isStudent)
-                          _MenuItem(
-                            icon: Icons.screen_lock_portrait_rounded,
-                            label: 'Screen Time Controls',
-                            onTap: () =>
-                                context.push('/student/screen-time-settings'),
-                          ),
+                        _MenuItem(
+                          icon: Icons.screen_lock_portrait_rounded,
+                          label: 'Screen Time & Focus Controls',
+                          onTap: () =>
+                              context.push(AppRoutes.studentScreenTimeSettings),
+                        ),
                       ],
                     ),
                   ),
@@ -249,7 +246,6 @@ class _CollegeProfileScreen extends ConsumerWidget {
           orElse: () => ('User', 'user@example.com'),
         ) ??
         ('User', 'user@example.com');
-    final isStudent = currentFlavor == AppFlavor.student;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final background = isDark ? const Color(0xFF0F172A) : Colors.white;
     final surface = isDark ? const Color(0xFF172033) : Colors.white;
@@ -345,13 +341,12 @@ class _CollegeProfileScreen extends ConsumerWidget {
                   );
                 },
               ),
-              if (!isStudent)
-                _CollegeSettingsTile(
-                  icon: Icons.screen_lock_portrait_outlined,
-                  title: 'Screen time controls',
-                  subtitle: 'Manage student study access',
-                  onTap: () => context.push('/student/screen-time-settings'),
-                ),
+              _CollegeSettingsTile(
+                icon: Icons.screen_lock_portrait_outlined,
+                title: 'Screen Time & Focus Controls',
+                subtitle: 'Manage apps, shields, and study conversion',
+                onTap: () => context.push(AppRoutes.studentScreenTimeSettings),
+              ),
             ],
           ),
           const SizedBox(height: 28),

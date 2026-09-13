@@ -5,6 +5,7 @@ import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/models/workspace.dart';
+import 'package:social_study_app/shared/services/session_persistence_service.dart';
 import 'package:social_study_app/features/profile/presentation/profile_screen.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/admin/moderation/presentation/moderation_screen.dart';
@@ -83,8 +84,20 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
           authenticated: (user) {
             if (isOnPayment) return null;
             if (currentFlavor == AppFlavor.student) {
-              if (isOnLogin) {
+              final isSetupDone = SessionPersistenceService.instance
+                  .isPermissionSetupCompleteSync(user.id);
+              final isOnStudentOnboarding =
+                  state.matchedLocation == AppRoutes.studentOnboarding;
+              if (!isSetupDone && !isOnStudentOnboarding) {
+                return AppRoutes.studentOnboarding;
+              }
+              if (isSetupDone && isOnStudentOnboarding) {
                 return AppRoutes.studentHome;
+              }
+              if (isOnLogin) {
+                return isSetupDone
+                    ? AppRoutes.studentHome
+                    : AppRoutes.studentOnboarding;
               }
               return null;
             }

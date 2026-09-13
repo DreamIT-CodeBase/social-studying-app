@@ -29,6 +29,7 @@ from app.core.database import (
     SCREEN_TIME_SETTINGS,
     SCREEN_TIME_WALLETS,
     USERS,
+    WORKSPACES,
     get_collection,
 )
 from app.core.exceptions import ForbiddenError
@@ -159,6 +160,16 @@ async def update_settings(
     Creates the settings document if it doesn't exist yet (upsert).
     """
     _assert_admin(current_user, workspace_id)
+
+    # Check workspace type — school workspaces / teachers cannot enforce device blocking
+    col_ws = get_collection(current_user.tenant_id, WORKSPACES)
+    ws_doc = await col_ws.find_one({"_id": workspace_id, "deleted_at": None})
+    if ws_doc and ws_doc.get("type") == "school":
+        if body.enable_blocking is True or (body.blocked_packages and len(body.blocked_packages) > 0):
+            raise ForbiddenError(
+                "School and teacher accounts cannot enforce app blocking on student personal devices. "
+                "Device interference is managed by parents or personal self-study."
+            )
 
     settings = await _load_or_default_settings(
         tenant_id=current_user.tenant_id,
@@ -395,11 +406,22 @@ async def _load_or_default_settings(*, tenant_id: str, workspace_id: str) -> Scr
     raw = await col.find_one({"_id": f"sts_{workspace_id}"})
     if raw:
         return ScreenTimeSettings.model_validate(raw)
+
+    is_school = False
+    try:
+        col_ws = get_collection(tenant_id, WORKSPACES)
+        ws_doc = await col_ws.find_one({"_id": workspace_id, "deleted_at": None})
+        is_school = bool(ws_doc and ws_doc.get("type") == "school")
+    except Exception:
+        pass
+
     # Return in-memory defaults — only persisted when admin explicitly saves.
     return ScreenTimeSettings(
         **{"_id": f"sts_{workspace_id}"},
         tenant_id=tenant_id,
         workspace_id=workspace_id,
+        enable_blocking=not is_school,
+        blocked_packages=[] if is_school else _DEFAULT_BLOCKED_PACKAGES,
     )
 
 
@@ -415,6 +437,8 @@ async def _load_or_default_wallet(
         tenant_id=tenant_id,
         workspace_id=workspace_id,
         student_id=student_id,
+        available_minutes=30,
+        total_earned_minutes=30,
     )
 
 
@@ -498,6 +522,10 @@ def _wallet_to_view(w: ScreenTimeWallet) -> ScreenTimeWalletView:
 def _assert_workspace_member(user: User, workspace_id: str) -> None:
     if user.role == UserRole.tenant_admin:
         return
+    if workspace_id == f"wsp_self_{user.id}" or (
+        workspace_id.startswith("wsp_self_") and user.id in workspace_id
+    ):
+        return
     ids = {m.workspace_id for m in user.workspace_memberships}
     if workspace_id not in ids:
         raise ForbiddenError("You are not a member of this workspace")
@@ -506,8 +534,13 @@ def _assert_workspace_member(user: User, workspace_id: str) -> None:
 def _assert_admin(user: User, workspace_id: str) -> None:
     if user.role == UserRole.tenant_admin:
         return
+    if workspace_id == f"wsp_self_{user.id}" or (
+        workspace_id.startswith("wsp_self_") and user.id in workspace_id
+    ):
+        return
     if user.role == UserRole.workspace_admin:
         ids = {m.workspace_id for m in user.workspace_memberships}
         if workspace_id in ids:
             return
     raise ForbiddenError("Only workspace or tenant admins can update screen time settings")
+

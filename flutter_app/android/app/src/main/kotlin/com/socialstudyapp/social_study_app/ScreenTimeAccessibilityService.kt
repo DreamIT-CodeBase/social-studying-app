@@ -637,7 +637,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
 
     private fun getBlockedPackages(prefs: android.content.SharedPreferences): Set<String> {
         val jsonString = prefs.getString(KEY_BLOCKED_PACKAGES, null)
-            ?: return DEFAULT_BLOCKED_PACKAGES
+            ?: return emptySet()
         return parseJsonArray(jsonString).toSet()
     }
 
