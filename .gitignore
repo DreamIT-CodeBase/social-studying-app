@@ -1,48 +1,51 @@
-# # Python
-# __pycache__/
-# *.pyc
-# *.pyo
-# .venv/
-# venv/
-# dist/
-# build/
-# *.egg-info/
-# .mypy_cache/
-# .ruff_cache/
-# .pytest_cache/
-# htmlcov/
-# .coverage
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.uv-cache/
+htmlcov/
+.coverage
 
-# # Environment / secrets — NEVER commit these
-# backend/.env
-# mcp-server/.env
-# *.env.local
-# *.env.dev
-# *.env.staging
-# *.env.prod
-# *.env.production
+# Environment / secrets — NEVER commit these
+backend/.env
+backend/.env.dev
+mcp-server/.env
+*.env.local
+*.env.dev
+*.env.staging
+*.env.prod
+*.env.production
 
-# # Flutter / Dart
-# flutter_app/.dart_tool/
-# flutter_app/.flutter-plugins
-# flutter_app/.flutter-plugins-dependencies
-# flutter_app/build/
-# flutter_app/.packages
-# flutter_app/pubspec.lock
+# Flutter / Dart
+flutter_app/.dart_tool/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
+flutter_app/build/
+flutter_app/.packages
+flutter_app/pubspec.lock
 
-# # IDE
-# .idea/
-# .vscode/
-# *.swp
-# *.swo
-# .DS_Store
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
 
-# # Azure
-# infra/environments/*/params.local.json
+# Azure
+infra/environments/*/params.local.json
 
-# # Logs
-# *.log
+# Logs
+*.log
 
-# # gstack / Claude Code local tooling artifacts
-# .gstack/
-# .claude/worktrees/
+# gstack / Claude Code local tooling artifacts
+.gstack/
+.claude/worktrees/
+.codex/

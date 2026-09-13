@@ -54,6 +54,7 @@ class EarnedBadgeView(BaseModel):
     description: str
     icon: str
     earned_at: str
+    xp_reward: int = 0
 
 
 class AvailableBadgeView(BaseModel):
@@ -68,6 +69,16 @@ class AvailableBadgeView(BaseModel):
     name: str
     description: str
     icon: str
+    xp_reward: int = 0
+
+
+class DailyLoginFeedback(BaseModel):
+    awarded: bool
+    xp_earned: int
+    xp_total: int
+    new_level: int
+    leveled_up: bool
+    badges_unlocked: list[EarnedBadgeView]
 
 
 class GamificationProfile(BaseModel):
@@ -96,9 +107,13 @@ class GamificationProfile(BaseModel):
     questions_answered: int
     questions_correct: int
     flashcards_reviewed: int
+    study_sessions_completed: int
+    revision_sessions_completed: int
+    flashcard_sessions_completed: int
 
     badges: list[EarnedBadgeView]
     daily_activity: dict[str, int]
+    daily_xp: dict[str, int]
 
 
 class StreakSummary(BaseModel):
@@ -159,6 +174,42 @@ class LeaderboardResponse(BaseModel):
 
 
 # ── Profile endpoint ────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/users/me/gamification/daily-login",
+    response_model=DailyLoginFeedback,
+)
+async def claim_daily_login(
+    workspace_id: str,
+    current_user: User = Depends(get_current_user),
+) -> DailyLoginFeedback:
+    """Claim the once-per-calendar-day +2 XP login reward."""
+    _assert_workspace_member(current_user, workspace_id)
+    result = await gamification_service.record_daily_login(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=current_user.id,
+    )
+    delta = result.delta
+    return DailyLoginFeedback(
+        awarded=result.awarded,
+        xp_earned=delta.xp_earned,
+        xp_total=delta.state.xp_total if delta.state is not None else 0,
+        new_level=delta.new_level,
+        leveled_up=delta.leveled_up,
+        badges_unlocked=[
+            EarnedBadgeView(
+                badge_id=badge.badge_id,
+                name=badge.name,
+                description=badge.description,
+                icon=badge.icon,
+                earned_at=badge.earned_at,
+                xp_reward=badge.xp_reward,
+            )
+            for badge in delta.badges_unlocked
+        ],
+    )
 
 
 @router.get(
@@ -253,6 +304,7 @@ async def get_badges(
             description=b.description,
             icon=b.icon,
             earned_at=b.earned_at,
+            xp_reward=b.xp_reward,
         )
         for b in state.badges
     ]
@@ -262,6 +314,7 @@ async def get_badges(
             name=definition.name,
             description=definition.description,
             icon=definition.icon,
+            xp_reward=definition.xp_reward,
         )
         for definition in badges_module.BADGES
         if definition.id not in earned_ids
@@ -366,6 +419,9 @@ def _state_to_profile(state: GamificationState) -> GamificationProfile:
         questions_answered=state.questions_answered,
         questions_correct=state.questions_correct,
         flashcards_reviewed=state.flashcards_reviewed,
+        study_sessions_completed=state.study_sessions_completed,
+        revision_sessions_completed=state.revision_sessions_completed,
+        flashcard_sessions_completed=state.flashcard_sessions_completed,
         badges=[
             EarnedBadgeView(
                 badge_id=b.badge_id,
@@ -373,10 +429,12 @@ def _state_to_profile(state: GamificationState) -> GamificationProfile:
                 description=b.description,
                 icon=b.icon,
                 earned_at=b.earned_at,
+                xp_reward=b.xp_reward,
             )
             for b in state.badges
         ],
         daily_activity=state.daily_activity,
+        daily_xp=state.daily_xp,
     )
 
 
@@ -409,9 +467,7 @@ def _assert_can_view(
         return
     # Student fall-through.
     if user.id != target_user_id:
-        raise ForbiddenError(
-            "Students can only view their own gamification profile"
-        )
+        raise ForbiddenError("Students can only view their own gamification profile")
 
 
 async def _read_workspace(tenant_id: str, workspace_id: str) -> Workspace:
@@ -422,9 +478,7 @@ async def _read_workspace(tenant_id: str, workspace_id: str) -> Workspace:
     return Workspace.model_validate(raw)
 
 
-async def _fetch_display_names(
-    *, tenant_id: str, student_ids: list[str]
-) -> dict[str, str]:
+async def _fetch_display_names(*, tenant_id: str, student_ids: list[str]) -> dict[str, str]:
     """Batch-fetch ``display_name`` for the given users.
 
     One ``find({"_id": {"$in": ids}})`` query instead of N point reads.
@@ -442,3 +496,62 @@ async def _fetch_display_names(
         }
     )
     return {doc["_id"]: doc.get("display_name", "Unknown") async for doc in cursor}
+
+
+class SessionCompletionRequest(BaseModel):
+    session_type: str = Field(pattern="^(study|revision|flashcard)$")
+
+
+class SessionCompletionFeedback(BaseModel):
+    xp_earned: int
+    new_level: int
+    leveled_up: bool
+    streak_days: int
+    streak_extended: bool
+    badges_unlocked: list[EarnedBadgeView]
+
+
+@router.post(
+    "/users/{student_id}/gamification/complete-session",
+    response_model=SessionCompletionFeedback,
+)
+async def complete_session(
+    workspace_id: str,
+    student_id: str,
+    payload: SessionCompletionRequest,
+    current_user: User = Depends(get_current_user),
+) -> SessionCompletionFeedback:
+    """Award XP for completing a study, revision, or flashcard session."""
+    if current_user.id != student_id and current_user.role != UserRole.admin:
+        raise ForbiddenError("Cannot submit session completion for another student.")
+
+    await _read_workspace(current_user.tenant_id, workspace_id)
+    is_member = any(m.workspace_id == workspace_id for m in current_user.workspace_memberships)
+    if not is_member and current_user.role != UserRole.admin:
+        raise ForbiddenError("Not a member of this workspace.")
+
+    delta = await gamification_service.record_session_completion(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=student_id,
+        session_type=payload.session_type,
+    )
+
+    return SessionCompletionFeedback(
+        xp_earned=delta.xp_earned,
+        new_level=delta.new_level,
+        leveled_up=delta.leveled_up,
+        streak_days=delta.streak_days,
+        streak_extended=delta.streak_extended,
+        badges_unlocked=[
+            EarnedBadgeView(
+                badge_id=b.badge_id,
+                name=b.name,
+                description=b.description,
+                icon=b.icon,
+                earned_at=b.earned_at,
+                xp_reward=b.xp_reward,
+            )
+            for b in delta.badges_unlocked
+        ],
+    )

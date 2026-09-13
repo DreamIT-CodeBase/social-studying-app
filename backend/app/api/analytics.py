@@ -23,12 +23,13 @@ Access rules
 from __future__ import annotations
 
 import logging
+from datetime import UTC, date, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from app.core.auth import get_current_user, require_role
-from app.core.exceptions import ForbiddenError
+from app.core.exceptions import ForbiddenError, ValidationError
 from app.models.user import User, UserRole
 from app.services import analytics as analytics_service
 
@@ -58,8 +59,8 @@ class TopicMasteryView(BaseModel):
 class ActivityEntryView(BaseModel):
     """One row in the recent-activity timeline.
 
-    ``is_correct`` is ``None`` for flashcards (self-rated, no graded
-    verdict).
+    ``is_correct`` is populated for current graded flashcards and remains
+    ``None`` only for legacy self-rated events.
     """
 
     kind: str  # "question" or "flashcard"
@@ -122,6 +123,47 @@ class WorkspaceAnalyticsView(BaseModel):
     engagement_heatmap: list[HeatmapCellView]
 
 
+class LearningTrendPointView(BaseModel):
+    date: str
+    overall_mastery: float
+    quiz_accuracy: float
+    flashcard_recall: float
+    activity_count: int
+
+
+class LearningTrendKpisView(BaseModel):
+    overall_mastery: float
+    mastery_change: float
+    quiz_accuracy: float
+    students_needing_attention: int
+
+
+class LearningTrendStudentView(BaseModel):
+    student_id: str
+    display_name: str
+    overall_mastery: float
+    mastery_change: float
+    quiz_accuracy: float
+    flashcard_recall: float
+    activity_count: int
+    needs_attention: bool
+
+
+class LearningProgressTrendView(BaseModel):
+    workspace_id: str
+    scope: str
+    student_id: str | None = None
+    student_name: str | None = None
+    topic: str | None = None
+    start_date: str
+    end_date: str
+    available_topics: list[str] = Field(default_factory=list)
+    kpis: LearningTrendKpisView
+    points: list[LearningTrendPointView] = Field(default_factory=list)
+    workspace_comparison: list[LearningTrendPointView] = Field(default_factory=list)
+    students: list[LearningTrendStudentView] = Field(default_factory=list)
+
+
 class TenantWorkspaceSummary(BaseModel):
     """Per-workspace row on the tenant analytics dashboard."""
 
@@ -179,9 +221,7 @@ async def get_student_progress(
 )
 async def get_workspace_analytics(
     workspace_id: str,
-    current_user: User = Depends(
-        require_role(UserRole.tenant_admin, UserRole.workspace_admin)
-    ),
+    current_user: User = Depends(require_role(UserRole.tenant_admin, UserRole.workspace_admin)),
 ) -> WorkspaceAnalyticsView:
     """Aggregate analytics across every student in the workspace.
 
@@ -199,6 +239,44 @@ async def get_workspace_analytics(
         workspace_id=workspace_id,
     )
     return WorkspaceAnalyticsView(**payload)
+
+
+@workspace_router.get(
+    "/analytics/learning-progress",
+    response_model=LearningProgressTrendView,
+)
+async def get_learning_progress_trend(
+    workspace_id: str,
+    student_id: str | None = None,
+    topic: str | None = None,
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    compare_workspace: bool = False,
+    current_user: User = Depends(require_role(UserRole.tenant_admin, UserRole.workspace_admin)),
+) -> LearningProgressTrendView:
+    """Return event-derived learning trends and intervention KPIs."""
+    if current_user.role == UserRole.workspace_admin:
+        ids = {m.workspace_id for m in current_user.workspace_memberships}
+        if workspace_id not in ids:
+            raise ForbiddenError("You are not a member of this workspace")
+
+    resolved_end = end_date or datetime.now(UTC).date()
+    resolved_start = start_date or (resolved_end - timedelta(days=29))
+    if resolved_end < resolved_start:
+        raise ValidationError("end_date must be on or after start_date")
+    if (resolved_end - resolved_start).days > 366:
+        raise ValidationError("Date range cannot exceed 367 days")
+
+    payload = await analytics_service.build_learning_progress_trend(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        start_date=resolved_start,
+        end_date=resolved_end,
+        student_id=student_id,
+        topic=topic,
+        compare_workspace=compare_workspace,
+    )
+    return LearningProgressTrendView(**payload)
 
 
 # ── Tenant analytics endpoint ───────────────────────────────────────────────
@@ -243,6 +321,4 @@ def _assert_can_view(
     if user.role == UserRole.workspace_admin:
         return
     if user.id != target_user_id:
-        raise ForbiddenError(
-            "Students can only view their own progress"
-        )
+        raise ForbiddenError("Students can only view their own progress")

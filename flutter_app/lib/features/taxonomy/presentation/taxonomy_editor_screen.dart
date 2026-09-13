@@ -102,9 +102,18 @@ class _TaxonomyEditorScreenState extends ConsumerState<TaxonomyEditorScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Edit Taxonomy',
-          style: TextStyle(fontWeight: FontWeight.w700),
+        title: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Edit knowledge map',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            Text(
+              'Organize topics and learning order',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            ),
+          ],
         ),
         actions: [
           _SaveAction(enabled: _canSave, saving: _saving, onSave: _save),
@@ -138,29 +147,78 @@ class _TaxonomyEditorScreenState extends ConsumerState<TaxonomyEditorScreen> {
             message: _validationError!,
             onDismiss: () => setState(() => _validationError = null),
           ),
-        _MakeRootDropTarget(
-          onDropTopic: (topic) => _reparent(topic.id, null),
-        ),
         Expanded(
-          child: ListView.separated(
+          child: ListView(
             padding: const EdgeInsets.fromLTRB(
               Spacing.lg,
-              Spacing.sm,
+              Spacing.md,
               Spacing.lg,
-              Spacing.lg,
+              Spacing.xxxl,
             ),
-            itemCount: rows.length,
-            separatorBuilder: (_, __) => const SizedBox(height: Spacing.sm),
-            itemBuilder: (_, i) => _EditableTopicRow(
-              row: rows[i],
-              topics: topics,
-              onTap: () => _openEditSheet(rows[i].topic),
-              onDelete: () => _confirmDelete(rows[i].topic),
-              canAcceptDrop: (dragged) =>
-                  _canReparent(dragged.id, rows[i].topic.id),
-              onAcceptDrop: (dragged) =>
-                  _reparent(dragged.id, rows[i].topic.id),
-            ),
+            children: [
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 920),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _EditorOverview(
+                        topics: topics,
+                        version: _loadedVersion ?? 0,
+                        dirty: _dirty,
+                        onDiscard: _discardChanges,
+                      ),
+                      const SizedBox(height: Spacing.lg),
+                      _MakeRootDropTarget(
+                        onDropTopic: (topic) => _reparent(topic.id, null),
+                      ),
+                      const SizedBox(height: Spacing.lg),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Topic structure',
+                              style: context.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${rows.length} topics',
+                            style: context.textTheme.labelLarge?.copyWith(
+                              color: context.colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: Spacing.xs),
+                      Text(
+                        'Tap a topic to edit it. Long-press and drag to change its parent.',
+                        style: context.textTheme.bodySmall?.copyWith(
+                          color: context.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: Spacing.md),
+                      for (var index = 0; index < rows.length; index++) ...[
+                        _EditableTopicRow(
+                          row: rows[index],
+                          topics: topics,
+                          onTap: () => _openEditSheet(rows[index].topic),
+                          onDelete: () => _confirmDelete(rows[index].topic),
+                          canAcceptDrop: (dragged) =>
+                              _canReparent(dragged.id, rows[index].topic.id),
+                          onAcceptDrop: (dragged) =>
+                              _reparent(dragged.id, rows[index].topic.id),
+                        ),
+                        if (index != rows.length - 1)
+                          const SizedBox(height: Spacing.sm),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -187,19 +245,29 @@ class _TaxonomyEditorScreenState extends ConsumerState<TaxonomyEditorScreen> {
   }
 
   void _applyEdit(String id, _TopicDraft draft) {
-    _mutate(id, (t) => t.copyWith(
-          name: draft.name,
-          description: draft.description,
-          aliases: draft.aliases,
-          complexityLevel: draft.complexityLevel,
-          parentId: draft.parentId,
-        ));
+    _mutate(
+        id,
+        (t) => t.copyWith(
+              name: draft.name,
+              description: draft.description,
+              aliases: draft.aliases,
+              complexityLevel: draft.complexityLevel,
+              parentId: draft.parentId,
+            ));
   }
 
   void _deleteTopic(String id) {
     setState(() {
       _validationError = null;
       _topics = _topics!.where((t) => t.id != id).toList();
+    });
+  }
+
+  void _discardChanges() {
+    if (!_dirty) return;
+    setState(() {
+      _topics = [..._loadedSnapshot!];
+      _validationError = null;
     });
   }
 
@@ -229,6 +297,7 @@ class _TaxonomyEditorScreenState extends ConsumerState<TaxonomyEditorScreen> {
     final updated = await showModalBottomSheet<_TopicDraft>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       showDragHandle: true,
       builder: (_) => _TopicEditSheet(
         topic: topic,
@@ -236,7 +305,8 @@ class _TaxonomyEditorScreenState extends ConsumerState<TaxonomyEditorScreen> {
         // this one. Prevents the dropdown from offering a cycle.
         candidateParents: _topics!
             .where(
-              (t) => t.id != topic.id && !_descendantsOf(topic.id).contains(t.id),
+              (t) =>
+                  t.id != topic.id && !_descendantsOf(topic.id).contains(t.id),
             )
             .toList(),
       ),
@@ -357,6 +427,164 @@ class _TaxonomyEditorScreenState extends ConsumerState<TaxonomyEditorScreen> {
 // ─────────────────────────────────────────────────────────────────────────
 // AppBar Save action
 // ─────────────────────────────────────────────────────────────────────────
+
+class _EditorOverview extends StatelessWidget {
+  const _EditorOverview({
+    required this.topics,
+    required this.version,
+    required this.dirty,
+    required this.onDiscard,
+  });
+
+  final List<CanonicalTopic> topics;
+  final int version;
+  final bool dirty;
+  final VoidCallback onDiscard;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colorScheme;
+    final rootCount = topics.where((topic) => topic.parentId == null).length;
+    return Container(
+      key: const ValueKey('taxonomy_editor_overview'),
+      padding: const EdgeInsets.all(Spacing.xl),
+      decoration: BoxDecoration(
+        color: colors.primaryContainer,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: colors.primary.withAlpha(35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: colors.primary,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Icon(
+                  Icons.schema_rounded,
+                  color: colors.onPrimary,
+                  size: 25,
+                ),
+              ),
+              const SizedBox(width: Spacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Shape the learning path',
+                      style: context.textTheme.titleLarge?.copyWith(
+                        color: colors.onPrimaryContainer,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: Spacing.xs),
+                    Text(
+                      'Parent topics are taught before their subtopics. Keep '
+                      'the structure focused and easy to follow.',
+                      style: context.textTheme.bodyMedium?.copyWith(
+                        color: colors.onPrimaryContainer.withAlpha(190),
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Spacing.lg),
+          Wrap(
+            spacing: Spacing.sm,
+            runSpacing: Spacing.sm,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _EditorStatusChip(
+                icon: Icons.bubble_chart_rounded,
+                label: '${topics.length} topics',
+              ),
+              _EditorStatusChip(
+                icon: Icons.account_tree_rounded,
+                label: '$rootCount roots',
+              ),
+              _EditorStatusChip(
+                icon: Icons.history_rounded,
+                label: 'Version $version',
+              ),
+              _EditorStatusChip(
+                icon: dirty ? Icons.edit_note_rounded : Icons.check_rounded,
+                label: dirty ? 'Unsaved changes' : 'All changes saved',
+                emphasized: dirty,
+              ),
+            ],
+          ),
+          if (dirty) ...[
+            const SizedBox(height: Spacing.md),
+            TextButton.icon(
+              onPressed: onDiscard,
+              icon: const Icon(Icons.undo_rounded, size: 18),
+              label: const Text('Discard local changes'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _EditorStatusChip extends StatelessWidget {
+  const _EditorStatusChip({
+    required this.icon,
+    required this.label,
+    this.emphasized = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Spacing.sm,
+        vertical: Spacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: emphasized ? colors.secondaryContainer : colors.surface,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 15,
+            color: emphasized
+                ? colors.onSecondaryContainer
+                : colors.onSurfaceVariant,
+          ),
+          const SizedBox(width: Spacing.xs),
+          Text(
+            label,
+            style: context.textTheme.labelMedium?.copyWith(
+              color: emphasized
+                  ? colors.onSecondaryContainer
+                  : colors.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _SaveAction extends StatelessWidget {
   const _SaveAction({
@@ -540,7 +768,8 @@ class _EditableTopicRow extends StatelessWidget {
       builder: (context, candidate, _) {
         final highlighted = candidate.isNotEmpty;
         return Padding(
-          padding: EdgeInsets.only(left: row.depth * 20.0),
+          padding: EdgeInsets.only(
+              left: row.depth * (context.isMobile ? 10.0 : 20.0)),
           child: LongPressDraggable<CanonicalTopic>(
             data: row.topic,
             delay: const Duration(milliseconds: 250),
@@ -614,87 +843,142 @@ class _RowCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: highlighted
-          ? context.colorScheme.primaryContainer
-          : context.colorScheme.surface,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: highlighted
-                  ? context.colorScheme.primary
-                  : context.colorScheme.outlineVariant,
-              width: highlighted ? 2 : 1,
-            ),
+    final colors = context.colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final depthColor = row.depth == 0 ? colors.primary : colors.tertiary;
+    final rowSurface = isDark ? colors.surfaceContainerHighest : colors.surface;
+    final insetSurface =
+        isDark ? colors.surface : colors.surfaceContainerHighest;
+    return Container(
+      key: ValueKey('taxonomy_editor_row_${row.topic.id}'),
+      decoration: BoxDecoration(
+        color: highlighted ? colors.primaryContainer : rowSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: highlighted ? colors.primary : colors.outlineVariant,
+          width: highlighted ? 2 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isDark
+                ? Colors.black.withAlpha(55)
+                : colors.shadow.withAlpha(10),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
-          padding: const EdgeInsets.all(Spacing.lg),
-          child: Row(
-            children: [
-              Icon(
-                row.childCount > 0
-                    ? Icons.folder_outlined
-                    : Icons.label_outline_rounded,
-                size: 18,
-                color: context.colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: Spacing.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      row.topic.name,
-                      style: context.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              Spacing.sm,
+              Spacing.md,
+              Spacing.xs,
+              Spacing.md,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.drag_indicator_rounded,
+                  size: 20,
+                  color: colors.onSurfaceVariant.withAlpha(125),
+                ),
+                const SizedBox(width: Spacing.xs),
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: depthColor.withAlpha(22),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    row.childCount > 0
+                        ? Icons.hub_outlined
+                        : Icons.circle_outlined,
+                    size: 20,
+                    color: depthColor,
+                  ),
+                ),
+                const SizedBox(width: Spacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        row.depth == 0
+                            ? 'ROOT CONCEPT'
+                            : 'LEVEL ${row.depth + 1}',
+                        style: context.textTheme.labelSmall?.copyWith(
+                          color: depthColor,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        row.topic.name,
+                        style: context.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      if (row.topic.aliases.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          row.topic.aliases.join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.textTheme.labelSmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (row.topic.complexityLevel != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: Spacing.sm,
+                      vertical: Spacing.xs,
+                    ),
+                    decoration: BoxDecoration(
+                      color: insetSurface,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'L${_formatLevel(row.topic.complexityLevel!)}',
+                      style: context.textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                    if (row.topic.aliases.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        'Aliases: ${row.topic.aliases.join(', ')}',
-                        style: context.textTheme.labelSmall?.copyWith(
-                          color: context.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                    if (row.topic.complexityLevel != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        'Complexity L${_formatLevel(row.topic.complexityLevel!)}',
-                        style: context.textTheme.labelSmall?.copyWith(
-                          color: context.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ],
+                  ),
+                IconButton(
+                  tooltip: 'Delete topic',
+                  onPressed: onDelete,
+                  icon: Icon(
+                    Icons.delete_outline_rounded,
+                    color: colors.error,
+                  ),
                 ),
-              ),
-              IconButton(
-                tooltip: 'Delete topic',
-                onPressed: onDelete,
-                icon: Icon(
-                  Icons.delete_outline_rounded,
-                  color: context.colorScheme.error,
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: colors.onSurfaceVariant,
                 ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: context.colorScheme.onSurfaceVariant,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  static String _formatLevel(double level) =>
-      level == level.toInt() ? level.toInt().toString() : level.toStringAsFixed(1);
+  static String _formatLevel(double level) => level == level.toInt()
+      ? level.toInt().toString()
+      : level.toStringAsFixed(1);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -784,13 +1068,52 @@ class _TopicEditSheetState extends State<_TopicEditSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: context.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Icon(
+                    Icons.edit_note_rounded,
+                    color: context.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: Spacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Edit Topic',
+                        style: context.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        'Refine how this concept appears in the learning map',
+                        style: context.textTheme.bodySmall?.copyWith(
+                          color: context.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: Spacing.xl),
             Text(
-              'Edit Topic',
-              style: context.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
+              'TOPIC DETAILS',
+              style: context.textTheme.labelSmall?.copyWith(
+                color: context.colorScheme.primary,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.8,
               ),
             ),
-            const SizedBox(height: Spacing.lg),
+            const SizedBox(height: Spacing.sm),
             TextField(
               controller: _nameController,
               autofocus: true,
@@ -866,8 +1189,8 @@ class _TopicEditSheetState extends State<_TopicEditSheet> {
                   Expanded(
                     child: Slider(
                       min: 1,
-                      max: 10,
-                      divisions: 18,
+                      max: 5,
+                      divisions: 8,
                       value: _complexityLevel,
                       label: _complexityLevel.toStringAsFixed(1),
                       onChanged: (v) => setState(() => _complexityLevel = v),

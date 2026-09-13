@@ -6,9 +6,12 @@ import 'package:social_study_app/core/routing/router.dart';
 import 'package:social_study_app/core/theme/app_theme.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/notifications/presentation/notification_service.dart';
+import 'package:social_study_app/shared/services/session_persistence_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   setAppFlavor(AppFlavor.admin);
+  await SessionPersistenceService.init();
   runApp(const ProviderScope(child: _AdminApp()));
 }
 
@@ -50,7 +53,7 @@ class _AdminAppState extends ConsumerState<_AdminApp> {
     });
 
     return MaterialApp.router(
-      title: 'Social Study — Admin',
+      title: 'Social Studying — Admin',
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
@@ -62,11 +65,11 @@ class _AdminAppState extends ConsumerState<_AdminApp> {
   void _initNotifications(router) {
     unawaited(
       ref.read(notificationServiceProvider).initialize(
-            onTap: (RemoteMessage message) {
-              final path = deepLinkFor(message.data);
-              if (path != null) router.go(path);
-            },
-          ),
+        onTap: (RemoteMessage message) {
+          final path = deepLinkFor(message.data);
+          if (path != null) router.go(path);
+        },
+      ),
     );
   }
 }

@@ -23,12 +23,14 @@ class ScreenTimeDashboardCard extends ConsumerWidget {
         final total = wallet.totalEarnedMinutes;
         final available = wallet.availableMinutes;
         final usedToday = wallet.consumedToday;
-        
-        final double progress = total > 0 ? (available / total).clamp(0.0, 1.0) : 0.0;
+
+        final double progress =
+            total > 0 ? (available / total).clamp(0.0, 1.0) : 0.0;
 
         return Card(
           elevation: 4,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
           child: Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),
@@ -82,8 +84,10 @@ class ScreenTimeDashboardCard extends ConsumerWidget {
                     ),
                     if (currentFlavor == AppFlavor.admin)
                       IconButton(
-                        icon: const Icon(Icons.settings_rounded, color: Colors.white70, size: 20),
-                        onPressed: () => context.push('/student/screen-time-settings'),
+                        icon: const Icon(Icons.settings_rounded,
+                            color: Colors.white70, size: 20),
+                        onPressed: () =>
+                            context.push('/student/screen-time-settings'),
                         tooltip: 'Manage Settings',
                       ),
                   ],
@@ -117,16 +121,72 @@ class ScreenTimeDashboardCard extends ConsumerWidget {
                   child: LinearProgressIndicator(
                     value: progress,
                     backgroundColor: Colors.white.withOpacity(0.1),
-                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
+                    valueColor:
+                        const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
                     minHeight: 8,
                   ),
                 ),
+                if (available <= 0) ...[
+                  const SizedBox(height: Spacing.md),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(Spacing.md),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: Colors.redAccent.withOpacity(0.4),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent.withOpacity(0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.block_rounded,
+                            color: Colors.redAccent,
+                            size: 18,
+                          ),
+                        ),
+                        const SizedBox(width: Spacing.md),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Social Media Blocked",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                "You have consumed your all time for social media. Study more to unlock apps!",
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: Spacing.lg),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     _StatItem(
-                      label: 'Earned Total',
+                      label: 'Earned This Week',
                       value: '$total m',
                     ),
                     _StatItem(
@@ -142,21 +202,24 @@ class ScreenTimeDashboardCard extends ConsumerWidget {
                 const SizedBox(height: Spacing.lg),
                 const Divider(color: Colors.white24, height: 1),
                 const SizedBox(height: Spacing.md),
-                 Row(
+                Row(
                   children: [
                     if (currentFlavor == AppFlavor.admin) ...[
                       Expanded(
                         child: TextButton.icon(
                           style: TextButton.styleFrom(
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: Spacing.md),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: Spacing.md),
                           ),
-                          icon: const Icon(Icons.settings_suggest_outlined, size: 18),
+                          icon: const Icon(Icons.settings_suggest_outlined,
+                              size: 18),
                           label: const Text(
                             'Manage Apps',
                             style: TextStyle(fontWeight: FontWeight.w700),
                           ),
-                          onPressed: () => context.push('/student/screen-time-settings'),
+                          onPressed: () =>
+                              context.push('/student/screen-time-settings'),
                         ),
                       ),
                       Container(
@@ -169,7 +232,8 @@ class ScreenTimeDashboardCard extends ConsumerWidget {
                       child: TextButton.icon(
                         style: TextButton.styleFrom(
                           foregroundColor: Colors.greenAccent,
-                          padding: const EdgeInsets.symmetric(vertical: Spacing.md),
+                          padding:
+                              const EdgeInsets.symmetric(vertical: Spacing.md),
                         ),
                         icon: const Icon(Icons.school_outlined, size: 18),
                         label: const Text(

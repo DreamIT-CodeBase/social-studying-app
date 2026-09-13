@@ -37,7 +37,7 @@ class DemoDocumentsRepository implements DocumentsRepository {
   final Map<String, Map<String, Document>> _byWorkspace = {};
 
   /// Active timers keyed by `documentId`. Held so we can cancel on
-  /// soft-delete and so we never leak timers across re-uploads of the
+  /// permanent deletion and so we never leak timers across re-uploads of the
   /// same doc id (which can't happen in practice but defends against
   /// bugs in tests).
   final Map<String, Timer> _activeTimers = {};
@@ -67,11 +67,13 @@ class DemoDocumentsRepository implements DocumentsRepository {
   Future<Document> upload({
     required String workspaceId,
     required String filename,
-    required Uint8List bytes,
     required String contentType,
+    DocumentUpload? upload,
+    Uint8List? bytes,
   }) async {
     await _simulateNetwork();
-    if (bytes.isEmpty) {
+    final file = resolveDocumentUpload(upload: upload, bytes: bytes);
+    if (file.sizeBytes == 0) {
       throw const EmptyUploadException();
     }
     final docType = _docTypeFor(contentType, filename);
@@ -94,6 +96,33 @@ class DemoDocumentsRepository implements DocumentsRepository {
   }
 
   @override
+  Future<Document> scrape({
+    required String workspaceId,
+    required String url,
+  }) async {
+    await _simulateNetwork();
+    if (url.isEmpty) {
+      throw Exception('URL cannot be empty');
+    }
+    final id = 'doc_${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}';
+    final uri = Uri.tryParse(url);
+    final host = uri?.host ?? 'website';
+    final filename = 'scraped_$host.txt';
+
+    final initial = Document(
+      id: id,
+      workspaceId: workspaceId,
+      filename: filename,
+      docType: DocumentType.text,
+      status: DocumentStatus.pending,
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    _byWorkspace.putIfAbsent(workspaceId, () => {})[id] = initial;
+    _scheduleNext(workspaceId: workspaceId, documentId: id);
+    return initial;
+  }
+
+  @override
   Future<void> delete({
     required String workspaceId,
     required String documentId,
@@ -101,6 +130,22 @@ class DemoDocumentsRepository implements DocumentsRepository {
     await _simulateNetwork();
     _activeTimers.remove(documentId)?.cancel();
     _byWorkspace[workspaceId]?.remove(documentId);
+  }
+
+  @override
+  Future<Document> approve({
+    required String workspaceId,
+    required String documentId,
+  }) async {
+    await _simulateNetwork();
+    final doc = await get(workspaceId: workspaceId, documentId: documentId);
+    final updated = doc.copyWith(
+      status: DocumentStatus.textExtracted,
+      processingError: null,
+    );
+    _byWorkspace[workspaceId]?[documentId] = updated;
+    _scheduleNext(workspaceId: workspaceId, documentId: documentId);
+    return updated;
   }
 
   // ── State machine ──────────────────────────────────────────────────────────
@@ -140,7 +185,8 @@ class DemoDocumentsRepository implements DocumentsRepository {
   /// would in production.
   Document _nextSnapshot(Document current) {
     return switch (current.status) {
-      DocumentStatus.pending => current.copyWith(status: DocumentStatus.extracting),
+      DocumentStatus.pending =>
+        current.copyWith(status: DocumentStatus.extracting),
       DocumentStatus.extracting => current.copyWith(
           status: DocumentStatus.textExtracted,
           pageCount: 12,
@@ -172,11 +218,14 @@ class DemoDocumentsRepository implements DocumentsRepository {
             ),
           ],
         ),
-      DocumentStatus.topicsExtracted => current.copyWith(status: DocumentStatus.chunking),
+      DocumentStatus.topicsExtracted =>
+        current.copyWith(status: DocumentStatus.chunking),
       DocumentStatus.chunking =>
         current.copyWith(status: DocumentStatus.chunked, chunkCount: 9),
-      DocumentStatus.chunked => current.copyWith(status: DocumentStatus.vectorizing),
-      DocumentStatus.vectorizing => current.copyWith(status: DocumentStatus.ready),
+      DocumentStatus.chunked =>
+        current.copyWith(status: DocumentStatus.vectorizing),
+      DocumentStatus.vectorizing =>
+        current.copyWith(status: DocumentStatus.ready),
       // Terminal — caller should not advance these. Return unchanged so
       // we don't accidentally unroll a terminal state.
       DocumentStatus.ready ||
@@ -235,6 +284,18 @@ class EmptyUploadException implements Exception {
   const EmptyUploadException();
   @override
   String toString() => 'Uploaded file is empty';
+}
+
+class UploadTooLargeException implements Exception {
+  const UploadTooLargeException([
+    this.message =
+        'This document is larger than the supported processing limit.',
+  ]);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 class UnsupportedFileTypeException implements Exception {

@@ -200,9 +200,7 @@ class AzureNotificationHubSender(NotificationSender):
         # api-version 2015-04 is the documented version for the direct-send
         # data-plane endpoint that accepts the FCM v1 (``fcmV1``) format.
         # See https://learn.microsoft.com/rest/api/notificationhubs/direct-send
-        url = (
-            f"{endpoint}{self._hub_name}/messages/?direct&api-version=2015-04"
-        )
+        url = f"{endpoint}{self._hub_name}/messages/?direct&api-version=2015-04"
         sas_token = _mint_sas_token(
             target_uri=f"{endpoint}{self._hub_name}/messages/",
             key_name=self._connection["key_name"],
@@ -242,9 +240,7 @@ class AzureNotificationHubSender(NotificationSender):
             response.status_code,
             response.text[:200],
         )
-        return DispatchResult(
-            outcome=DispatchOutcome.failed, failure_reason=reason
-        )
+        return DispatchResult(outcome=DispatchOutcome.failed, failure_reason=reason)
 
 
 # ── Sender factory ─────────────────────────────────────────────────────────
@@ -513,9 +509,7 @@ async def register_token(
     timestamp = utc_now()
     # Deterministic id so the upsert filter and the doc agree on identity.
     # Hash the installation id to keep the id short + safe for Cosmos.
-    doc_id = (
-        f"ntk_{hashlib.sha256(installation_id.encode()).hexdigest()[:32]}"
-    )
+    doc_id = f"ntk_{hashlib.sha256(installation_id.encode()).hexdigest()[:32]}"
     doc = NotificationToken(
         **{"_id": doc_id},
         tenant_id=tenant_id,
@@ -532,9 +526,7 @@ async def register_token(
     # the heartbeat path.
     existing = await col.find_one({"_id": doc_id, "deleted_at": None})
     if existing is not None:
-        doc = doc.model_copy(
-            update={"registered_at": existing.get("registered_at", timestamp)}
-        )
+        doc = doc.model_copy(update={"registered_at": existing.get("registered_at", timestamp)})
     await col.replace_one(
         {"_id": doc_id},
         doc.model_dump(by_alias=True),
@@ -561,9 +553,7 @@ async def delete_token(
     Called on explicit sign-out from the Flutter side, and from the
     scheduler when ANH returns HTTP 410 (expired registration).
     """
-    doc_id = (
-        f"ntk_{hashlib.sha256(installation_id.encode()).hexdigest()[:32]}"
-    )
+    doc_id = f"ntk_{hashlib.sha256(installation_id.encode()).hexdigest()[:32]}"
     col = get_collection(tenant_id, NOTIFICATION_TOKENS)
     result = await col.update_one(
         {"_id": doc_id, "user_id": user_id, "deleted_at": None},
@@ -575,9 +565,7 @@ async def delete_token(
 # ── Cosmos reads / writes ──────────────────────────────────────────────────
 
 
-async def _read_tokens(
-    *, tenant_id: str, user_id: str
-) -> list[NotificationToken]:
+async def _read_tokens(*, tenant_id: str, user_id: str) -> list[NotificationToken]:
     col = get_collection(tenant_id, NOTIFICATION_TOKENS)
     cursor = col.find({"user_id": user_id, "deleted_at": None})
     return [NotificationToken.model_validate(raw) async for raw in cursor]
@@ -662,8 +650,7 @@ def _mint_sas_token(
     )
     encoded_signature = urllib.parse.quote_plus(signature)
     return (
-        f"SharedAccessSignature sr={encoded_uri}&sig={encoded_signature}"
-        f"&se={expiry}&skn={key_name}"
+        f"SharedAccessSignature sr={encoded_uri}&sig={encoded_signature}&se={expiry}&skn={key_name}"
     )
 
 
@@ -677,12 +664,13 @@ def _anh_format_for(platform: DevicePlatform) -> str:
     FCM v1 credentials. See
     https://learn.microsoft.com/azure/notification-hubs/firebase-migration-rest
     """
-    return "fcmV1" if platform == DevicePlatform.android else "apple"
+    # Both mobile clients register Firebase registration tokens. On Apple
+    # devices FCM maps that token to APNs, so the direct send must still use
+    # the FCM v1 transport; ``apple`` would require a raw APNs device token.
+    return "fcmV1"
 
 
-def _platform_payload(
-    *, platform: DevicePlatform, payload: NotificationPayload
-) -> bytes:
+def _platform_payload(*, platform: DevicePlatform, payload: NotificationPayload) -> bytes:
     """Return the platform-shaped JSON body that ANH proxies to FCM /
     APNs.
 
@@ -697,23 +685,31 @@ def _platform_payload(
     here means the sender doesn't bloat with platform conditionals at the
     call site.
     """
-    if platform == DevicePlatform.android:
-        body: dict[str, Any] = {
-            "message": {
-                "notification": {
-                    "title": payload.title,
-                    "body": payload.body,
-                },
-                "data": payload.data,
-            }
-        }
-    else:  # APNs
-        body = {
-            "aps": {
-                "alert": {"title": payload.title, "body": payload.body},
-                "sound": "default",
+    body: dict[str, Any] = {
+        "message": {
+            "notification": {
+                "title": payload.title,
+                "body": payload.body,
             },
-            **payload.data,
+            "data": payload.data,
+        }
+    }
+    if platform == DevicePlatform.android:
+        body["message"]["android"] = {
+            "priority": "HIGH",
+            "notification": {
+                "channel_id": "social_study_channel",
+            },
+        }
+    else:
+        body["message"]["apns"] = {
+            "headers": {"apns-priority": "10"},
+            "payload": {
+                "aps": {
+                    "sound": "default",
+                    "content-available": 1,
+                }
+            },
         }
     return json.dumps(body).encode("utf-8")
 

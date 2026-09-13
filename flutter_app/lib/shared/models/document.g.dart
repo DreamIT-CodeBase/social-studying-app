@@ -50,6 +50,8 @@ _$DocumentImpl _$$DocumentImplFromJson(Map<String, dynamic> json) =>
               .toList() ??
           const <String>[],
       processingError: json['processing_error'] as String?,
+      category: json['category'] as String?,
+      subcategory: json['subcategory'] as String?,
     );
 
 Map<String, dynamic> _$$DocumentImplToJson(_$DocumentImpl instance) =>
@@ -67,6 +69,8 @@ Map<String, dynamic> _$$DocumentImplToJson(_$DocumentImpl instance) =>
       'text_char_count': instance.textCharCount,
       'languages': instance.languages,
       'processing_error': instance.processingError,
+      'category': instance.category,
+      'subcategory': instance.subcategory,
     };
 
 const _$DocumentTypeEnumMap = {

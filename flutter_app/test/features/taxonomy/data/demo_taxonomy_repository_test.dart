@@ -47,7 +47,10 @@ void main() {
 
       final renamed = [
         for (final t in loaded.topics)
-          if (t.id == 'tpc_demo_cells') t.copyWith(name: 'Cell Structure') else t,
+          if (t.id == 'tpc_demo_cells')
+            t.copyWith(name: 'Cell Structure')
+          else
+            t,
       ];
 
       final updated = await repo.update(

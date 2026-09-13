@@ -52,6 +52,7 @@ class BadgeDefinition:
     description: str
     icon: str
     trigger: Callable[[GamificationState], bool]
+    xp_reward: int = 5
 
 
 # ── Catalog ─────────────────────────────────────────────────────────────────
@@ -75,6 +76,14 @@ BADGES: tuple[BadgeDefinition, ...] = (
         description="Review your first flashcard.",
         icon="style_rounded",
         trigger=lambda s: s.flashcards_reviewed >= 1,
+    ),
+    BadgeDefinition(
+        id="first_study_session",
+        name="Session Starter",
+        description="Complete your first study session.",
+        icon="play_circle_rounded",
+        trigger=lambda s: s.study_sessions_completed >= 1,
+        xp_reward=8,
     ),
     # Streak progression
     BadgeDefinition(
@@ -151,8 +160,7 @@ BADGES: tuple[BadgeDefinition, ...] = (
         # already implies non-zero, but the explicit guard makes the
         # invariant local + the predicate safe to call on any state.
         trigger=lambda s: (
-            s.questions_answered >= 50
-            and s.questions_correct / max(s.questions_answered, 1) >= 0.9
+            s.questions_answered >= 50 and s.questions_correct / max(s.questions_answered, 1) >= 0.9
         ),
     ),
     # XP totals
@@ -192,7 +200,31 @@ BADGES: tuple[BadgeDefinition, ...] = (
         icon="psychology_rounded",
         trigger=lambda s: s.flashcards_reviewed >= 250,
     ),
+    BadgeDefinition(
+        id="flashcards_remembered_100",
+        name="Memory Keeper",
+        description="Remember 100 flashcards.",
+        icon="psychology_alt_rounded",
+        trigger=lambda s: s.flashcards_remembered >= 100,
+        xp_reward=15,
+    ),
+    BadgeDefinition(
+        id="perfect_session",
+        name="Perfect Session",
+        description="Complete a question session without a wrong answer.",
+        icon="verified_rounded",
+        trigger=lambda s: s.perfect_sessions >= 1,
+        xp_reward=10,
+    ),
     # Level
+    BadgeDefinition(
+        id="level_2",
+        name="Level Up",
+        description="Reach level 2.",
+        icon="upgrade_rounded",
+        trigger=lambda s: s.level >= 2,
+        xp_reward=5,
+    ),
     BadgeDefinition(
         id="level_5",
         name="Apprentice",

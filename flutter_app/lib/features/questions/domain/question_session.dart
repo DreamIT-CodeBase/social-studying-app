@@ -74,4 +74,10 @@ class QuestionSession with _$QuestionSession {
   /// message is the Dio interceptor's friendly text.
   const factory QuestionSession.error({required String message}) =
       QuestionSessionError;
+
+  /// Study session completed.
+  const factory QuestionSession.completed({
+    required int correctCount,
+    required int totalCount,
+  }) = QuestionSessionCompleted;
 }

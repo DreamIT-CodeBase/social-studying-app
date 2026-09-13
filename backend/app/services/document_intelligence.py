@@ -18,7 +18,7 @@ import logging
 from dataclasses import dataclass
 
 from azure.ai.documentintelligence import DocumentIntelligenceClient
-from azure.ai.documentintelligence.models import AnalyzeResult
+from azure.ai.documentintelligence.models import AnalyzeDocumentRequest, AnalyzeResult
 from azure.core.credentials import AzureKeyCredential
 
 from app.core.config import settings
@@ -53,9 +53,7 @@ def _client() -> DocumentIntelligenceClient:
 def _to_extracted(result: AnalyzeResult) -> ExtractedDocument:
     text = (result.content or "").strip()
     pages = result.pages or []
-    languages = sorted(
-        {lang.locale for lang in (result.languages or []) if lang.locale}
-    )
+    languages = sorted({lang.locale for lang in (result.languages or []) if lang.locale})
     return ExtractedDocument(text=text, page_count=len(pages), languages=languages)
 
 
@@ -92,19 +90,62 @@ async def extract_text(
                 body=content,
                 content_type=content_type,
             )
-            return poller.result()
+            # 10-minute hard timeout. Document Intelligence on the S0 tier
+            # can take 15+ minutes for very large PDFs, but without a timeout
+            # the thread blocks forever if DI hangs or is silently throttled.
+            # TimeoutError propagates as a transient failure so Service Bus
+            # redelivers the message rather than leaving the doc stuck.
+            return poller.result(timeout=600)
 
     try:
         result = await asyncio.to_thread(_sync)
     except Exception as exc:
         logger.exception("Document Intelligence analyze failed")
-        raise ServiceUnavailableError(
-            f"Document Intelligence extraction failed: {exc}"
-        ) from exc
+        raise ServiceUnavailableError(f"Document Intelligence extraction failed: {exc}") from exc
 
     extracted = _to_extracted(result)
     logger.info(
         "Document Intelligence extracted %d chars across %d pages (langs=%s)",
+        len(extracted.text),
+        extracted.page_count,
+        extracted.languages or ["unknown"],
+    )
+    return extracted
+
+
+async def extract_text_from_url(document_url: str) -> ExtractedDocument:
+    """Extract text from a private, time-limited Blob URL.
+
+    The worker no longer has to download a large PDF into its Container Apps
+    memory before it can call Document Intelligence.  Azure reads the source
+    directly from Blob Storage, which is both faster and avoids OOM failures
+    for documents near the supported 500 MB processing limit.
+    """
+    if not document_url:
+        raise ValueError("extract_text_from_url() requires a document URL")
+
+    def _sync() -> AnalyzeResult:
+        with _client() as client:
+            poller = client.begin_analyze_document(
+                model_id=_PREBUILT_READ,
+                body=AnalyzeDocumentRequest(url_source=document_url),
+            )
+            # 10-minute hard timeout. Without this, a stalled or throttled
+            # Document Intelligence job blocks the worker thread indefinitely,
+            # causing the Service Bus message lock (default 5 min) to expire
+            # and the message to be redelivered — starting a new DI job on
+            # top of the still-running one and burning through all 5 retries.
+            return poller.result(timeout=600)
+
+    try:
+        result = await asyncio.to_thread(_sync)
+    except Exception as exc:
+        logger.exception("Document Intelligence URL analysis failed")
+        raise ServiceUnavailableError(f"Document Intelligence extraction failed: {exc}") from exc
+
+    extracted = _to_extracted(result)
+    logger.info(
+        "Document Intelligence URL extraction produced %d chars across %d pages (langs=%s)",
         len(extracted.text),
         extracted.page_count,
         extracted.languages or ["unknown"],

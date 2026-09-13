@@ -26,7 +26,6 @@ from app.models.workspace import Workspace, WorkspaceSettings
 from app.services.notifications import DispatchResult
 from app.workers import notification_scheduler
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 
@@ -114,9 +113,7 @@ def _patch_module(
     async def _fake_gam(*, tenant_id, workspace_id, student_id):
         return gamification.get(student_id)
 
-    async def _fake_already(
-        *, tenant_id, user_id, notification_type, today_iso
-    ):
+    async def _fake_already(*, tenant_id, user_id, notification_type, today_iso):
         return (user_id, notification_type.value) in sent
 
     study_mock = AsyncMock(return_value=results)
@@ -127,15 +124,9 @@ def _patch_module(
 
     return [
         patch.object(notification_scheduler, "_read_students", _fake_students),
-        patch.object(
-            notification_scheduler, "_read_workspaces_by_id", _fake_workspaces
-        ),
-        patch.object(
-            notification_scheduler, "_read_gamification", _fake_gam
-        ),
-        patch.object(
-            notification_scheduler, "_already_sent_today", _fake_already
-        ),
+        patch.object(notification_scheduler, "_read_workspaces_by_id", _fake_workspaces),
+        patch.object(notification_scheduler, "_read_gamification", _fake_gam),
+        patch.object(notification_scheduler, "_already_sent_today", _fake_already),
         patch.object(
             notification_scheduler,
             "_fire_unanswered_reprompts",
@@ -175,9 +166,7 @@ async def test_active_today_student_gets_no_reminder():
         },
     )
     with _enter(mocks):
-        summary = await notification_scheduler.run_tick_for_tenant(
-            tenant_id="ten_a"
-        )
+        summary = await notification_scheduler.run_tick_for_tenant(tenant_id="ten_a")
 
     assert summary.students_evaluated == 1
     assert summary.study_reminders_sent == 0
@@ -199,9 +188,7 @@ async def test_inactive_today_student_with_no_streak_fires_study_reminder_only()
         },
     )
     with _enter(mocks):
-        summary = await notification_scheduler.run_tick_for_tenant(
-            tenant_id="ten_a"
-        )
+        summary = await notification_scheduler.run_tick_for_tenant(tenant_id="ten_a")
 
     assert summary.study_reminders_sent == 1
     assert summary.streak_warnings_sent == 0
@@ -224,9 +211,7 @@ async def test_inactive_today_student_with_streak_fires_both_pushes():
         },
     )
     with _enter(mocks):
-        summary = await notification_scheduler.run_tick_for_tenant(
-            tenant_id="ten_a"
-        )
+        summary = await notification_scheduler.run_tick_for_tenant(tenant_id="ten_a")
 
     assert summary.study_reminders_sent == 1
     assert summary.streak_warnings_sent == 1
@@ -254,9 +239,7 @@ async def test_already_sent_today_suppresses_second_fire():
         },
     )
     with _enter(mocks):
-        summary = await notification_scheduler.run_tick_for_tenant(
-            tenant_id="ten_a"
-        )
+        summary = await notification_scheduler.run_tick_for_tenant(tenant_id="ten_a")
     assert summary.study_reminders_sent == 0
     assert summary.streak_warnings_sent == 0
     study.assert_not_awaited()
@@ -271,9 +254,7 @@ async def test_student_with_no_workspace_is_skipped_silently():
         gamification={},
     )
     with _enter(mocks):
-        summary = await notification_scheduler.run_tick_for_tenant(
-            tenant_id="ten_a"
-        )
+        summary = await notification_scheduler.run_tick_for_tenant(tenant_id="ten_a")
     assert summary.students_evaluated == 1
     assert summary.study_reminders_sent == 0
     study.assert_not_awaited()
@@ -288,9 +269,7 @@ async def test_student_with_deleted_workspace_is_skipped_silently():
         gamification={"stu_a": _gamification()},
     )
     with _enter(mocks):
-        summary = await notification_scheduler.run_tick_for_tenant(
-            tenant_id="ten_a"
-        )
+        summary = await notification_scheduler.run_tick_for_tenant(tenant_id="ten_a")
     assert summary.study_reminders_sent == 0
     study.assert_not_awaited()
 
@@ -346,14 +325,13 @@ async def test_reprompt_path_fires_for_due_questions_and_clears_defer():
             return questions_col
         raise AssertionError(collection)
 
-    reprompt_mock = AsyncMock(
-        return_value=[DispatchResult(outcome=DispatchOutcome.logged_only)]
-    )
-    with patch.object(
-        notification_scheduler, "get_collection", side_effect=_factory
-    ), patch(
-        "app.workers.notification_scheduler.notification_service.send_unanswered_reprompt",
-        reprompt_mock,
+    reprompt_mock = AsyncMock(return_value=[DispatchResult(outcome=DispatchOutcome.logged_only)])
+    with (
+        patch.object(notification_scheduler, "get_collection", side_effect=_factory),
+        patch(
+            "app.workers.notification_scheduler.notification_service.send_unanswered_reprompt",
+            reprompt_mock,
+        ),
     ):
         successes, failures = await notification_scheduler._fire_unanswered_reprompts(
             tenant_id="ten_a"
@@ -402,11 +380,12 @@ async def test_reprompt_skips_questions_with_missing_owner_but_clears_field():
         raise AssertionError(collection)
 
     reprompt_mock = AsyncMock()
-    with patch.object(
-        notification_scheduler, "get_collection", side_effect=_factory
-    ), patch(
-        "app.workers.notification_scheduler.notification_service.send_unanswered_reprompt",
-        reprompt_mock,
+    with (
+        patch.object(notification_scheduler, "get_collection", side_effect=_factory),
+        patch(
+            "app.workers.notification_scheduler.notification_service.send_unanswered_reprompt",
+            reprompt_mock,
+        ),
     ):
         successes, failures = await notification_scheduler._fire_unanswered_reprompts(
             tenant_id="ten_a"
@@ -421,23 +400,17 @@ async def test_reprompt_skips_questions_with_missing_owner_but_clears_field():
 
 @pytest.mark.asyncio
 async def test_dispatch_failures_count_against_summary():
-    failing = DispatchResult(
-        outcome=DispatchOutcome.failed, failure_reason="http 410"
-    )
+    failing = DispatchResult(outcome=DispatchOutcome.failed, failure_reason="http 410")
     mocks, _ = _patch_module(
         students=[_student()],
         workspaces={"wsp_a": _workspace()},
         gamification={
-            "stu_a": _gamification(
-                last_active_date="2026-04-01", streak_days=2
-            ),
+            "stu_a": _gamification(last_active_date="2026-04-01", streak_days=2),
         },
         sender_results=[failing, failing],
     )
     with _enter(mocks):
-        summary = await notification_scheduler.run_tick_for_tenant(
-            tenant_id="ten_a"
-        )
+        summary = await notification_scheduler.run_tick_for_tenant(tenant_id="ten_a")
     # 2 failures per send_* call, fired twice (reminder + warning) = 4.
     assert summary.failures == 4
     assert summary.study_reminders_sent == 0

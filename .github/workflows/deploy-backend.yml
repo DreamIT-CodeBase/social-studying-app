@@ -1,0 +1,89 @@
+name: Deploy backend to Azure
+
+on:
+  push:
+    branches:
+      - main
+      - tarun/entra-auth
+    paths:
+      - backend/**
+      - .github/workflows/deploy-backend.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-staging
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: uv sync --locked --extra dev
+      - run: uv run ruff check app tests
+      - run: uv run pytest tests/unit
+
+  deploy:
+    name: Deploy staging
+    needs: test
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      AZURE_CORE_OUTPUT: none
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign in to Azure Container Registry
+        run: az acr login --name "${{ vars.ACR_NAME }}"
+      - name: Build and push immutable image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ${{ vars.ACR_NAME }}.azurecr.io/social-study-api:${{ github.sha }}
+            ${{ vars.ACR_NAME }}.azurecr.io/social-study-api:staging
+      - name: Roll out image to API and workers
+        shell: bash
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          API_APP: ${{ vars.AZURE_API_APP }}
+          DOCUMENT_WORKER_APP: ${{ vars.AZURE_DOCUMENT_WORKER_APP }}
+          TOPIC_WORKER_APP: ${{ vars.AZURE_TOPIC_WORKER_APP }}
+          CHUNKER_APP: ${{ vars.AZURE_CHUNKER_APP }}
+          VECTORIZER_APP: ${{ vars.AZURE_VECTORIZER_APP }}
+        run: |
+          image="${ACR_NAME}.azurecr.io/social-study-api:${IMAGE_TAG}"
+          for app in "$API_APP" "$DOCUMENT_WORKER_APP" "$TOPIC_WORKER_APP" "$CHUNKER_APP" "$VECTORIZER_APP"; do
+            if [[ -n "$app" ]]; then
+              az containerapp update --resource-group "$RESOURCE_GROUP" --name "$app" --image "$image"
+            fi
+          done
+      - name: Verify deployment
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          API_APP: ${{ vars.AZURE_API_APP }}
+        run: |
+          fqdn=$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$API_APP" --query properties.configuration.ingress.fqdn --output tsv)
+          curl --fail --retry 6 --retry-delay 10 --retry-all-errors "https://${fqdn}/health"
+

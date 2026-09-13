@@ -28,14 +28,56 @@ abstract class DocumentsRepository {
   Future<Document> upload({
     required String workspaceId,
     required String filename,
-    required Uint8List bytes,
     required String contentType,
+    DocumentUpload? upload,
+    Uint8List? bytes,
+  });
+
+  Future<Document> scrape({
+    required String workspaceId,
+    required String url,
   });
 
   Future<void> delete({
     required String workspaceId,
     required String documentId,
   });
+
+  Future<Document> approve({
+    required String workspaceId,
+    required String documentId,
+  });
+}
+
+/// A file source that can read a bounded range without loading the whole
+/// document into memory.  Native pickers supply an [XFile]-backed reader;
+/// the byte-array constructor remains useful for web and unit tests.
+class DocumentUpload {
+  DocumentUpload({
+    required this.sizeBytes,
+    required this.readRange,
+  });
+
+  factory DocumentUpload.fromBytes(Uint8List bytes) => DocumentUpload(
+        sizeBytes: bytes.length,
+        readRange: (start, end) async =>
+            Uint8List.sublistView(bytes, start, end),
+      );
+
+  final int sizeBytes;
+  final Future<Uint8List> Function(int start, int end) readRange;
+}
+
+/// Resolves the new streaming source or the legacy in-memory test source.
+/// Exactly one form is required so callers cannot accidentally upload a
+/// different byte sequence from the size they declared.
+DocumentUpload resolveDocumentUpload({
+  DocumentUpload? upload,
+  Uint8List? bytes,
+}) {
+  if (upload != null && bytes == null) return upload;
+  if (upload == null && bytes != null) return DocumentUpload.fromBytes(bytes);
+  throw ArgumentError('Provide exactly one of upload or bytes.');
 }
 
 /// Provider selects between the demo (in-process state machine) and the

@@ -36,16 +36,12 @@ def _clear_index_cache():
 
 
 def test_index_name_for_lowercases_and_replaces_underscores(monkeypatch):
-    monkeypatch.setattr(
-        azure_ai_search.settings, "search_chunks_index_prefix", "chunks"
-    )
+    monkeypatch.setattr(azure_ai_search.settings, "search_chunks_index_prefix", "chunks")
     assert azure_ai_search.index_name_for("ten_ABC123") == "chunks-ten-abc123"
 
 
 def test_index_name_for_uses_configured_prefix(monkeypatch):
-    monkeypatch.setattr(
-        azure_ai_search.settings, "search_chunks_index_prefix", "study-chunks"
-    )
+    monkeypatch.setattr(azure_ai_search.settings, "search_chunks_index_prefix", "study-chunks")
     assert azure_ai_search.index_name_for("ten_xyz") == "study-chunks-ten-xyz"
 
 
@@ -88,9 +84,7 @@ async def test_ensure_index_treats_resource_exists_as_success(monkeypatch):
     """Concurrent worker won the create race — that's success, not an error."""
     monkeypatch.setattr(azure_ai_search.settings, "search_endpoint", "https://x")
     monkeypatch.setattr(azure_ai_search.settings, "search_key", "k")
-    patched, client = _patched_index_client(
-        create_side_effect=ResourceExistsError("already there")
-    )
+    patched, client = _patched_index_client(create_side_effect=ResourceExistsError("already there"))
     with patched:
         name = await azure_ai_search.ensure_index("ten_abc")
     assert name == azure_ai_search.index_name_for("ten_abc")
@@ -169,7 +163,9 @@ def _patched_data_client(*, upload_results=None, search_results=None, delete_res
             async def gen():
                 for r in search_results:
                     yield r
+
             return gen()
+
         client.search = AsyncMock(side_effect=fake_search)
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)
@@ -196,9 +192,7 @@ async def test_upsert_chunks_returns_success_count(monkeypatch):
     monkeypatch.setattr(azure_ai_search.settings, "search_endpoint", "https://x")
     monkeypatch.setattr(azure_ai_search.settings, "search_key", "k")
     docs = [{"id": "chk_a"}, {"id": "chk_b"}]
-    patched, client = _patched_data_client(
-        upload_results=[_success("chk_a"), _success("chk_b")]
-    )
+    patched, client = _patched_data_client(upload_results=[_success("chk_a"), _success("chk_b")])
     with patched:
         n = await azure_ai_search.upsert_chunks(tenant_id="ten_x", documents=docs)
     assert n == 2
@@ -221,9 +215,7 @@ async def test_upsert_chunks_partial_failure_raises(monkeypatch):
     """If even one doc in a batch fails, the whole call raises so SB redelivers."""
     monkeypatch.setattr(azure_ai_search.settings, "search_endpoint", "https://x")
     monkeypatch.setattr(azure_ai_search.settings, "search_key", "k")
-    patched, _ = _patched_data_client(
-        upload_results=[_success("chk_a"), _failure("chk_b", "rate")]
-    )
+    patched, _ = _patched_data_client(upload_results=[_success("chk_a"), _failure("chk_b", "rate")])
     with patched, pytest.raises(ServiceUnavailableError, match="1/2 succeeded"):
         await azure_ai_search.upsert_chunks(
             tenant_id="ten_x",
@@ -243,9 +235,7 @@ async def test_upsert_chunks_http_error_raises_service_unavailable(monkeypatch):
     client.__aexit__ = AsyncMock(return_value=False)
     with patch.object(azure_ai_search, "_data_client", return_value=client):
         with pytest.raises(ServiceUnavailableError, match="upsert failed"):
-            await azure_ai_search.upsert_chunks(
-                tenant_id="ten_x", documents=[{"id": "chk_a"}]
-            )
+            await azure_ai_search.upsert_chunks(tenant_id="ten_x", documents=[{"id": "chk_a"}])
 
 
 # ── delete_for_document ─────────────────────────────────────────────────────
@@ -261,9 +251,7 @@ async def test_delete_for_document_searches_then_deletes(monkeypatch):
         delete_results=[_success("chk_a"), _success("chk_b"), _success("chk_c")],
     )
     with patched:
-        n = await azure_ai_search.delete_for_document(
-            tenant_id="ten_x", document_id="doc_abc"
-        )
+        n = await azure_ai_search.delete_for_document(tenant_id="ten_x", document_id="doc_abc")
     assert n == 3
     # delete_documents got the ids extracted from the search.
     client.delete_documents.assert_awaited_once()
@@ -284,13 +272,9 @@ async def test_delete_for_document_empty_search_skips_delete(monkeypatch):
     """No matches → no delete call, return 0."""
     monkeypatch.setattr(azure_ai_search.settings, "search_endpoint", "https://x")
     monkeypatch.setattr(azure_ai_search.settings, "search_key", "k")
-    patched, client = _patched_data_client(
-        search_results=[], delete_results=[]
-    )
+    patched, client = _patched_data_client(search_results=[], delete_results=[])
     with patched:
-        n = await azure_ai_search.delete_for_document(
-            tenant_id="ten_x", document_id="doc_abc"
-        )
+        n = await azure_ai_search.delete_for_document(tenant_id="ten_x", document_id="doc_abc")
     assert n == 0
     client.delete_documents.assert_not_awaited()
 
@@ -305,9 +289,7 @@ async def test_delete_for_document_index_not_found_returns_zero(monkeypatch):
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)
     with patch.object(azure_ai_search, "_data_client", return_value=client):
-        n = await azure_ai_search.delete_for_document(
-            tenant_id="ten_x", document_id="doc_abc"
-        )
+        n = await azure_ai_search.delete_for_document(tenant_id="ten_x", document_id="doc_abc")
     assert n == 0
 
 
@@ -322,9 +304,7 @@ async def test_delete_for_document_404_http_error_returns_zero(monkeypatch):
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)
     with patch.object(azure_ai_search, "_data_client", return_value=client):
-        n = await azure_ai_search.delete_for_document(
-            tenant_id="ten_x", document_id="doc_abc"
-        )
+        n = await azure_ai_search.delete_for_document(tenant_id="ten_x", document_id="doc_abc")
     assert n == 0
 
 
@@ -337,9 +317,7 @@ async def test_delete_for_document_partial_failure_raises(monkeypatch):
         delete_results=[_success("chk_a"), _failure("chk_b")],
     )
     with patched, pytest.raises(ServiceUnavailableError, match="1/2 succeeded"):
-        await azure_ai_search.delete_for_document(
-            tenant_id="ten_x", document_id="doc_abc"
-        )
+        await azure_ai_search.delete_for_document(tenant_id="ten_x", document_id="doc_abc")
 
 
 # ── chunk_to_index_doc ──────────────────────────────────────────────────────
@@ -454,9 +432,7 @@ async def test_search_chunks_returns_empty_when_no_query_inputs():
     The tool layer (Sprint 3.5) already short-circuits this case, but
     the service must also be safe to call directly.
     """
-    out = await azure_ai_search.search_chunks(
-        tenant_id="ten_a", workspace_id="wsp_a"
-    )
+    out = await azure_ai_search.search_chunks(tenant_id="ten_a", workspace_id="wsp_a")
     assert out == []
 
 
@@ -464,9 +440,7 @@ async def test_search_chunks_returns_empty_when_no_query_inputs():
 async def test_search_chunks_text_only_runs_bm25_and_projects_score():
     rows = [_hit(0, score=0.7), _hit(1, score=0.55)]
     client = _client_returning(rows)
-    with patch(
-        "app.services.azure_ai_search._data_client", return_value=client
-    ):
+    with patch("app.services.azure_ai_search._data_client", return_value=client):
         result = await azure_ai_search.search_chunks(
             tenant_id="ten_a",
             workspace_id="wsp_a",
@@ -488,9 +462,7 @@ async def test_search_chunks_text_only_runs_bm25_and_projects_score():
 async def test_search_chunks_topic_filter_uses_or_composition():
     """Two topic_ids → OData ``topic_ids/any(t: t eq '..' or t eq '..')``."""
     client = _client_returning([])
-    with patch(
-        "app.services.azure_ai_search._data_client", return_value=client
-    ):
+    with patch("app.services.azure_ai_search._data_client", return_value=client):
         await azure_ai_search.search_chunks(
             tenant_id="ten_a",
             workspace_id="wsp_a",
@@ -510,9 +482,7 @@ async def test_search_chunks_topic_filter_uses_or_composition():
 async def test_search_chunks_hybrid_passes_vector_query_to_sdk():
     client = _client_returning([_hit(0)])
     vec = [0.1, 0.2, 0.3]
-    with patch(
-        "app.services.azure_ai_search._data_client", return_value=client
-    ):
+    with patch("app.services.azure_ai_search._data_client", return_value=client):
         await azure_ai_search.search_chunks(
             tenant_id="ten_a",
             workspace_id="wsp_a",
@@ -545,9 +515,7 @@ async def test_search_chunks_returns_empty_on_index_not_found():
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)
     client.search = AsyncMock(side_effect=ResourceNotFoundError("no index"))
-    with patch(
-        "app.services.azure_ai_search._data_client", return_value=client
-    ):
+    with patch("app.services.azure_ai_search._data_client", return_value=client):
         out = await azure_ai_search.search_chunks(
             tenant_id="ten_a", workspace_id="wsp_a", query_text="x"
         )
@@ -566,9 +534,7 @@ async def test_search_chunks_treats_404_http_error_as_empty():
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)
     client.search = AsyncMock(side_effect=err)
-    with patch(
-        "app.services.azure_ai_search._data_client", return_value=client
-    ):
+    with patch("app.services.azure_ai_search._data_client", return_value=client):
         out = await azure_ai_search.search_chunks(
             tenant_id="ten_a", workspace_id="wsp_a", query_text="x"
         )
@@ -587,12 +553,11 @@ async def test_search_chunks_wraps_other_http_errors_as_service_unavailable():
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)
     client.search = AsyncMock(side_effect=err)
-    with patch(
-        "app.services.azure_ai_search._data_client", return_value=client
-    ), pytest.raises(ServiceUnavailableError):
-        await azure_ai_search.search_chunks(
-            tenant_id="ten_a", workspace_id="wsp_a", query_text="x"
-        )
+    with (
+        patch("app.services.azure_ai_search._data_client", return_value=client),
+        pytest.raises(ServiceUnavailableError),
+    ):
+        await azure_ai_search.search_chunks(tenant_id="ten_a", workspace_id="wsp_a", query_text="x")
 
 
 # ── _build_filter ───────────────────────────────────────────────────────────
@@ -611,9 +576,5 @@ def test_build_filter_escapes_workspace_quote():
 
 
 def test_build_filter_with_topics_uses_or_composition():
-    f = azure_ai_search._build_filter(
-        workspace_id="wsp_a", topic_ids=["tpc_1", "tpc_2"]
-    )
-    assert f == (
-        "workspace_id eq 'wsp_a' and topic_ids/any(t: t eq 'tpc_1' or t eq 'tpc_2')"
-    )
+    f = azure_ai_search._build_filter(workspace_id="wsp_a", topic_ids=["tpc_1", "tpc_2"])
+    assert f == ("workspace_id eq 'wsp_a' and topic_ids/any(t: t eq 'tpc_1' or t eq 'tpc_2')")

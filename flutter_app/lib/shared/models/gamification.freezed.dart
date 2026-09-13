@@ -1293,11 +1293,21 @@ mixin _$GamificationProfile {
   int get questionsCorrect => throw _privateConstructorUsedError;
   @JsonKey(name: 'flashcards_reviewed')
   int get flashcardsReviewed => throw _privateConstructorUsedError;
+  @JsonKey(name: 'study_sessions_completed')
+  int get studySessionsCompleted => throw _privateConstructorUsedError;
+  @JsonKey(name: 'revision_sessions_completed')
+  int get revisionSessionsCompleted => throw _privateConstructorUsedError;
+  @JsonKey(name: 'flashcard_sessions_completed')
+  int get flashcardSessionsCompleted => throw _privateConstructorUsedError;
   List<EarnedBadge> get badges => throw _privateConstructorUsedError;
 
   /// Last 30 days of activity counts — `{"2026-05-23": 12, ...}`.
   @JsonKey(name: 'daily_activity')
   Map<String, int> get dailyActivity => throw _privateConstructorUsedError;
+
+  /// Last 30 days of net XP by UTC calendar date.
+  @JsonKey(name: 'daily_xp')
+  Map<String, int> get dailyXp => throw _privateConstructorUsedError;
 
   /// Serializes this GamificationProfile to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -1330,8 +1340,14 @@ abstract class $GamificationProfileCopyWith<$Res> {
       @JsonKey(name: 'questions_answered') int questionsAnswered,
       @JsonKey(name: 'questions_correct') int questionsCorrect,
       @JsonKey(name: 'flashcards_reviewed') int flashcardsReviewed,
+      @JsonKey(name: 'study_sessions_completed') int studySessionsCompleted,
+      @JsonKey(name: 'revision_sessions_completed')
+      int revisionSessionsCompleted,
+      @JsonKey(name: 'flashcard_sessions_completed')
+      int flashcardSessionsCompleted,
       List<EarnedBadge> badges,
-      @JsonKey(name: 'daily_activity') Map<String, int> dailyActivity});
+      @JsonKey(name: 'daily_activity') Map<String, int> dailyActivity,
+      @JsonKey(name: 'daily_xp') Map<String, int> dailyXp});
 }
 
 /// @nodoc
@@ -1363,8 +1379,12 @@ class _$GamificationProfileCopyWithImpl<$Res, $Val extends GamificationProfile>
     Object? questionsAnswered = null,
     Object? questionsCorrect = null,
     Object? flashcardsReviewed = null,
+    Object? studySessionsCompleted = null,
+    Object? revisionSessionsCompleted = null,
+    Object? flashcardSessionsCompleted = null,
     Object? badges = null,
     Object? dailyActivity = null,
+    Object? dailyXp = null,
   }) {
     return _then(_value.copyWith(
       studentId: null == studentId
@@ -1423,6 +1443,18 @@ class _$GamificationProfileCopyWithImpl<$Res, $Val extends GamificationProfile>
           ? _value.flashcardsReviewed
           : flashcardsReviewed // ignore: cast_nullable_to_non_nullable
               as int,
+      studySessionsCompleted: null == studySessionsCompleted
+          ? _value.studySessionsCompleted
+          : studySessionsCompleted // ignore: cast_nullable_to_non_nullable
+              as int,
+      revisionSessionsCompleted: null == revisionSessionsCompleted
+          ? _value.revisionSessionsCompleted
+          : revisionSessionsCompleted // ignore: cast_nullable_to_non_nullable
+              as int,
+      flashcardSessionsCompleted: null == flashcardSessionsCompleted
+          ? _value.flashcardSessionsCompleted
+          : flashcardSessionsCompleted // ignore: cast_nullable_to_non_nullable
+              as int,
       badges: null == badges
           ? _value.badges
           : badges // ignore: cast_nullable_to_non_nullable
@@ -1430,6 +1462,10 @@ class _$GamificationProfileCopyWithImpl<$Res, $Val extends GamificationProfile>
       dailyActivity: null == dailyActivity
           ? _value.dailyActivity
           : dailyActivity // ignore: cast_nullable_to_non_nullable
+              as Map<String, int>,
+      dailyXp: null == dailyXp
+          ? _value.dailyXp
+          : dailyXp // ignore: cast_nullable_to_non_nullable
               as Map<String, int>,
     ) as $Val);
   }
@@ -1458,8 +1494,14 @@ abstract class _$$GamificationProfileImplCopyWith<$Res>
       @JsonKey(name: 'questions_answered') int questionsAnswered,
       @JsonKey(name: 'questions_correct') int questionsCorrect,
       @JsonKey(name: 'flashcards_reviewed') int flashcardsReviewed,
+      @JsonKey(name: 'study_sessions_completed') int studySessionsCompleted,
+      @JsonKey(name: 'revision_sessions_completed')
+      int revisionSessionsCompleted,
+      @JsonKey(name: 'flashcard_sessions_completed')
+      int flashcardSessionsCompleted,
       List<EarnedBadge> badges,
-      @JsonKey(name: 'daily_activity') Map<String, int> dailyActivity});
+      @JsonKey(name: 'daily_activity') Map<String, int> dailyActivity,
+      @JsonKey(name: 'daily_xp') Map<String, int> dailyXp});
 }
 
 /// @nodoc
@@ -1489,8 +1531,12 @@ class __$$GamificationProfileImplCopyWithImpl<$Res>
     Object? questionsAnswered = null,
     Object? questionsCorrect = null,
     Object? flashcardsReviewed = null,
+    Object? studySessionsCompleted = null,
+    Object? revisionSessionsCompleted = null,
+    Object? flashcardSessionsCompleted = null,
     Object? badges = null,
     Object? dailyActivity = null,
+    Object? dailyXp = null,
   }) {
     return _then(_$GamificationProfileImpl(
       studentId: null == studentId
@@ -1549,6 +1595,18 @@ class __$$GamificationProfileImplCopyWithImpl<$Res>
           ? _value.flashcardsReviewed
           : flashcardsReviewed // ignore: cast_nullable_to_non_nullable
               as int,
+      studySessionsCompleted: null == studySessionsCompleted
+          ? _value.studySessionsCompleted
+          : studySessionsCompleted // ignore: cast_nullable_to_non_nullable
+              as int,
+      revisionSessionsCompleted: null == revisionSessionsCompleted
+          ? _value.revisionSessionsCompleted
+          : revisionSessionsCompleted // ignore: cast_nullable_to_non_nullable
+              as int,
+      flashcardSessionsCompleted: null == flashcardSessionsCompleted
+          ? _value.flashcardSessionsCompleted
+          : flashcardSessionsCompleted // ignore: cast_nullable_to_non_nullable
+              as int,
       badges: null == badges
           ? _value._badges
           : badges // ignore: cast_nullable_to_non_nullable
@@ -1556,6 +1614,10 @@ class __$$GamificationProfileImplCopyWithImpl<$Res>
       dailyActivity: null == dailyActivity
           ? _value._dailyActivity
           : dailyActivity // ignore: cast_nullable_to_non_nullable
+              as Map<String, int>,
+      dailyXp: null == dailyXp
+          ? _value._dailyXp
+          : dailyXp // ignore: cast_nullable_to_non_nullable
               as Map<String, int>,
     ));
   }
@@ -1580,12 +1642,21 @@ class _$GamificationProfileImpl extends _GamificationProfile {
       @JsonKey(name: 'questions_answered') this.questionsAnswered = 0,
       @JsonKey(name: 'questions_correct') this.questionsCorrect = 0,
       @JsonKey(name: 'flashcards_reviewed') this.flashcardsReviewed = 0,
+      @JsonKey(name: 'study_sessions_completed')
+      this.studySessionsCompleted = 0,
+      @JsonKey(name: 'revision_sessions_completed')
+      this.revisionSessionsCompleted = 0,
+      @JsonKey(name: 'flashcard_sessions_completed')
+      this.flashcardSessionsCompleted = 0,
       final List<EarnedBadge> badges = const <EarnedBadge>[],
       @JsonKey(name: 'daily_activity')
-      final Map<String, int> dailyActivity = const <String, int>{}})
+      final Map<String, int> dailyActivity = const <String, int>{},
+      @JsonKey(name: 'daily_xp')
+      final Map<String, int> dailyXp = const <String, int>{}})
       : _xpByTopic = xpByTopic,
         _badges = badges,
         _dailyActivity = dailyActivity,
+        _dailyXp = dailyXp,
         super._();
 
   factory _$GamificationProfileImpl.fromJson(Map<String, dynamic> json) =>
@@ -1643,6 +1714,15 @@ class _$GamificationProfileImpl extends _GamificationProfile {
   @override
   @JsonKey(name: 'flashcards_reviewed')
   final int flashcardsReviewed;
+  @override
+  @JsonKey(name: 'study_sessions_completed')
+  final int studySessionsCompleted;
+  @override
+  @JsonKey(name: 'revision_sessions_completed')
+  final int revisionSessionsCompleted;
+  @override
+  @JsonKey(name: 'flashcard_sessions_completed')
+  final int flashcardSessionsCompleted;
   final List<EarnedBadge> _badges;
   @override
   @JsonKey()
@@ -1664,9 +1744,21 @@ class _$GamificationProfileImpl extends _GamificationProfile {
     return EqualUnmodifiableMapView(_dailyActivity);
   }
 
+  /// Last 30 days of net XP by UTC calendar date.
+  final Map<String, int> _dailyXp;
+
+  /// Last 30 days of net XP by UTC calendar date.
+  @override
+  @JsonKey(name: 'daily_xp')
+  Map<String, int> get dailyXp {
+    if (_dailyXp is EqualUnmodifiableMapView) return _dailyXp;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableMapView(_dailyXp);
+  }
+
   @override
   String toString() {
-    return 'GamificationProfile(studentId: $studentId, workspaceId: $workspaceId, xpTotal: $xpTotal, xpThisWeek: $xpThisWeek, xpByTopic: $xpByTopic, level: $level, xpIntoLevel: $xpIntoLevel, xpForNextLevel: $xpForNextLevel, streakDays: $streakDays, longestStreakDays: $longestStreakDays, lastActiveDate: $lastActiveDate, questionsAnswered: $questionsAnswered, questionsCorrect: $questionsCorrect, flashcardsReviewed: $flashcardsReviewed, badges: $badges, dailyActivity: $dailyActivity)';
+    return 'GamificationProfile(studentId: $studentId, workspaceId: $workspaceId, xpTotal: $xpTotal, xpThisWeek: $xpThisWeek, xpByTopic: $xpByTopic, level: $level, xpIntoLevel: $xpIntoLevel, xpForNextLevel: $xpForNextLevel, streakDays: $streakDays, longestStreakDays: $longestStreakDays, lastActiveDate: $lastActiveDate, questionsAnswered: $questionsAnswered, questionsCorrect: $questionsCorrect, flashcardsReviewed: $flashcardsReviewed, studySessionsCompleted: $studySessionsCompleted, revisionSessionsCompleted: $revisionSessionsCompleted, flashcardSessionsCompleted: $flashcardSessionsCompleted, badges: $badges, dailyActivity: $dailyActivity, dailyXp: $dailyXp)';
   }
 
   @override
@@ -1700,31 +1792,46 @@ class _$GamificationProfileImpl extends _GamificationProfile {
                 other.questionsCorrect == questionsCorrect) &&
             (identical(other.flashcardsReviewed, flashcardsReviewed) ||
                 other.flashcardsReviewed == flashcardsReviewed) &&
+            (identical(other.studySessionsCompleted, studySessionsCompleted) ||
+                other.studySessionsCompleted == studySessionsCompleted) &&
+            (identical(other.revisionSessionsCompleted,
+                    revisionSessionsCompleted) ||
+                other.revisionSessionsCompleted == revisionSessionsCompleted) &&
+            (identical(other.flashcardSessionsCompleted,
+                    flashcardSessionsCompleted) ||
+                other.flashcardSessionsCompleted ==
+                    flashcardSessionsCompleted) &&
             const DeepCollectionEquality().equals(other._badges, _badges) &&
             const DeepCollectionEquality()
-                .equals(other._dailyActivity, _dailyActivity));
+                .equals(other._dailyActivity, _dailyActivity) &&
+            const DeepCollectionEquality().equals(other._dailyXp, _dailyXp));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
-  int get hashCode => Object.hash(
-      runtimeType,
-      studentId,
-      workspaceId,
-      xpTotal,
-      xpThisWeek,
-      const DeepCollectionEquality().hash(_xpByTopic),
-      level,
-      xpIntoLevel,
-      xpForNextLevel,
-      streakDays,
-      longestStreakDays,
-      lastActiveDate,
-      questionsAnswered,
-      questionsCorrect,
-      flashcardsReviewed,
-      const DeepCollectionEquality().hash(_badges),
-      const DeepCollectionEquality().hash(_dailyActivity));
+  int get hashCode => Object.hashAll([
+        runtimeType,
+        studentId,
+        workspaceId,
+        xpTotal,
+        xpThisWeek,
+        const DeepCollectionEquality().hash(_xpByTopic),
+        level,
+        xpIntoLevel,
+        xpForNextLevel,
+        streakDays,
+        longestStreakDays,
+        lastActiveDate,
+        questionsAnswered,
+        questionsCorrect,
+        flashcardsReviewed,
+        studySessionsCompleted,
+        revisionSessionsCompleted,
+        flashcardSessionsCompleted,
+        const DeepCollectionEquality().hash(_badges),
+        const DeepCollectionEquality().hash(_dailyActivity),
+        const DeepCollectionEquality().hash(_dailyXp)
+      ]);
 
   /// Create a copy of GamificationProfile
   /// with the given fields replaced by the non-null parameter values.
@@ -1745,23 +1852,30 @@ class _$GamificationProfileImpl extends _GamificationProfile {
 
 abstract class _GamificationProfile extends GamificationProfile {
   const factory _GamificationProfile(
-      {@JsonKey(name: 'student_id') required final String studentId,
-      @JsonKey(name: 'workspace_id') required final String workspaceId,
-      @JsonKey(name: 'xp_total') final int xpTotal,
-      @JsonKey(name: 'xp_this_week') final int xpThisWeek,
-      @JsonKey(name: 'xp_by_topic') final Map<String, int> xpByTopic,
-      final int level,
-      @JsonKey(name: 'xp_into_level') final int xpIntoLevel,
-      @JsonKey(name: 'xp_for_next_level') final int xpForNextLevel,
-      @JsonKey(name: 'streak_days') final int streakDays,
-      @JsonKey(name: 'longest_streak_days') final int longestStreakDays,
-      @JsonKey(name: 'last_active_date') final String? lastActiveDate,
-      @JsonKey(name: 'questions_answered') final int questionsAnswered,
-      @JsonKey(name: 'questions_correct') final int questionsCorrect,
-      @JsonKey(name: 'flashcards_reviewed') final int flashcardsReviewed,
-      final List<EarnedBadge> badges,
-      @JsonKey(name: 'daily_activity')
-      final Map<String, int> dailyActivity}) = _$GamificationProfileImpl;
+          {@JsonKey(name: 'student_id') required final String studentId,
+          @JsonKey(name: 'workspace_id') required final String workspaceId,
+          @JsonKey(name: 'xp_total') final int xpTotal,
+          @JsonKey(name: 'xp_this_week') final int xpThisWeek,
+          @JsonKey(name: 'xp_by_topic') final Map<String, int> xpByTopic,
+          final int level,
+          @JsonKey(name: 'xp_into_level') final int xpIntoLevel,
+          @JsonKey(name: 'xp_for_next_level') final int xpForNextLevel,
+          @JsonKey(name: 'streak_days') final int streakDays,
+          @JsonKey(name: 'longest_streak_days') final int longestStreakDays,
+          @JsonKey(name: 'last_active_date') final String? lastActiveDate,
+          @JsonKey(name: 'questions_answered') final int questionsAnswered,
+          @JsonKey(name: 'questions_correct') final int questionsCorrect,
+          @JsonKey(name: 'flashcards_reviewed') final int flashcardsReviewed,
+          @JsonKey(name: 'study_sessions_completed')
+          final int studySessionsCompleted,
+          @JsonKey(name: 'revision_sessions_completed')
+          final int revisionSessionsCompleted,
+          @JsonKey(name: 'flashcard_sessions_completed')
+          final int flashcardSessionsCompleted,
+          final List<EarnedBadge> badges,
+          @JsonKey(name: 'daily_activity') final Map<String, int> dailyActivity,
+          @JsonKey(name: 'daily_xp') final Map<String, int> dailyXp}) =
+      _$GamificationProfileImpl;
   const _GamificationProfile._() : super._();
 
   factory _GamificationProfile.fromJson(Map<String, dynamic> json) =
@@ -1811,12 +1925,26 @@ abstract class _GamificationProfile extends GamificationProfile {
   @JsonKey(name: 'flashcards_reviewed')
   int get flashcardsReviewed;
   @override
+  @JsonKey(name: 'study_sessions_completed')
+  int get studySessionsCompleted;
+  @override
+  @JsonKey(name: 'revision_sessions_completed')
+  int get revisionSessionsCompleted;
+  @override
+  @JsonKey(name: 'flashcard_sessions_completed')
+  int get flashcardSessionsCompleted;
+  @override
   List<EarnedBadge> get badges;
 
   /// Last 30 days of activity counts — `{"2026-05-23": 12, ...}`.
   @override
   @JsonKey(name: 'daily_activity')
   Map<String, int> get dailyActivity;
+
+  /// Last 30 days of net XP by UTC calendar date.
+  @override
+  @JsonKey(name: 'daily_xp')
+  Map<String, int> get dailyXp;
 
   /// Create a copy of GamificationProfile
   /// with the given fields replaced by the non-null parameter values.
@@ -2367,4 +2495,303 @@ abstract class _LeaderboardResponse extends LeaderboardResponse {
   @JsonKey(includeFromJson: false, includeToJson: false)
   _$$LeaderboardResponseImplCopyWith<_$LeaderboardResponseImpl> get copyWith =>
       throw _privateConstructorUsedError;
+}
+
+SessionCompletionFeedback _$SessionCompletionFeedbackFromJson(
+    Map<String, dynamic> json) {
+  return _SessionCompletionFeedback.fromJson(json);
+}
+
+/// @nodoc
+mixin _$SessionCompletionFeedback {
+  @JsonKey(name: 'xp_earned')
+  int get xpEarned => throw _privateConstructorUsedError;
+  @JsonKey(name: 'new_level')
+  int get newLevel => throw _privateConstructorUsedError;
+  @JsonKey(name: 'leveled_up')
+  bool get leveledUp => throw _privateConstructorUsedError;
+  @JsonKey(name: 'streak_days')
+  int get streakDays => throw _privateConstructorUsedError;
+  @JsonKey(name: 'streak_extended')
+  bool get streakExtended => throw _privateConstructorUsedError;
+  @JsonKey(name: 'badges_unlocked')
+  List<EarnedBadge> get badgesUnlocked => throw _privateConstructorUsedError;
+
+  /// Serializes this SessionCompletionFeedback to a JSON map.
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+
+  /// Create a copy of SessionCompletionFeedback
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  $SessionCompletionFeedbackCopyWith<SessionCompletionFeedback> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $SessionCompletionFeedbackCopyWith<$Res> {
+  factory $SessionCompletionFeedbackCopyWith(SessionCompletionFeedback value,
+          $Res Function(SessionCompletionFeedback) then) =
+      _$SessionCompletionFeedbackCopyWithImpl<$Res, SessionCompletionFeedback>;
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'xp_earned') int xpEarned,
+      @JsonKey(name: 'new_level') int newLevel,
+      @JsonKey(name: 'leveled_up') bool leveledUp,
+      @JsonKey(name: 'streak_days') int streakDays,
+      @JsonKey(name: 'streak_extended') bool streakExtended,
+      @JsonKey(name: 'badges_unlocked') List<EarnedBadge> badgesUnlocked});
+}
+
+/// @nodoc
+class _$SessionCompletionFeedbackCopyWithImpl<$Res,
+        $Val extends SessionCompletionFeedback>
+    implements $SessionCompletionFeedbackCopyWith<$Res> {
+  _$SessionCompletionFeedbackCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  /// Create a copy of SessionCompletionFeedback
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? xpEarned = null,
+    Object? newLevel = null,
+    Object? leveledUp = null,
+    Object? streakDays = null,
+    Object? streakExtended = null,
+    Object? badgesUnlocked = null,
+  }) {
+    return _then(_value.copyWith(
+      xpEarned: null == xpEarned
+          ? _value.xpEarned
+          : xpEarned // ignore: cast_nullable_to_non_nullable
+              as int,
+      newLevel: null == newLevel
+          ? _value.newLevel
+          : newLevel // ignore: cast_nullable_to_non_nullable
+              as int,
+      leveledUp: null == leveledUp
+          ? _value.leveledUp
+          : leveledUp // ignore: cast_nullable_to_non_nullable
+              as bool,
+      streakDays: null == streakDays
+          ? _value.streakDays
+          : streakDays // ignore: cast_nullable_to_non_nullable
+              as int,
+      streakExtended: null == streakExtended
+          ? _value.streakExtended
+          : streakExtended // ignore: cast_nullable_to_non_nullable
+              as bool,
+      badgesUnlocked: null == badgesUnlocked
+          ? _value.badgesUnlocked
+          : badgesUnlocked // ignore: cast_nullable_to_non_nullable
+              as List<EarnedBadge>,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$SessionCompletionFeedbackImplCopyWith<$Res>
+    implements $SessionCompletionFeedbackCopyWith<$Res> {
+  factory _$$SessionCompletionFeedbackImplCopyWith(
+          _$SessionCompletionFeedbackImpl value,
+          $Res Function(_$SessionCompletionFeedbackImpl) then) =
+      __$$SessionCompletionFeedbackImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call(
+      {@JsonKey(name: 'xp_earned') int xpEarned,
+      @JsonKey(name: 'new_level') int newLevel,
+      @JsonKey(name: 'leveled_up') bool leveledUp,
+      @JsonKey(name: 'streak_days') int streakDays,
+      @JsonKey(name: 'streak_extended') bool streakExtended,
+      @JsonKey(name: 'badges_unlocked') List<EarnedBadge> badgesUnlocked});
+}
+
+/// @nodoc
+class __$$SessionCompletionFeedbackImplCopyWithImpl<$Res>
+    extends _$SessionCompletionFeedbackCopyWithImpl<$Res,
+        _$SessionCompletionFeedbackImpl>
+    implements _$$SessionCompletionFeedbackImplCopyWith<$Res> {
+  __$$SessionCompletionFeedbackImplCopyWithImpl(
+      _$SessionCompletionFeedbackImpl _value,
+      $Res Function(_$SessionCompletionFeedbackImpl) _then)
+      : super(_value, _then);
+
+  /// Create a copy of SessionCompletionFeedback
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? xpEarned = null,
+    Object? newLevel = null,
+    Object? leveledUp = null,
+    Object? streakDays = null,
+    Object? streakExtended = null,
+    Object? badgesUnlocked = null,
+  }) {
+    return _then(_$SessionCompletionFeedbackImpl(
+      xpEarned: null == xpEarned
+          ? _value.xpEarned
+          : xpEarned // ignore: cast_nullable_to_non_nullable
+              as int,
+      newLevel: null == newLevel
+          ? _value.newLevel
+          : newLevel // ignore: cast_nullable_to_non_nullable
+              as int,
+      leveledUp: null == leveledUp
+          ? _value.leveledUp
+          : leveledUp // ignore: cast_nullable_to_non_nullable
+              as bool,
+      streakDays: null == streakDays
+          ? _value.streakDays
+          : streakDays // ignore: cast_nullable_to_non_nullable
+              as int,
+      streakExtended: null == streakExtended
+          ? _value.streakExtended
+          : streakExtended // ignore: cast_nullable_to_non_nullable
+              as bool,
+      badgesUnlocked: null == badgesUnlocked
+          ? _value._badgesUnlocked
+          : badgesUnlocked // ignore: cast_nullable_to_non_nullable
+              as List<EarnedBadge>,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$SessionCompletionFeedbackImpl implements _SessionCompletionFeedback {
+  const _$SessionCompletionFeedbackImpl(
+      {@JsonKey(name: 'xp_earned') required this.xpEarned,
+      @JsonKey(name: 'new_level') required this.newLevel,
+      @JsonKey(name: 'leveled_up') required this.leveledUp,
+      @JsonKey(name: 'streak_days') required this.streakDays,
+      @JsonKey(name: 'streak_extended') required this.streakExtended,
+      @JsonKey(name: 'badges_unlocked')
+      final List<EarnedBadge> badgesUnlocked = const <EarnedBadge>[]})
+      : _badgesUnlocked = badgesUnlocked;
+
+  factory _$SessionCompletionFeedbackImpl.fromJson(Map<String, dynamic> json) =>
+      _$$SessionCompletionFeedbackImplFromJson(json);
+
+  @override
+  @JsonKey(name: 'xp_earned')
+  final int xpEarned;
+  @override
+  @JsonKey(name: 'new_level')
+  final int newLevel;
+  @override
+  @JsonKey(name: 'leveled_up')
+  final bool leveledUp;
+  @override
+  @JsonKey(name: 'streak_days')
+  final int streakDays;
+  @override
+  @JsonKey(name: 'streak_extended')
+  final bool streakExtended;
+  final List<EarnedBadge> _badgesUnlocked;
+  @override
+  @JsonKey(name: 'badges_unlocked')
+  List<EarnedBadge> get badgesUnlocked {
+    if (_badgesUnlocked is EqualUnmodifiableListView) return _badgesUnlocked;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_badgesUnlocked);
+  }
+
+  @override
+  String toString() {
+    return 'SessionCompletionFeedback(xpEarned: $xpEarned, newLevel: $newLevel, leveledUp: $leveledUp, streakDays: $streakDays, streakExtended: $streakExtended, badgesUnlocked: $badgesUnlocked)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$SessionCompletionFeedbackImpl &&
+            (identical(other.xpEarned, xpEarned) ||
+                other.xpEarned == xpEarned) &&
+            (identical(other.newLevel, newLevel) ||
+                other.newLevel == newLevel) &&
+            (identical(other.leveledUp, leveledUp) ||
+                other.leveledUp == leveledUp) &&
+            (identical(other.streakDays, streakDays) ||
+                other.streakDays == streakDays) &&
+            (identical(other.streakExtended, streakExtended) ||
+                other.streakExtended == streakExtended) &&
+            const DeepCollectionEquality()
+                .equals(other._badgesUnlocked, _badgesUnlocked));
+  }
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  int get hashCode => Object.hash(
+      runtimeType,
+      xpEarned,
+      newLevel,
+      leveledUp,
+      streakDays,
+      streakExtended,
+      const DeepCollectionEquality().hash(_badgesUnlocked));
+
+  /// Create a copy of SessionCompletionFeedback
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$SessionCompletionFeedbackImplCopyWith<_$SessionCompletionFeedbackImpl>
+      get copyWith => __$$SessionCompletionFeedbackImplCopyWithImpl<
+          _$SessionCompletionFeedbackImpl>(this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$SessionCompletionFeedbackImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _SessionCompletionFeedback implements SessionCompletionFeedback {
+  const factory _SessionCompletionFeedback(
+          {@JsonKey(name: 'xp_earned') required final int xpEarned,
+          @JsonKey(name: 'new_level') required final int newLevel,
+          @JsonKey(name: 'leveled_up') required final bool leveledUp,
+          @JsonKey(name: 'streak_days') required final int streakDays,
+          @JsonKey(name: 'streak_extended') required final bool streakExtended,
+          @JsonKey(name: 'badges_unlocked')
+          final List<EarnedBadge> badgesUnlocked}) =
+      _$SessionCompletionFeedbackImpl;
+
+  factory _SessionCompletionFeedback.fromJson(Map<String, dynamic> json) =
+      _$SessionCompletionFeedbackImpl.fromJson;
+
+  @override
+  @JsonKey(name: 'xp_earned')
+  int get xpEarned;
+  @override
+  @JsonKey(name: 'new_level')
+  int get newLevel;
+  @override
+  @JsonKey(name: 'leveled_up')
+  bool get leveledUp;
+  @override
+  @JsonKey(name: 'streak_days')
+  int get streakDays;
+  @override
+  @JsonKey(name: 'streak_extended')
+  bool get streakExtended;
+  @override
+  @JsonKey(name: 'badges_unlocked')
+  List<EarnedBadge> get badgesUnlocked;
+
+  /// Create a copy of SessionCompletionFeedback
+  /// with the given fields replaced by the non-null parameter values.
+  @override
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$SessionCompletionFeedbackImplCopyWith<_$SessionCompletionFeedbackImpl>
+      get copyWith => throw _privateConstructorUsedError;
 }

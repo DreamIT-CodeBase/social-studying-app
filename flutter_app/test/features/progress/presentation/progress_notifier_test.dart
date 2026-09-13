@@ -39,8 +39,7 @@ void main() {
   group('StudentProgressNotifier', () {
     test('fetches the snapshot for the authenticated student', () async {
       final authRepo = _MockAuthRepo();
-      when(() => authRepo.getStoredUser())
-          .thenAnswer((_) async => _demoUser());
+      when(() => authRepo.getStoredUser()).thenAnswer((_) async => _demoUser());
       final container = _container(
         authRepo: authRepo,
         progressRepo: DemoProgressRepository(),
@@ -75,8 +74,7 @@ void main() {
 
     test('refresh re-runs the fetch and still resolves', () async {
       final authRepo = _MockAuthRepo();
-      when(() => authRepo.getStoredUser())
-          .thenAnswer((_) async => _demoUser());
+      when(() => authRepo.getStoredUser()).thenAnswer((_) async => _demoUser());
       final container = _container(
         authRepo: authRepo,
         progressRepo: DemoProgressRepository(),

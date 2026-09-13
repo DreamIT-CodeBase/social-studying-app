@@ -46,16 +46,15 @@ class WorkspaceAnalyticsScreen extends ConsumerWidget {
         },
         child: async.when(
           data: (analytics) => _Body(analytics: analytics),
-          loading: () =>
-              const LoadingIndicator(message: 'Loading analytics…'),
+          loading: () => const LoadingIndicator(message: 'Loading analytics…'),
           error: (error, _) => ListView(
             children: [
               SizedBox(
                 height: context.screenHeight * 0.7,
                 child: ErrorView(
                   message: error.toString(),
-                  onRetry: () => ref
-                      .invalidate(workspaceAnalyticsProvider(workspaceId)),
+                  onRetry: () =>
+                      ref.invalidate(workspaceAnalyticsProvider(workspaceId)),
                 ),
               ),
             ],
@@ -81,8 +80,7 @@ class _Body extends StatelessWidget {
             child: const EmptyStateView(
               icon: Icons.insights_rounded,
               title: 'No analytics yet',
-              subtitle:
-                  'Once students join and start answering questions, '
+              subtitle: 'Once students join and start answering questions, '
                   'their activity and mastery will show up here.',
             ),
           ),
@@ -134,6 +132,50 @@ class _MetricsGrid extends StatelessWidget {
     final qpsLabel = analytics.avgQuestionsPerStudent == 0
         ? '0'
         : analytics.avgQuestionsPerStudent.toStringAsFixed(1);
+    final isMobile = context.isMobile;
+
+    if (isMobile) {
+      return Column(
+        children: [
+          _MetricTile(
+            icon: Icons.people_rounded,
+            color: AppColors.primary,
+            label: 'Students',
+            value: '${analytics.totalStudents}',
+            subtitle: '${analytics.activeStudents7d} active this week',
+            horizontal: true,
+          ),
+          const SizedBox(height: Spacing.sm),
+          _MetricTile(
+            icon: Icons.insights_rounded,
+            color: AppColors.tertiary,
+            label: 'Avg mastery',
+            value: '$masteryPct%',
+            subtitle: 'across all students',
+            horizontal: true,
+          ),
+          const SizedBox(height: Spacing.sm),
+          _MetricTile(
+            icon: Icons.quiz_rounded,
+            color: AppColors.secondary,
+            label: 'Questions / student',
+            value: qpsLabel,
+            subtitle: 'avg attempted',
+            horizontal: true,
+          ),
+          const SizedBox(height: Spacing.sm),
+          _MetricTile(
+            icon: Icons.adjust_rounded,
+            color: AppColors.primary,
+            label: 'Accuracy',
+            value: '$accuracyPct%',
+            subtitle: 'across all attempts',
+            horizontal: true,
+          ),
+        ],
+      );
+    }
+
     return Column(
       children: [
         Row(
@@ -195,6 +237,7 @@ class _MetricTile extends StatelessWidget {
     required this.label,
     required this.value,
     required this.subtitle,
+    this.horizontal = false,
   });
 
   final IconData icon;
@@ -202,55 +245,105 @@ class _MetricTile extends StatelessWidget {
   final String label;
   final String value;
   final String subtitle;
+  final bool horizontal;
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(Spacing.lg),
       decoration: BoxDecoration(
         color: context.colorScheme.surface,
         border: Border.all(color: context.colorScheme.outlineVariant),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(width: Spacing.xs),
-              Expanded(
-                child: Text(
-                  label,
+      child: horizontal
+          ? Row(
+              children: [
+                Icon(icon, color: color, size: 24),
+                const SizedBox(width: Spacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.textTheme.labelSmall?.copyWith(
+                          color: context.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(
+                            value,
+                            style: context.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: color,
+                            ),
+                          ),
+                          const SizedBox(width: Spacing.xs),
+                          Expanded(
+                            child: Text(
+                              subtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: context.textTheme.labelSmall?.copyWith(
+                                color: context.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, color: color, size: 20),
+                    const SizedBox(width: Spacing.xs),
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.textTheme.labelSmall?.copyWith(
+                          color: context.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: Spacing.sm),
+                Text(
+                  value,
+                  style: context.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: context.textTheme.labelSmall?.copyWith(
                     color: context.colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: Spacing.sm),
-          Text(
-            value,
-            style: context.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-              color: color,
+              ],
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: context.textTheme.labelSmall?.copyWith(
-              color: context.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -298,17 +391,26 @@ class _EngagementHeatmap extends StatelessWidget {
           // The cell row stretches to fill the card; SizedBox sets
           // the row height so the days render as flat squares
           // regardless of card width.
-          SizedBox(
-            height: 36,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final cell in cells) ...[
-                  Expanded(child: _HeatmapSquare(cell: cell, maxEvents: maxEvents)),
-                  if (cell != cells.last) const SizedBox(width: 4),
-                ],
-              ],
-            ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final n = cells.length;
+              final totalSpacing = (n - 1) * 4.0;
+              final cellWidth = (constraints.maxWidth - totalSpacing) / n;
+              return SizedBox(
+                height: cellWidth,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final cell in cells) ...[
+                      Expanded(
+                          child:
+                              _HeatmapSquare(cell: cell, maxEvents: maxEvents)),
+                      if (cell != cells.last) const SizedBox(width: 4),
+                    ],
+                  ],
+                ),
+              );
+            },
           ),
           const SizedBox(height: Spacing.sm),
           Row(
@@ -339,8 +441,18 @@ class _EngagementHeatmap extends StatelessWidget {
     final parsed = DateTime.tryParse(iso);
     if (parsed == null) return iso;
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${months[parsed.month - 1]} ${parsed.day}';
   }
@@ -445,8 +557,7 @@ class _TopicCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final mastery = topic.avgMastery.clamp(0.0, 1.0);
     final masteryPct = (mastery * 100).round();
-    final accuracyPct =
-        (topic.correctRate.clamp(0.0, 1.0) * 100).round();
+    final accuracyPct = (topic.correctRate.clamp(0.0, 1.0) * 100).round();
     final color = _bandColor(mastery);
     return Card(
       margin: EdgeInsets.zero,

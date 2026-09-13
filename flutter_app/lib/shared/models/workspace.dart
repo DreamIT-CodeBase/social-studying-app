@@ -7,6 +7,13 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'workspace.freezed.dart';
 part 'workspace.g.dart';
 
+/// True for the automatic private workspace created for student self-study.
+///
+/// Admin surfaces use this as a defensive boundary even though the backend
+/// also excludes these workspaces from admin list/profile responses.
+bool isSelfLearningWorkspaceId(String workspaceId) =>
+    workspaceId.startsWith('wsp_self_');
+
 /// Per-workspace configuration. Mirrors `app.models.workspace.WorkspaceSettings`
 /// exactly — the admin settings screen (4.4) reads and patches this.
 ///
@@ -26,13 +33,19 @@ class WorkspaceSettings with _$WorkspaceSettings {
 
     /// When true, AI-generated content that passes safety is auto-served;
     /// when false it lands in the moderation queue for admin review.
-    @JsonKey(name: 'auto_approve_content') @Default(true) bool autoApproveContent,
+    @JsonKey(name: 'auto_approve_content')
+    @Default(true)
+    bool autoApproveContent,
 
     /// Whether the workspace leaderboard is visible to students.
-    @JsonKey(name: 'leaderboard_visible') @Default(true) bool leaderboardVisible,
+    @JsonKey(name: 'leaderboard_visible')
+    @Default(true)
+    bool leaderboardVisible,
 
     /// Whether difficulty calibration adapts to each student's mastery.
-    @JsonKey(name: 'adaptive_difficulty') @Default(true) bool adaptiveDifficulty,
+    @JsonKey(name: 'adaptive_difficulty')
+    @Default(true)
+    bool adaptiveDifficulty,
   }) = _WorkspaceSettings;
 
   factory WorkspaceSettings.fromJson(Map<String, dynamic> json) =>

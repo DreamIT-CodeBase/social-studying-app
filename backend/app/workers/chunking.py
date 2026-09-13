@@ -105,8 +105,7 @@ async def _set_status(
     )
     if result.matched_count == 0:
         logger.warning(
-            "Document not found during chunking status update: "
-            "tenant=%s workspace=%s doc=%s",
+            "Document not found during chunking status update: tenant=%s workspace=%s doc=%s",
             tenant_id,
             workspace_id,
             document_id,
@@ -177,9 +176,7 @@ async def _handle(msg: ReceivedChunkingMessage) -> None:
 
     # 1. Pull the extracted text blob (Sprint 2.3's output).
     try:
-        text = await blob_storage.download_extracted_text(
-            payload.extracted_text_blob_path
-        )
+        text = await blob_storage.download_extracted_text(payload.extracted_text_blob_path)
     except ResourceNotFoundError as exc:
         await _mark_failed(
             payload, f"Extracted text blob not found: {payload.extracted_text_blob_path}"
@@ -225,26 +222,17 @@ async def _handle(msg: ReceivedChunkingMessage) -> None:
         sum(c.char_count for c in chunks),
     )
 
-    # 5. Hand off to the vectorizer (Sprint 2.9). Best-effort, same pattern
-    #    as the topic_extraction → chunking handoff: if publish fails the
-    #    doc is already at `chunked` and a re-run of THIS worker would
-    #    re-pay for the (cheap) chunker pass — acceptable cost. A sweep
-    #    job (TBD) catches docs stuck without a matching vector row.
-    try:
-        await publish_vectorization_message(
-            VectorizationMessage(
-                document_id=payload.document_id,
-                tenant_id=payload.tenant_id,
-                workspace_id=payload.workspace_id,
-                chunk_count=inserted,
-            )
+    # 5. Hand off to the vectorizer. A publish failure must propagate so
+    # Service Bus retries the message instead of leaving the next UI stage
+    # in progress indefinitely.
+    await publish_vectorization_message(
+        VectorizationMessage(
+            document_id=payload.document_id,
+            tenant_id=payload.tenant_id,
+            workspace_id=payload.workspace_id,
+            chunk_count=inserted,
         )
-    except Exception:
-        logger.exception(
-            "Failed to enqueue vectorization handoff for doc=%s — "
-            "document is stuck at chunked",
-            payload.document_id,
-        )
+    )
 
 
 # ── Main loop ────────────────────────────────────────────────────────────────
@@ -254,8 +242,14 @@ _MAX_DELIVERY = 5  # matches queue maxDeliveryCount in service-bus.bicep
 
 
 async def run_forever(*, max_wait_seconds: int = 30) -> None:
-    """Consume the chunking queue until cancelled."""
+    """Keep the worker alive across idle Service Bus receive windows."""
     logger.info("Chunking worker starting")
+    while True:
+        await _consume_until_idle(max_wait_seconds=max_wait_seconds)
+
+
+async def _consume_until_idle(*, max_wait_seconds: int) -> None:
+    """Consume the chunking queue until cancelled."""
     async with consume_chunking_messages(max_wait_seconds=max_wait_seconds) as messages:
         async for msg in messages:
             try:

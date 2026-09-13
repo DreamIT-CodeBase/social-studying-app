@@ -1,31 +1,45 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/screen_time/providers/screen_time_providers.dart';
+import 'package:social_study_app/features/screen_time/models/student_device_status.dart';
 import 'package:social_study_app/core/config/app_flavor.dart';
+import 'package:social_study_app/features/home/providers/workspace_providers.dart';
+import 'package:social_study_app/features/admin/moderation/presentation/moderation_screen.dart';
+import 'package:social_study_app/features/admin/moderation/presentation/moderation_notifier.dart';
+import 'package:social_study_app/features/screen_time/widgets/accessibility_disclosure_dialog.dart';
+import 'package:social_study_app/shared/models/workspace.dart';
 
 class ScreenTimeSettingsScreen extends ConsumerStatefulWidget {
   const ScreenTimeSettingsScreen({super.key});
 
   @override
-  ConsumerState<ScreenTimeSettingsScreen> createState() => _ScreenTimeSettingsScreenState();
+  ConsumerState<ScreenTimeSettingsScreen> createState() =>
+      _ScreenTimeSettingsScreenState();
 }
 
-class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScreen>
+class _ScreenTimeSettingsScreenState
+    extends ConsumerState<ScreenTimeSettingsScreen>
     with WidgetsBindingObserver {
   bool _isAccessibilityEnabled = false;
   bool _isLoadingAccessibility = true;
+  bool _isIOSScreenTimeAuthorized = false;
+  bool _hasIOSSelectedApps = false;
 
   final Map<String, (String name, IconData icon)> _availableApps = {
     'com.instagram.android': ('Instagram', Icons.camera_alt_outlined),
+    'com.instagram.barcelona': ('Threads', Icons.alternate_email_rounded),
     'com.zhiliaoapp.musically': ('TikTok', Icons.music_note_outlined),
     'com.google.android.youtube': ('YouTube', Icons.play_circle_outline),
     'com.facebook.katana': ('Facebook', Icons.facebook_outlined),
     'com.twitter.android': ('X (Twitter)', Icons.alternate_email_outlined),
     'com.snapchat.android': ('Snapchat', Icons.chat_bubble_outline),
+    'com.reddit.frontpage': ('Reddit', Icons.forum_outlined),
+    'com.pinterest': ('Pinterest', Icons.push_pin_outlined),
   };
 
   @override
@@ -51,6 +65,24 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
   }
 
   Future<void> _checkAccessibilityStatus() async {
+    if (Platform.isIOS) {
+      setState(() => _isLoadingAccessibility = true);
+      final authorized = await ref
+          .read(screenTimeNotifierProvider.notifier)
+          .isScreenTimeAuthorized();
+      final hasApps = await ref
+          .read(screenTimeNotifierProvider.notifier)
+          .hasSelectedBlockedApps();
+      if (mounted) {
+        setState(() {
+          _isIOSScreenTimeAuthorized = authorized;
+          _hasIOSSelectedApps = hasApps;
+          _isLoadingAccessibility = false;
+        });
+      }
+      return;
+    }
+
     if (!Platform.isAndroid) {
       setState(() {
         _isAccessibilityEnabled = false;
@@ -59,7 +91,9 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
       return;
     }
     setState(() => _isLoadingAccessibility = true);
-    final enabled = await ref.read(screenTimeNotifierProvider.notifier).isAccessibilityServiceEnabled();
+    final enabled = await ref
+        .read(screenTimeNotifierProvider.notifier)
+        .isAccessibilityServiceEnabled();
     if (mounted) {
       setState(() {
         _isAccessibilityEnabled = enabled;
@@ -75,7 +109,24 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
     final enableBlockingAsync = ref.watch(enableBlockingProvider);
     final blockedPackagesAsync = ref.watch(blockedPackagesProvider);
 
-    final isEditable = currentFlavor == AppFlavor.admin;
+    final workspaceId = ref.watch(activeWorkspaceIdProvider);
+    final activeWorkspace = ref.watch(activeStudentWorkspaceProvider);
+    final isSelfLearning = workspaceId == null ||
+        isSelfLearningWorkspaceId(workspaceId) ||
+        activeWorkspace?.type == 'personal';
+    final isSchoolWorkspace = activeWorkspace?.type == 'school';
+    final isFlavorAdmin = currentFlavor == AppFlavor.admin;
+
+    // Self-learners (independent users) and Family Admins (parents) can customize rules.
+    // Teachers in school workspaces do NOT have device-blocking controls (student privacy protection).
+    // Students in family workspaces are managed by their parent (read-only).
+    final isEditable = (isFlavorAdmin && !isSchoolWorkspace) ||
+        (!isFlavorAdmin && isSelfLearning);
+
+    final AsyncValue<List<StudentDeviceStatus>>? deviceStatusesAsync =
+        isFlavorAdmin && workspaceId != null
+            ? ref.watch(studentDeviceStatusesProvider(workspaceId))
+            : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -83,6 +134,13 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
           'Screen Time Settings',
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline_rounded),
+            tooltip: 'How Screen Time Works',
+            onPressed: () => _showQuickTutorial(context),
+          ),
+        ],
       ),
       body: walletAsync.when(
         data: (wallet) {
@@ -93,31 +151,76 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
           return ListView(
             padding: const EdgeInsets.all(Spacing.lg),
             children: [
-              _buildParentMessage(),
+              _buildRoleHeaderMessage(
+                isSelfLearning: isSelfLearning,
+                isSchoolWorkspace: isSchoolWorkspace,
+                isFlavorAdmin: isFlavorAdmin,
+              ),
               const SizedBox(height: Spacing.lg),
-              
-              if (Platform.isAndroid) ...[
+              if (activeWorkspace != null &&
+                  activeWorkspace.documentCount == 0) ...[
+                _buildNoContentWarningCard(context, activeWorkspace.id),
+                const SizedBox(height: Spacing.lg),
+              ],
+              if (isFlavorAdmin &&
+                  workspaceId != null &&
+                  deviceStatusesAsync != null) ...[
+                _buildSectionTitle('Student Device Health'),
+                const SizedBox(height: Spacing.sm),
+                _buildDeviceHealthCard(
+                  workspaceId,
+                  deviceStatusesAsync,
+                ),
+                const SizedBox(height: Spacing.lg),
+              ],
+              if (Platform.isIOS) ...[
+                _buildIOSScreenTimeCard(),
+                const SizedBox(height: Spacing.lg),
+              ],
+              if (Platform.isAndroid && !isFlavorAdmin) ...[
                 _buildAccessibilityStatusCard(),
                 const SizedBox(height: Spacing.lg),
               ],
-
               _buildSectionTitle('App Blocking Controls'),
               const SizedBox(height: Spacing.sm),
-              _buildBlockingControlCard(enableBlocking, isEditable),
+              _buildBlockingControlCard(
+                enableBlocking: enableBlocking,
+                isEditable: isEditable,
+                isSelfLearning: isSelfLearning,
+                isSchoolWorkspace: isSchoolWorkspace,
+              ),
               const SizedBox(height: Spacing.lg),
-
               if (enableBlocking) ...[
-                _buildSectionTitle('Apps to Control'),
+                if (Platform.isIOS && (isEditable || _hasIOSSelectedApps)) ...[
+                  _buildSectionTitle('Shielded Apps & Categories'),
+                  const SizedBox(height: Spacing.sm),
+                  _buildIOSAppPickerCard(isEditable: isEditable),
+                  const SizedBox(height: Spacing.lg),
+                ],
+                _buildSectionTitle('Controlled Apps & URLs'),
                 const SizedBox(height: Spacing.sm),
-                _buildAppSelectorCard(blockedPackages, isEditable),
+                _buildAppSelectorCard(
+                  blockedPackages: blockedPackages,
+                  isEditable: isEditable,
+                  isSchoolWorkspace: isSchoolWorkspace,
+                ),
                 const SizedBox(height: Spacing.lg),
               ],
-
+              _buildSectionTitle(
+                  'Social Media Question Rules & Reoccurring Timeframe'),
+              const SizedBox(height: Spacing.sm),
+              _buildSocialQuestionsCard(isEditable),
+              const SizedBox(height: Spacing.lg),
+              if ((isFlavorAdmin || isSelfLearning) && workspaceId != null) ...[
+                _buildSectionTitle('Flagged Uploads & Content Controls'),
+                const SizedBox(height: Spacing.sm),
+                _buildFlaggedUploadsCard(workspaceId),
+                const SizedBox(height: Spacing.lg),
+              ],
               _buildSectionTitle('Rules & Conversion'),
               const SizedBox(height: Spacing.sm),
               _buildConversionCard(ratio, isEditable),
               const SizedBox(height: Spacing.lg),
-
               if (isEditable) ...[
                 _buildResetCard(),
               ],
@@ -125,41 +228,72 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, stack) => Center(child: Text('Error loading settings: $err')),
+        error: (err, stack) =>
+            Center(child: Text('Error loading settings: $err')),
       ),
     );
   }
 
-  Widget _buildParentMessage() {
+  Widget _buildRoleHeaderMessage({
+    required bool isSelfLearning,
+    required bool isSchoolWorkspace,
+    required bool isFlavorAdmin,
+  }) {
+    final IconData icon;
+    final String title;
+    final String subtitle;
+
+    if (isSchoolWorkspace) {
+      icon = Icons.school_rounded;
+      title = 'School & Classroom Policy';
+      subtitle =
+          'Teachers manage curriculum and study materials. In accordance with student privacy standards, device app blocking is reserved for parents or personal self-study.';
+    } else if (isSelfLearning) {
+      icon = Icons.self_improvement_rounded;
+      title = 'Personal Study Protection';
+      subtitle =
+          'You are in control. Choose which distracting apps to pause during study sessions so you can stay focused and earn screen time.';
+    } else if (isFlavorAdmin) {
+      icon = Icons.family_restroom_rounded;
+      title = 'Parental Screen Time Oversight';
+      subtitle =
+          'Set app boundaries and XP rules for your child. Completing study questions unlocks digital freedom for selected entertainment apps.';
+    } else {
+      icon = Icons.family_restroom_rounded;
+      title = 'Parental Screen Time Oversight';
+      subtitle =
+          'Your screen time rules and blocked apps are set by your family admin. Answer study questions to earn social media time!';
+    }
+
     return Card(
       elevation: 0,
-      color: AppColors.primaryContainer.withOpacity(0.4),
+      color: AppColors.primaryContainer.withValues(alpha: 0.4),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: AppColors.primaryContainer),
+        side: const BorderSide(color: AppColors.primaryContainer),
       ),
-      child: const Padding(
-        padding: EdgeInsets.all(Spacing.lg),
+      child: Padding(
+        padding: const EdgeInsets.all(Spacing.lg),
         child: Row(
           children: [
-            Icon(Icons.family_restroom_rounded, color: AppColors.primary, size: 28),
-            SizedBox(width: Spacing.md),
+            Icon(icon, color: AppColors.primary, size: 28),
+            const SizedBox(width: Spacing.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Earn Digital Freedom',
-                    style: TextStyle(
+                    title,
+                    style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
                       color: AppColors.onPrimaryContainer,
                     ),
                   ),
-                  SizedBox(height: 2),
+                  const SizedBox(height: 2),
                   Text(
-                    'Connect study progress directly with screen time. Study questions to unlock access to social media apps.',
-                    style: TextStyle(
+                    subtitle,
+                    style: const TextStyle(
                       fontSize: 13,
                       color: AppColors.onPrimaryContainer,
                     ),
@@ -171,6 +305,269 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
         ),
       ),
     );
+  }
+
+  Widget _buildNoContentWarningCard(BuildContext context, String workspaceId) {
+    final isFlavorAdmin = currentFlavor == AppFlavor.admin;
+    return Card(
+      elevation: 0,
+      color: Colors.amber.withValues(alpha: 0.12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.amber.withValues(alpha: 0.4)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(Spacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.upload_file_rounded,
+                    color: Colors.amber, size: 24),
+                const SizedBox(width: Spacing.sm),
+                Expanded(
+                  child: Text(
+                    'No Study Materials Uploaded Yet',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'App blocking is paused so your phone remains fully accessible. Upload your first PDF, notes, or study materials to generate study questions and start earning screen time.',
+              style: TextStyle(
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: Spacing.sm),
+            FilledButton.tonalIcon(
+              onPressed: () {
+                if (isFlavorAdmin) {
+                  context.push('/admin/documents');
+                } else {
+                  context.push('/student/documents');
+                }
+              },
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('Upload Study Material'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showQuickTutorial(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).padding.bottom + Spacing.lg,
+          left: Spacing.lg,
+          right: Spacing.lg,
+          top: Spacing.lg,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: Spacing.md),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.menu_book_rounded,
+                        color: AppColors.primary),
+                  ),
+                  const SizedBox(width: Spacing.sm),
+                  const Expanded(
+                    child: Text(
+                      'How Screen Time & Controls Work',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: Spacing.md),
+              _buildTutorialItem(
+                icon: Icons.power_settings_new_rounded,
+                color: Colors.green,
+                title: '1. App Blocking Switch',
+                description:
+                    'Turn this switch OFF at any time for instant, unrestricted phone access. When ON, only your specifically chosen distraction apps are paused when study minutes reach 0.',
+              ),
+              _buildTutorialItem(
+                icon: Icons.shield_rounded,
+                color: Colors.blue,
+                title: '2. Choosing Shielded Apps',
+                description:
+                    'Select specific distraction apps (Instagram, TikTok, YouTube). Essential phone tools like home security systems (Ring, ADT), alarms, clock, and emergency calls are NEVER blocked.',
+              ),
+              _buildTutorialItem(
+                icon: Icons.upload_file_rounded,
+                color: Colors.amber,
+                title: '3. Uploading Study Content',
+                description:
+                    'Upload notes, PDFs, or slides. The AI reads your materials and creates personalized practice questions. Blocking stays paused until you upload content so you are never locked out without questions to answer.',
+              ),
+              _buildTutorialItem(
+                icon: Icons.quiz_rounded,
+                color: Colors.purple,
+                title: '4. Answering Questions to Earn Time',
+                description:
+                    'Complete study questions to earn XP. Every 10 XP converts into 1 minute of social media time. The more you learn, the more time you unlock.',
+              ),
+              _buildTutorialItem(
+                icon: Icons.admin_panel_settings_rounded,
+                color: Colors.indigo,
+                title: '5. Roles & Administration',
+                description:
+                    '• Self-Learner: You customize and control everything.\n• Parent: Administer rules and choose blocked apps for children.\n• Teacher / Classroom: Uploads curriculum only. Cannot block personal devices.',
+              ),
+              const SizedBox(height: Spacing.md),
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _showEmergencyUnblockDialog(context);
+                },
+                icon: const Icon(Icons.lock_open_rounded, color: Colors.red),
+                label: const Text('Emergency: Instant App Unblock',
+                    style: TextStyle(
+                        color: Colors.red, fontWeight: FontWeight.bold)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.red),
+                  minimumSize: const Size(double.infinity, 48),
+                ),
+              ),
+              const SizedBox(height: Spacing.sm),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 48),
+                ),
+                child: const Text('Got It!'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTutorialItem({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String description,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Spacing.md),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: Spacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  description,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showEmergencyUnblockDialog(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Emergency Unblock'),
+        content: const Text(
+          'This will immediately disable app blocking and clear all active shields on your phone. Are you sure?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Disable Blocking Now'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await _runPolicyUpdate(
+        () => ref
+            .read(screenTimeNotifierProvider.notifier)
+            .updateEnableBlocking(false),
+      );
+      if (mounted) {
+        ref.invalidate(enableBlockingProvider);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('All app shields removed. Phone is fully unblocked.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildSectionTitle(String title) {
@@ -187,10 +584,141 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
     );
   }
 
+  Widget _buildDeviceHealthCard(
+    String workspaceId,
+    AsyncValue<List<StudentDeviceStatus>> statusesAsync,
+  ) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: statusesAsync.when(
+        loading: () => const Padding(
+          padding: EdgeInsets.all(Spacing.lg),
+          child: Row(
+            children: [
+              SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: Spacing.md),
+              Text('Checking student devices…'),
+            ],
+          ),
+        ),
+        error: (error, _) => Padding(
+          padding: const EdgeInsets.all(Spacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Device health unavailable',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: Spacing.xs),
+              Text('$error'),
+              const SizedBox(height: Spacing.sm),
+              OutlinedButton.icon(
+                onPressed: () =>
+                    ref.invalidate(studentDeviceStatusesProvider(workspaceId)),
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+        data: (statuses) {
+          if (statuses.isEmpty) {
+            return const Padding(
+              padding: EdgeInsets.all(Spacing.lg),
+              child: Text(
+                'No students are enrolled in this workspace yet.',
+              ),
+            );
+          }
+
+          final readyCount =
+              statuses.where((status) => status.blockingReady).length;
+          return Column(
+            children: [
+              ListTile(
+                leading: Icon(
+                  readyCount == statuses.length
+                      ? Icons.verified_user_rounded
+                      : Icons.warning_amber_rounded,
+                  color: readyCount == statuses.length
+                      ? Colors.green
+                      : Colors.orange,
+                ),
+                title: Text(
+                  '$readyCount of ${statuses.length} devices ready',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: const Text(
+                  'Blocking requires Accessibility and Usage Access.',
+                ),
+                trailing: IconButton(
+                  tooltip: 'Refresh device health',
+                  onPressed: () => ref
+                      .invalidate(studentDeviceStatusesProvider(workspaceId)),
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ),
+              const Divider(height: 1),
+              ...statuses.map(
+                (status) => ListTile(
+                  leading: Icon(
+                    status.blockingReady
+                        ? Icons.check_circle_rounded
+                        : Icons.error_rounded,
+                    color: status.blockingReady ? Colors.green : Colors.red,
+                  ),
+                  title: Text(status.displayName),
+                  subtitle: Text(
+                    status.blockingReady
+                        ? 'Blocking active • ${_formatLastReported(status.lastReportedAt)}'
+                        : 'Permission action required • ${_formatLastReported(status.lastReportedAt)}',
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  String _formatLastReported(DateTime? timestamp) {
+    if (timestamp == null) return 'never reported';
+    final local = timestamp.toLocal();
+    final minute = local.minute.toString().padLeft(2, '0');
+    return 'last checked ${local.month}/${local.day} ${local.hour}:$minute';
+  }
+
+  Future<bool> _runPolicyUpdate(Future<void> Function() update) async {
+    try {
+      await update();
+      return true;
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not update the student policy. Check your connection and try again.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false;
+    }
+  }
+
   Widget _buildAccessibilityStatusCard() {
     final statusColor = _isAccessibilityEnabled ? Colors.green : Colors.orange;
     final statusText = _isAccessibilityEnabled ? 'Active' : 'Disabled';
-    final statusIcon = _isAccessibilityEnabled ? Icons.check_circle : Icons.warning_amber_rounded;
+    final statusIcon = _isAccessibilityEnabled
+        ? Icons.check_circle
+        : Icons.warning_amber_rounded;
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -207,7 +735,8 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
                     children: [
                       const Text(
                         'Android App Blocking Service',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16),
                       ),
                       const SizedBox(height: 4),
                       Row(
@@ -244,14 +773,45 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
             FilledButton.icon(
               style: FilledButton.styleFrom(
                 minimumSize: const Size(double.infinity, 44),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                backgroundColor: _isAccessibilityEnabled ? Colors.grey : AppColors.primary,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                backgroundColor:
+                    _isAccessibilityEnabled ? Colors.grey : AppColors.primary,
               ),
               onPressed: () {
-                ref.read(screenTimeNotifierProvider.notifier).openAccessibilitySettings();
+                showAccessibilityProminentDisclosureDialog(
+                  context,
+                  onAccept: () {
+                    ref
+                        .read(screenTimeNotifierProvider.notifier)
+                        .openAccessibilitySettings();
+                  },
+                );
               },
               icon: const Icon(Icons.settings_power_rounded),
-              label: Text(_isAccessibilityEnabled ? 'Configure Settings' : 'Enable Service'),
+              label: Text(_isAccessibilityEnabled
+                  ? 'Configure Settings'
+                  : 'Enable Service'),
+            ),
+            const SizedBox(height: Spacing.xs),
+            Center(
+              child: TextButton.icon(
+                onPressed: () {
+                  showAccessibilityProminentDisclosureDialog(
+                    context,
+                    onAccept: () {
+                      ref
+                          .read(screenTimeNotifierProvider.notifier)
+                          .openAccessibilitySettings();
+                    },
+                  );
+                },
+                icon: const Icon(Icons.info_outline_rounded, size: 16),
+                label: const Text(
+                  'View Prominent Disclosure & Privacy Policy',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
             ),
           ],
         ),
@@ -259,7 +819,221 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
     );
   }
 
-  Widget _buildBlockingControlCard(bool enableBlocking, bool isAdmin) {
+  Widget _buildIOSScreenTimeCard() {
+    final statusColor =
+        _isIOSScreenTimeAuthorized ? Colors.green : Colors.orange;
+    final statusText =
+        _isIOSScreenTimeAuthorized ? 'Authorized' : 'Permission needed';
+    final statusIcon = _isIOSScreenTimeAuthorized
+        ? Icons.check_circle
+        : Icons.warning_amber_rounded;
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(Spacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Apple Screen Time Protection',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(statusIcon, color: statusColor, size: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Status: $statusText',
+                            style: TextStyle(
+                              color: statusColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                if (_isLoadingAccessibility)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: Spacing.md),
+            const Text(
+              'Social Studying uses Apple Family Controls and Screen Time to securely shield selected social media apps when study minutes reach 0.',
+              style: TextStyle(fontSize: 13, color: AppColors.onSurfaceVariant),
+            ),
+            if (!_isIOSScreenTimeAuthorized) ...[
+              const SizedBox(height: Spacing.md),
+              FilledButton.icon(
+                onPressed: () async {
+                  await ref
+                      .read(screenTimeNotifierProvider.notifier)
+                      .requestScreenTimeAuthorization();
+                  await _checkAccessibilityStatus();
+                },
+                icon: const Icon(Icons.shield_rounded),
+                label: const Text('Authorize Screen Time'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIOSAppPickerCard({required bool isEditable}) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(Spacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  _hasIOSSelectedApps
+                      ? Icons.verified_rounded
+                      : Icons.app_blocking_rounded,
+                  color: _hasIOSSelectedApps ? Colors.green : AppColors.primary,
+                  size: 28,
+                ),
+                const SizedBox(width: Spacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Apps & Categories to Shield',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _hasIOSSelectedApps
+                            ? 'Social apps and domains configured'
+                            : 'No apps selected yet',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: _hasIOSSelectedApps
+                              ? Colors.green
+                              : AppColors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: Spacing.md),
+            Text(
+              isEditable
+                  ? 'Tap below to open Apple’s native app picker and choose which social networking apps, categories, or websites to lock.'
+                  : 'Shielded apps are configured by your family administrator and enforced automatically.',
+              style: const TextStyle(
+                  fontSize: 13, color: AppColors.onSurfaceVariant),
+            ),
+            const SizedBox(height: Spacing.sm),
+            Container(
+              padding: const EdgeInsets.all(Spacing.sm),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: Colors.blue.withValues(alpha: 0.2),
+                ),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.lightbulb_outline_rounded,
+                      size: 16, color: Color(0xFF3674FF)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Quick setup: choose the Social category to cover apps Apple classifies as social. Also select YouTube or any other app you want to block, because Apple controls category membership.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF1E3A8A),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isEditable) ...[
+              const SizedBox(height: Spacing.md),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  if (!_isIOSScreenTimeAuthorized) {
+                    final authorized = await ref
+                        .read(screenTimeNotifierProvider.notifier)
+                        .requestScreenTimeAuthorization();
+                    if (!authorized) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content:
+                                Text('Please authorize Screen Time first.'),
+                          ),
+                        );
+                      }
+                      return;
+                    }
+                  }
+                  await ref
+                      .read(screenTimeNotifierProvider.notifier)
+                      .presentFamilyActivityPicker();
+                  await _checkAccessibilityStatus();
+                },
+                icon: const Icon(Icons.touch_app_rounded),
+                label: Text(_hasIOSSelectedApps
+                    ? 'Edit Shielded Apps'
+                    : 'Choose Apps to Shield'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBlockingControlCard({
+    required bool enableBlocking,
+    required bool isEditable,
+    required bool isSelfLearning,
+    required bool isSchoolWorkspace,
+  }) {
+    final String subtitle;
+    if (isSchoolWorkspace) {
+      subtitle =
+          'Device blocking is disabled in classroom mode to protect student privacy';
+    } else if (isEditable) {
+      subtitle = isSelfLearning
+          ? 'Pause chosen apps when study time runs out'
+          : 'Block targeted apps for your child when screen time is exhausted';
+    } else {
+      subtitle = 'App blocking is managed by your family admin';
+    }
+
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: SwitchListTile(
@@ -267,56 +1041,290 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
           'Enable App Blocking',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        subtitle: Text(
-          isAdmin
-              ? 'Block targeted apps when screen time is exhausted'
-              : 'App blocking is managed by your parent or university',
-        ),
+        subtitle: Text(subtitle),
         value: enableBlocking,
         activeColor: AppColors.primary,
-        onChanged: isAdmin
+        onChanged: isEditable
             ? (value) async {
-                await ref.read(screenTimeNotifierProvider.notifier).updateEnableBlocking(value);
-                ref.invalidate(enableBlockingProvider);
+                final updated = await _runPolicyUpdate(
+                  () => ref
+                      .read(screenTimeNotifierProvider.notifier)
+                      .updateEnableBlocking(value),
+                );
+                if (updated) ref.invalidate(enableBlockingProvider);
               }
             : null,
       ),
     );
   }
 
-  Widget _buildAppSelectorCard(List<String> blockedPackages, bool isAdmin) {
+  Widget _buildAppSelectorCard({
+    required List<String> blockedPackages,
+    required bool isEditable,
+    required bool isSchoolWorkspace,
+  }) {
+    final customApps = blockedPackages
+        .where((pkg) => !_availableApps.containsKey(pkg))
+        .toList();
+
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Column(
-        children: _availableApps.entries.map((entry) {
-          final pkg = entry.key;
-          final (name, icon) = entry.value;
-          final isBlocked = blockedPackages.contains(pkg);
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!isEditable) ...[
+            Padding(
+              padding: const EdgeInsets.all(Spacing.md),
+              child: Container(
+                padding: const EdgeInsets.all(Spacing.md),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.blue.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.shield_outlined,
+                        size: 22, color: AppColors.primary),
+                    const SizedBox(width: Spacing.sm),
+                    Expanded(
+                      child: Text(
+                        isSchoolWorkspace
+                            ? 'Classroom Device Privacy: Student personal devices are not blocked by school accounts. Device interference is managed by parents or self-study.'
+                            : 'Managed by Parent: Blocked apps and URLs are configured by your family administrator and enforced automatically.',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF1E3A8A),
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          ..._availableApps.entries.map((entry) {
+            final pkg = entry.key;
+            final (name, icon) = entry.value;
+            final isBlocked = blockedPackages.contains(pkg);
 
-          return CheckboxListTile(
-            title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-            secondary: Icon(icon, color: isBlocked ? AppColors.primary : Colors.grey),
-            value: isBlocked,
-            activeColor: AppColors.primary,
-            onChanged: isAdmin
-                ? (bool? checked) async {
-                    final newList = List<String>.from(blockedPackages);
-                    if (checked == true) {
-                      newList.add(pkg);
-                    } else {
-                      newList.remove(pkg);
-                    }
-                    await ref.read(screenTimeNotifierProvider.notifier).updateBlockedPackages(newList);
-                    ref.invalidate(blockedPackagesProvider);
-                  }
-                : null,
-          );
-        }).toList(),
+            if (!isEditable) {
+              // Students see standard apps in read-only mode
+              return ListTile(
+                leading: Icon(icon,
+                    color: isBlocked ? AppColors.primary : Colors.grey),
+                title: Text(name,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                trailing: isBlocked
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Blocked',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      )
+                    : const Text(
+                        'Allowed',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+              );
+            }
+
+            return CheckboxListTile(
+              title: Text(name,
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              secondary: Icon(icon,
+                  color: isBlocked ? AppColors.primary : Colors.grey),
+              value: isBlocked,
+              activeColor: AppColors.primary,
+              onChanged: (bool? checked) async {
+                final newList = List<String>.from(blockedPackages);
+                if (checked == true) {
+                  newList.add(pkg);
+                } else {
+                  newList.remove(pkg);
+                }
+                final updated = await _runPolicyUpdate(
+                  () => ref
+                      .read(screenTimeNotifierProvider.notifier)
+                      .updateBlockedPackages(newList),
+                );
+                if (updated) ref.invalidate(blockedPackagesProvider);
+              },
+            );
+          }),
+          if (customApps.isNotEmpty) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  Spacing.lg, Spacing.md, Spacing.lg, Spacing.xs),
+              child: Text(
+                'Custom Blocked Apps & URLs',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: context.colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+            ),
+            ...customApps.map((item) {
+              final isUrl = item.contains('.') && !item.startsWith('com.');
+              return ListTile(
+                leading: Icon(
+                  isUrl ? Icons.public_rounded : Icons.apps_rounded,
+                  color: AppColors.primary,
+                ),
+                title: Text(
+                  item,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                trailing: isEditable
+                    ? IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded,
+                            color: Colors.red),
+                        tooltip: 'Remove from blocked list',
+                        onPressed: () async {
+                          final newList = List<String>.from(blockedPackages)
+                            ..remove(item);
+                          final updated = await _runPolicyUpdate(
+                            () => ref
+                                .read(screenTimeNotifierProvider.notifier)
+                                .updateBlockedPackages(newList),
+                          );
+                          if (updated) ref.invalidate(blockedPackagesProvider);
+                        },
+                      )
+                    : Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Blocked',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+              );
+            }),
+          ],
+          if (isEditable) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(Spacing.md),
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 44),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () => _showAddCustomAppDialog(blockedPackages),
+                icon: const Icon(Icons.add_link_rounded),
+                label: const Text('Add App or Website URL to Block'),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 
-  Widget _buildConversionCard(int ratio, bool isAdmin) {
+  void _showAddCustomAppDialog(List<String> currentBlocked) {
+    final controller = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.add_link_rounded, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text(
+              'Block App or Website URL',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter an application URL or package identifier to block (e.g. tiktok.com, https://instagram.com, com.example.app):',
+              style: TextStyle(fontSize: 13, color: AppColors.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'e.g. tiktok.com or com.snapchat.android',
+                prefixIcon: const Icon(Icons.link_rounded),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              var input = controller.text.trim();
+              if (input.isEmpty) return;
+
+              // Clean / normalize URL or package name
+              if (input.startsWith('https://')) input = input.substring(8);
+              if (input.startsWith('http://')) input = input.substring(7);
+              if (input.startsWith('www.')) input = input.substring(4);
+              if (input.contains('/')) {
+                input = input.split('/').first;
+              }
+              input = input.toLowerCase().trim();
+
+              if (input.isNotEmpty && !currentBlocked.contains(input)) {
+                final newList = List<String>.from(currentBlocked)..add(input);
+                Navigator.of(dialogCtx).pop();
+                final updated = await _runPolicyUpdate(
+                  () => ref
+                      .read(screenTimeNotifierProvider.notifier)
+                      .updateBlockedPackages(newList),
+                );
+                if (updated) ref.invalidate(blockedPackagesProvider);
+              } else {
+                Navigator.of(dialogCtx).pop();
+              }
+            },
+            child: const Text('Block'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConversionCard(int ratio, bool isEditable) {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
@@ -331,7 +1339,8 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
             const SizedBox(height: Spacing.sm),
             Text(
               'Currently set to: $ratio XP = 1 Minute of screen time.\n(For example, 100 XP gives 10 minutes).',
-              style: const TextStyle(fontSize: 13, color: AppColors.onSurfaceVariant),
+              style: const TextStyle(
+                  fontSize: 13, color: AppColors.onSurfaceVariant),
             ),
             const SizedBox(height: Spacing.md),
             DropdownButtonFormField<int>(
@@ -340,22 +1349,58 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
                 labelText: 'Conversion Rate',
                 filled: true,
                 fillColor: context.colorScheme.surfaceContainer,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
               items: const [
-                DropdownMenuItem(value: 5, child: Text('5 XP = 1 Minute (Generous)')),
-                DropdownMenuItem(value: 10, child: Text('10 XP = 1 Minute (Standard)')),
-                DropdownMenuItem(value: 20, child: Text('20 XP = 1 Minute (Moderate)')),
-                DropdownMenuItem(value: 50, child: Text('50 XP = 1 Minute (Strict)')),
+                DropdownMenuItem(
+                    value: 5, child: Text('5 XP = 1 Minute (Generous)')),
+                DropdownMenuItem(
+                    value: 10, child: Text('10 XP = 1 Minute (Standard)')),
+                DropdownMenuItem(
+                    value: 20, child: Text('20 XP = 1 Minute (Moderate)')),
+                DropdownMenuItem(
+                    value: 50, child: Text('50 XP = 1 Minute (Strict)')),
               ],
-              onChanged: isAdmin
+              onChanged: isEditable
                   ? (value) async {
                       if (value != null) {
-                        await ref.read(screenTimeNotifierProvider.notifier).updateXpToMinuteRatio(value);
-                        ref.invalidate(xpToMinuteRatioProvider);
+                        final updated = await _runPolicyUpdate(
+                          () => ref
+                              .read(screenTimeNotifierProvider.notifier)
+                              .updateXpToMinuteRatio(value),
+                        );
+                        if (updated) ref.invalidate(xpToMinuteRatioProvider);
                       }
                     }
                   : null,
+            ),
+            const SizedBox(height: Spacing.md),
+            Container(
+              padding: const EdgeInsets.all(Spacing.md),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.withValues(alpha: 0.2)),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline_rounded,
+                      size: 20, color: Color(0xFF1E3A8A)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'How Screen Time works: Answering study questions earns XP. Every 10 XP automatically converts into 1 minute of social media time. When you use social apps, minutes count down. Once available minutes reach 0, selected apps are shielded until you answer more questions.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF1E3A8A),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -366,24 +1411,298 @@ class _ScreenTimeSettingsScreenState extends ConsumerState<ScreenTimeSettingsScr
   Widget _buildResetCard() {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ListTile(
-        title: const Text(
-          'Reset Today\'s Screen Time Stats',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
-        ),
-        subtitle: const Text('Resets today\'s usage timer to 0 without affecting your earned balance.'),
-        trailing: const Icon(Icons.refresh_rounded, color: Colors.orange),
-        onTap: () async {
-          await ref.read(screenTimeNotifierProvider.notifier).resetConsumedToday();
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Daily usage stats reset successfully.'),
-                backgroundColor: Colors.green,
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.shield_rounded, color: Colors.indigo),
+            title: const Text(
+              'Test App Shields Now (Simulate 0 Min)',
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo),
+            ),
+            subtitle: const Text(
+                'Sets available minutes to 0 and immediately activates app shields so you can verify social apps are blocked.'),
+            trailing:
+                const Icon(Icons.play_arrow_rounded, color: Colors.indigo),
+            onTap: () async {
+              await ref
+                  .read(screenTimeNotifierProvider.notifier)
+                  .simulateZeroMinutesForTesting();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                        'Available time set to 0 and shields activated! Try opening a blocked social app now.'),
+                    backgroundColor: Colors.indigo,
+                  ),
+                );
+              }
+            },
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.add_circle_outline_rounded,
+                color: Colors.green),
+            title: const Text(
+              'Add 15 Test Minutes (Unblock Apps)',
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
+            ),
+            subtitle: const Text(
+                'Grants 15 minutes to test that app shields release.'),
+            trailing: const Icon(Icons.add_rounded, color: Colors.green),
+            onTap: () async {
+              await ref
+                  .read(screenTimeNotifierProvider.notifier)
+                  .addTestMinutes(15);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content:
+                        Text('Added 15 test minutes! App shields released.'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.refresh_rounded, color: Colors.orange),
+            title: const Text(
+              'Reset Today\'s Screen Time Stats',
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
+            ),
+            subtitle: const Text(
+                'Resets today\'s usage timer to 0 without affecting your earned balance.'),
+            trailing: const Icon(Icons.arrow_forward_ios_rounded,
+                size: 16, color: Colors.orange),
+            onTap: () async {
+              await ref
+                  .read(screenTimeNotifierProvider.notifier)
+                  .resetConsumedToday();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Daily usage stats reset successfully.'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSocialQuestionsCard(bool isEditable) {
+    final enableSocialAsync = ref.watch(enableSocialQuestionsProvider);
+    final intervalAsync = ref.watch(recurringQuestionsIntervalProvider);
+    final promptCountAsync = ref.watch(questionsPerPromptProvider);
+    final targetSubjectAsync = ref.watch(socialQuestionsSubjectProvider);
+
+    final enableSocial = enableSocialAsync.valueOrNull ?? true;
+    final interval = intervalAsync.valueOrNull ?? 15;
+    final promptCount = promptCountAsync.valueOrNull ?? 1;
+    final targetSubject = targetSubjectAsync.valueOrNull;
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(Spacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Require Questions for Social Media',
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
-            );
-          }
-        },
+              subtitle: Text(
+                isEditable
+                    ? 'Learner must answer study questions to open or continue using social media'
+                    : 'Configured by parent to reinforce study habits',
+              ),
+              value: enableSocial,
+              activeColor: AppColors.primary,
+              onChanged: isEditable
+                  ? (value) async {
+                      await ref
+                          .read(screenTimeNotifierProvider.notifier)
+                          .updateEnableSocialQuestions(value);
+                    }
+                  : null,
+            ),
+            if (enableSocial) ...[
+              const Divider(height: 24),
+              const Text(
+                'Recurring Question Interval (Timeframe)',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Frequency of recurring study questions while browsing social apps:',
+                style:
+                    TextStyle(fontSize: 12, color: AppColors.onSurfaceVariant),
+              ),
+              const SizedBox(height: Spacing.sm),
+              DropdownButtonFormField<int>(
+                value: interval,
+                decoration: InputDecoration(
+                  labelText: 'Recurring Interval',
+                  filled: true,
+                  fillColor: context.colorScheme.surfaceContainer,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 0, child: Text('On App Launch Only')),
+                  DropdownMenuItem(
+                      value: 15, child: Text('Every 15 Minutes (Recommended)')),
+                  DropdownMenuItem(value: 30, child: Text('Every 30 Minutes')),
+                  DropdownMenuItem(value: 45, child: Text('Every 45 Minutes')),
+                  DropdownMenuItem(value: 60, child: Text('Every 1 Hour')),
+                ],
+                onChanged: isEditable
+                    ? (value) async {
+                        if (value != null) {
+                          await ref
+                              .read(screenTimeNotifierProvider.notifier)
+                              .updateRecurringQuestionsInterval(value);
+                        }
+                      }
+                    : null,
+              ),
+              const SizedBox(height: Spacing.md),
+              const Text(
+                'Questions per Recurring Prompt',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              const SizedBox(height: Spacing.sm),
+              DropdownButtonFormField<int>(
+                value: promptCount,
+                decoration: InputDecoration(
+                  labelText: 'Question Count',
+                  filled: true,
+                  fillColor: context.colorScheme.surfaceContainer,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                      value: 1, child: Text('1 Question (Quick Recall)')),
+                  DropdownMenuItem(
+                      value: 2, child: Text('2 Questions (Balanced)')),
+                  DropdownMenuItem(
+                      value: 3, child: Text('3 Questions (Deep Practice)')),
+                ],
+                onChanged: isEditable
+                    ? (value) async {
+                        if (value != null) {
+                          await ref
+                              .read(screenTimeNotifierProvider.notifier)
+                              .updateQuestionsPerPrompt(value);
+                        }
+                      }
+                    : null,
+              ),
+              const SizedBox(height: Spacing.md),
+              const Text(
+                'Target Study Subject Focus',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              const SizedBox(height: Spacing.sm),
+              DropdownButtonFormField<String?>(
+                value: targetSubject,
+                decoration: InputDecoration(
+                  labelText: 'Subject Focus',
+                  filled: true,
+                  fillColor: context.colorScheme.surfaceContainer,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                      value: null, child: Text('All Subjects (Rotational)')),
+                  DropdownMenuItem(
+                      value: 'Chemistry', child: Text('Chemistry Focus 🧪')),
+                  DropdownMenuItem(
+                      value: 'Mathematics',
+                      child: Text('Mathematics Focus 📐')),
+                  DropdownMenuItem(
+                      value: 'Physics', child: Text('Physics Focus ⚡')),
+                  DropdownMenuItem(
+                      value: 'Biology', child: Text('Biology Focus 🧬')),
+                ],
+                onChanged: isEditable
+                    ? (value) async {
+                        await ref
+                            .read(screenTimeNotifierProvider.notifier)
+                            .updateSocialQuestionsSubject(value);
+                      }
+                    : null,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFlaggedUploadsCard(String workspaceId) {
+    final queueAsync = ref.watch(moderationQueueProvider(workspaceId));
+    final flaggedCount = queueAsync.valueOrNull?.length ?? 0;
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(Spacing.md),
+        child: Column(
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: (flaggedCount > 0 ? Colors.orange : Colors.green)
+                      .withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  flaggedCount > 0
+                      ? Icons.flag_rounded
+                      : Icons.verified_user_rounded,
+                  color: flaggedCount > 0 ? Colors.orange : Colors.green,
+                  size: 22,
+                ),
+              ),
+              title: Text(
+                flaggedCount > 0
+                    ? '$flaggedCount Flagged Upload(s) Awaiting Review'
+                    : 'All Uploads Approved & Safe',
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              subtitle: Text(
+                flaggedCount > 0
+                    ? 'Review study materials before questions are generated'
+                    : 'AI content safety filter is active and protecting uploads',
+                style: const TextStyle(fontSize: 12),
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ModerationScreen(workspaceId: workspaceId),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -19,6 +19,7 @@ class Badge(BaseModel):
     description: str
     icon: str
     earned_at: str
+    xp_reward: int = 0
 
 
 class GamificationState(CosmosDocument):
@@ -57,7 +58,7 @@ class GamificationState(CosmosDocument):
     # Streak
     streak_days: int = 0
     longest_streak_days: int = 0
-    last_active_date: str | None = None   # ISO date "2026-04-30"
+    last_active_date: str | None = None  # ISO date "2026-04-30"
 
     # Badges
     badges: list[Badge] = Field(default_factory=list)
@@ -66,11 +67,22 @@ class GamificationState(CosmosDocument):
     questions_answered: int = 0
     questions_correct: int = 0
     flashcards_reviewed: int = 0
+    flashcards_remembered: int = 0
+    study_sessions_completed: int = 0
+    revision_sessions_completed: int = 0
+    flashcard_sessions_completed: int = 0
+    perfect_sessions: int = 0
+    last_login_reward_date: str | None = None
 
     daily_activity: dict[str, int] = Field(default_factory=dict)
     """date_iso → total events that day (questions + flashcards). The
     engine caps this to the last 30 entries — older dates are pruned on
     each write so the doc stays bounded."""
+
+    daily_xp: dict[str, int] = Field(default_factory=dict)
+    """ISO date to net XP applied that day. Values use the same
+    floor-at-zero rules as ``xp_this_week`` so the weekly chart and XP
+    counter stay synchronized. The engine retains the latest 30 dates."""
 
     # Leaderboard
     leaderboard_rank: int | None = None

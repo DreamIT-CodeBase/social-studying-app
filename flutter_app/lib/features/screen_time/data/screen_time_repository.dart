@@ -5,6 +5,7 @@ import 'package:social_study_app/features/screen_time/data/real_screen_time_repo
 import 'package:social_study_app/core/config/environment.dart';
 import 'package:social_study_app/features/screen_time/models/screen_time_settings.dart';
 import 'package:social_study_app/features/screen_time/models/screen_time_wallet.dart';
+import 'package:social_study_app/features/screen_time/models/student_device_status.dart';
 import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/services/dio_client.dart';
 
@@ -28,6 +29,10 @@ abstract class ScreenTimeRepository {
   });
 
   Future<ScreenTimeWallet> syncXp({required String workspaceId});
+
+  Future<List<StudentDeviceStatus>> fetchDeviceStatuses({
+    required String workspaceId,
+  });
 
   Future<void> reportPermissionStatus({
     required bool overlayPermission,

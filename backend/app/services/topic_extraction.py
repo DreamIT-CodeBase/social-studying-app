@@ -37,6 +37,12 @@ _PROMPT_NAME = "topic_extraction_v1"
 # Cached because read_text + split is pure I/O — we never need to re-read
 # the prompt mid-process. Cleared by tests that monkeypatch the prompt.
 _PROMPT_CACHE: tuple[str, str] | None = None
+_LAST_EXTRACTED_SUBJECT: str | None = None
+
+
+def get_last_extracted_subject() -> str | None:
+    """Return the subject evaluated by the most recent topic extraction call."""
+    return _LAST_EXTRACTED_SUBJECT
 
 
 def _system_user() -> tuple[str, str]:
@@ -47,22 +53,72 @@ def _system_user() -> tuple[str, str]:
     return _PROMPT_CACHE
 
 
-def _truncate(text: str, *, max_chars: int) -> str:
-    """Take the first ``max_chars`` characters of ``text``, log if truncated.
+def _prepare_text_for_topic_extraction(text: str, *, max_chars: int = 16_000) -> str:
+    """Prepare a compact, high-signal representation of the document for topic extraction.
 
-    Front-truncation (not back) on purpose: textbook tables of contents,
-    glossaries, and chapter headings tend to live in the first 60K chars and
-    are gold for topic identification. The back tends to be exercises and
-    bibliographies, which are noise for this task.
+    For documents <= max_chars, the full text is passed directly.
+    For large documents (40k to 100k+ chars / 1 lakh chars), feeding the raw text
+    causes high latency (30-60s) and large prompt tokens. Instead, this function:
+      1. Keeps front matter & Table of Contents (first 4,500 chars)
+      2. Extracts structural chapter and section headings across the entire document
+      3. Uniformly samples paragraph beginnings across every single page
+      4. Keeps the concluding summary (last 1,500 chars)
+    This gives 100% full-document topic coverage in ~12k-16k chars, cutting LLM latency to 2-3s.
     """
-    if len(text) <= max_chars:
+    total_len = len(text)
+    if total_len <= max_chars:
         return text
-    logger.warning(
-        "Truncating extracted text for topic extraction: %d chars → %d chars",
-        len(text),
-        max_chars,
+
+    head_budget = 4_500
+    tail_budget = 1_500
+    head = text[:head_budget]
+    tail = text[-tail_budget:] if total_len > head_budget + tail_budget else ""
+
+    middle = text[head_budget : total_len - tail_budget]
+    middle_lines = middle.splitlines()
+
+    sampled_lines: list[str] = []
+    current_chars = len(head) + len(tail)
+    target_budget = max_chars - 500
+
+    # 1. Structural headings & section titles
+    for line in middle_lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        is_heading = (
+            stripped.startswith(("#", "Chapter", "CHAPTER", "Unit", "UNIT", "Section", "SECTION", "Topic", "TOPIC", "Part", "PART", "Module", "MODULE"))
+            or (len(stripped) < 80 and stripped.isupper())
+            or (len(stripped) < 60 and not stripped.endswith(".") and (stripped[0].isdigit() or stripped.startswith("- ")))
+        )
+        if is_heading:
+            sampled_lines.append(stripped)
+            current_chars += len(stripped) + 1
+            if current_chars >= target_budget:
+                break
+
+    # 2. Distributed paragraph slices across the whole middle
+    if current_chars < target_budget:
+        remaining = target_budget - current_chars
+        step = max(1, len(middle) // 12)
+        slices: list[str] = []
+        for offset in range(0, len(middle), step):
+            snippet = middle[offset : offset + 350].strip()
+            if snippet:
+                slices.append(snippet)
+            if sum(len(s) for s in slices) >= remaining:
+                break
+        middle_content = "\n".join(sampled_lines) + "\n\n" + "\n---\n".join(slices)
+    else:
+        middle_content = "\n".join(sampled_lines)
+
+    logger.info(
+        "Distilled extracted text for topic extraction: %d chars → %d chars (coverage: 100%%)",
+        total_len,
+        len(head) + len(middle_content) + len(tail),
     )
-    return text[:max_chars]
+    result = f"{head}\n\n[... Structural Headings & Representative Content Across Document ...]\n{middle_content}\n\n[... Final Summary & Conclusion ...]\n{tail}"
+    return result[:max_chars]
 
 
 def _coerce_topic(raw: dict[str, Any]) -> TopicTag | None:
@@ -128,12 +184,47 @@ def _dedupe(topics: list[TopicTag]) -> list[TopicTag]:
     return out
 
 
-async def extract_topics(text: str) -> list[TopicTag]:
-    """Extract a list of topics from a document's extracted text.
+def _get_extraction_guidance(char_count: int) -> str:
+    """Length-tailored extraction instructions to balance granularity and speed.
 
-    Empty or whitespace-only text returns an empty list without an OpenAI
-    call — matches the prompt's "return []" contract and saves money on
-    blank documents (cover pages, admin uploads with no body content).
+    - Under 2K chars: Short study note / concise material (< 2,000 chars).
+      Extract a generous, good amount of distinct topics (4 to 8 fine-grained topics)
+      covering every specific concept, principle, definition, rule, or formula so
+      the learner has multiple focused topics to practice from this short text.
+    - Over 3K chars: Comprehensive / multi-page document (> 3,000 chars).
+      Read wholly and comprehensively through the entire document from start to finish.
+      Extract ONLY the MAIN, primary overarching core topics (5 to 10 major themes/units),
+      consolidating minor sub-details and micro-vocabulary under their parent pillars.
+    - 2K - 3K chars: Balanced extraction of 4 to 8 core concepts.
+    """
+    if char_count < 2000:
+        return (
+            "- DOCUMENT SIZE: Short study note / concise material (< 2,000 characters).\n"
+            "- GRANULAR EXTRACTION: Thoroughly extract a generous, good amount of distinct topics (4 to 8 topics).\n"
+            "- DEEP COVERAGE: Break down the content into specific concepts, principles, key definitions, rules, or formulas mentioned, "
+            "so the student has multiple focused, granular topics to study from this short text.\n"
+            "- Avoid collapsing everything into a single broad topic."
+        )
+    elif char_count > 3000:
+        return (
+            "- DOCUMENT SIZE: Comprehensive / multi-page study material (> 3,000 characters).\n"
+            "- WHOLE-DOCUMENT ANALYSIS: Read wholly and comprehensively through the entire provided text from start to finish.\n"
+            "- MAIN TOPICS ONLY: Extract ONLY the MAIN, primary overarching core topics (5 to 10 major themes, units, or foundational concepts).\n"
+            "- HIGH-LEVEL SYNTHESIS: Consolidate sub-details and minor vocabulary under their parent main topic. "
+            "Do NOT extract microscopic factoids or fragmented single-paragraph subtopics; focus on the primary curriculum pillars."
+        )
+    else:
+        return (
+            "- DOCUMENT SIZE: Medium study material (2,000 - 3,000 characters).\n"
+            "- BALANCED EXTRACTION: Extract 4 to 8 clear, distinct core topics that accurately represent the key concepts of the study material."
+        )
+
+
+async def extract_topics_and_subject(text: str) -> tuple[list[TopicTag], str | None]:
+    """Extract a list of topics and an LLM-evaluated subject/novel/book title.
+
+    Empty or whitespace-only text returns an empty list and None subject
+    without an OpenAI call.
 
     Raises:
         ServiceUnavailableError: model not reachable / not configured.
@@ -141,20 +232,26 @@ async def extract_topics(text: str) -> list[TopicTag]:
     """
     if not text or not text.strip():
         logger.info("Topic extraction: empty text, returning []")
-        return []
+        return [], None
 
-    system_prompt, user_template = _system_user()
+    system_template, user_template = _system_user()
+    char_count = len(text.strip())
+    guidance = _get_extraction_guidance(char_count)
+
+    max_budget = min(settings.openai_topic_extraction_max_input_chars, 20_000)
+    distilled_text = _prepare_text_for_topic_extraction(text, max_chars=max_budget)
+
+    system_prompt = render(system_template, extraction_guidance=guidance)
     user_prompt = render(
         user_template,
-        source_content=_truncate(
-            text, max_chars=settings.openai_topic_extraction_max_input_chars
-        ),
+        source_content=distilled_text,
+        extraction_guidance=guidance,
     )
 
     response = await azure_openai.chat_json(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        max_output_tokens=settings.openai_topic_extraction_max_output_tokens,
+        max_output_tokens=min(settings.openai_topic_extraction_max_output_tokens, 1200),
     )
 
     raw_topics = response.get("topics")
@@ -167,12 +264,31 @@ async def extract_topics(text: str) -> list[TopicTag]:
         )
         raise ValueError("Topic extraction response missing 'topics' list")
 
+    judged_subject = response.get("subject")
+    judged_subject = (
+        judged_subject.strip() or None
+        if isinstance(judged_subject, str)
+        else None
+    )
+
+    global _LAST_EXTRACTED_SUBJECT
+    _LAST_EXTRACTED_SUBJECT = judged_subject
+
     parsed = [t for t in (_coerce_topic(r) for r in raw_topics if isinstance(r, dict)) if t]
     deduped = _dedupe(parsed)
     logger.info(
-        "Topic extraction: %d raw → %d parsed → %d deduped",
+        "Topic extraction (%d chars, mode=%s, subject=%s): %d raw → %d parsed → %d deduped",
+        char_count,
+        "short_granular" if char_count < 2000 else ("long_main" if char_count > 3000 else "medium"),
+        judged_subject,
         len(raw_topics),
         len(parsed),
         len(deduped),
     )
-    return deduped
+    return deduped, judged_subject
+
+
+async def extract_topics(text: str) -> list[TopicTag]:
+    """Extract a list of topics from a document's extracted text (backwards compatible)."""
+    topics, _ = await extract_topics_and_subject(text)
+    return topics

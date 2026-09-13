@@ -14,9 +14,7 @@ part 'users_notifier.g.dart';
 class WorkspaceUsersList extends _$WorkspaceUsersList {
   @override
   Future<List<User>> build(String workspaceId) {
-    return ref
-        .read(usersRepositoryProvider)
-        .listWorkspaceUsers(workspaceId);
+    return ref.read(usersRepositoryProvider).listWorkspaceUsers(workspaceId);
   }
 
   /// Re-fetch the roster. Used by pull-to-refresh and after mutations.
@@ -43,6 +41,16 @@ class WorkspaceUsersList extends _$WorkspaceUsersList {
   /// Deactivate a user, then refresh.
   Future<void> deactivateUser(String userId) async {
     await ref.read(usersRepositoryProvider).deactivateUser(userId);
+    refresh();
+    ref.read(workspacesListProvider.notifier).refresh();
+  }
+
+  /// Remove a student/member from this workspace, then refresh.
+  Future<void> removeMember(String userId) async {
+    await ref.read(usersRepositoryProvider).removeMember(
+          workspaceId: workspaceId,
+          userId: userId,
+        );
     refresh();
     ref.read(workspacesListProvider.notifier).refresh();
   }

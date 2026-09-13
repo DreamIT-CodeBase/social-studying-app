@@ -47,7 +47,7 @@ class ExtractionMessage:
     uploaded_at: str
 
     @classmethod
-    def from_json(cls, payload: bytes | str) -> "ExtractionMessage":
+    def from_json(cls, payload: bytes | str) -> ExtractionMessage:
         data = json.loads(payload)
         return cls(
             document_id=data["document_id"],
@@ -90,9 +90,7 @@ async def publish_extraction_message(message: ExtractionMessage) -> None:
             ``app/api/documents.py`` for the rollback pattern).
     """
     if not settings.service_bus_connection:
-        raise RuntimeError(
-            "SERVICE_BUS_CONNECTION is not configured — cannot publish."
-        )
+        raise RuntimeError("SERVICE_BUS_CONNECTION is not configured — cannot publish.")
 
     body = message.to_json()
     sb = ServiceBusClient.from_connection_string(settings.service_bus_connection)
@@ -147,6 +145,15 @@ class ReceivedExtractionMessage:
             self._raw, reason=reason, error_description=description
         )
 
+    async def renew_lock(self) -> None:
+        """Renew the Service Bus message lock to prevent expiry-driven redelivery.
+
+        Call this periodically while a long-running operation (e.g. Document
+        Intelligence) is in flight. The lock duration is configured on the
+        queue (default 5 minutes); renewals extend it by another full duration.
+        """
+        await self._receiver.renew_message_lock(self._raw)
+
 
 @asynccontextmanager
 async def consume_extraction_messages(
@@ -172,9 +179,7 @@ async def consume_extraction_messages(
     shutdown signals.
     """
     if not settings.service_bus_connection:
-        raise RuntimeError(
-            "SERVICE_BUS_CONNECTION is not configured — cannot consume."
-        )
+        raise RuntimeError("SERVICE_BUS_CONNECTION is not configured — cannot consume.")
 
     sb = ServiceBusClient.from_connection_string(settings.service_bus_connection)
     async with sb:

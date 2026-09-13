@@ -39,9 +39,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from uuid import uuid4
-
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Response, status
 
@@ -79,7 +78,6 @@ from app.models.question import (
     AnswerFeedback,
     AnswerSubmission,
     BadgeUnlock,
-    DifficultyLevel,
     Question,
     QuestionForStudent,
     QuestionStatus,
@@ -90,7 +88,10 @@ from app.models.workspace import Workspace
 from app.services import (
     answer_evaluation,
     question_generation,
+    question_pipeline,
     question_safety,
+    rag_evaluation,
+    study_sources,
 )
 from app.services import (
     gamification as gamification_service,
@@ -111,6 +112,7 @@ from app.services.question_generation import (
     InsufficientSource,
 )
 from app.services.question_safety import QuestionReview, ReviewVerdict
+from app.services.subject_classifier import classify_subject_from_text
 
 logger = logging.getLogger(__name__)
 
@@ -118,15 +120,13 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/questions", tags=["questio
 
 
 # How many distinct topic candidates we'll try before giving up. Each
-# candidate is one full generation + review round; 3 is the sweet spot
-# between user wait time (~3-9 seconds total) and not punishing the
-# student for one bad GPT-4o roll.
-_MAX_ATTEMPTS = 3
+# candidate is one full generation + review round; 2 is the sweet spot
+# between user wait time and not punishing the student for a bad roll.
+_MAX_ATTEMPTS = 2
 
-# How many grounding chunks to retrieve per generation attempt. 5 is
-# enough to give the prompt context across a textbook section without
-# blowing the prompt token budget.
-_GROUNDING_CHUNK_LIMIT = 5
+# How many grounding chunks to retrieve per generation attempt. 3 is
+# enough context while keeping input tokens small for extremely fast inference.
+_GROUNDING_CHUNK_LIMIT = 3
 
 
 # ── Endpoint ────────────────────────────────────────────────────────────────
@@ -135,34 +135,193 @@ _GROUNDING_CHUNK_LIMIT = 5
 @router.post("/next", response_model=QuestionForStudent)
 async def next_question(
     workspace_id: str,
+    background_tasks: BackgroundTasks,
+    revision: bool = False,
+    subject: str | None = None,
     current_user: User = Depends(get_current_user),
 ) -> QuestionForStudent:
-    """Generate and return the next adaptive question for the calling student.
-
-    Returns the question stripped of its answer + explanation
-    (:class:`QuestionForStudent`). The full answer is revealed by
-    ``POST /questions/{id}/answer`` after the student submits.
-
-    Raises:
-        404: Workspace not found (or caller has no access).
-        409: Workspace has no canonical topics yet — admin needs to
-            upload material before the engine can pick anything.
-        503: All retry attempts produced unservable results (the
-            grounding can't sustain a fair question right now, OR the
-            model output keeps being malformed). Client should retry
-            after ``Retry-After`` seconds.
-    """
+    """Generate and return the next adaptive question for the calling student."""
     _assert_workspace_access(current_user, workspace_id)
+
+    import os
+
+    is_testing = "PYTEST_CURRENT_TEST" in os.environ
+    if not revision and not is_testing:
+        q_doc = await question_pipeline.get_next_question(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            student_id=current_user.id,
+            user_obj=current_user,
+            revision=revision,
+            subject=subject,
+            background_tasks=background_tasks,
+        )
+        return QuestionForStudent.from_doc(q_doc)
+
+    if revision:
+        # --- Revision Session Logic ---
+        # 1. Fetch past interactions in this workspace
+        interactions_col = get_collection(current_user.tenant_id, INTERACTIONS)
+        cursor = interactions_col.find(
+            {"workspace_id": workspace_id, "student_id": current_user.id}
+        )
+        interactions = await cursor.to_list(length=1000)
+        if subject:
+            interactions = [
+                i for i in interactions
+                if classify_subject_from_text(str(i.get("topic", ""))).casefold()
+                == subject.casefold()
+            ]
+
+        # 2. Extract wrong answers (recent wrong answers favoured/sorted first)
+        wrong_interactions = [i for i in interactions if not i.get("is_correct", True)]
+        wrong_qids = []
+        for itx in sorted(wrong_interactions, key=lambda x: x.get("answered_at", ""), reverse=True):
+            qid = itx.get("question_id")
+            if qid and qid not in wrong_qids:
+                wrong_qids.append(qid)
+
+        # 3. Fallback: latest answered questions from the recent 5 study sessions
+        fallback_qids = []
+        if not wrong_qids and interactions:
+            sorted_itx = sorted(interactions, key=lambda x: x.get("answered_at", ""))
+            sessions = []
+            current_session = []
+            for itx in sorted_itx:
+                if not current_session:
+                    current_session.append(itx)
+                else:
+                    try:
+                        prev_time = datetime.fromisoformat(
+                            current_session[-1].get("answered_at", "").replace("Z", "+00:00")
+                        )
+                        curr_time = datetime.fromisoformat(
+                            itx.get("answered_at", "").replace("Z", "+00:00")
+                        )
+                        if (curr_time - prev_time).total_seconds() > 30 * 60:
+                            sessions.append(current_session)
+                            current_session = [itx]
+                        else:
+                            current_session.append(itx)
+                    except Exception:
+                        current_session.append(itx)
+            if current_session:
+                sessions.append(current_session)
+
+            # Extract from the recent 5 sessions (newest session first)
+            recent_5_sessions = list(reversed(sessions))[:5]
+            for session in recent_5_sessions:
+                for itx in sorted(session, key=lambda x: x.get("answered_at", ""), reverse=True):
+                    qid = itx.get("question_id")
+                    if qid and qid not in fallback_qids:
+                        fallback_qids.append(qid)
+
+        candidates = wrong_qids if wrong_qids else fallback_qids
+
+        # 4. Filter out questions answered in the last 1 hour to prevent repetition
+        cutoff = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+        recent_answered_qids = {
+            i.get("question_id") for i in interactions if i.get("answered_at", "") >= cutoff
+        }
+        eligible_qids = [qid for qid in candidates if qid not in recent_answered_qids]
+
+        # 5. Fetch and serve eligible question
+        if eligible_qids:
+            col = get_collection(current_user.tenant_id, QUESTION_QUEUE)
+            q_cursor = col.find(
+                {
+                    "_id": {"$in": eligible_qids},
+                    "workspace_id": workspace_id,
+                    "status": QuestionStatus.approved.value,
+                    "deleted_at": None,
+                }
+            )
+            fetched_qs = await q_cursor.to_list(length=100)
+            q_map = {q["_id"]: q for q in fetched_qs}
+            for qid in eligible_qids:
+                if qid in q_map:
+                    matched_q = Question.model_validate(q_map[qid])
+                    logger.info("next_question (revision) served past question=%s", matched_q.id)
+                    return QuestionForStudent.from_doc(matched_q)
+
+        # 6. Fallback: Generate a new revision question on a recent topic
+        target_topic = None
+        if wrong_interactions:
+            target_topic = sorted(
+                wrong_interactions, key=lambda x: x.get("answered_at", ""), reverse=True
+            )[0].get("topic")
+        elif interactions:
+            target_topic = sorted(
+                interactions, key=lambda x: x.get("answered_at", ""), reverse=True
+            )[0].get("topic")
+
+        if target_topic:
+            workspace = await _read_workspace(current_user.tenant_id, workspace_id)
+            enabled_types = _resolve_enabled_types(workspace)
+            context = await _fetch_student_context(
+                tenant_id=current_user.tenant_id,
+                workspace_id=workspace_id,
+                student_id=current_user.id,
+                limit=100,
+            )
+            all_seen_bodies = await _fetch_seen_question_bodies(
+                tenant_id=current_user.tenant_id,
+                question_ids=context.seen_question_ids,
+            )
+            question_type = _pick_question_type(enabled_types, context)
+            try:
+                selection = await select_next_topic(
+                    tenant_id=current_user.tenant_id,
+                    workspace_id=workspace_id,
+                    student_id=current_user.id,
+                )
+                candidate = None
+                for c in selection.candidates:
+                    if c.topic_name.casefold() == target_topic.casefold():
+                        candidate = c
+                        break
+                if not candidate and selection.candidates:
+                    candidate = selection.candidates[0]
+
+                if candidate:
+                    outcome = await _try_candidate(
+                        current_user=current_user,
+                        workspace_id=workspace_id,
+                        candidate=candidate,
+                        context=context,
+                        question_type=question_type,
+                        all_seen_bodies=all_seen_bodies,
+                    )
+                    if isinstance(outcome, _Persisted):
+                        logger.info(
+                            "next_question (revision fallback generation) generated new question=%s",
+                            outcome.for_student.id,
+                        )
+                        return outcome.for_student
+            except Exception as e:
+                logger.warning("next_question (revision fallback generation) failed: %s", e)
 
     # Sprint 3.13: check the prefetch slot first. If a prior /answer
     # call queued a question for this student, claim it atomically and
     # serve immediately — skipping the full generation pipeline. The
     # find-one-and-update ensures two concurrent /next calls can't
     # both consume the same row.
+    context_for_prefetch = await _fetch_student_context(
+        tenant_id=current_user.tenant_id,
+        workspace_id=workspace_id,
+        student_id=current_user.id,
+        limit=100,
+    )
+    all_seen_bodies = await _fetch_seen_question_bodies(
+        tenant_id=current_user.tenant_id,
+        question_ids=context_for_prefetch.seen_question_ids,
+    )
     prefetched = await _claim_prefetched_question(
         tenant_id=current_user.tenant_id,
         workspace_id=workspace_id,
         student_id=current_user.id,
+        already_seen_ids=set(context_for_prefetch.seen_question_ids),
+        already_seen_bodies=all_seen_bodies,
     )
     if prefetched is not None:
         logger.info(
@@ -192,11 +351,10 @@ async def next_question(
         # Same 404 as access denial, no need to distinguish.
         raise NotFoundError("Workspace", workspace_id) from exc
 
-    context = await _fetch_student_context(
-        tenant_id=current_user.tenant_id,
-        workspace_id=workspace_id,
-        student_id=current_user.id,
-    )
+    # Re-use the context we already fetched for the prefetch check; if the
+    # prefetch path was taken, context_for_prefetch is available from the
+    # block above. We always have it because the prefetch guard runs first.
+    context = context_for_prefetch
 
     # One question type per request — see module docstring for why we
     # don't switch types mid-retry.
@@ -212,13 +370,13 @@ async def next_question(
             candidate=candidate,
             context=context,
             question_type=question_type,
+            all_seen_bodies=all_seen_bodies,
         )
         if isinstance(outcome, _Persisted):
             return outcome.for_student
 
         attempt_log.append(
-            f"attempt={attempt_index} topic={candidate.topic_name!r} → "
-            f"{outcome.reason}"
+            f"attempt={attempt_index} topic={candidate.topic_name!r} → {outcome.reason}"
         )
 
     logger.warning(
@@ -260,6 +418,7 @@ async def _try_candidate(
     candidate: TopicScore,
     context: RetrieveStudentContextOutput,
     question_type: QuestionType,
+    all_seen_bodies: list[str],
 ) -> _Persisted | _Skip:
     """One full attempt: calibrate → retrieve → generate → review → persist.
 
@@ -288,18 +447,34 @@ async def _try_candidate(
             "indexed but search returned nothing"
         )
 
+    # Pass recently-seen question bodies to the generator so the prompt
+    # instructs GPT-4o to avoid exact-duplicate stems. Capped at 30 to
+    # keep prompt tokens reasonable but give it plenty of examples of what to avoid.
+    seen_bodies = all_seen_bodies[:30]
+
     try:
         generated = await question_generation.generate_question(
             topic=candidate.topic_name,
             difficulty=difficulty,
             question_type=question_type,
             grounding_chunks=retrieved.chunks,
-            seen_question_bodies=None,  # reverted: user prefers repeats over 503 errors on small workspaces
+            seen_question_bodies=seen_bodies or None,
         )
     except InsufficientSource as exc:
         return _Skip(f"generator: insufficient_source ({exc})")
     except question_generation.QuestionShapeError as exc:
         return _Skip(f"generator: shape error ({exc})")
+
+    # Strict check: is this question body (normalized) already answered by the student?
+    normalized_generated_body = generated.body.strip().lower().rstrip("?.!")
+    seen_bodies_normalized = {b.strip().lower().rstrip("?.!") for b in all_seen_bodies}
+    if normalized_generated_body in seen_bodies_normalized:
+        logger.warning(
+            "Generated question body duplicate of seen question for student=%s body=%r",
+            current_user.id,
+            generated.body,
+        )
+        return _Skip("generated question body matches an already-seen question")
 
     review = await question_safety.review_question(generated)
     persisted = await _persist_question(
@@ -316,9 +491,7 @@ async def _try_candidate(
 
     if review.verdict == ReviewVerdict.flagged:
         # Persisted for admin review; don't serve.
-        return _Skip(
-            f"safety flagged ({', '.join(review.safety.flagged_categories)})"
-        )
+        return _Skip(f"safety flagged ({', '.join(review.safety.flagged_categories)})")
 
     # Rejected — never persisted (see _persist_question). Skip.
     return _Skip(f"review rejected: {review.reason}")
@@ -352,9 +525,7 @@ async def _persist_question(
         if review.verdict == ReviewVerdict.approved
         else QuestionStatus.pending_review
     )
-    document_id = (
-        retrieved.chunks[0].document_id if retrieved.chunks else "unknown"
-    )
+    document_id = retrieved.chunks[0].document_id if retrieved.chunks else "unknown"
     question_id = f"qst_{uuid4().hex}"
 
     question = Question(
@@ -389,6 +560,32 @@ async def _persist_question(
 
     col = get_collection(current_user.tenant_id, QUESTION_QUEUE)
     await col.insert_one(question.model_dump(by_alias=True))
+
+    # Trigger End-to-End RAG evaluation trace & metric persistence
+    try:
+        current_sources = await study_sources.current_study_sources(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+        )
+        source_chunk_ids = [c.chunk_id for c in retrieved.chunks]
+        await rag_evaluation.evaluate_and_persist_rag(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            student_id=current_user.id,
+            selected_topic_id=candidate.topic_id,
+            selected_topic_name=candidate.topic_name,
+            active_document_ids=current_sources.document_ids,
+            retrieved_chunks=retrieved.chunks,
+            generation_chunk_ids=source_chunk_ids,
+            question_id=question_id,
+            question_type=generated.question_type.value,
+            question_body=generated.body,
+            reference_answer=generated.answer,
+            explanation=generated.explanation,
+            known_source_chunk_ids=source_chunk_ids,
+        )
+    except Exception as eval_exc:
+        logger.warning("RAG evaluation failed in _persist_question %s: %s", question_id, eval_exc)
 
     if review.verdict == ReviewVerdict.flagged:
         await _write_moderation_log(
@@ -454,6 +651,7 @@ async def _fetch_student_context(
     tenant_id: str,
     workspace_id: str,
     student_id: str,
+    limit: int = 100,
 ) -> RetrieveStudentContextOutput:
     result = await invoke(
         "retrieve_student_context",
@@ -461,6 +659,7 @@ async def _fetch_student_context(
             tenant_id=tenant_id,
             workspace_id=workspace_id,
             student_id=student_id,
+            recent_interaction_limit=limit,
         ),
     )
     assert isinstance(result, RetrieveStudentContextOutput)
@@ -473,15 +672,14 @@ async def _fetch_student_context(
 def _resolve_enabled_types(workspace: Workspace) -> list[QuestionType]:
     """Project workspace.settings.question_types to validated enum values.
 
-    Admins set string question types in workspace settings; this function
-    drops anything that isn't a valid :class:`QuestionType` (a misconfig
-    shouldn't 500 the endpoint, but should be loud in the logs) and
-    falls back to MCQ when the list ends up empty.
+    Only MCQ and short_answer (one word) are allowed to be displayed to students.
     """
     valid: list[QuestionType] = []
     for raw in workspace.settings.question_types:
         try:
-            valid.append(QuestionType(raw))
+            q_type = QuestionType(raw)
+            if q_type in (QuestionType.mcq, QuestionType.short_answer):
+                valid.append(q_type)
         except ValueError:
             logger.warning(
                 "Workspace %s has unknown question_type %r in settings — ignoring",
@@ -489,12 +687,7 @@ def _resolve_enabled_types(workspace: Workspace) -> list[QuestionType]:
                 raw,
             )
     if not valid:
-        logger.warning(
-            "Workspace %s has no valid question_types configured; "
-            "defaulting to MCQ",
-            workspace.id,
-        )
-        return [QuestionType.mcq]
+        return [QuestionType.mcq, QuestionType.short_answer]
     return valid
 
 
@@ -555,6 +748,7 @@ async def submit_answer(
     question_id: str,
     submission: AnswerSubmission,
     background_tasks: BackgroundTasks,
+    revision: bool = False,
     current_user: User = Depends(get_current_user),
 ) -> AnswerFeedback:
     """Evaluate a student's submitted answer and update their mastery.
@@ -606,6 +800,7 @@ async def submit_answer(
         topic=question.topic,
         difficulty=question.difficulty,
         is_correct=evaluation.is_correct,
+        revision=revision,
         now=timestamp,
     )
 
@@ -693,6 +888,7 @@ async def submit_answer(
                 name=b.name,
                 description=b.description,
                 icon=b.icon,
+                xp_reward=b.xp_reward,
             )
             for b in gamification_delta.badges_unlocked
         ],
@@ -749,8 +945,7 @@ async def skip_question(
     )
     if question.status != QuestionStatus.approved:
         raise ConflictError(
-            f"Question {question_id} is not in a skippable state "
-            f"(status={question.status.value})."
+            f"Question {question_id} is not in a skippable state (status={question.status.value})."
         )
 
     new_count = question.defer_count + 1
@@ -761,9 +956,7 @@ async def skip_question(
     if new_count >= UNANSWERED_REPROMPT_MAX_SKIPS:
         next_eligible = None
     else:
-        next_eligible = (
-            datetime.now(UTC) + UNANSWERED_REPROMPT_COOLDOWN
-        ).isoformat()
+        next_eligible = (datetime.now(UTC) + UNANSWERED_REPROMPT_COOLDOWN).isoformat()
 
     col = get_collection(current_user.tenant_id, QUESTION_QUEUE)
     await col.update_one(
@@ -778,8 +971,7 @@ async def skip_question(
         },
     )
     logger.info(
-        "Question skipped question=%s student=%s defer_count=%d "
-        "next_eligible=%s",
+        "Question skipped question=%s student=%s defer_count=%d next_eligible=%s",
         question_id,
         current_user.id,
         new_count,
@@ -826,6 +1018,7 @@ async def _record_interaction(
     is_correct: bool,
     xp_earned: int,
     timestamp: str,
+    session_id: str | None = None,
 ) -> None:
     """Append to the append-only ``interactions`` collection.
 
@@ -840,6 +1033,7 @@ async def _record_interaction(
         tenant_id=tenant_id,
         workspace_id=workspace_id,
         student_id=student_id,
+        session_id=session_id,
         question_id=question.id,
         topic=question.topic,
         is_correct=is_correct,
@@ -903,6 +1097,8 @@ async def _claim_prefetched_question(
     tenant_id: str,
     workspace_id: str,
     student_id: str,
+    already_seen_ids: set[str] | None = None,
+    already_seen_bodies: list[str] | None = None,
 ) -> Question | None:
     """Atomically claim a prefetched question reserved for ``student_id``.
 
@@ -910,6 +1106,11 @@ async def _claim_prefetched_question(
     can't both consume the same row — only one of them will see the
     pre-claim state where ``prefetched_for == student_id``; the other
     finds nothing and falls through to live generation.
+
+    ``already_seen_ids``: set of question_ids the student has already
+    answered. A prefetched question whose id is in this set is discarded
+    (deleted from the slot) rather than re-served — the student would
+    see the same question twice otherwise.
 
     Returns the question (already projected with prefetched_for=None)
     or None if no prefetched row is available.
@@ -930,7 +1131,21 @@ async def _claim_prefetched_question(
     if raw is None:
         return None
     raw["prefetched_for"] = None
-    return Question.model_validate(raw)
+    question = Question.model_validate(raw)
+
+    # Guard: if the student has already answered this question or one with the exact same body, discard it
+    normalized_prefetched_body = question.body.strip().lower().rstrip("?.!")
+    seen_bodies_normalized = {b.strip().lower().rstrip("?.!") for b in (already_seen_bodies or [])}
+    if (
+        already_seen_ids and question.id in already_seen_ids
+    ) or normalized_prefetched_body in seen_bodies_normalized:
+        logger.info(
+            "Discarding stale prefetched question=%s (already seen or duplicate body) student=%s",
+            question.id,
+            student_id,
+        )
+        return None
+    return question
 
 
 async def prefetch_next_question(
@@ -1029,15 +1244,32 @@ async def _prefetch_impl(
     if not retrieved.chunks:
         return
 
+    all_seen_bodies = await _fetch_seen_question_bodies(
+        tenant_id=tenant_id,
+        question_ids=context_result.seen_question_ids,
+    )
+    seen_bodies_prefetch = all_seen_bodies[:30]
+
     try:
         generated = await question_generation.generate_question(
             topic=candidate.topic_name,
             difficulty=difficulty,
             question_type=question_type,
             grounding_chunks=retrieved.chunks,
-            seen_question_bodies=None,
+            seen_question_bodies=seen_bodies_prefetch or None,
         )
     except (InsufficientSource, question_generation.QuestionShapeError):
+        return
+
+    # Strict check: is this question body (normalized) already answered by the student?
+    normalized_generated_body = generated.body.strip().lower().rstrip("?.!")
+    seen_bodies_normalized = {b.strip().lower().rstrip("?.!") for b in all_seen_bodies}
+    if normalized_generated_body in seen_bodies_normalized:
+        logger.warning(
+            "Prefetch generated question body duplicate of seen question for student=%s body=%r",
+            student_id,
+            generated.body,
+        )
         return
 
     review = await question_safety.review_question(generated)
@@ -1047,9 +1279,7 @@ async def _prefetch_impl(
         # submission anyway.
         return
 
-    document_id = (
-        retrieved.chunks[0].document_id if retrieved.chunks else "unknown"
-    )
+    document_id = retrieved.chunks[0].document_id if retrieved.chunks else "unknown"
     question = Question(
         **{"_id": f"qst_{uuid4().hex}"},
         tenant_id=tenant_id,

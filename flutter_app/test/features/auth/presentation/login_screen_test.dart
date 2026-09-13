@@ -30,11 +30,12 @@ void main() {
   });
 
   group('LoginScreen — unauthenticated', () {
-    testWidgets('shows sign-in button', (tester) async {
+    testWidgets('shows sign-in buttons', (tester) async {
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump(); // let FutureProvider resolve
 
-      expect(find.text('Sign in with Microsoft'), findsOneWidget);
+      expect(find.text('Sign in / Sign up with Email'), findsOneWidget);
+      expect(find.text('Sign in with Google'), findsOneWidget);
       expect(find.text('Continue with Demo Account'), findsNothing);
     });
 
@@ -42,42 +43,79 @@ void main() {
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump();
 
-      expect(find.text('Social Study'), findsOneWidget);
+      expect(find.text('Welcome to Social Studying'), findsOneWidget);
       expect(
-        find.textContaining('AI-powered adaptive learning'),
+        find.text('Sign in to continue learning.'),
         findsOneWidget,
       );
     });
 
-    testWidgets('shows loading indicator while sign-in is in progress',
+    testWidgets(
+        'shows loading indicator while Microsoft sign-in is in progress',
         (tester) async {
       final completer = Completer<User>();
-      when(() => mockRepo.signInWithMicrosoft()).thenAnswer((_) => completer.future);
+      when(() => mockRepo.signInWithMicrosoft())
+          .thenAnswer((_) => completer.future);
 
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump();
 
-      await tester.tap(find.text('Sign in with Microsoft'));
+      await tester.tap(find.text('Sign in / Sign up with Email'));
       await tester.pump(); // trigger loading state
 
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
-      expect(find.text('Sign in with Microsoft'), findsNothing);
+      expect(find.text('Sign in / Sign up with Email'), findsNothing);
 
       completer.complete(_fakeUser); // clean up pending future
-      await tester.pumpAndSettle();
+      await tester.pump();
     });
 
-    testWidgets('shows error view when sign-in fails', (tester) async {
-      when(() => mockRepo.signInWithMicrosoft()).thenThrow(Exception('Auth failed'));
+    testWidgets('shows loading indicator while Google sign-in is in progress',
+        (tester) async {
+      final completer = Completer<User>();
+      when(() => mockRepo.signInWithGoogle())
+          .thenAnswer((_) => completer.future);
 
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump();
 
-      await tester.tap(find.text('Sign in with Microsoft'));
+      await tester.tap(find.text('Sign in with Google'));
+      await tester.pump(); // trigger loading state
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('Sign in with Google'), findsNothing);
+
+      completer.complete(_fakeUser); // clean up pending future
+      await tester.pump();
+    });
+
+    testWidgets('shows error view when Microsoft sign-in fails',
+        (tester) async {
+      when(() => mockRepo.signInWithMicrosoft())
+          .thenThrow(Exception('Auth failed'));
+
+      await tester.pumpWidget(_buildSubject(repo: mockRepo));
+      await tester.pump();
+
+      await tester.tap(find.text('Sign in / Sign up with Email'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Something went wrong'), findsOneWidget);
-      expect(find.text('Try Again'), findsOneWidget);
+      expect(find.text('Auth failed'), findsOneWidget);
+      expect(find.text('Sign in / Sign up with Email'), findsOneWidget);
+    });
+
+    testWidgets('shows error view when Google sign-in fails', (tester) async {
+      when(() => mockRepo.signInWithGoogle())
+          .thenThrow(Exception('Auth failed'));
+
+      await tester.pumpWidget(_buildSubject(repo: mockRepo));
+      await tester.pump();
+
+      await tester.tap(find.text('Sign in with Google'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Auth failed'), findsOneWidget);
+      expect(find.text('Sign in with Google'), findsOneWidget);
     });
   });
 

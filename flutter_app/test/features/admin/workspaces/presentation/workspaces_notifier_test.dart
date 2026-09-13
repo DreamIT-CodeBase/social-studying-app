@@ -11,6 +11,8 @@ import 'package:social_study_app/shared/models/workspace.dart';
 
 class _MockAuthRepo extends Mock implements AuthRepository {}
 
+class _MockWorkspacesRepo extends Mock implements WorkspacesRepository {}
+
 User _adminUser() => User(
       id: 'usr_demo_001',
       email: 'demo@socialstudyapp.com',
@@ -37,6 +39,34 @@ Future<ProviderContainer> _container(WorkspacesRepository repo) async {
 
 void main() {
   group('WorkspacesList', () {
+    test('filters self-learning workspaces out of all admin state', () async {
+      final repo = _MockWorkspacesRepo();
+      final createdAt = DateTime(2026, 1, 1);
+      when(repo.list).thenAnswer(
+        (_) async => [
+          Workspace(
+            id: 'wsp_self_usr_demo_001',
+            tenantId: 'ten_demo',
+            name: 'Self Learning Workspace',
+            settings: const WorkspaceSettings(),
+            createdAt: createdAt,
+          ),
+          Workspace(
+            id: 'wsp_classroom',
+            tenantId: 'ten_demo',
+            name: 'Science Class',
+            settings: const WorkspaceSettings(),
+            createdAt: createdAt,
+          ),
+        ],
+      );
+
+      final container = await _container(repo);
+      final list = await container.read(workspacesListProvider.future);
+
+      expect(list.map((workspace) => workspace.id), ['wsp_classroom']);
+    });
+
     test('build loads the seeded workspace list', () async {
       final container = await _container(DemoWorkspacesRepository());
       final list = await container.read(workspacesListProvider.future);
@@ -44,8 +74,7 @@ void main() {
       expect(list.single.name, 'Demo Classroom');
     });
 
-    test('createWorkspace adds a row the refreshed list reflects',
-        () async {
+    test('createWorkspace adds a row the refreshed list reflects', () async {
       final container = await _container(DemoWorkspacesRepository());
       await container.read(workspacesListProvider.future);
 
@@ -72,8 +101,7 @@ void main() {
       );
     });
 
-    test('deleteWorkspace removes the row from the refreshed list',
-        () async {
+    test('deleteWorkspace removes the row from the refreshed list', () async {
       final container = await _container(DemoWorkspacesRepository());
       await container.read(workspacesListProvider.future);
 
@@ -102,15 +130,14 @@ void main() {
       final container = await _container(DemoWorkspacesRepository());
       await container.read(workspacesListProvider.future);
 
-      final updated = await container
-          .read(workspacesListProvider.notifier)
-          .updateSettings(
-            workspaceId: 'wsp_demo_001',
-            settings: const WorkspaceSettings(
-              questionsPerDay: 12,
-              leaderboardVisible: false,
-            ),
-          );
+      final updated =
+          await container.read(workspacesListProvider.notifier).updateSettings(
+                workspaceId: 'wsp_demo_001',
+                settings: const WorkspaceSettings(
+                  questionsPerDay: 12,
+                  leaderboardVisible: false,
+                ),
+              );
       expect(updated.settings.questionsPerDay, 12);
       expect(updated.settings.leaderboardVisible, isFalse);
 

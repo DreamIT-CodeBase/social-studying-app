@@ -35,12 +35,12 @@ Taxonomy _tax({int version = 1, List<CanonicalTopic>? topics}) => Taxonomy(
           ],
     );
 
-Widget _wrap({required _MockRepo repo}) => ProviderScope(
+Widget _wrap({required _MockRepo repo, ThemeData? theme}) => ProviderScope(
       overrides: [
         taxonomyRepositoryProvider.overrideWith((_) => repo),
       ],
       child: MaterialApp(
-        theme: AppTheme.light,
+        theme: theme ?? AppTheme.light,
         home: const TaxonomyViewerScreen(workspaceId: 'wsp_test'),
       ),
     );
@@ -72,7 +72,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('renders topic names + version header on happy path',
+  testWidgets('renders topic names and overview metrics on happy path',
       (tester) async {
     when(() => repo.get(workspaceId: 'wsp_test'))
         .thenAnswer((_) async => _tax(version: 7));
@@ -81,12 +81,43 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('2 topics'), findsOneWidget);
-    expect(find.text('v7'), findsOneWidget);
+    expect(find.text('Version 7'), findsOneWidget);
+    expect(find.text('Your learning landscape'), findsOneWidget);
+    expect(find.text('Topic hierarchy'), findsOneWidget);
     expect(find.text('Cells'), findsOneWidget);
     expect(find.text('Photosynthesis'), findsOneWidget);
   });
 
-  testWidgets('renders description, alias chips, and complexity', (tester) async {
+  testWidgets('dark theme uses contrasting hero and elevated topic surfaces',
+      (tester) async {
+    when(() => repo.get(workspaceId: 'wsp_test'))
+        .thenAnswer((_) async => _tax());
+
+    await tester.pumpWidget(_wrap(repo: repo, theme: AppTheme.dark));
+    await tester.pumpAndSettle();
+
+    final hero = tester.widget<Container>(
+      find.byKey(const ValueKey('knowledge_map_hero')),
+    );
+    final heroDecoration = hero.decoration! as BoxDecoration;
+    final heroGradient = heroDecoration.gradient! as LinearGradient;
+    expect(
+      heroGradient.colors.first,
+      AppTheme.dark.colorScheme.primaryContainer,
+    );
+
+    final topicCard = tester.widget<Container>(
+      find.byKey(const ValueKey('taxonomy_topic_card_tpc_root')),
+    );
+    final topicDecoration = topicCard.decoration! as BoxDecoration;
+    expect(
+      topicDecoration.color,
+      AppTheme.dark.colorScheme.surfaceContainerHighest,
+    );
+  });
+
+  testWidgets('renders description, alias chips, and complexity',
+      (tester) async {
     when(() => repo.get(workspaceId: 'wsp_test'))
         .thenAnswer((_) async => _tax());
 
@@ -148,6 +179,40 @@ void main() {
     expect(find.text('Regenerate'), findsOneWidget);
   });
 
+  testWidgets('search keeps matching topics and their ancestors',
+      (tester) async {
+    when(() => repo.get(workspaceId: 'wsp_test'))
+        .thenAnswer((_) async => _tax());
+
+    await tester.pumpWidget(_wrap(repo: repo));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('taxonomy_search')),
+      'Plant Energy',
+    );
+    await tester.pump();
+
+    expect(find.text('Photosynthesis'), findsOneWidget);
+    expect(find.text('Cells'), findsOneWidget);
+    expect(find.text('2 of 2 topics shown'), findsOneWidget);
+  });
+
+  testWidgets('complexity filters narrow the hierarchy', (tester) async {
+    when(() => repo.get(workspaceId: 'wsp_test'))
+        .thenAnswer((_) async => _tax());
+
+    await tester.pumpWidget(_wrap(repo: repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Foundations'));
+    await tester.pump();
+
+    expect(find.text('Cells'), findsOneWidget);
+    expect(find.text('Photosynthesis'), findsNothing);
+    expect(find.text('1 of 2 topics shown'), findsOneWidget);
+  });
+
   testWidgets(
     'pressing Regenerate shows confirmation dialog and fires POST on confirm',
     (tester) async {
@@ -177,8 +242,8 @@ void main() {
       await tester.pumpAndSettle();
 
       verify(() => repo.regenerate(workspaceId: 'wsp_test')).called(1);
-      // Version header now reflects the bumped version.
-      expect(find.text('v2'), findsOneWidget);
+      // Overview now reflects the bumped version.
+      expect(find.text('Version 2'), findsOneWidget);
     },
   );
 }

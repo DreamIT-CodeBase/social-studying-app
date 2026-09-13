@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:social_study_app/features/screen_time/data/screen_time_repository.dart';
 import 'package:social_study_app/features/screen_time/models/screen_time_settings.dart';
 import 'package:social_study_app/features/screen_time/models/screen_time_wallet.dart';
+import 'package:social_study_app/features/screen_time/models/student_device_status.dart';
 
 class RealScreenTimeRepository implements ScreenTimeRepository {
   RealScreenTimeRepository({required this.dio});
@@ -11,7 +12,8 @@ class RealScreenTimeRepository implements ScreenTimeRepository {
   static const _apiPrefix = '/api/v1';
 
   @override
-  Future<ScreenTimeSettings> fetchSettings({required String workspaceId}) async {
+  Future<ScreenTimeSettings> fetchSettings(
+      {required String workspaceId}) async {
     final response = await dio.get<Map<String, dynamic>>(
       '$_apiPrefix/workspaces/$workspaceId/screen-time/settings',
     );
@@ -63,6 +65,22 @@ class RealScreenTimeRepository implements ScreenTimeRepository {
       '$_apiPrefix/workspaces/$workspaceId/screen-time/wallet/sync-xp',
     );
     return ScreenTimeWallet.fromJson(response.data!);
+  }
+
+  @override
+  Future<List<StudentDeviceStatus>> fetchDeviceStatuses({
+    required String workspaceId,
+  }) async {
+    final response = await dio.get<List<dynamic>>(
+      '$_apiPrefix/workspaces/$workspaceId/screen-time/device-statuses',
+    );
+    return response.data!
+        .map(
+          (item) => StudentDeviceStatus.fromJson(
+            item as Map<String, dynamic>,
+          ),
+        )
+        .toList(growable: false);
   }
 
   @override

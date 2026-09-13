@@ -233,9 +233,7 @@ def test_put_taxonomy_as_non_admin_forbidden(client):
 
 def test_put_taxonomy_as_workspace_admin_member_succeeds(client):
     """Workspace admins (teachers/parents) can edit even without tenant_admin."""
-    ws_admin = make_user(
-        role=UserRole.workspace_admin, workspace_ids=["wsp_test001"]
-    )
+    ws_admin = make_user(role=UserRole.workspace_admin, workspace_ids=["wsp_test001"])
     app.dependency_overrides[get_current_user] = lambda: ws_admin
 
     new_topics = [_topic("tpc_a", "X")]
@@ -257,9 +255,7 @@ def test_put_taxonomy_as_workspace_admin_member_succeeds(client):
 
 def test_put_taxonomy_as_non_member_workspace_admin_forbidden(client):
     """A workspace_admin who is NOT a member of this workspace must be blocked."""
-    ws_admin = make_user(
-        role=UserRole.workspace_admin, workspace_ids=["wsp_other"]
-    )
+    ws_admin = make_user(role=UserRole.workspace_admin, workspace_ids=["wsp_other"])
     app.dependency_overrides[get_current_user] = lambda: ws_admin
 
     response = client.put(
@@ -288,15 +284,11 @@ def test_regenerate_happy_path_returns_202(client):
         patch(
             "app.api.taxonomy.taxonomy_service.regenerate_from_documents",
             AsyncMock(
-                return_value=RegenerateOutcome(
-                    documents_merged=3, topics_total=12, final_version=6
-                )
+                return_value=RegenerateOutcome(documents_merged=3, topics_total=12, final_version=6)
             ),
         ) as mock_regen,
     ):
-        response = client.post(
-            "/api/v1/workspaces/wsp_test001/taxonomy/regenerate"
-        )
+        response = client.post("/api/v1/workspaces/wsp_test001/taxonomy/regenerate")
 
     assert response.status_code == 202
     body = response.json()
@@ -318,9 +310,7 @@ def test_regenerate_missing_workspace_returns_404(client):
     col.find_one = AsyncMock(return_value=None)
 
     with patch("app.api.taxonomy.get_collection", return_value=col):
-        response = client.post(
-            "/api/v1/workspaces/wsp_missing/taxonomy/regenerate"
-        )
+        response = client.post("/api/v1/workspaces/wsp_missing/taxonomy/regenerate")
 
     assert response.status_code == 404
 
@@ -329,9 +319,7 @@ def test_regenerate_as_non_admin_forbidden(client):
     student = make_user(role=UserRole.student, workspace_ids=["wsp_test001"])
     app.dependency_overrides[get_current_user] = lambda: student
 
-    response = client.post(
-        "/api/v1/workspaces/wsp_test001/taxonomy/regenerate"
-    )
+    response = client.post("/api/v1/workspaces/wsp_test001/taxonomy/regenerate")
     assert response.status_code == 403
 
 
@@ -352,8 +340,6 @@ def test_regenerate_background_failure_does_not_crash_request(client):
             AsyncMock(side_effect=RuntimeError("OpenAI is having a moment")),
         ),
     ):
-        response = client.post(
-            "/api/v1/workspaces/wsp_test001/taxonomy/regenerate"
-        )
+        response = client.post("/api/v1/workspaces/wsp_test001/taxonomy/regenerate")
 
     assert response.status_code == 202

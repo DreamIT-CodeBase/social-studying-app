@@ -8,4 +8,5 @@ extension ContextThemeExtensions on BuildContext {
   Size get screenSize => MediaQuery.sizeOf(this);
   double get screenWidth => MediaQuery.sizeOf(this).width;
   double get screenHeight => MediaQuery.sizeOf(this).height;
+  bool get isMobile => screenWidth < 600;
 }

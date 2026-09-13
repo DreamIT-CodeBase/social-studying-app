@@ -55,8 +55,7 @@ class RealUsersRepository implements UsersRepository {
     } on DioException catch (e) {
       if (e.response?.statusCode == 409) {
         throw UserEmailConflictException(
-          _detail(e.response?.data) ??
-              'A user with that email already exists',
+          _detail(e.response?.data) ?? 'A user with that email already exists',
         );
       }
       rethrow;
@@ -71,6 +70,25 @@ class RealUsersRepository implements UsersRepository {
       if (e.response?.statusCode == 404) {
         throw UserNotFoundException(
           _detail(e.response?.data) ?? 'User not found',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> removeMember({
+    required String workspaceId,
+    required String userId,
+  }) async {
+    try {
+      await dio.delete<void>(
+        '$_apiPrefix/workspaces/$workspaceId/members/$userId',
+      );
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) {
+        throw UserNotFoundException(
+          _detail(e.response?.data) ?? 'Member not found',
         );
       }
       rethrow;

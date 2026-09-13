@@ -6,7 +6,9 @@ param tags object
 param keyVaultName string
 param managedIdentityPrincipalId string
 
-var storageAccountName = 'stssa${environment}ddjopeut37ed2'
+var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id)
+
+var storageAccountName = 'stssa${environment}${uniqueSuffix}'
 var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
@@ -25,9 +27,41 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
+// Native apps do not use CORS, but this enables the same short-lived,
+// blob-scoped SAS upload path for Flutter Web.  The browser never receives an
+// account key and Blob access is still constrained by the per-file SAS.
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: storageAccount
+  name: 'default'
+  properties: {
+    cors: {
+      corsRules: [
+        {
+          allowedOrigins: [
+            '*'
+          ]
+          allowedMethods: [
+            'PUT'
+            'OPTIONS'
+          ]
+          allowedHeaders: [
+            '*'
+          ]
+          exposedHeaders: [
+            'ETag'
+            'x-ms-request-id'
+            'x-ms-version'
+          ]
+          maxAgeInSeconds: 3600
+        }
+      ]
+    }
+  }
+}
+
 resource documentsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
   name: '${storageAccountName}/default/documents'
-  dependsOn: [storageAccount]
+  dependsOn: [blobService]
   properties: {
     publicAccess: 'None'
   }

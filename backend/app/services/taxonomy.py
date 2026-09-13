@@ -59,13 +59,11 @@ DEPENDENCY_INFERENCE_PROMPT_VERSION = "dependency_inference_v1"
 # we lose three races in a row, something pathological is happening.
 _MAX_MERGE_RETRIES = 3
 
-# Tokens budget for the merge response. ~3K topics worth of JSON fits in 8K
-# tokens comfortably; we cap at 6K to leave headroom for very long taxonomies.
-_MERGE_MAX_OUTPUT_TOKENS = 6_000
+# Tokens budget for the merge response. Capped at 2,000 for fast responses.
+_MERGE_MAX_OUTPUT_TOKENS = 2_000
 
-# Tokens budget for the dependency inference response. Smaller than merge —
-# each row is just {topic_id, parent_id}, much tighter than full topic JSON.
-_INFER_DEPS_MAX_OUTPUT_TOKENS = 3_000
+# Tokens budget for the dependency inference response.
+_INFER_DEPS_MAX_OUTPUT_TOKENS = 1_500
 
 
 class TaxonomyMergeError(RuntimeError):
@@ -86,10 +84,10 @@ class DependencyInferenceError(RuntimeError):
 class MergeOutcome:
     """Result handed back to the worker for logging / observability."""
 
-    taxonomy_version: int          # the version we wrote
-    topics_total: int              # canonical topics after the merge
-    topics_added: int              # how many new canonical topics this doc added
-    seeded: bool                   # True if this was the first-doc seed path
+    taxonomy_version: int  # the version we wrote
+    topics_total: int  # canonical topics after the merge
+    topics_added: int  # how many new canonical topics this doc added
+    seeded: bool  # True if this was the first-doc seed path
 
 
 # ── Public entry point ───────────────────────────────────────────────────────
@@ -129,9 +127,7 @@ async def merge_into_workspace(
     for attempt in range(1, _MAX_MERGE_RETRIES + 1):
         workspace = await _read_workspace(tenant_id, workspace_id)
         if workspace is None:
-            raise TaxonomyMergeError(
-                f"Workspace {workspace_id} not found in tenant {tenant_id}"
-            )
+            raise TaxonomyMergeError(f"Workspace {workspace_id} not found in tenant {tenant_id}")
 
         if not workspace.taxonomy.topics:
             # Seed path — first doc to land for this workspace.
@@ -184,8 +180,7 @@ async def merge_into_workspace(
         )
 
     raise TaxonomyMergeError(
-        f"Could not commit taxonomy merge for {workspace_id} "
-        f"after {_MAX_MERGE_RETRIES} attempts"
+        f"Could not commit taxonomy merge for {workspace_id} after {_MAX_MERGE_RETRIES} attempts"
     )
 
 
@@ -412,10 +407,10 @@ class InferDepsOutcome:
 
     taxonomy_version: int
     topics_total: int
-    edges_set: int             # canonical topics with a non-None parent_id after the pass
-    edges_changed: int         # rows whose parent_id differs from before the pass
-    edges_dropped_invalid: int # rows the validator threw out (self-ref, unknown id, cycle)
-    skipped: bool              # True when taxonomy had <2 topics → no AI call
+    edges_set: int  # canonical topics with a non-None parent_id after the pass
+    edges_changed: int  # rows whose parent_id differs from before the pass
+    edges_dropped_invalid: int  # rows the validator threw out (self-ref, unknown id, cycle)
+    skipped: bool  # True when taxonomy had <2 topics → no AI call
 
 
 async def infer_dependencies(
@@ -484,10 +479,7 @@ async def infer_dependencies(
             last_merged_at=workspace.taxonomy.last_merged_at,
         )
         edges_set = sum(1 for t in new_topics if t.parent_id is not None)
-        edges_changed = sum(
-            1 for t in new_topics
-            if t.parent_id != before_parents.get(t.id)
-        )
+        edges_changed = sum(1 for t in new_topics if t.parent_id != before_parents.get(t.id))
 
         wrote = await _conditional_write(
             tenant_id=tenant_id,
@@ -524,8 +516,7 @@ async def infer_dependencies(
         )
 
     raise DependencyInferenceError(
-        f"Could not commit dep inference for {workspace_id} "
-        f"after {_MAX_MERGE_RETRIES} attempts"
+        f"Could not commit dep inference for {workspace_id} after {_MAX_MERGE_RETRIES} attempts"
     )
 
 
@@ -717,9 +708,7 @@ def validate_taxonomy_shape(topics: list[CanonicalTopic]) -> None:
                 f"Topic {t.id} references unknown parent_id {t.parent_id}"
             )
         if t.parent_id == t.id:
-            raise TaxonomyValidationError(
-                f"Topic {t.id} cannot be its own parent"
-            )
+            raise TaxonomyValidationError(f"Topic {t.id} cannot be its own parent")
 
     # 3. No cycles. Walk up from each node.
     parent_map = {t.id: t.parent_id for t in topics}
@@ -769,9 +758,7 @@ async def replace_taxonomy(
 
     workspace = await _read_workspace(tenant_id, workspace_id)
     if workspace is None:
-        raise RuntimeError(
-            f"Workspace {workspace_id} not found in tenant {tenant_id}"
-        )
+        raise RuntimeError(f"Workspace {workspace_id} not found in tenant {tenant_id}")
 
     new_taxonomy = Taxonomy(
         topics=topics,
@@ -802,9 +789,9 @@ async def replace_taxonomy(
 class RegenerateOutcome:
     """Telemetry from a regenerate run, surfaced via the API's 202 body."""
 
-    documents_merged: int      # how many docs replayed through merge
-    topics_total: int          # canonical topics after replay
-    final_version: int         # taxonomy_version on disk after replay
+    documents_merged: int  # how many docs replayed through merge
+    topics_total: int  # canonical topics after replay
+    final_version: int  # taxonomy_version on disk after replay
 
 
 async def regenerate_from_documents(
@@ -836,9 +823,7 @@ async def regenerate_from_documents(
     """
     workspace = await _read_workspace(tenant_id, workspace_id)
     if workspace is None:
-        raise RuntimeError(
-            f"Workspace {workspace_id} not found in tenant {tenant_id}"
-        )
+        raise RuntimeError(f"Workspace {workspace_id} not found in tenant {tenant_id}")
 
     # Wipe the existing taxonomy under CAS so no concurrent merge can
     # interleave with the replay. Retry once on conflict — concurrent
@@ -861,9 +846,7 @@ async def regenerate_from_documents(
             )
         workspace = await _read_workspace(tenant_id, workspace_id)
         if workspace is None:
-            raise RuntimeError(
-                f"Workspace {workspace_id} vanished during regenerate"
-            )
+            raise RuntimeError(f"Workspace {workspace_id} vanished during regenerate")
 
     logger.info(
         "Regenerate: reset taxonomy on workspace=%s (was version=%d)",
@@ -905,9 +888,7 @@ async def regenerate_from_documents(
     # Final dep inference. Best-effort, same as the worker path — a deps
     # failure leaves a parent-less but otherwise valid taxonomy.
     try:
-        await infer_dependencies(
-            tenant_id=tenant_id, workspace_id=workspace_id
-        )
+        await infer_dependencies(tenant_id=tenant_id, workspace_id=workspace_id)
     except DependencyInferenceError:
         logger.exception(
             "Regenerate: dep inference failed for workspace=%s, "

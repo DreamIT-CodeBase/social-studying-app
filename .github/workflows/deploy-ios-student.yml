@@ -1,0 +1,339 @@
+name: Deploy iOS apps
+
+on:
+  push:
+    branches:
+      - main
+      - tarun/entra-auth
+  workflow_dispatch:
+    inputs:
+      upload_to_testflight:
+        description: Upload both signed IPAs to TestFlight
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-apps-testflight
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and deploy ${{ matrix.flavor }} app
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavor: student
+            bundle_id: ai.socialstudying.app
+            target: lib/main_student.dart
+            profile_secret: IOS_PROVISIONING_PROFILE_BASE64
+          - flavor: admin
+            bundle_id: ai.socialstudying.app.admin
+            target: lib/main_admin.dart
+            profile_secret: IOS_ADMIN_PROVISIONING_PROFILE_BASE64
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: flutter_app
+    env:
+      APP_BUNDLE_ID: ${{ matrix.bundle_id }}
+      APP_FLAVOR: ${{ matrix.flavor }}
+      APP_TARGET: ${{ matrix.target }}
+      APPLE_TEAM_ID: B7BJ5HC53B
+    steps:
+      - uses: actions/checkout@v4
+
+
+
+      - name: Select latest Xcode toolchain
+        run: |
+          set -euo pipefail
+          ls -ld /Applications/Xcode* || true
+
+          XCODE_APP=""
+          # Prioritize newest Xcode 26.x toolchain required by App Store Connect (iOS 26 SDK)
+          for candidate in \
+            "/Applications/Xcode_26.3.app" \
+            "/Applications/Xcode_26.2.app" \
+            "/Applications/Xcode_26.1.app" \
+            "/Applications/Xcode_26.0.app" \
+            $(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V -r); do
+            if [ -d "$candidate/Contents/Developer" ]; then
+              XCODE_APP="$candidate"
+              break
+            fi
+          done
+
+          if [ -z "$XCODE_APP" ]; then
+            echo "No valid Xcode installation found in /Applications" >&2
+            exit 1
+          fi
+
+          echo "Selected: $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          export DEVELOPER_DIR="$XCODE_APP/Contents/Developer"
+          echo "DEVELOPER_DIR=$XCODE_APP/Contents/Developer" >> "$GITHUB_ENV"
+          sudo xcodebuild -license accept || true
+          sudo xcodebuild -runFirstLaunch || true
+          xcrun simctl list > /dev/null 2>&1 || true
+          sudo xcodebuild -downloadPlatform iOS || true
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Verify App Store build toolchain
+        run: |
+          xcode_version=$(xcodebuild -version | awk 'NR == 1 { print $2 }')
+          xcode_major=${xcode_version%%.*}
+          if (( xcode_major < 26 )); then
+            echo "Warning: Xcode 26 or later is recommended by App Store Connect; runner selected Xcode $xcode_version." >&2
+          fi
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Patch dependencies for Xcode 16
+        run: |
+          echo "Patching file_picker FilePickerPlugin.m in pub-cache if present..."
+          find "$HOME/.pub-cache" -name "FilePickerPlugin.m" -exec sed -i '' 's/newUrls = urls;/newUrls = [urls mutableCopy];/g' {} + || true
+          find "$HOME/.pub-cache" -name "FilePickerPlugin.m" -exec grep -H "newUrls = " {} + || true
+
+      - name: Generate baseline Flutter xcconfig
+        run: |
+          cat <<EOF > ios/Flutter/Generated.xcconfig
+          FLUTTER_ROOT=$FLUTTER_ROOT
+          FLUTTER_APPLICATION_PATH=$PWD
+          COCOAPODS_PARALLEL_CODE_SIGN=true
+          EOF
+          touch ios/Flutter/flutter_export_environment.sh
+
+      - name: Install Apple signing credentials
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          STUDENT_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          ADMIN_PROFILE_BASE64: ${{ secrets.IOS_ADMIN_PROVISIONING_PROFILE_BASE64 }}
+          EXTENSION_PROFILE_BASE64: ${{ secrets.IOS_SCREENTIME_PROVISIONING_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$APP_FLAVOR" == "student" ]]; then
+            RAW_PROFILE="$STUDENT_PROFILE_BASE64"
+          else
+            RAW_PROFILE="$ADMIN_PROFILE_BASE64"
+          fi
+
+          if [[ -z "$RAW_PROFILE" ]]; then
+            echo "Provisioning profile secret for $APP_FLAVOR is empty." >&2
+            if [[ "$APP_FLAVOR" == "admin" ]]; then
+              echo "SKIP_BUILD=true" >> "$GITHUB_ENV"
+              echo "Skipping admin iOS build because IOS_ADMIN_PROVISIONING_PROFILE_BASE64 is not configured."
+              exit 0
+            fi
+            exit 1
+          fi
+          echo "SKIP_BUILD=false" >> "$GITHUB_ENV"
+
+          certificate_path="$RUNNER_TEMP/distribution.p12"
+          profile_path="$RUNNER_TEMP/$APP_FLAVOR.mobileprovision"
+          keychain_path="$RUNNER_TEMP/app-signing.keychain-db"
+
+          printf '%s' "$CERTIFICATE_BASE64" | tr -d '\r\n ' | base64 -D > "$certificate_path"
+          printf '%s' "$RAW_PROFILE" | tr -d '\r\n ' | base64 -D > "$profile_path"
+
+          if [[ ! -s "$profile_path" ]]; then
+            echo "Failed to decode provisioning profile for $APP_FLAVOR." >&2
+            exit 1
+          fi
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+
+          profile_plist="$RUNNER_TEMP/$APP_FLAVOR-profile.plist"
+          security cms -D -i "$profile_path" > "$profile_plist"
+          profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$profile_plist")
+          profile_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$profile_plist")
+          profile_app_id=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$profile_plist")
+          profile_aps_environment=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' "$profile_plist" 2>/dev/null || true)
+
+          echo "Found profile '$profile_name' (UUID: $profile_uuid, App ID: $profile_app_id, APS: $profile_aps_environment)"
+
+          if [[ "$profile_app_id" != "$APPLE_TEAM_ID.$APP_BUNDLE_ID" ]]; then
+            echo "Provisioning profile is for '$profile_app_id', expected '$APPLE_TEAM_ID.$APP_BUNDLE_ID'." >&2
+            exit 1
+          fi
+          if [[ "$APP_FLAVOR" == "student" && "$profile_aps_environment" != "production" ]]; then
+            echo "Provisioning profile '$profile_name' does not include production APNs. Enable Push Notifications for $APP_BUNDLE_ID and replace the profile secret." >&2
+            exit 1
+          fi
+          if [[ "$APP_FLAVOR" == "student" ]]; then
+            profile_family_controls=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.family-controls' "$profile_plist" 2>/dev/null || true)
+            profile_app_group=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups:0' "$profile_plist" 2>/dev/null || true)
+            if [[ "$profile_family_controls" != "true" || "$profile_app_group" != "group.ai.socialstudying.app.screentime" ]]; then
+              echo "Student profile '$profile_name' is missing Family Controls or the Screen Time App Group. Regenerate IOS_PROVISIONING_PROFILE_BASE64 after enabling both capabilities for $APP_BUNDLE_ID." >&2
+              exit 1
+            fi
+          fi
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
+          echo "IOS_PROFILE_NAME=$profile_name" >> "$GITHUB_ENV"
+
+          if [[ "$APP_FLAVOR" == "student" ]]; then
+            if [[ -z "$EXTENSION_PROFILE_BASE64" ]]; then
+              echo "IOS_SCREENTIME_PROVISIONING_PROFILE_BASE64 is required for the Screen Time extension." >&2
+              exit 1
+            fi
+            echo "Installing ScreenTimeExtension provisioning profile..."
+            ext_profile_path="$RUNNER_TEMP/extension.mobileprovision"
+            printf '%s' "$EXTENSION_PROFILE_BASE64" | tr -d '\r\n ' | base64 -D > "$ext_profile_path"
+            if [[ ! -s "$ext_profile_path" ]]; then
+              echo "Failed to decode Screen Time extension provisioning profile." >&2
+              exit 1
+            fi
+
+            ext_profile_plist="$RUNNER_TEMP/ext-profile.plist"
+            security cms -D -i "$ext_profile_path" > "$ext_profile_plist"
+            ext_profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$ext_profile_plist")
+            ext_profile_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$ext_profile_plist")
+            ext_profile_app_id=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$ext_profile_plist")
+            ext_profile_family_controls=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.family-controls' "$ext_profile_plist" 2>/dev/null || true)
+            ext_profile_app_group=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups:0' "$ext_profile_plist" 2>/dev/null || true)
+            expected_extension_app_id="$APPLE_TEAM_ID.$APP_BUNDLE_ID.ScreenTimeExtension"
+
+            if [[ "$ext_profile_app_id" != "$expected_extension_app_id" ]]; then
+              echo "Screen Time extension profile is for '$ext_profile_app_id', expected '$expected_extension_app_id'." >&2
+              exit 1
+            fi
+            if [[ "$ext_profile_family_controls" != "true" || "$ext_profile_app_group" != "group.ai.socialstudying.app.screentime" ]]; then
+              echo "Screen Time extension profile '$ext_profile_name' is missing Family Controls or the Screen Time App Group. Regenerate IOS_SCREENTIME_PROVISIONING_PROFILE_BASE64 after enabling both capabilities for $APP_BUNDLE_ID.ScreenTimeExtension." >&2
+              exit 1
+            fi
+
+            cp "$ext_profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$ext_profile_uuid.mobileprovision"
+            echo "IOS_EXT_PROFILE_NAME=$ext_profile_name" >> "$GITHUB_ENV"
+            echo "Installed extension profile '$ext_profile_name' ($ext_profile_uuid)"
+          fi
+
+      - name: Create App Store export configuration
+        if: env.SKIP_BUILD != 'true'
+        run: |
+          plutil -create xml1 "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c 'Add :method string app-store' "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c 'Add :signingStyle string manual' "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_TEAM_ID" "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c 'Add :uploadSymbols bool true' "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c 'Add :provisioningProfiles dict' "$RUNNER_TEMP/ExportOptions.plist"
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$APP_BUNDLE_ID string $IOS_PROFILE_NAME" "$RUNNER_TEMP/ExportOptions.plist"
+          if [[ "$APP_FLAVOR" == "student" ]]; then
+            /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$APP_BUNDLE_ID.ScreenTimeExtension string $IOS_EXT_PROFILE_NAME" "$RUNNER_TEMP/ExportOptions.plist"
+          fi
+
+      - name: Build signed IPA
+        if: env.SKIP_BUILD != 'true'
+        run: |
+          touch ios/Flutter/Generated.xcconfig
+          touch ios/Flutter/flutter_export_environment.sh
+
+          signing_config="ios/Flutter/CI-signing.xcconfig"
+          {
+            printf 'CODE_SIGN_STYLE=Manual\n'
+            printf 'CODE_SIGN_IDENTITY=Apple Distribution\n'
+            printf 'DEVELOPMENT_TEAM=%s\n' "$APPLE_TEAM_ID"
+            printf 'PROVISIONING_PROFILE_SPECIFIER=%s\n' "$IOS_PROFILE_NAME"
+            if [[ "$APP_FLAVOR" == "student" ]]; then
+              printf 'CODE_SIGN_ENTITLEMENTS=Runner/Runner.entitlements\n'
+            fi
+          } > "$signing_config"
+
+          build_number=$((10000 + GITHUB_RUN_NUMBER))
+
+          # For admin flavor, remove ScreenTimeExtension from Runner target dependencies and embed phase
+          if [[ "$APP_FLAVOR" == "admin" ]]; then
+            python3 ios/remove_extension_from_admin.py
+          fi
+
+          # Inject the extension provisioning profile specifier into the pbxproj build settings
+          if [[ "$APP_FLAVOR" == "student" ]]; then
+            EXT_PROFILE_ESCAPED=$(echo "$IOS_EXT_PROFILE_NAME" | sed 's/[&/\]/\\&/g')
+            sed -i '' "s|PRODUCT_BUNDLE_IDENTIFIER = \"ai\.socialstudying\.app\.ScreenTimeExtension\";|PRODUCT_BUNDLE_IDENTIFIER = \"ai.socialstudying.app.ScreenTimeExtension\";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${EXT_PROFILE_ESCAPED}\";|g" ios/Runner.xcodeproj/project.pbxproj
+            echo "Injected PROVISIONING_PROFILE_SPECIFIER = $IOS_EXT_PROFILE_NAME"
+          fi
+
+          flutter build ipa \
+            --verbose \
+            --release \
+            --flavor "$APP_FLAVOR" \
+            --target "$APP_TARGET" \
+            --build-number "$build_number" \
+            --export-options-plist "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Upload IPA artifact
+        if: env.SKIP_BUILD != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: social-studying-${{ matrix.flavor }}-ios-${{ github.run_number }}
+          path: flutter_app/build/ios/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Configure App Store Connect API key
+        if: (github.event_name == 'push' || inputs.upload_to_testflight) && env.SKIP_BUILD != 'true'
+        env:
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        run: |
+          set -euo pipefail
+          KEY_ID=$(echo "$APP_STORE_CONNECT_KEY_ID" | tr -d '\r\n ')
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          key_file="$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8"
+          if echo "$APP_STORE_CONNECT_PRIVATE_KEY" | grep -q "BEGIN PRIVATE KEY"; then
+            printf '%s\n' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$key_file"
+          elif echo "$APP_STORE_CONNECT_PRIVATE_KEY" | base64 -D 2>/dev/null | grep -q "BEGIN PRIVATE KEY"; then
+            echo "$APP_STORE_CONNECT_PRIVATE_KEY" | tr -d '\r\n ' | base64 -D > "$key_file"
+          else
+            printf '%b\n' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$key_file"
+          fi
+          mkdir -p "$HOME/.private_keys"
+          cp "$key_file" "$HOME/.private_keys/AuthKey_${KEY_ID}.p8"
+          chmod 600 "$key_file" "$HOME/.private_keys/AuthKey_${KEY_ID}.p8"
+
+      - name: Upload to TestFlight
+        if: (github.event_name == 'push' || inputs.upload_to_testflight) && env.SKIP_BUILD != 'true'
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          KEY_ID=$(echo "$APP_STORE_CONNECT_KEY_ID" | tr -d '\r\n ')
+          ISSUER_ID=$(echo "$APP_STORE_CONNECT_ISSUER_ID" | tr -d '\r\n ')
+          ipa_path=$(find build/ios/ipa -maxdepth 1 -name '*.ipa' -print -quit)
+          test -n "$ipa_path"
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$ipa_path" \
+            --apiKey "$KEY_ID" \
+            --apiIssuer "$ISSUER_ID" \
+            --show-progress
+
+      - name: Remove signing credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" 2>/dev/null || true
+          rm -rf "$HOME/.appstoreconnect/private_keys" "$HOME/.private_keys"

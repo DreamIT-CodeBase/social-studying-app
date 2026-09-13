@@ -11,8 +11,7 @@ void main() {
       expect(list.single.name, 'Demo Classroom');
     });
 
-    test('returns an unmodifiable view — callers cannot mutate it',
-        () async {
+    test('returns an unmodifiable view — callers cannot mutate it', () async {
       final repo = DemoWorkspacesRepository();
       final list = await repo.list();
       expect(() => list.clear(), throwsUnsupportedError);
@@ -31,16 +30,14 @@ void main() {
       expect(list.map((w) => w.name), contains('Biology 101'));
     });
 
-    test('trims the name and stores an empty description by default',
-        () async {
+    test('trims the name and stores an empty description by default', () async {
       final repo = DemoWorkspacesRepository();
       final created = await repo.create(name: '  Chemistry  ');
       expect(created.name, 'Chemistry');
       expect(created.description, isEmpty);
     });
 
-    test('throws WorkspaceNameConflictException on a duplicate name',
-        () async {
+    test('throws WorkspaceNameConflictException on a duplicate name', () async {
       final repo = DemoWorkspacesRepository();
       // Case-insensitive clash with the seeded "Demo Classroom".
       expect(
@@ -51,8 +48,7 @@ void main() {
   });
 
   group('DemoWorkspacesRepository.update', () {
-    test('patches name and description, leaving settings untouched',
-        () async {
+    test('patches name and description, leaving settings untouched', () async {
       final repo = DemoWorkspacesRepository();
       final updated = await repo.update(
         workspaceId: 'wsp_demo_001',

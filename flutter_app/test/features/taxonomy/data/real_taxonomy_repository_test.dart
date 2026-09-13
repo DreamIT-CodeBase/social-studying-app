@@ -81,7 +81,8 @@ void main() {
   test('get on 404 throws TaxonomyWorkspaceNotFoundException', () async {
     final repo = RealTaxonomyRepository(
       dio: _dioWith(
-        (_) => _jsonRaw('{"detail":"Workspace wsp_test not found"}', status: 404),
+        (_) =>
+            _jsonRaw('{"detail":"Workspace wsp_test not found"}', status: 404),
       ),
     );
 

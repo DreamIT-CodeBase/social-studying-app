@@ -23,8 +23,7 @@ void main() {
       expect(q2.id, startsWith('qst_demo_'));
     });
 
-    test('rotates through all four fixture types within four calls',
-        () async {
+    test('rotates through all four fixture types within four calls', () async {
       final repo = DemoQuestionsRepository();
       final types = <QuestionType>{};
       for (var i = 0; i < 4; i++) {
@@ -108,8 +107,7 @@ void main() {
       );
     });
 
-    test('repeated correct answers bump topic mastery monotonically',
-        () async {
+    test('repeated correct answers bump topic mastery monotonically', () async {
       final repo = DemoQuestionsRepository();
       double? lastMastery;
       // Answer the MCQ fixture twice (it'll come up at indices 0 and 4).

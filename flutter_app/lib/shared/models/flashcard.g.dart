@@ -28,12 +28,22 @@ _$FlashcardRatingSubmissionImpl _$$FlashcardRatingSubmissionImplFromJson(
         Map<String, dynamic> json) =>
     _$FlashcardRatingSubmissionImpl(
       rating: $enumDecode(_$FlashcardRatingEnumMap, json['rating']),
+      selectedOption: json['selected_option'] as String?,
+      isCorrect: json['is_correct'] as bool?,
+      responseTimeMs: (json['response_time_ms'] as num?)?.toInt(),
+      sessionProgress: (json['session_progress'] as num?)?.toInt(),
+      accuracyPercentage: (json['accuracy_percentage'] as num?)?.toDouble(),
     );
 
 Map<String, dynamic> _$$FlashcardRatingSubmissionImplToJson(
         _$FlashcardRatingSubmissionImpl instance) =>
     <String, dynamic>{
       'rating': _$FlashcardRatingEnumMap[instance.rating]!,
+      'selected_option': instance.selectedOption,
+      'is_correct': instance.isCorrect,
+      'response_time_ms': instance.responseTimeMs,
+      'session_progress': instance.sessionProgress,
+      'accuracy_percentage': instance.accuracyPercentage,
     };
 
 const _$FlashcardRatingEnumMap = {

@@ -72,8 +72,7 @@ def _mcq_response(correct_key: str = "B") -> dict:
         ],
         "answer": correct_key,
         "explanation": (
-            "Chloroplasts contain chlorophyll, which captures photons "
-            "during photosynthesis."
+            "Chloroplasts contain chlorophyll, which captures photons during photosynthesis."
         ),
     }
 
@@ -248,8 +247,7 @@ async def test_long_answer_happy_path():
             "Calvin cycle fixes CO2 into glucose",
         ],
         "explanation": (
-            "Captures the full light-then-dark reaction sequence taught "
-            "at the intro level."
+            "Captures the full light-then-dark reaction sequence taught at the intro level."
         ),
     }
     patched, _ = _mock_chat_json(response)
@@ -340,7 +338,9 @@ async def test_true_false_rejects_non_boolean_string():
         "explanation": "...",
     }
     patched, _ = _mock_chat_json(response)
-    with patched, pytest.raises(QuestionShapeError, match="exactly 'true' or 'false'"):
+    with patched, pytest.raises(
+        QuestionShapeError, match=r"must be boolean or 'true'/'false'"
+    ):
         await generate_question(
             topic="Photosynthesis",
             difficulty=DifficultyLevel.beginner,
@@ -424,9 +424,10 @@ async def test_empty_grounding_chunks_raises_immediately():
     grounding from its own knowledge.
     """
     # NB: chat_json must NOT be called — we'd raise before getting there.
-    with patch.object(
-        question_generation.azure_openai, "chat_json", AsyncMock()
-    ) as mock_call, pytest.raises(InsufficientSource, match="No grounding chunks"):
+    with (
+        patch.object(question_generation.azure_openai, "chat_json", AsyncMock()) as mock_call,
+        pytest.raises(InsufficientSource, match="No grounding chunks"),
+    ):
         await generate_question(
             topic="Anything",
             difficulty=DifficultyLevel.beginner,

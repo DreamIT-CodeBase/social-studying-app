@@ -69,10 +69,7 @@ def _mcq(
         question_type=QuestionType.mcq,
         difficulty=DifficultyLevel.beginner,
         prompt_version="question_mcq_v1",
-        options=[
-            McqOption(key=k, text=t, is_correct=(k == correct))
-            for k, t in opt_pairs
-        ],
+        options=[McqOption(key=k, text=t, is_correct=(k == correct)) for k, t in opt_pairs],
         grading_hints=[],
     )
 

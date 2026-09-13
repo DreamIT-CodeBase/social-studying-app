@@ -20,13 +20,12 @@ XP model
 --------
 Question XP::
 
-    attempt_xp = 10                              # every submission
-    correct_bonus = {beg: 5, int: 10, adv: 20}   # on correct only
-    streak_bonus = min(streak_days, 10)          # capped, both correct+miss
+    correct_xp = 7           # on correct answer
+    incorrect_xp = -1        # on wrong attempt (penalty)
+    streak_bonus = +2 XP     # awarded when streak extends to a new day
 
-So a correct intermediate answer on day-3 of a streak earns 23 XP.
-The streak cap stops late-streak bonuses from dwarfing the difficulty
-bonus and keeps levelling at the higher end driven by harder content.
+So a correct answer on a new streak day earns 9 XP.
+A wrong answer deducts 1 XP (floor at 0 so total never goes negative).
 
 Flashcard XP::
 
@@ -71,7 +70,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
-from app.core.database import GAMIFICATION, get_collection
+from pymongo.errors import DuplicateKeyError
+
+from app.core.database import GAMIFICATION, XP_EVENTS, get_collection
 from app.models.base import utc_now
 from app.models.flashcard import FlashcardRating
 from app.models.gamification import Badge, GamificationState
@@ -84,31 +85,37 @@ logger = logging.getLogger(__name__)
 # ── XP constants ────────────────────────────────────────────────────────────
 
 
-ATTEMPT_XP: int = 10
+ATTEMPT_XP: int = 1
 """XP awarded just for submitting an answer. Encourages attempts."""
 
 CORRECT_BONUS_XP: dict[DifficultyLevel, int] = {
-    DifficultyLevel.beginner: 5,
-    DifficultyLevel.intermediate: 10,
-    DifficultyLevel.advanced: 20,
+    DifficultyLevel.beginner: 0,
+    DifficultyLevel.intermediate: 0,
+    DifficultyLevel.advanced: 0,
 }
 """Difficulty-weighted bonus added on a correct answer."""
 
-WRONG_ANSWER_PENALTY_XP: int = -5
-"""XP deducted when the student answers incorrectly. Applied after the
-attempt XP and streak bonus are computed — the net result can be
-negative for this event, but :func:`record_question_attempt` floors
-``xp_total`` at 0 so the cumulative total never goes below zero."""
+WRONG_ANSWER_PENALTY_XP: int = -1
+"""XP deducted when the student answers incorrectly. On wrong answers,
+attempt XP and streak bonus are not awarded, and only this penalty is
+applied. The returned value is negative; the caller floors total XP at 0."""
 
 STREAK_BONUS_CAP: int = 10
 """Maximum streak-day XP applied to a single submission. Streak XP =
 ``min(streak_days, STREAK_BONUS_CAP)``. Caps the late-streak runaway —
 a 200-day streak doesn't trivialise the level curve."""
 
-FLASHCARD_XP: int = 5
+FLASHCARD_XP: int = 1
 """Flat XP for any flashcard rating event. No difficulty signal, no
 streak bonus — keep flashcards modest so the question loop stays the
 core reward path."""
+
+QUESTION_CORRECT_XP = 1
+QUESTION_WRONG_XP = -1
+FLASHCARD_REMEMBER_XP = 1
+FLASHCARD_REVIEW_XP = -1
+DAILY_LOGIN_XP = 2
+SESSION_COMPLETION_XP = {"study": 8, "revision": 5, "flashcard": 5}
 
 DAILY_ACTIVITY_RETENTION_DAYS: int = 30
 """How many days of ``daily_activity`` to keep on the doc. Older
@@ -154,6 +161,14 @@ class GamificationDelta:
     unit tests that exercise the dataclass shape."""
 
 
+@dataclass(frozen=True, slots=True)
+class DailyLoginResult:
+    """Idempotent daily-login claim result."""
+
+    awarded: bool
+    delta: GamificationDelta
+
+
 # ── Public entry points ─────────────────────────────────────────────────────
 
 
@@ -165,28 +180,13 @@ async def record_question_attempt(
     topic: str,
     difficulty: DifficultyLevel,
     is_correct: bool,
+    revision: bool = False,
     now: str | None = None,
 ) -> GamificationDelta:
-    """Apply one answer's effect to the student's gamification state.
+    """Apply the shared +1 / -1 question rule.
 
-    Pipeline:
-        1. Read the state (create on first interaction).
-        2. Apply weekly reset / streak update / counters.
-        3. Compute XP (attempt + correct bonus + streak bonus).
-        4. Bump XP totals, per-topic XP, daily activity.
-        5. Recompute level. Capture level-up.
-        6. Run :func:`badges.evaluate_badges`, append unlocks.
-        7. Upsert.
-
-    Returns:
-        :class:`GamificationDelta` with the XP actually awarded (incl.
-        streak bonus), the post-event level / streak / badges, and the
-        persisted state.
-
-    The caller is responsible for writing the interaction record with
-    ``xp_earned = delta.xp_earned`` BEFORE awarding any further state
-    — interaction is the source of truth, gamification is the
-    summary.
+    Daily login is a separate idempotent event and is never piggy-backed on
+    an answer.
     """
     timestamp = now or utc_now()
     today = _today(timestamp)
@@ -199,29 +199,29 @@ async def record_question_attempt(
 
     pre_level = state.level
     _apply_weekly_reset(state, today=today)
+    previous_weekly_xp = state.xp_this_week
     streak_extended = _apply_streak(state, today=today)
 
     xp_earned = compute_question_xp(
         is_correct=is_correct,
         difficulty=difficulty,
         streak_days=state.streak_days,
+        revision=revision,
     )
 
-    # Floor xp_total at 0 — a wrong-answer penalty can produce a
-    # negative ``xp_earned`` for this event, but a student's cumulative
-    # total should never go below zero (level 1 is the floor).
-    state.xp_total = max(0, state.xp_total + xp_earned)
-    state.xp_this_week = max(0, state.xp_this_week + xp_earned)
-    state.xp_by_topic[topic] = max(
-        0, state.xp_by_topic.get(topic, 0) + xp_earned
-    )
+    _apply_xp_delta(state, xp_earned, topic=topic)
     state.questions_answered += 1
     if is_correct:
         state.questions_correct += 1
-    state.level = level_for_xp(state.xp_total)
     _bump_daily_activity(state, today=today)
-
-    unlocks = _materialise_unlocks(state, earned_at=timestamp)
+    state.level = level_for_xp(state.xp_total)
+    unlocks, achievement_xp = _materialise_unlocks(state, earned_at=timestamp)
+    xp_earned += achievement_xp
+    _bump_daily_xp(
+        state,
+        today=today,
+        xp_delta=state.xp_this_week - previous_weekly_xp,
+    )
 
     state.touch()
     await _persist(tenant_id=tenant_id, state=state)
@@ -258,12 +258,10 @@ async def record_flashcard_rating(
     rating: FlashcardRating,
     now: str | None = None,
 ) -> GamificationDelta:
-    """Apply one flashcard rating event to the student's gamification state.
+    """Apply flashcard recall XP.
 
-    Same pipeline as :func:`record_question_attempt` but flat-XP and
-    no correct/incorrect counter. ``rating`` is accepted (and logged)
-    for parity with the interaction record even though v1 XP doesn't
-    vary by it — Sprint 5/6 SRS may weight it later.
+    ``easy`` is Remember (+1), ``hard`` is Needs Review (-1), and legacy
+    ``medium`` submissions from older clients remain neutral.
     """
     timestamp = now or utc_now()
     today = _today(timestamp)
@@ -276,18 +274,27 @@ async def record_flashcard_rating(
 
     pre_level = state.level
     _apply_weekly_reset(state, today=today)
+    previous_weekly_xp = state.xp_this_week
     streak_extended = _apply_streak(state, today=today)
 
-    xp_earned = FLASHCARD_XP
-
-    state.xp_total += xp_earned
-    state.xp_this_week += xp_earned
-    state.xp_by_topic[topic] = state.xp_by_topic.get(topic, 0) + xp_earned
+    xp_earned = {
+        FlashcardRating.easy: FLASHCARD_REMEMBER_XP,
+        FlashcardRating.hard: FLASHCARD_REVIEW_XP,
+        FlashcardRating.medium: 0,
+    }[rating]
+    _apply_xp_delta(state, xp_earned, topic=topic)
     state.flashcards_reviewed += 1
-    state.level = level_for_xp(state.xp_total)
+    if rating == FlashcardRating.easy:
+        state.flashcards_remembered += 1
     _bump_daily_activity(state, today=today)
-
-    unlocks = _materialise_unlocks(state, earned_at=timestamp)
+    state.level = level_for_xp(state.xp_total)
+    unlocks, achievement_xp = _materialise_unlocks(state, earned_at=timestamp)
+    xp_earned += achievement_xp
+    _bump_daily_xp(
+        state,
+        today=today,
+        xp_delta=state.xp_this_week - previous_weekly_xp,
+    )
 
     state.touch()
     await _persist(tenant_id=tenant_id, state=state)
@@ -312,6 +319,171 @@ async def record_flashcard_rating(
         streak_extended=streak_extended,
         badges_unlocked=unlocks,
         state=state,
+    )
+
+
+async def record_session_completion(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    student_id: str,
+    session_type: str,
+    perfect: bool = False,
+    now: str | None = None,
+) -> GamificationDelta:
+    """Award the configured bonus for a fully completed session.
+
+    Callers must verify full completion before invoking this function.
+    """
+    timestamp = now or utc_now()
+    today = _today(timestamp)
+
+    state = await _read_or_init(
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        student_id=student_id,
+    )
+
+    pre_level = state.level
+    _apply_weekly_reset(state, today=today)
+    previous_weekly_xp = state.xp_this_week
+    streak_extended = _apply_streak(state, today=today)
+
+    try:
+        xp_earned = SESSION_COMPLETION_XP[session_type]
+    except KeyError as exc:
+        raise ValueError(f"Unknown session_type={session_type!r}") from exc
+
+    _apply_xp_delta(state, xp_earned)
+    if session_type == "study":
+        state.study_sessions_completed += 1
+    elif session_type == "revision":
+        state.revision_sessions_completed += 1
+    else:
+        state.flashcard_sessions_completed += 1
+    if perfect and session_type in {"study", "revision"}:
+        state.perfect_sessions += 1
+    _bump_daily_activity(state, today=today)
+    state.level = level_for_xp(state.xp_total)
+    unlocks, achievement_xp = _materialise_unlocks(state, earned_at=timestamp)
+    xp_earned += achievement_xp
+    _bump_daily_xp(
+        state,
+        today=today,
+        xp_delta=state.xp_this_week - previous_weekly_xp,
+    )
+
+    state.touch()
+    await _persist(tenant_id=tenant_id, state=state)
+
+    logger.info(
+        "Gamification session complete event student=%s workspace=%s type=%s "
+        "xp=%d streak=%d level=%d unlocks=%s",
+        student_id,
+        workspace_id,
+        session_type,
+        xp_earned,
+        state.streak_days,
+        state.level,
+        [u.badge_id for u in unlocks],
+    )
+
+    return GamificationDelta(
+        xp_earned=xp_earned,
+        new_level=state.level,
+        leveled_up=state.level > pre_level,
+        streak_days=state.streak_days,
+        streak_extended=streak_extended,
+        badges_unlocked=unlocks,
+        state=state,
+    )
+
+
+async def record_daily_login(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    student_id: str,
+    now: str | None = None,
+) -> DailyLoginResult:
+    """Award +2 XP once per UTC calendar day.
+
+    The deterministic event id is a concurrency guard: simultaneous launches
+    race on Mongo's unique ``_id`` and only one can mutate XP.
+    """
+    timestamp = now or utc_now()
+    today = _today(timestamp)
+    event_id = f"daily_login:{workspace_id}:{student_id}:{today.isoformat()}"
+    events = get_collection(tenant_id, XP_EVENTS)
+    try:
+        await events.insert_one(
+            {
+                "_id": event_id,
+                "tenant_id": tenant_id,
+                "workspace_id": workspace_id,
+                "student_id": student_id,
+                "event_type": "daily_login",
+                "xp": DAILY_LOGIN_XP,
+                "created_at": timestamp,
+            }
+        )
+    except DuplicateKeyError:
+        state = await _read_or_init(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            student_id=student_id,
+        )
+        return DailyLoginResult(
+            awarded=False,
+            delta=GamificationDelta(
+                xp_earned=0,
+                new_level=state.level,
+                leveled_up=False,
+                streak_days=state.streak_days,
+                streak_extended=False,
+                badges_unlocked=[],
+                state=state,
+            ),
+        )
+
+    try:
+        state = await _read_or_init(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            student_id=student_id,
+        )
+        pre_level = state.level
+        _apply_weekly_reset(state, today=today)
+        previous_weekly_xp = state.xp_this_week
+        streak_extended = _apply_streak(state, today=today)
+        _apply_xp_delta(state, DAILY_LOGIN_XP)
+        state.last_login_reward_date = today.isoformat()
+        _bump_daily_activity(state, today=today)
+        state.level = level_for_xp(state.xp_total)
+        unlocks, achievement_xp = _materialise_unlocks(state, earned_at=timestamp)
+        total_earned = DAILY_LOGIN_XP + achievement_xp
+        _bump_daily_xp(
+            state,
+            today=today,
+            xp_delta=state.xp_this_week - previous_weekly_xp,
+        )
+        state.touch()
+        await _persist(tenant_id=tenant_id, state=state)
+    except Exception:
+        await events.delete_one({"_id": event_id})
+        raise
+
+    return DailyLoginResult(
+        awarded=True,
+        delta=GamificationDelta(
+            xp_earned=total_earned,
+            new_level=state.level,
+            leveled_up=state.level > pre_level,
+            streak_days=state.streak_days,
+            streak_extended=streak_extended,
+            badges_unlocked=unlocks,
+            state=state,
+        ),
     )
 
 
@@ -365,24 +537,14 @@ def compute_question_xp(
     is_correct: bool,
     difficulty: DifficultyLevel,
     streak_days: int,
+    revision: bool = False,
 ) -> int:
-    """Pure XP rule: attempt + (correct?) bonus + capped streak bonus
-    − wrong-answer penalty.
+    """Award exactly +1 for correct and -1 for incorrect answers.
 
-    Always-on attempt XP rewards trying. Correct bonus scales with
-    difficulty so hard questions are worth chasing. Streak bonus
-    rewards regular study, capped so a 200-day streak doesn't
-    trivialise the level curve. Wrong answers receive a flat
-    :data:`WRONG_ANSWER_PENALTY_XP` deduction — the returned value may
-    be negative; the caller is responsible for flooring ``xp_total``.
+    Session XP is independent of difficulty and streak so the value shown
+    immediately in the offline-ready client matches the persisted result.
     """
-    xp = ATTEMPT_XP
-    if is_correct:
-        xp += CORRECT_BONUS_XP[difficulty]
-    else:
-        xp += WRONG_ANSWER_PENALTY_XP
-    xp += min(streak_days, STREAK_BONUS_CAP)
-    return xp
+    return QUESTION_CORRECT_XP if is_correct else QUESTION_WRONG_XP
 
 
 def level_for_xp(xp_total: int) -> int:
@@ -525,12 +687,40 @@ def _bump_daily_activity(state: GamificationState, *, today: date) -> None:
             state.daily_activity.pop(stale_key, None)
 
 
+def _bump_daily_xp(
+    state: GamificationState,
+    *,
+    today: date,
+    xp_delta: int,
+) -> None:
+    """Add XP actually applied today and prune old date entries.
+
+    The delta comes from the weekly counter before and after the event,
+    rather than the nominal award. That preserves floor-at-zero
+    behaviour for penalties and keeps the chart total synchronized with
+    ``xp_this_week``.
+    """
+    key = today.isoformat()
+    state.daily_xp[key] = state.daily_xp.get(key, 0) + xp_delta
+    if len(state.daily_xp) > DAILY_ACTIVITY_RETENTION_DAYS:
+        for stale_key in sorted(state.daily_xp)[
+            : len(state.daily_xp) - DAILY_ACTIVITY_RETENTION_DAYS
+        ]:
+            state.daily_xp.pop(stale_key, None)
+
+
 # ── Badge unlocking ─────────────────────────────────────────────────────────
 
 
-def _materialise_unlocks(
-    state: GamificationState, *, earned_at: str
-) -> list[Badge]:
+def _apply_xp_delta(state: GamificationState, xp_delta: int, *, topic: str | None = None) -> None:
+    """Apply one delta to total, weekly, and optional topic XP."""
+    state.xp_total = max(0, state.xp_total + xp_delta)
+    state.xp_this_week = max(0, state.xp_this_week + xp_delta)
+    if topic is not None:
+        state.xp_by_topic[topic] = max(0, state.xp_by_topic.get(topic, 0) + xp_delta)
+
+
+def _materialise_unlocks(state: GamificationState, *, earned_at: str) -> tuple[list[Badge], int]:
     """Evaluate the catalog, append fresh unlocks to ``state.badges``,
     return them.
 
@@ -540,17 +730,29 @@ def _materialise_unlocks(
     rewrite already-earned records.
     """
     unlocks: list[Badge] = []
-    for definition in badges_module.evaluate_badges(state):
-        badge = Badge(
-            badge_id=definition.id,
-            name=definition.name,
-            description=definition.description,
-            icon=definition.icon,
-            earned_at=earned_at,
-        )
-        state.badges.append(badge)
-        unlocks.append(badge)
-    return unlocks
+    total_reward = 0
+    while True:
+        definitions = badges_module.evaluate_badges(state)
+        if not definitions:
+            break
+        reward = 0
+        for definition in definitions:
+            badge = Badge(
+                badge_id=definition.id,
+                name=definition.name,
+                description=definition.description,
+                icon=definition.icon,
+                earned_at=earned_at,
+                xp_reward=definition.xp_reward,
+            )
+            state.badges.append(badge)
+            unlocks.append(badge)
+            reward += definition.xp_reward
+        if reward:
+            _apply_xp_delta(state, reward)
+            state.level = level_for_xp(state.xp_total)
+            total_reward += reward
+    return unlocks, total_reward
 
 
 # ── Cosmos I/O ──────────────────────────────────────────────────────────────

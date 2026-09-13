@@ -3,8 +3,35 @@ import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/models/workspace.dart';
 import 'package:social_study_app/features/admin/workspaces/data/workspaces_repository.dart';
+import 'package:social_study_app/shared/services/session_persistence_service.dart';
 
 part 'workspace_providers.g.dart';
+
+/// Memberships used by the student UI. The personal workspace ID is
+/// deterministic and the backend provisions it in `get_current_user`, so the
+/// client can expose it immediately even when secure storage still contains a
+/// profile written before that membership was added.
+List<WorkspaceMembership> effectiveStudentMemberships(User? user) {
+  if (user == null) return const [];
+  final memberships = List<WorkspaceMembership>.of(user.workspaceMemberships);
+
+  // This provider is consumed only by the student application. Do not key the
+  // personal workspace off the account's legacy/global role: Google accounts
+  // created before workspace roles were separated can legitimately carry a
+  // workspace-admin role and still need their personal study space here.
+  final selfWorkspaceId = 'wsp_self_${user.id}';
+  if (!memberships.any((item) => item.workspaceId == selfWorkspaceId)) {
+    memberships.insert(
+      0,
+      WorkspaceMembership(
+        workspaceId: selfWorkspaceId,
+        role: UserRole.workspaceAdmin,
+        workspaceName: 'Self Learning Workspace',
+      ),
+    );
+  }
+  return memberships;
+}
 
 @Riverpod(keepAlive: true)
 class ActiveWorkspaceId extends _$ActiveWorkspaceId {
@@ -15,31 +42,53 @@ class ActiveWorkspaceId extends _$ActiveWorkspaceId {
       authenticated: (u) => u,
       orElse: () => null,
     );
-    if (user == null || user.workspaceMemberships.isEmpty) {
+    final memberships = effectiveStudentMemberships(user);
+    if (user == null || memberships.isEmpty) {
       return null;
     }
-    // Default to the first membership in the list
-    return user.workspaceMemberships.first.workspaceId;
+
+    // Always honor the user's saved workspace preference first.
+    // This prevents an auth refresh from overriding the user's explicit choice
+    // (e.g., switching to Self Study workspace and reloading stays on Self Study).
+    final savedId = SessionPersistenceService.instance.getWorkspaceSync();
+    if (savedId != null && memberships.any((m) => m.workspaceId == savedId)) {
+      return savedId;
+    }
+
+    // Cold-start (no valid saved preference): prefer a joined class/family
+    // workspace over the automatic self-study workspace so enrolled students
+    // land in their active learning space on first launch.
+    final selfWorkspaceId = 'wsp_self_${user.id}';
+    for (final membership in memberships) {
+      if (membership.workspaceId != selfWorkspaceId) {
+        return membership.workspaceId;
+      }
+    }
+    return memberships.first.workspaceId;
   }
 
   void setWorkspaceId(String workspaceId) {
     state = workspaceId;
+    SessionPersistenceService.instance
+        .saveWorkspace(workspaceId)
+        .catchError((_) {});
   }
 }
 
 @riverpod
-WorkspaceMembership? activeWorkspaceMembership(ActiveWorkspaceMembershipRef ref) {
+WorkspaceMembership? activeWorkspaceMembership(
+    ActiveWorkspaceMembershipRef ref) {
   final authState = ref.watch(authNotifierProvider).valueOrNull;
   final user = authState?.maybeWhen(
     authenticated: (u) => u,
     orElse: () => null,
   );
   if (user == null) return null;
-  
+
   final activeId = ref.watch(activeWorkspaceIdProvider);
   if (activeId == null) return null;
-  
-  for (final membership in user.workspaceMemberships) {
+
+  for (final membership in effectiveStudentMemberships(user)) {
     if (membership.workspaceId == activeId) {
       return membership;
     }
@@ -51,7 +100,8 @@ WorkspaceMembership? activeWorkspaceMembership(ActiveWorkspaceMembershipRef ref)
 bool isActiveWorkspaceAdmin(IsActiveWorkspaceAdminRef ref) {
   final membership = ref.watch(activeWorkspaceMembershipProvider);
   if (membership == null) return false;
-  return membership.role == UserRole.workspaceAdmin || membership.role == UserRole.tenantAdmin;
+  return membership.role == UserRole.workspaceAdmin ||
+      membership.role == UserRole.tenantAdmin;
 }
 
 @riverpod
@@ -66,70 +116,12 @@ Workspace? activeStudentWorkspace(ActiveStudentWorkspaceRef ref) {
   final workspacesAsync = ref.watch(studentWorkspacesProvider);
   final activeId = ref.watch(activeWorkspaceIdProvider);
   if (activeId == null) return null;
-  
+
   final list = workspacesAsync.valueOrNull ?? [];
   for (final w in list) {
     if (w.id == activeId) {
       return w;
     }
   }
-  return null;
-}
-
-@riverpod
-class WorkspaceMessages extends _$WorkspaceMessages {
-  @override
-  Future<List<Map<String, dynamic>>> build(String workspaceId) async {
-    return ref.read(workspacesRepositoryProvider).getMessages(workspaceId);
-  }
-
-  Future<void> sendMessage(String content) async {
-    await ref.read(workspacesRepositoryProvider).postMessage(workspaceId, content: content);
-    ref.invalidateSelf();
-  }
-}
-
-@riverpod
-Future<List<Map<String, dynamic>>> workspaceActivity(WorkspaceActivityRef ref, String workspaceId) {
-  return ref.read(workspacesRepositoryProvider).listActivity(workspaceId);
-}
-
-@riverpod
-class WorkspaceMembersList extends _$WorkspaceMembersList {
-  @override
-  Future<List<Map<String, dynamic>>> build(String workspaceId) async {
-    return ref.read(workspacesRepositoryProvider).listMembers(workspaceId);
-  }
-
-  Future<void> changeRole(String userId, String role) async {
-    await ref.read(workspacesRepositoryProvider).changeMemberRole(workspaceId, userId: userId, role: role);
-    ref.invalidateSelf();
-  }
-
-  Future<void> removeMember(String userId) async {
-    // Re-use changeMemberRole/leave endpoint if needed or implement a specific method.
-    // In our backend, there is no direct kick endpoint, but Owner updating member's role to left/deleted isn't there.
-    // Wait, the backend leave_workspace has:
-    // @router.post("/{workspace_id}/leave")
-    // Wait, let's see how member can be removed. The backend list members has no kick, but we can update role or add kick if needed.
-    // Actually, in change_member_role there is only promoting/demoting.
-    // Wait! Let's just implement promotion/demotion.
-  }
-}
-
-@riverpod
-Future<String?> currentCollaborativeRole(CurrentCollaborativeRoleRef ref, String workspaceId) async {
-  final authValue = ref.watch(authNotifierProvider).valueOrNull;
-  final userId = authValue?.maybeWhen(authenticated: (user) => user.id, orElse: () => null);
-  if (userId == null) return null;
-  
-  try {
-    final members = await ref.watch(workspaceMembersListProvider(workspaceId).future);
-    for (final m in members) {
-      if (m['user_id'] == userId) {
-        return m['role'] as String?;
-      }
-    }
-  } catch (_) {}
   return null;
 }

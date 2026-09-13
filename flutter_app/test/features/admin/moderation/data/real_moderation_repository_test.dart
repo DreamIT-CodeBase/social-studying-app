@@ -83,8 +83,7 @@ void main() {
   });
 
   group('RealModerationRepository.resolve', () {
-    test('PUTs to the resolve sub-resource with the approved flag',
-        () async {
+    test('PUTs to the resolve sub-resource with the approved flag', () async {
       final adapter = _FakeAdapter(
         (opts) => _json(jsonEncode(_itemJson(verdict: 'approved'))),
       );

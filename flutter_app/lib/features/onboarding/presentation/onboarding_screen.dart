@@ -8,6 +8,7 @@ import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/features/admin/workspaces/data/demo_workspaces_repository.dart';
 import 'package:social_study_app/features/admin/workspaces/presentation/workspaces_notifier.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
+import 'package:social_study_app/shared/widgets/app_logo.dart';
 
 /// Sprint 6.9 — first-launch admin onboarding wizard.
 ///
@@ -47,7 +48,8 @@ enum AdminRole {
   parent('Parent', 'Family Study', 'Daily learning at home.'),
   teacher('Teacher', 'My Class', 'Classroom learning space.');
 
-  const AdminRole(this.label, this.defaultWorkspaceName, this.defaultDescription);
+  const AdminRole(
+      this.label, this.defaultWorkspaceName, this.defaultDescription);
 
   final String label;
   final String defaultWorkspaceName;
@@ -58,8 +60,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   _Step _step = _Step.roleChoice;
   AdminRole? _role;
 
-  late final TextEditingController _nameController =
-      TextEditingController();
+  late final TextEditingController _nameController = TextEditingController();
   late final TextEditingController _descriptionController =
       TextEditingController();
 
@@ -80,6 +81,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
+          // Admin plan button temporarily hidden for tester onboarding; code preserved
+          // TextButton.icon(
+          //   icon: const Icon(Icons.workspace_premium_rounded, size: 18),
+          //   label: const Text('Admin Plan'),
+          //   onPressed: () => context.push(AppRoutes.adminSubscription),
+          // ),
           IconButton(
             tooltip: 'Sign Out',
             icon: const Icon(Icons.logout_rounded),
@@ -165,11 +172,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────
 // Step 1 — role choice
 // ─────────────────────────────────────────────────────────────────────────
-
 
 class _RoleChoiceView extends StatelessWidget {
   const _RoleChoiceView({super.key, required this.onSelect});
@@ -215,30 +220,14 @@ class _RoleChoiceView extends StatelessWidget {
   }
 }
 
-
 class _Hero extends StatelessWidget {
   const _Hero();
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        width: 96,
-        height: 96,
-        decoration: BoxDecoration(
-          color: AppColors.primaryContainer,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: const Icon(
-          Icons.auto_stories_rounded,
-          color: AppColors.primary,
-          size: 56,
-        ),
-      ),
-    );
+    return const Center(child: AppLogo(size: 96));
   }
 }
-
 
 class _RoleCard extends StatelessWidget {
   const _RoleCard({required this.role, required this.onTap});
@@ -313,11 +302,9 @@ class _RoleCard extends StatelessWidget {
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────
 // Step 2 — workspace setup form
 // ─────────────────────────────────────────────────────────────────────────
-
 
 class _WorkspaceSetupView extends StatelessWidget {
   const _WorkspaceSetupView({
@@ -428,7 +415,6 @@ class _WorkspaceSetupView extends StatelessWidget {
     );
   }
 }
-
 
 void _snack(BuildContext context, String message) {
   ScaffoldMessenger.of(context)

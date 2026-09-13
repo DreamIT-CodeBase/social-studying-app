@@ -41,7 +41,6 @@ class QuestionNotAnswerableException implements Exception {
   String toString() => 'QuestionNotAnswerableException: $message';
 }
 
-
 /// Offline, deterministic implementation of the question loop.
 ///
 /// Backs the demo user so an offline dev can exercise the full
@@ -73,7 +72,11 @@ class DemoQuestionsRepository implements QuestionsRepository {
   final Map<String, double> _topicMastery = {};
 
   @override
-  Future<Question> next({required String workspaceId}) async {
+  Future<Question> next({
+    required String workspaceId,
+    bool revision = false,
+    String? subject,
+  }) async {
     await Future<void>.delayed(const Duration(milliseconds: 250));
     final fixture = _fixtures[_index % _fixtures.length];
     _index++;
@@ -92,6 +95,7 @@ class DemoQuestionsRepository implements QuestionsRepository {
     required String workspaceId,
     required String questionId,
     required AnswerSubmission submission,
+    bool revision = false,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 200));
     final state = _served[questionId];

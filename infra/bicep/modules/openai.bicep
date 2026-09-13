@@ -15,7 +15,9 @@ param gpt4oCapacity int = 0
 @description('Tokens-per-minute capacity for text-embedding-3-small (in thousands). 0 = skip deployment.')
 param embeddingCapacity int = 0
 
-var accountName = 'oai-ssa-${environment}-ddjopeut37ed2'
+var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id)
+
+var accountName = 'oai-ssa-${environment}-${uniqueSuffix}'
 var hasQuota = gpt4oCapacity > 0
 var hasEmbeddingQuota = embeddingCapacity > 0
 

@@ -57,9 +57,7 @@ def split_system_user(template: str) -> tuple[str, str]:
         ValueError: if the file doesn't contain both markers.
     """
     if "[SYSTEM]" not in template or "[USER]" not in template:
-        raise ValueError(
-            "Prompt must contain [SYSTEM] and [USER] section markers"
-        )
+        raise ValueError("Prompt must contain [SYSTEM] and [USER] section markers")
     _, _, rest = template.partition("[SYSTEM]")
     system_part, _, user_part = rest.partition("[USER]")
     return system_part.strip(), user_part.strip()

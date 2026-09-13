@@ -55,7 +55,7 @@ from typing import Any
 from app.mcp_tools.retrieve_content import RetrievedChunk
 from app.models.question import DifficultyLevel, McqOption, QuestionType
 from app.prompts import load_prompt, render, split_system_user
-from app.services import azure_openai
+from app.services import azure_openai, question_validation
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +238,7 @@ async def generate_question(
         len(grading_hints),
     )
 
-    return GeneratedQuestion(
+    generated = GeneratedQuestion(
         body=body.strip(),
         answer=answer,
         explanation=explanation,
@@ -248,6 +248,17 @@ async def generate_question(
         options=options,
         grading_hints=grading_hints,
     )
+
+    validated = question_validation.validate_and_sanitize_question(
+        generated,
+        grounding_chunks=grounding_chunks,
+    )
+    if validated is None:
+        raise QuestionShapeError(
+            f"Generated question failed accuracy validation for topic={topic!r}."
+        )
+
+    return validated
 
 
 # ── Prompt input formatting ─────────────────────────────────────────────────
@@ -286,9 +297,7 @@ def _parse_mcq(raw: dict[str, Any]) -> tuple[str, str, list[McqOption], list[str
     raw_options = raw.get("options")
     if not isinstance(raw_options, list) or len(raw_options) != 4:
         got = len(raw_options) if isinstance(raw_options, list) else "non-list"
-        raise QuestionShapeError(
-            f"MCQ requires exactly 4 options; got {got}."
-        )
+        raise QuestionShapeError(f"MCQ requires exactly 4 options; got {got}.")
 
     options: list[McqOption] = []
     correct_keys: list[str] = []
@@ -348,14 +357,8 @@ def _parse_long_answer(
     key_points_raw = raw.get("key_points") or []
     if not isinstance(key_points_raw, list) or len(key_points_raw) < 3:
         got = len(key_points_raw) if isinstance(key_points_raw, list) else "non-list"
-        raise QuestionShapeError(
-            f"long_answer requires at least 3 key_points; got {got}."
-        )
-    key_points = [
-        str(p).strip()
-        for p in key_points_raw
-        if isinstance(p, str) and p.strip()
-    ]
+        raise QuestionShapeError(f"long_answer requires at least 3 key_points; got {got}.")
+    key_points = [str(p).strip() for p in key_points_raw if isinstance(p, str) and p.strip()]
     if len(key_points) < 3:
         raise QuestionShapeError(
             f"long_answer key_points must each be a non-empty string; "
@@ -367,13 +370,19 @@ def _parse_long_answer(
 def _parse_true_false(
     raw: dict[str, Any],
 ) -> tuple[str, str, list[McqOption], list[str]]:
-    answer_raw = raw.get("answer")
-    if answer_raw not in ("true", "false"):
+    answer_val = raw.get("answer")
+    if isinstance(answer_val, bool):
+        answer_str = "true" if answer_val else "false"
+    elif isinstance(answer_val, str):
+        answer_str = answer_val.strip().lower()
+    else:
+        answer_str = ""
+    if answer_str not in ("true", "false"):
         raise QuestionShapeError(
-            f"true_false 'answer' must be exactly 'true' or 'false'; got {answer_raw!r}."
+            f"true_false 'answer' must be boolean or 'true'/'false'; got {answer_val!r}."
         )
     explanation = _require_string(raw, "explanation")
-    return answer_raw, explanation, [], []
+    return answer_str, explanation, [], []
 
 
 def _parse_mathematical(
@@ -384,23 +393,17 @@ def _parse_mathematical(
     steps_raw = raw.get("solution_steps") or []
     if not isinstance(steps_raw, list) or len(steps_raw) < 2:
         got = len(steps_raw) if isinstance(steps_raw, list) else "non-list"
-        raise QuestionShapeError(
-            f"mathematical requires at least 2 solution_steps; got {got}."
-        )
+        raise QuestionShapeError(f"mathematical requires at least 2 solution_steps; got {got}.")
     steps = [str(s).strip() for s in steps_raw if isinstance(s, str) and s.strip()]
     if len(steps) < 2:
-        raise QuestionShapeError(
-            "mathematical solution_steps must each be a non-empty string."
-        )
+        raise QuestionShapeError("mathematical solution_steps must each be a non-empty string.")
     return answer, explanation, [], steps
 
 
 def _require_string(raw: dict[str, Any], field_name: str) -> str:
     value = raw.get(field_name)
     if not isinstance(value, str) or not value.strip():
-        raise QuestionShapeError(
-            f"Required field {field_name!r} is missing or empty."
-        )
+        raise QuestionShapeError(f"Required field {field_name!r} is missing or empty.")
     return value.strip()
 
 
@@ -409,12 +412,12 @@ def _require_string(raw: dict[str, Any], field_name: str) -> str:
 _PROMPT_REGISTRY: dict[QuestionType, _PromptSpec] = {
     QuestionType.mcq: _PromptSpec(
         name="question_mcq_v1",
-        max_output_tokens=600,
+        max_output_tokens=350,
         parser=_parse_mcq,
     ),
     QuestionType.short_answer: _PromptSpec(
         name="question_short_answer_v1",
-        max_output_tokens=400,
+        max_output_tokens=200,
         parser=_parse_short_answer,
     ),
     QuestionType.long_answer: _PromptSpec(
@@ -433,3 +436,109 @@ _PROMPT_REGISTRY: dict[QuestionType, _PromptSpec] = {
         parser=_parse_mathematical,
     ),
 }
+
+
+async def generate_batch_questions(
+    *,
+    topic: str,
+    difficulty: DifficultyLevel,
+    count: int = 5,
+    grounding_chunks: list[RetrievedChunk],
+    seen_question_bodies: list[str] | None = None,
+    target_type: QuestionType | None = None,
+) -> list[GeneratedQuestion]:
+    """Generate a batch of diverse questions using question_batch_v1 prompt."""
+    if not grounding_chunks:
+        raise InsufficientSource(
+            "No grounding chunks supplied for batch generation; refusing "
+            "to call GPT-4o without source material."
+        )
+
+    template = load_prompt("question_batch_v1")
+    system_prompt, user_template = split_system_user(template)
+
+    source_content = _format_source(grounding_chunks)
+    seen_section = _format_seen(seen_question_bodies or [])
+
+    type_instruction = ""
+    if target_type:
+        type_desc_map = {
+            QuestionType.mcq: "Multiple Choice Question (mcq) — 4 options, exactly 1 correct",
+            QuestionType.short_answer: "Short Answer (short_answer) — concise 1-10 word factual recall answer",
+            QuestionType.true_false: "True / False (true_false) — answer must be exactly 'true' or 'false', with explanation",
+            QuestionType.long_answer: "Long Answer (long_answer) — essay-style answer with at least 3 key_points and a reference_answer",
+        }
+        type_desc = type_desc_map.get(target_type, target_type.value)
+        type_instruction = (
+            f"\nCRITICAL REQUIREMENT: Generate EXACTLY {count} questions in the 'questions' list. "
+            f"Every single question in the 'questions' list MUST have question_type = '{target_type.value}' ({type_desc}). "
+            f"Do not include any other question types. Ensure there are exactly {count} questions.\n"
+        )
+
+    user_prompt = render(
+        user_template,
+        topic=topic,
+        difficulty=difficulty.value,
+        source_content=source_content,
+        seen_questions=seen_section,
+        count=str(count),
+        type_instruction=type_instruction,
+    )
+
+    response = await azure_openai.chat_json(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        max_output_tokens=1500,
+        temperature=0.7,
+    )
+
+    if response.get("insufficient_source") is True:
+        raise InsufficientSource(f"Model returned insufficient_source for batch topic={topic!r}")
+
+    raw_questions = response.get("questions")
+    if not isinstance(raw_questions, list):
+        raise QuestionShapeError("Expected 'questions' field to be a list in response.")
+
+    results: list[GeneratedQuestion] = []
+    for raw in raw_questions:
+        try:
+            q_type_str = raw.get("question_type")
+            q_type = QuestionType(q_type_str)
+            if target_type and q_type != target_type:
+                logger.info(
+                    "Skipping question with mismatched type %s (expected %s)",
+                    q_type,
+                    target_type,
+                )
+                continue
+
+            spec = _PROMPT_REGISTRY[q_type]
+            answer, explanation, options, grading_hints = spec.parser(raw)
+
+            body = raw.get("body")
+            if not isinstance(body, str) or not body.strip():
+                continue
+
+            candidate_gq = GeneratedQuestion(
+                body=body.strip(),
+                answer=answer,
+                explanation=explanation,
+                question_type=q_type,
+                difficulty=difficulty,
+                prompt_version="question_batch_v1",
+                options=options,
+                grading_hints=grading_hints,
+            )
+
+            validated = question_validation.validate_and_sanitize_question(
+                candidate_gq,
+                grounding_chunks=grounding_chunks,
+            )
+            if validated is not None:
+                results.append(validated)
+            else:
+                logger.warning("Question failed accuracy validation in batch; discarded: %s", body)
+        except Exception as e:
+            logger.warning("Failed to parse question in batch: %s", e)
+
+    return results

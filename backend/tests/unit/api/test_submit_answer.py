@@ -145,9 +145,7 @@ def _patches(
     interactions_col = MagicMock()
     persisted_interactions: list[dict] = []
     interactions_col.insert_one = AsyncMock(
-        side_effect=lambda d: (
-            persisted_interactions.append(d) or MagicMock(inserted_id=d["_id"])
-        )
+        side_effect=lambda d: persisted_interactions.append(d) or MagicMock(inserted_id=d["_id"])
     )
 
     def _factory(_tid, collection):

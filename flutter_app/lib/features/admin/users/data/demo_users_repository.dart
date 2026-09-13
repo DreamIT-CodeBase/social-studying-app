@@ -89,8 +89,7 @@ class DemoUsersRepository implements UsersRepository {
     await _latency();
     return List.unmodifiable(
       _users.where(
-        (u) => u.workspaceMemberships
-            .any((m) => m.workspaceId == workspaceId),
+        (u) => u.workspaceMemberships.any((m) => m.workspaceId == workspaceId),
       ),
     );
   }
@@ -137,6 +136,21 @@ class DemoUsersRepository implements UsersRepository {
     final index = _users.indexWhere((u) => u.id == userId);
     if (index == -1) throw const UserNotFoundException();
     _users.removeAt(index);
+  }
+
+  @override
+  Future<void> removeMember({
+    required String workspaceId,
+    required String userId,
+  }) async {
+    await _latency();
+    final index = _users.indexWhere((u) => u.id == userId);
+    if (index == -1) throw const UserNotFoundException();
+    final user = _users[index];
+    final memberships = user.workspaceMemberships
+        .where((m) => m.workspaceId != workspaceId)
+        .toList();
+    _users[index] = user.copyWith(workspaceMemberships: memberships);
   }
 
   @override

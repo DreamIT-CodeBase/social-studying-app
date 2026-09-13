@@ -142,24 +142,78 @@ def _next_patches(
     the safety mock (so tests with multi-attempt scenarios can inspect
     its call count).
     """
+    # Build workspace with taxonomy topics matching selection
+    w = _workspace()
+    from app.models.workspace import CanonicalTopic
+
+    w.taxonomy.topics = [
+        CanonicalTopic(id=f"tpc_{i}", name=cand.topic_name)
+        for i, cand in enumerate(selection.candidates)
+    ]
+
     workspaces_col = MagicMock()
-    workspaces_col.find_one = AsyncMock(
-        return_value=_workspace().model_dump(by_alias=True)
-    )
+    workspaces_col.find_one = AsyncMock(return_value=w.model_dump(by_alias=True))
 
     persisted: list[dict] = []
     flashcards_col = MagicMock()
     flashcards_col.insert_one = AsyncMock(
         side_effect=lambda d: persisted.append(d) or MagicMock(inserted_id=d["_id"])
     )
+    flashcards_col.find_one = AsyncMock(return_value=None)
+
+    # Mock interactions and questions matching candidate topics
+    topic_names = [c.topic_name for c in selection.candidates]
+    mock_interactions = [
+        {
+            "question_id": f"q_{name}",
+            "topic": name,
+            "is_correct": True,
+            "answered_at": f"2026-07-03T00:00:0{i}Z",
+        }
+        for i, name in enumerate(topic_names)
+    ]
+
+    interactions_col = MagicMock()
+    _int_find_cursor = MagicMock()
+    _int_find_cursor.to_list = AsyncMock(return_value=mock_interactions)
+    interactions_col.find = MagicMock(return_value=_int_find_cursor)
+
+    questions_col = MagicMock()
+    mock_questions_map = {
+        f"q_{name}": {
+            "_id": f"q_{name}",
+            "tenant_id": "ten_test001",
+            "workspace_id": "wsp_a",
+            "document_id": "doc_a",
+            "topic": name,
+            "question_type": "mcq",
+            "difficulty": "beginner",
+            "body": f"body of {name}",
+            "answer": "A",
+            "explanation": "explanation",
+            "source_chunk_ids": ["chk_0"],
+            "status": "approved",
+        }
+        for name in topic_names
+    }
+
+    async def _mock_find_one(filter_query):
+        qid = filter_query.get("_id")
+        return mock_questions_map.get(qid)
+
+    questions_col.find_one = AsyncMock(side_effect=_mock_find_one)
 
     def _factory(_tid, collection):
-        from app.core.database import FLASHCARDS, WORKSPACES
+        from app.core.database import FLASHCARDS, INTERACTIONS, QUESTION_QUEUE, WORKSPACES
 
         if collection == WORKSPACES:
             return workspaces_col
         if collection == FLASHCARDS:
             return flashcards_col
+        if collection == INTERACTIONS:
+            return interactions_col
+        if collection == QUESTION_QUEUE:
+            return questions_col
         raise AssertionError(f"unexpected collection: {collection}")
 
     async def _invoke_router(name, params):
@@ -255,23 +309,114 @@ def test_next_flagged_first_candidate_persists_and_tries_next(client, student):
     cand1 = _topic_score(id_="tpc_1", name="FirstTopic")
     cand2 = _topic_score(id_="tpc_2", name="SecondTopic")
 
+    w = _workspace()
+    from app.models.workspace import CanonicalTopic
+
+    w.taxonomy.topics = [
+        CanonicalTopic(id="tpc_1", name="FirstTopic"),
+        CanonicalTopic(id="tpc_2", name="SecondTopic"),
+    ]
     workspaces_col = MagicMock()
-    workspaces_col.find_one = AsyncMock(
-        return_value=_workspace().model_dump(by_alias=True)
-    )
+    workspaces_col.find_one = AsyncMock(return_value=w.model_dump(by_alias=True))
     persisted: list[dict] = []
     flashcards_col = MagicMock()
     flashcards_col.insert_one = AsyncMock(
         side_effect=lambda d: persisted.append(d) or MagicMock(inserted_id=d["_id"])
     )
+    flashcards_col.find_one = AsyncMock(return_value=None)
+
+    mock_interactions = [
+        {
+            "question_id": "q_FirstTopic",
+            "topic": "FirstTopic",
+            "is_correct": True,
+            "answered_at": "2026-07-03T00:00:02Z",
+        },
+        {
+            "question_id": "q_SecondTopic",
+            "topic": "SecondTopic",
+            "is_correct": True,
+            "answered_at": "2026-07-03T00:00:01Z",
+        },
+    ]
+    interactions_col = MagicMock()
+    _int_find_cursor = MagicMock()
+    _int_find_cursor.to_list = AsyncMock(return_value=mock_interactions)
+    interactions_col.find = MagicMock(return_value=_int_find_cursor)
+
+    questions_col = MagicMock()
+    mock_questions_map = {
+        "FirstTopic": {
+            "_id": "q_FirstTopic",
+            "tenant_id": "ten_test001",
+            "workspace_id": "wsp_a",
+            "document_id": "doc_a",
+            "topic": "FirstTopic",
+            "question_type": "mcq",
+            "difficulty": "beginner",
+            "body": "body of FirstTopic",
+            "answer": "A",
+            "explanation": "explanation",
+            "source_chunk_ids": ["chk_0"],
+            "status": "approved",
+        },
+        "SecondTopic": {
+            "_id": "q_SecondTopic",
+            "tenant_id": "ten_test001",
+            "workspace_id": "wsp_a",
+            "document_id": "doc_a",
+            "topic": "SecondTopic",
+            "question_type": "mcq",
+            "difficulty": "beginner",
+            "body": "body of SecondTopic",
+            "answer": "A",
+            "explanation": "explanation",
+            "source_chunk_ids": ["chk_0"],
+            "status": "approved",
+        },
+    }
+
+    async def _mock_find_one(filter_query):
+        qid = filter_query.get("_id")
+        # In the test, query can be by _id
+        for q in mock_questions_map.values():
+            if q["_id"] == qid:
+                return q
+        return None
+
+    questions_col.find_one = AsyncMock(side_effect=_mock_find_one)
+
+    ratings_col = MagicMock()
+    _rat_find_cursor = MagicMock()
+    _rat_find_cursor.limit = MagicMock(return_value=_rat_find_cursor)
+    _rat_find_cursor.to_list = AsyncMock(return_value=[])
+    ratings_col.find = MagicMock(return_value=_rat_find_cursor)
+
+    mod_col = MagicMock()
+    mod_col.insert_one = AsyncMock()
 
     def _factory(_tid, collection):
-        from app.core.database import FLASHCARDS, WORKSPACES
+        from app.core.database import (
+            FLASHCARD_RATINGS,
+            FLASHCARDS,
+            INTERACTIONS,
+            MODERATION_LOG,
+            QUESTION_QUEUE,
+            WORKSPACES,
+        )
 
         if collection == WORKSPACES:
             return workspaces_col
         if collection == FLASHCARDS:
             return flashcards_col
+        if collection == INTERACTIONS:
+            return interactions_col
+        if collection == QUESTION_QUEUE:
+            return questions_col
+        if collection == FLASHCARD_RATINGS:
+            return ratings_col
+        if collection == MODERATION_LOG:
+            return mod_col
         raise AssertionError(collection)
 
     async def _invoke_router(name, params):
@@ -297,6 +442,7 @@ def test_next_flagged_first_candidate_persists_and_tries_next(client, student):
             "app.api.flashcards.content_safety.analyze_extracted_text",
             _safety,
         ),
+        patch("random.uniform", return_value=0.0),
     ):
         response = client.post("/api/v1/workspaces/wsp_a/flashcards/next")
 
@@ -322,12 +468,14 @@ def test_next_rejected_first_candidate_not_persisted(client, student):
     cand1 = _topic_score(id_="tpc_1", name="FirstTopic")
     cand2 = _topic_score(id_="tpc_2", name="SecondTopic")
     # First generation produces front==back; second is clean.
-    generated_iter = iter([
-        _generated(front="Glucose", back="Glucose"),  # structural fail
-        _generated(),
-    ])
+    generated_iter = iter(
+        [
+            _generated(front="Glucose", back="Glucose"),  # structural fail
+            _generated(),
+        ]
+    )
 
-    async def _generate(*, topic, grounding_chunks, seen_card_fronts=None):
+    async def _generate(*, topic, grounding_chunks, seen_card_fronts=None, mastery_tier="beginner"):
         return next(generated_iter)
 
     mocks, persisted, *_ = _next_patches(
@@ -350,12 +498,14 @@ def test_next_rejected_first_candidate_not_persisted(client, student):
 def test_next_insufficient_source_skips_to_next_candidate(client, student):
     cand1 = _topic_score(id_="tpc_1", name="DenseTopic")
     cand2 = _topic_score(id_="tpc_2", name="GoodTopic")
-    generated_iter = iter([
-        InsufficientFlashcardSource("nothing in source"),
-        _generated(),
-    ])
+    generated_iter = iter(
+        [
+            InsufficientFlashcardSource("nothing in source"),
+            _generated(),
+        ]
+    )
 
-    async def _generate(*, topic, grounding_chunks, seen_card_fronts=None):
+    async def _generate(*, topic, grounding_chunks, seen_card_fronts=None, mastery_tier="beginner"):
         item = next(generated_iter)
         if isinstance(item, Exception):
             raise item
@@ -373,36 +523,85 @@ def test_next_insufficient_source_skips_to_next_candidate(client, student):
     assert len(persisted) == 1
 
 
-def test_next_empty_retrieval_skips_candidate_without_calling_generator(
-    client, student
-):
+def test_next_empty_retrieval_skips_candidate_without_calling_generator(client, student):
     cand1 = _topic_score(id_="tpc_empty", name="EmptyTopic")
     cand2 = _topic_score(id_="tpc_good", name="GoodTopic")
-    retrieval_iter = iter([
-        RetrieveContentOutput(chunks=[], mode="empty"),
-        _retrieved("real source"),
-    ])
+    retrieval_iter = iter(
+        [
+            RetrieveContentOutput(chunks=[], mode="empty"),
+            _retrieved("real source"),
+        ]
+    )
 
     async def _invoke_router(name, params):
         return next(retrieval_iter)
 
+    w = _workspace()
+    from app.models.workspace import CanonicalTopic
+
+    w.taxonomy.topics = [
+        CanonicalTopic(id="tpc_empty", name="EmptyTopic"),
+        CanonicalTopic(id="tpc_good", name="GoodTopic"),
+    ]
     workspaces_col = MagicMock()
-    workspaces_col.find_one = AsyncMock(
-        return_value=_workspace().model_dump(by_alias=True)
-    )
+    workspaces_col.find_one = AsyncMock(return_value=w.model_dump(by_alias=True))
     persisted: list[dict] = []
     flashcards_col = MagicMock()
     flashcards_col.insert_one = AsyncMock(
         side_effect=lambda d: persisted.append(d) or MagicMock(inserted_id=d["_id"])
     )
+    flashcards_col.find_one = AsyncMock(return_value=None)
+
+    topic_names = ["EmptyTopic", "GoodTopic"]
+    mock_interactions = [
+        {
+            "question_id": f"q_{name}",
+            "topic": name,
+            "is_correct": True,
+            "answered_at": f"2026-07-03T00:00:0{i}Z",
+        }
+        for i, name in enumerate(topic_names)
+    ]
+    interactions_col = MagicMock()
+    _int_find_cursor = MagicMock()
+    _int_find_cursor.to_list = AsyncMock(return_value=mock_interactions)
+    interactions_col.find = MagicMock(return_value=_int_find_cursor)
+
+    questions_col = MagicMock()
+    mock_questions_map = {
+        "q_GoodTopic": {
+            "_id": "q_GoodTopic",
+            "tenant_id": "ten_test001",
+            "workspace_id": "wsp_a",
+            "document_id": "doc_a",
+            "topic": "GoodTopic",
+            "question_type": "mcq",
+            "difficulty": "beginner",
+            "body": "body of GoodTopic",
+            "answer": "A",
+            "explanation": "explanation",
+            "source_chunk_ids": ["chk_0"],
+            "status": "approved",
+        }
+    }
+
+    async def _mock_find_one(filter_query):
+        qid = filter_query.get("_id")
+        return mock_questions_map.get(qid)
+
+    questions_col.find_one = AsyncMock(side_effect=_mock_find_one)
 
     def _factory(_tid, collection):
-        from app.core.database import FLASHCARDS, WORKSPACES
+        from app.core.database import FLASHCARDS, INTERACTIONS, QUESTION_QUEUE, WORKSPACES
 
         if collection == WORKSPACES:
             return workspaces_col
         if collection == FLASHCARDS:
             return flashcards_col
+        if collection == INTERACTIONS:
+            return interactions_col
+        if collection == QUESTION_QUEUE:
+            return questions_col
         raise AssertionError(collection)
 
     generate_mock = AsyncMock(return_value=_generated())
@@ -436,7 +635,7 @@ def test_next_empty_retrieval_skips_candidate_without_calling_generator(
 def test_next_all_candidates_fail_returns_503_with_retry_after(client, student):
     cands = [_topic_score(id_=f"tpc_{i}", name=f"T{i}") for i in range(3)]
 
-    async def _generate(*, topic, grounding_chunks, seen_card_fronts=None):
+    async def _generate(*, topic, grounding_chunks, seen_card_fronts=None, mastery_tier="beginner"):
         # Front==back structural failure → all rejected.
         return _generated(front="X", back="X")
 
@@ -458,15 +657,20 @@ def test_next_all_candidates_fail_returns_503_with_retry_after(client, student):
 
 def test_next_no_topics_available_returns_409(client, student):
     workspaces_col = MagicMock()
-    workspaces_col.find_one = AsyncMock(
-        return_value=_workspace().model_dump(by_alias=True)
-    )
+    workspaces_col.find_one = AsyncMock(return_value=_workspace().model_dump(by_alias=True))
+
+    interactions_col = MagicMock()
+    _int_find_cursor = MagicMock()
+    _int_find_cursor.to_list = AsyncMock(return_value=[])
+    interactions_col.find = MagicMock(return_value=_int_find_cursor)
 
     def _factory(_tid, collection):
-        from app.core.database import WORKSPACES
+        from app.core.database import INTERACTIONS, WORKSPACES
 
         if collection == WORKSPACES:
             return workspaces_col
+        if collection == INTERACTIONS:
+            return interactions_col
         return MagicMock()
 
     with (
@@ -610,9 +814,7 @@ def test_rate_invalid_rating_returns_422(client, student):
 
 
 def test_rate_pending_review_card_returns_409(client, student):
-    mocks, captured = _rate_patches(
-        _flashcard_doc(status_=FlashcardStatus.pending_review)
-    )
+    mocks, captured = _rate_patches(_flashcard_doc(status_=FlashcardStatus.pending_review))
     with _enter(mocks):
         response = client.post(
             "/api/v1/workspaces/wsp_a/flashcards/fc_target/rate",

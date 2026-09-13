@@ -151,8 +151,7 @@ def predict_success_probability(
     """
     if difficulty not in _CURVES:
         raise ValueError(
-            f"Unknown difficulty {difficulty!r}; calibration table only "
-            f"covers {list(_CURVES)}"
+            f"Unknown difficulty {difficulty!r}; calibration table only covers {list(_CURVES)}"
         )
     bounded = max(0.0, min(1.0, mastery))
     return _CURVES[difficulty].predict(bounded)

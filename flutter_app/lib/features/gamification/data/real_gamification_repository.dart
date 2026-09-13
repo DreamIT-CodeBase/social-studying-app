@@ -58,4 +58,17 @@ class RealGamificationRepository implements GamificationRepository {
     );
     return LeaderboardResponse.fromJson(response.data!);
   }
+
+  @override
+  Future<SessionCompletionFeedback> completeSession({
+    required String workspaceId,
+    required String userId,
+    required String sessionType,
+  }) async {
+    final response = await dio.post<Map<String, dynamic>>(
+      '$_apiPrefix/workspaces/$workspaceId/users/$userId/gamification/complete-session',
+      data: {'session_type': sessionType},
+    );
+    return SessionCompletionFeedback.fromJson(response.data!);
+  }
 }

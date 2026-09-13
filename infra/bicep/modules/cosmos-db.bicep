@@ -1,11 +1,13 @@
-// Azure Cosmos DB for MongoDB API — one database per tenant, one collection per domain.
+// Azure Cosmos DB for MongoDB API — shared throughput for dynamic tenants.
 // Primary connection string stored in Key Vault.
 param location string
 param environment string
 param tags object
 param keyVaultName string
 
-var accountName = 'cosmos-ssa-${environment}-ddjopeut37ed2'
+var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id)
+
+var accountName = 'cosmos-ssa-${environment}-${uniqueSuffix}'
 
 resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
   name: accountName
@@ -64,6 +66,71 @@ resource tenantsCollection 'Microsoft.DocumentDB/databaseAccounts/mongodbDatabas
     }
   }
 }
+
+// Dynamic tenant domain collections all consume this one database-level
+// throughput pool, preventing every signup or component from allocating
+// another dedicated 400 RU/s. Every collection is sharded by tenant_id.
+resource tenantDataDatabase 'Microsoft.DocumentDB/databaseAccounts/mongodbDatabases@2024-05-15' = {
+  parent: cosmosAccount
+  name: 'tenant_data_shared'
+  properties: {
+    resource: {
+      id: 'tenant_data_shared'
+    }
+    options: {
+      throughput: 400
+    }
+  }
+}
+
+var tenantCollectionNames = [
+  'users'
+  'workspaces'
+  'documents'
+  'chunks'
+  'knowledge_states'
+  'interactions'
+  'gamification'
+  'moderation_log'
+  'question_queue'
+  'flashcards'
+  'flashcard_ratings'
+  'adaptive_sessions'
+  'xp_events'
+  'notification_tokens'
+  'notification_dispatches'
+  'screen_time_settings'
+  'screen_time_wallets'
+  'device_usage_logs'
+  'app_usage_logs'
+  'screen_time_logs'
+  'app_restrictions'
+  'parental_controls'
+  'permission_status'
+  'db_stats'
+  'rag_evaluations'
+]
+
+resource tenantCollections 'Microsoft.DocumentDB/databaseAccounts/mongodbDatabases/collections@2024-05-15' = [for collectionName in tenantCollectionNames: {
+  parent: tenantDataDatabase
+  name: collectionName
+  properties: {
+    resource: {
+      id: collectionName
+      shardKey: {
+        tenant_id: 'Hash'
+      }
+      indexes: [
+        {
+          key: { keys: ['_id'] }
+        }
+        {
+          key: { keys: ['tenant_id'] }
+        }
+      ]
+    }
+  }
+}]
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   name: keyVaultName

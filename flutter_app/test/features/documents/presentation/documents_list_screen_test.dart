@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/theme/app_theme.dart';
 import 'package:social_study_app/features/documents/data/documents_repository.dart';
 import 'package:social_study_app/features/documents/presentation/documents_list_screen.dart';
@@ -28,13 +29,13 @@ Document _doc({
       createdAt: '2026-05-15T00:00:00+00:00',
     );
 
-Widget _wrap({required _MockRepo repo}) {
+Widget _wrap({required _MockRepo repo, String workspaceId = 'wsp_test'}) {
   return ProviderScope(
     overrides: [documentsRepositoryProvider.overrideWith((_) => repo)],
     child: MaterialApp(
       theme: AppTheme.light,
-      home: const Scaffold(
-        body: DocumentsListScreen(workspaceId: 'wsp_test'),
+      home: Scaffold(
+        body: DocumentsListScreen(workspaceId: workspaceId),
       ),
     ),
   );
@@ -49,9 +50,13 @@ void main() {
 
   setUp(() {
     repo = _MockRepo();
+    setAppFlavor(AppFlavor.admin);
   });
 
-  testWidgets('shows loading then empty state when no docs exist', (tester) async {
+  tearDown(() => setAppFlavor(AppFlavor.student));
+
+  testWidgets('shows loading then empty state when no docs exist',
+      (tester) async {
     final completer = Completer<List<Document>>();
     when(() => repo.list(workspaceId: 'wsp_test'))
         .thenAnswer((_) => completer.future);
@@ -105,7 +110,8 @@ void main() {
     expect(find.text('Try Again'), findsOneWidget);
   });
 
-  testWidgets('detail line summarises pages, chunks, and topics', (tester) async {
+  testWidgets('detail line summarises pages, chunks, and topics',
+      (tester) async {
     when(() => repo.list(workspaceId: 'wsp_test')).thenAnswer(
       (_) async => [
         const Document(
@@ -129,5 +135,57 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('12 pages • 9 chunks • 2 topics'), findsOneWidget);
+  });
+
+  testWidgets('admin can confirm and permanently delete a material',
+      (tester) async {
+    when(() => repo.list(workspaceId: 'wsp_test')).thenAnswer(
+      (_) async => [_doc(id: 'doc_a', filename: 'wrong-notes.pdf')],
+    );
+    when(
+      () => repo.delete(
+        workspaceId: 'wsp_test',
+        documentId: 'doc_a',
+      ),
+    ).thenAnswer((_) async {});
+
+    await tester.pumpWidget(_wrap(repo: repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('delete-document-doc_a')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Permanently delete material?'), findsOneWidget);
+    expect(find.textContaining('completely erased'), findsOneWidget);
+
+    await tester.tap(find.text('Delete permanently'));
+    await tester.pumpAndSettle();
+
+    verify(
+      () => repo.delete(
+        workspaceId: 'wsp_test',
+        documentId: 'doc_a',
+      ),
+    ).called(1);
+    expect(find.text('wrong-notes.pdf'), findsNothing);
+    expect(find.textContaining('was permanently deleted'), findsOneWidget);
+  });
+
+  testWidgets('student self-study workspace shows the delete action',
+      (tester) async {
+    setAppFlavor(AppFlavor.student);
+    when(() => repo.list(workspaceId: 'wsp_self_usr_1')).thenAnswer(
+      (_) async => [_doc(id: 'doc_self')],
+    );
+
+    await tester.pumpWidget(
+      _wrap(repo: repo, workspaceId: 'wsp_self_usr_1'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('delete-document-doc_self')),
+      findsOneWidget,
+    );
   });
 }

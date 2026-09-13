@@ -89,10 +89,7 @@ async def test_handle_happy_path_writes_vector_count_and_advances_to_ready():
         document_id="doc_abc",
     )
 
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses == [
         DocumentStatus.vectorizing.value,
         DocumentStatus.ready.value,
@@ -124,10 +121,7 @@ async def test_handle_empty_chunks_advances_with_zero_vectors():
 
     final_update = col.update_one.await_args_list[-1].args[1]["$set"]
     assert final_update["vector_count"] == 0
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses[-1] == DocumentStatus.ready.value
 
 
@@ -150,10 +144,7 @@ async def test_handle_document_not_found_marks_failed_and_dead_letters():
         await worker._handle(msg)
 
     msg._receiver.dead_letter_message.assert_awaited_once()
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses == [
         DocumentStatus.vectorizing.value,
         DocumentStatus.failed.value,
@@ -176,15 +167,12 @@ async def test_handle_transient_service_unavailable_propagates():
             "app.workers.vectorization.vectorization.vectorize_document",
             AsyncMock(side_effect=ServiceUnavailableError("OpenAI 503")),
         ),
+        pytest.raises(ServiceUnavailableError),
     ):
-        with pytest.raises(ServiceUnavailableError):
-            await worker._handle(msg)
+        await worker._handle(msg)
 
     # Status was set to vectorizing but never advanced — SB will redeliver.
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses == [DocumentStatus.vectorizing.value]
 
 
@@ -201,17 +189,10 @@ async def test_handle_workspace_missing_outcome_still_advances():
         patch("app.workers.vectorization.get_collection", return_value=col),
         patch(
             "app.workers.vectorization.vectorization.vectorize_document",
-            AsyncMock(
-                return_value=_outcome(
-                    read=2, indexed=2, topics=0, workspace_missing=True
-                )
-            ),
+            AsyncMock(return_value=_outcome(read=2, indexed=2, topics=0, workspace_missing=True)),
         ),
     ):
         await worker._handle(msg)
 
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses[-1] == DocumentStatus.ready.value

@@ -4,6 +4,8 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/shared/models/user.dart';
+import 'package:social_study_app/shared/models/workspace.dart';
+import 'package:social_study_app/shared/services/session_persistence_service.dart';
 import 'package:social_study_app/features/profile/presentation/profile_screen.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/admin/moderation/presentation/moderation_screen.dart';
@@ -12,6 +14,7 @@ import 'package:social_study_app/features/admin/workspaces/presentation/workspac
 import 'package:social_study_app/features/admin/analytics/presentation/workspace_analytics_screen.dart';
 import 'package:social_study_app/features/admin/students/presentation/student_progress_detail_screen.dart';
 import 'package:social_study_app/features/auth/presentation/login_screen.dart';
+import 'package:social_study_app/features/auth/presentation/legal_document_screen.dart';
 import 'package:social_study_app/features/documents/presentation/document_polling_screen.dart';
 import 'package:social_study_app/features/documents/presentation/documents_list_screen.dart';
 import 'package:social_study_app/features/gamification/presentation/badges_screen.dart';
@@ -22,9 +25,14 @@ import 'package:social_study_app/features/home/presentation/admin_home_screen.da
 import 'package:social_study_app/features/home/presentation/student_home_screen.dart';
 import 'package:social_study_app/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:social_study_app/features/onboarding/presentation/permission_onboarding_screen.dart';
+import 'package:social_study_app/features/onboarding/presentation/theme_selection_screen.dart';
 import 'package:social_study_app/features/taxonomy/presentation/taxonomy_viewer_screen.dart';
 import 'package:social_study_app/features/screen_time/screens/screen_time_settings_screen.dart';
-
+import 'package:social_study_app/features/study_sessions/domain/adaptive_session_models.dart';
+import 'package:social_study_app/features/study_sessions/presentation/adaptive_session_screen.dart';
+import 'package:social_study_app/features/subscription/presentation/payment_cancelled_screen.dart';
+import 'package:social_study_app/features/subscription/presentation/payment_success_screen.dart';
+import 'package:social_study_app/features/subscription/presentation/subscription_paywall_screen.dart';
 
 part 'router.g.dart';
 
@@ -62,11 +70,38 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
     return authAsync.when(
       data: (authState) {
         final isOnLogin = state.matchedLocation == AppRoutes.login;
-        final isOnOnboarding =
+        final isOnAdminOnboarding =
             state.matchedLocation == AppRoutes.adminOnboarding;
+        // Legal pages and payment returns are accessible.
+        final isOnLegal = state.matchedLocation == AppRoutes.terms ||
+            state.matchedLocation == AppRoutes.privacy;
+        final isOnPayment = state.matchedLocation == AppRoutes.paymentSuccess ||
+            state.matchedLocation == AppRoutes.paymentCancelled ||
+            state.matchedLocation == AppRoutes.adminSubscription;
         return authState.when(
-          unauthenticated: () => isOnLogin ? null : AppRoutes.login,
+          unauthenticated: () =>
+              (isOnLogin || isOnLegal || isOnPayment) ? null : AppRoutes.login,
           authenticated: (user) {
+            if (isOnPayment) return null;
+            if (currentFlavor == AppFlavor.student) {
+              final isSetupDone = SessionPersistenceService.instance
+                  .isPermissionSetupCompleteSync(user.id);
+              final isOnStudentOnboarding =
+                  state.matchedLocation == AppRoutes.studentOnboarding;
+              if (!isSetupDone && !isOnStudentOnboarding) {
+                return AppRoutes.studentOnboarding;
+              }
+              if (isSetupDone && isOnStudentOnboarding) {
+                return AppRoutes.studentHome;
+              }
+              if (isOnLogin) {
+                return isSetupDone
+                    ? AppRoutes.studentHome
+                    : AppRoutes.studentOnboarding;
+              }
+              return null;
+            }
+
             // Sprint 6.9 — admin with zero workspaces lands on the
             // onboarding wizard, not the dashboard. The wizard
             // creates the first workspace, and the redirect stops
@@ -74,19 +109,20 @@ class RouterNotifier extends _$RouterNotifier implements Listenable {
             // The student flavor doesn't get this — students join a
             // workspace via invite code, not creation.
             final adminWorkspaces = user.workspaceMemberships.where((m) =>
-                m.role == UserRole.tenantAdmin ||
-                m.role == UserRole.workspaceAdmin ||
-                user.role == UserRole.tenantAdmin);
+                !isSelfLearningWorkspaceId(m.workspaceId) &&
+                (m.role == UserRole.tenantAdmin ||
+                    m.role == UserRole.workspaceAdmin ||
+                    user.role == UserRole.tenantAdmin));
             final needsOnboarding =
                 currentFlavor == AppFlavor.admin && adminWorkspaces.isEmpty;
 
             if (needsOnboarding) {
-              return isOnOnboarding ? null : AppRoutes.adminOnboarding;
+              return isOnAdminOnboarding ? null : AppRoutes.adminOnboarding;
             }
             // If the admin has workspaces but somehow lands on
             // /onboarding (e.g. browser back button after first
             // creation), bounce them to the dashboard.
-            if (isOnOnboarding) {
+            if (isOnAdminOnboarding) {
               return AppRoutes.adminDashboard;
             }
             if (!isOnLogin) return null;
@@ -120,6 +156,19 @@ GoRouter router(RouterRef ref) {
         path: AppRoutes.login,
         builder: (_, __) => const LoginScreen(),
       ),
+      // ── Legal screens — accessible from the login footer ─────────────
+      GoRoute(
+        path: AppRoutes.terms,
+        builder: (_, __) => const TermsAndConditionsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.privacy,
+        builder: (_, __) => const PrivacyPolicyScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.themeSelection,
+        builder: (_, __) => const ThemeSelectionScreen(),
+      ),
       GoRoute(
         path: AppRoutes.profile,
         builder: (_, __) => const ProfileScreen(),
@@ -131,6 +180,20 @@ GoRouter router(RouterRef ref) {
       GoRoute(
         path: AppRoutes.adminOnboarding,
         builder: (_, __) => const OnboardingScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.adminSubscription,
+        builder: (_, __) => const SubscriptionPaywallScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.paymentSuccess,
+        builder: (_, state) => PaymentSuccessScreen(
+          sessionId: state.uri.queryParameters['session_id'],
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.paymentCancelled,
+        builder: (_, __) => const PaymentCancelledScreen(),
       ),
       GoRoute(
         path: AppRoutes.adminDocumentPolling,
@@ -179,12 +242,46 @@ GoRouter router(RouterRef ref) {
         path: AppRoutes.studentScreenTimeSettings,
         builder: (_, __) => const ScreenTimeSettingsScreen(),
       ),
-
+      GoRoute(
+        path: AppRoutes.studentAdaptiveSession,
+        builder: (_, state) {
+          final workspaceId = state.pathParameters['workspaceId']!;
+          final rawMode = adaptiveSessionModeFromWire(
+            state.uri.queryParameters['mode'],
+          );
+          final mode = isSelfLearningWorkspaceId(workspaceId) &&
+                  rawMode == AdaptiveSessionMode.revision
+              ? AdaptiveSessionMode.study
+              : rawMode;
+          return AdaptiveSessionScreen(
+            workspaceId: workspaceId,
+            mode: mode,
+            subject: state.uri.queryParameters['subject'],
+            subcategory: state.uri.queryParameters['subcategory'],
+            questionType: state.uri.queryParameters['question_type'],
+          );
+        },
+      ),
       GoRoute(
         path: AppRoutes.studentRevisionSession,
-        builder: (_, state) => RevisionScreen(
-          workspaceId: state.pathParameters['workspaceId']!,
-        ),
+        redirect: (_, state) {
+          final workspaceId = state.pathParameters['workspaceId']!;
+          if (isSelfLearningWorkspaceId(workspaceId)) {
+            final subject = state.uri.queryParameters['subject'];
+            final query = subject != null
+                ? '?mode=study&subject=${Uri.encodeComponent(subject)}'
+                : '?mode=study';
+            return '/student/session/$workspaceId$query';
+          }
+          return null;
+        },
+        builder: (_, state) {
+          final autoStart = state.uri.queryParameters['autoStart'] == 'true';
+          return RevisionScreen(
+            workspaceId: state.pathParameters['workspaceId']!,
+            autoStart: autoStart,
+          );
+        },
       ),
       GoRoute(
         path: AppRoutes.studentDocuments,
@@ -214,8 +311,7 @@ GoRouter router(RouterRef ref) {
           // Display name rides as a ``?name=`` query param so the
           // AppBar can render it without a users lookup. The roster
           // already has the name in hand and just URL-encodes it.
-          studentName:
-              state.uri.queryParameters['name'] ?? 'Student progress',
+          studentName: state.uri.queryParameters['name'] ?? 'Student progress',
         ),
       ),
       GoRoute(

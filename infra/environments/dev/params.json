@@ -12,7 +12,7 @@
       "value": "ssa2"
     },
     "deployerObjectId": {
-      "value": "08455b40-54d9-42eb-8992-6dc8b40a64b2"
+      "value": "4b5a567c-d193-4870-8bef-86282d112e04"
     },
     "b2cTenantId": {
       "value": "cbf2e3d3-af81-40dd-a396-aae11d2c6b3f"
@@ -23,11 +23,26 @@
     "b2cPolicyName": {
       "value": "B2C_1_signupsignin"
     },
+    "emailProvider": {
+      "value": "microsoft_graph"
+    },
+    "microsoftGraphTenantId": {
+      "value": "d8f6cae4-fdf0-476c-9337-1fbde504324b"
+    },
+    "microsoftGraphClientId": {
+      "value": "c1f19a14-4235-4f4d-961c-d8bdc0f4c21b"
+    },
+    "microsoftGraphClientSecretUri": {
+      "value": "https://kv-ssa-dev-xumnzboir5vz2.vault.azure.net/secrets/microsoft-graph-client-secret/4587f4ef99b843f59eebcd0a8f2d8776"
+    },
+    "microsoftGraphSenderEmail": {
+      "value": "socials@socialstudying.ai"
+    },
     "gpt4oCapacity": {
       "value": 10
     },
     "embeddingCapacity": {
-      "value": 30
+      "value": 50
     }
   }
 }

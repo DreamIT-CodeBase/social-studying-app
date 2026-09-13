@@ -29,6 +29,8 @@ mixin _$FlashcardSession {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int easyCount, int mediumCount, int hardCount)
+        completed,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -42,6 +44,7 @@ mixin _$FlashcardSession {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int easyCount, int mediumCount, int hardCount)? completed,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -55,6 +58,7 @@ mixin _$FlashcardSession {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int easyCount, int mediumCount, int hardCount)? completed,
     required TResult orElse(),
   }) =>
       throw _privateConstructorUsedError;
@@ -68,6 +72,7 @@ mixin _$FlashcardSession {
     required TResult Function(FlashcardSessionRated value) rated,
     required TResult Function(FlashcardSessionUnavailable value) unavailable,
     required TResult Function(FlashcardSessionError value) error,
+    required TResult Function(FlashcardSessionCompleted value) completed,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -80,6 +85,7 @@ mixin _$FlashcardSession {
     TResult? Function(FlashcardSessionRated value)? rated,
     TResult? Function(FlashcardSessionUnavailable value)? unavailable,
     TResult? Function(FlashcardSessionError value)? error,
+    TResult? Function(FlashcardSessionCompleted value)? completed,
   }) =>
       throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -92,6 +98,7 @@ mixin _$FlashcardSession {
     TResult Function(FlashcardSessionRated value)? rated,
     TResult Function(FlashcardSessionUnavailable value)? unavailable,
     TResult Function(FlashcardSessionError value)? error,
+    TResult Function(FlashcardSessionCompleted value)? completed,
     required TResult orElse(),
   }) =>
       throw _privateConstructorUsedError;
@@ -171,6 +178,8 @@ class _$FlashcardSessionIdleImpl implements FlashcardSessionIdle {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int easyCount, int mediumCount, int hardCount)
+        completed,
   }) {
     return idle();
   }
@@ -187,6 +196,7 @@ class _$FlashcardSessionIdleImpl implements FlashcardSessionIdle {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int easyCount, int mediumCount, int hardCount)? completed,
   }) {
     return idle?.call();
   }
@@ -203,6 +213,7 @@ class _$FlashcardSessionIdleImpl implements FlashcardSessionIdle {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int easyCount, int mediumCount, int hardCount)? completed,
     required TResult orElse(),
   }) {
     if (idle != null) {
@@ -222,6 +233,7 @@ class _$FlashcardSessionIdleImpl implements FlashcardSessionIdle {
     required TResult Function(FlashcardSessionRated value) rated,
     required TResult Function(FlashcardSessionUnavailable value) unavailable,
     required TResult Function(FlashcardSessionError value) error,
+    required TResult Function(FlashcardSessionCompleted value) completed,
   }) {
     return idle(this);
   }
@@ -237,6 +249,7 @@ class _$FlashcardSessionIdleImpl implements FlashcardSessionIdle {
     TResult? Function(FlashcardSessionRated value)? rated,
     TResult? Function(FlashcardSessionUnavailable value)? unavailable,
     TResult? Function(FlashcardSessionError value)? error,
+    TResult? Function(FlashcardSessionCompleted value)? completed,
   }) {
     return idle?.call(this);
   }
@@ -252,6 +265,7 @@ class _$FlashcardSessionIdleImpl implements FlashcardSessionIdle {
     TResult Function(FlashcardSessionRated value)? rated,
     TResult Function(FlashcardSessionUnavailable value)? unavailable,
     TResult Function(FlashcardSessionError value)? error,
+    TResult Function(FlashcardSessionCompleted value)? completed,
     required TResult orElse(),
   }) {
     if (idle != null) {
@@ -320,6 +334,8 @@ class _$FlashcardSessionLoadingImpl implements FlashcardSessionLoading {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int easyCount, int mediumCount, int hardCount)
+        completed,
   }) {
     return loading();
   }
@@ -336,6 +352,7 @@ class _$FlashcardSessionLoadingImpl implements FlashcardSessionLoading {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int easyCount, int mediumCount, int hardCount)? completed,
   }) {
     return loading?.call();
   }
@@ -352,6 +369,7 @@ class _$FlashcardSessionLoadingImpl implements FlashcardSessionLoading {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int easyCount, int mediumCount, int hardCount)? completed,
     required TResult orElse(),
   }) {
     if (loading != null) {
@@ -371,6 +389,7 @@ class _$FlashcardSessionLoadingImpl implements FlashcardSessionLoading {
     required TResult Function(FlashcardSessionRated value) rated,
     required TResult Function(FlashcardSessionUnavailable value) unavailable,
     required TResult Function(FlashcardSessionError value) error,
+    required TResult Function(FlashcardSessionCompleted value) completed,
   }) {
     return loading(this);
   }
@@ -386,6 +405,7 @@ class _$FlashcardSessionLoadingImpl implements FlashcardSessionLoading {
     TResult? Function(FlashcardSessionRated value)? rated,
     TResult? Function(FlashcardSessionUnavailable value)? unavailable,
     TResult? Function(FlashcardSessionError value)? error,
+    TResult? Function(FlashcardSessionCompleted value)? completed,
   }) {
     return loading?.call(this);
   }
@@ -401,6 +421,7 @@ class _$FlashcardSessionLoadingImpl implements FlashcardSessionLoading {
     TResult Function(FlashcardSessionRated value)? rated,
     TResult Function(FlashcardSessionUnavailable value)? unavailable,
     TResult Function(FlashcardSessionError value)? error,
+    TResult Function(FlashcardSessionCompleted value)? completed,
     required TResult orElse(),
   }) {
     if (loading != null) {
@@ -511,6 +532,8 @@ class _$FlashcardSessionViewingFrontImpl
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int easyCount, int mediumCount, int hardCount)
+        completed,
   }) {
     return viewingFront(card);
   }
@@ -527,6 +550,7 @@ class _$FlashcardSessionViewingFrontImpl
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int easyCount, int mediumCount, int hardCount)? completed,
   }) {
     return viewingFront?.call(card);
   }
@@ -543,6 +567,7 @@ class _$FlashcardSessionViewingFrontImpl
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int easyCount, int mediumCount, int hardCount)? completed,
     required TResult orElse(),
   }) {
     if (viewingFront != null) {
@@ -562,6 +587,7 @@ class _$FlashcardSessionViewingFrontImpl
     required TResult Function(FlashcardSessionRated value) rated,
     required TResult Function(FlashcardSessionUnavailable value) unavailable,
     required TResult Function(FlashcardSessionError value) error,
+    required TResult Function(FlashcardSessionCompleted value) completed,
   }) {
     return viewingFront(this);
   }
@@ -577,6 +603,7 @@ class _$FlashcardSessionViewingFrontImpl
     TResult? Function(FlashcardSessionRated value)? rated,
     TResult? Function(FlashcardSessionUnavailable value)? unavailable,
     TResult? Function(FlashcardSessionError value)? error,
+    TResult? Function(FlashcardSessionCompleted value)? completed,
   }) {
     return viewingFront?.call(this);
   }
@@ -592,6 +619,7 @@ class _$FlashcardSessionViewingFrontImpl
     TResult Function(FlashcardSessionRated value)? rated,
     TResult Function(FlashcardSessionUnavailable value)? unavailable,
     TResult Function(FlashcardSessionError value)? error,
+    TResult Function(FlashcardSessionCompleted value)? completed,
     required TResult orElse(),
   }) {
     if (viewingFront != null) {
@@ -709,6 +737,8 @@ class _$FlashcardSessionRevealedImpl implements FlashcardSessionRevealed {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int easyCount, int mediumCount, int hardCount)
+        completed,
   }) {
     return revealed(card);
   }
@@ -725,6 +755,7 @@ class _$FlashcardSessionRevealedImpl implements FlashcardSessionRevealed {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int easyCount, int mediumCount, int hardCount)? completed,
   }) {
     return revealed?.call(card);
   }
@@ -741,6 +772,7 @@ class _$FlashcardSessionRevealedImpl implements FlashcardSessionRevealed {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int easyCount, int mediumCount, int hardCount)? completed,
     required TResult orElse(),
   }) {
     if (revealed != null) {
@@ -760,6 +792,7 @@ class _$FlashcardSessionRevealedImpl implements FlashcardSessionRevealed {
     required TResult Function(FlashcardSessionRated value) rated,
     required TResult Function(FlashcardSessionUnavailable value) unavailable,
     required TResult Function(FlashcardSessionError value) error,
+    required TResult Function(FlashcardSessionCompleted value) completed,
   }) {
     return revealed(this);
   }
@@ -775,6 +808,7 @@ class _$FlashcardSessionRevealedImpl implements FlashcardSessionRevealed {
     TResult? Function(FlashcardSessionRated value)? rated,
     TResult? Function(FlashcardSessionUnavailable value)? unavailable,
     TResult? Function(FlashcardSessionError value)? error,
+    TResult? Function(FlashcardSessionCompleted value)? completed,
   }) {
     return revealed?.call(this);
   }
@@ -790,6 +824,7 @@ class _$FlashcardSessionRevealedImpl implements FlashcardSessionRevealed {
     TResult Function(FlashcardSessionRated value)? rated,
     TResult Function(FlashcardSessionUnavailable value)? unavailable,
     TResult Function(FlashcardSessionError value)? error,
+    TResult Function(FlashcardSessionCompleted value)? completed,
     required TResult orElse(),
   }) {
     if (revealed != null) {
@@ -915,6 +950,8 @@ class _$FlashcardSessionRatingImpl implements FlashcardSessionRating {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int easyCount, int mediumCount, int hardCount)
+        completed,
   }) {
     return rating(card, this.rating);
   }
@@ -931,6 +968,7 @@ class _$FlashcardSessionRatingImpl implements FlashcardSessionRating {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int easyCount, int mediumCount, int hardCount)? completed,
   }) {
     return rating?.call(card, this.rating);
   }
@@ -947,6 +985,7 @@ class _$FlashcardSessionRatingImpl implements FlashcardSessionRating {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int easyCount, int mediumCount, int hardCount)? completed,
     required TResult orElse(),
   }) {
     if (rating != null) {
@@ -966,6 +1005,7 @@ class _$FlashcardSessionRatingImpl implements FlashcardSessionRating {
     required TResult Function(FlashcardSessionRated value) rated,
     required TResult Function(FlashcardSessionUnavailable value) unavailable,
     required TResult Function(FlashcardSessionError value) error,
+    required TResult Function(FlashcardSessionCompleted value) completed,
   }) {
     return rating(this);
   }
@@ -981,6 +1021,7 @@ class _$FlashcardSessionRatingImpl implements FlashcardSessionRating {
     TResult? Function(FlashcardSessionRated value)? rated,
     TResult? Function(FlashcardSessionUnavailable value)? unavailable,
     TResult? Function(FlashcardSessionError value)? error,
+    TResult? Function(FlashcardSessionCompleted value)? completed,
   }) {
     return rating?.call(this);
   }
@@ -996,6 +1037,7 @@ class _$FlashcardSessionRatingImpl implements FlashcardSessionRating {
     TResult Function(FlashcardSessionRated value)? rated,
     TResult Function(FlashcardSessionUnavailable value)? unavailable,
     TResult Function(FlashcardSessionError value)? error,
+    TResult Function(FlashcardSessionCompleted value)? completed,
     required TResult orElse(),
   }) {
     if (rating != null) {
@@ -1134,6 +1176,8 @@ class _$FlashcardSessionRatedImpl implements FlashcardSessionRated {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int easyCount, int mediumCount, int hardCount)
+        completed,
   }) {
     return rated(card, response);
   }
@@ -1150,6 +1194,7 @@ class _$FlashcardSessionRatedImpl implements FlashcardSessionRated {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int easyCount, int mediumCount, int hardCount)? completed,
   }) {
     return rated?.call(card, response);
   }
@@ -1166,6 +1211,7 @@ class _$FlashcardSessionRatedImpl implements FlashcardSessionRated {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int easyCount, int mediumCount, int hardCount)? completed,
     required TResult orElse(),
   }) {
     if (rated != null) {
@@ -1185,6 +1231,7 @@ class _$FlashcardSessionRatedImpl implements FlashcardSessionRated {
     required TResult Function(FlashcardSessionRated value) rated,
     required TResult Function(FlashcardSessionUnavailable value) unavailable,
     required TResult Function(FlashcardSessionError value) error,
+    required TResult Function(FlashcardSessionCompleted value) completed,
   }) {
     return rated(this);
   }
@@ -1200,6 +1247,7 @@ class _$FlashcardSessionRatedImpl implements FlashcardSessionRated {
     TResult? Function(FlashcardSessionRated value)? rated,
     TResult? Function(FlashcardSessionUnavailable value)? unavailable,
     TResult? Function(FlashcardSessionError value)? error,
+    TResult? Function(FlashcardSessionCompleted value)? completed,
   }) {
     return rated?.call(this);
   }
@@ -1215,6 +1263,7 @@ class _$FlashcardSessionRatedImpl implements FlashcardSessionRated {
     TResult Function(FlashcardSessionRated value)? rated,
     TResult Function(FlashcardSessionUnavailable value)? unavailable,
     TResult Function(FlashcardSessionError value)? error,
+    TResult Function(FlashcardSessionCompleted value)? completed,
     required TResult orElse(),
   }) {
     if (rated != null) {
@@ -1345,6 +1394,8 @@ class _$FlashcardSessionUnavailableImpl implements FlashcardSessionUnavailable {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int easyCount, int mediumCount, int hardCount)
+        completed,
   }) {
     return unavailable(message, isNoTopics, retryAfterSeconds);
   }
@@ -1361,6 +1412,7 @@ class _$FlashcardSessionUnavailableImpl implements FlashcardSessionUnavailable {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int easyCount, int mediumCount, int hardCount)? completed,
   }) {
     return unavailable?.call(message, isNoTopics, retryAfterSeconds);
   }
@@ -1377,6 +1429,7 @@ class _$FlashcardSessionUnavailableImpl implements FlashcardSessionUnavailable {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int easyCount, int mediumCount, int hardCount)? completed,
     required TResult orElse(),
   }) {
     if (unavailable != null) {
@@ -1396,6 +1449,7 @@ class _$FlashcardSessionUnavailableImpl implements FlashcardSessionUnavailable {
     required TResult Function(FlashcardSessionRated value) rated,
     required TResult Function(FlashcardSessionUnavailable value) unavailable,
     required TResult Function(FlashcardSessionError value) error,
+    required TResult Function(FlashcardSessionCompleted value) completed,
   }) {
     return unavailable(this);
   }
@@ -1411,6 +1465,7 @@ class _$FlashcardSessionUnavailableImpl implements FlashcardSessionUnavailable {
     TResult? Function(FlashcardSessionRated value)? rated,
     TResult? Function(FlashcardSessionUnavailable value)? unavailable,
     TResult? Function(FlashcardSessionError value)? error,
+    TResult? Function(FlashcardSessionCompleted value)? completed,
   }) {
     return unavailable?.call(this);
   }
@@ -1426,6 +1481,7 @@ class _$FlashcardSessionUnavailableImpl implements FlashcardSessionUnavailable {
     TResult Function(FlashcardSessionRated value)? rated,
     TResult Function(FlashcardSessionUnavailable value)? unavailable,
     TResult Function(FlashcardSessionError value)? error,
+    TResult Function(FlashcardSessionCompleted value)? completed,
     required TResult orElse(),
   }) {
     if (unavailable != null) {
@@ -1533,6 +1589,8 @@ class _$FlashcardSessionErrorImpl implements FlashcardSessionError {
             String message, bool isNoTopics, int? retryAfterSeconds)
         unavailable,
     required TResult Function(String message) error,
+    required TResult Function(int easyCount, int mediumCount, int hardCount)
+        completed,
   }) {
     return error(message);
   }
@@ -1549,6 +1607,7 @@ class _$FlashcardSessionErrorImpl implements FlashcardSessionError {
     TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult? Function(String message)? error,
+    TResult? Function(int easyCount, int mediumCount, int hardCount)? completed,
   }) {
     return error?.call(message);
   }
@@ -1565,6 +1624,7 @@ class _$FlashcardSessionErrorImpl implements FlashcardSessionError {
     TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
         unavailable,
     TResult Function(String message)? error,
+    TResult Function(int easyCount, int mediumCount, int hardCount)? completed,
     required TResult orElse(),
   }) {
     if (error != null) {
@@ -1584,6 +1644,7 @@ class _$FlashcardSessionErrorImpl implements FlashcardSessionError {
     required TResult Function(FlashcardSessionRated value) rated,
     required TResult Function(FlashcardSessionUnavailable value) unavailable,
     required TResult Function(FlashcardSessionError value) error,
+    required TResult Function(FlashcardSessionCompleted value) completed,
   }) {
     return error(this);
   }
@@ -1599,6 +1660,7 @@ class _$FlashcardSessionErrorImpl implements FlashcardSessionError {
     TResult? Function(FlashcardSessionRated value)? rated,
     TResult? Function(FlashcardSessionUnavailable value)? unavailable,
     TResult? Function(FlashcardSessionError value)? error,
+    TResult? Function(FlashcardSessionCompleted value)? completed,
   }) {
     return error?.call(this);
   }
@@ -1614,6 +1676,7 @@ class _$FlashcardSessionErrorImpl implements FlashcardSessionError {
     TResult Function(FlashcardSessionRated value)? rated,
     TResult Function(FlashcardSessionUnavailable value)? unavailable,
     TResult Function(FlashcardSessionError value)? error,
+    TResult Function(FlashcardSessionCompleted value)? completed,
     required TResult orElse(),
   }) {
     if (error != null) {
@@ -1633,5 +1696,225 @@ abstract class FlashcardSessionError implements FlashcardSession {
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
   _$$FlashcardSessionErrorImplCopyWith<_$FlashcardSessionErrorImpl>
+      get copyWith => throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class _$$FlashcardSessionCompletedImplCopyWith<$Res> {
+  factory _$$FlashcardSessionCompletedImplCopyWith(
+          _$FlashcardSessionCompletedImpl value,
+          $Res Function(_$FlashcardSessionCompletedImpl) then) =
+      __$$FlashcardSessionCompletedImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({int easyCount, int mediumCount, int hardCount});
+}
+
+/// @nodoc
+class __$$FlashcardSessionCompletedImplCopyWithImpl<$Res>
+    extends _$FlashcardSessionCopyWithImpl<$Res,
+        _$FlashcardSessionCompletedImpl>
+    implements _$$FlashcardSessionCompletedImplCopyWith<$Res> {
+  __$$FlashcardSessionCompletedImplCopyWithImpl(
+      _$FlashcardSessionCompletedImpl _value,
+      $Res Function(_$FlashcardSessionCompletedImpl) _then)
+      : super(_value, _then);
+
+  /// Create a copy of FlashcardSession
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? easyCount = null,
+    Object? mediumCount = null,
+    Object? hardCount = null,
+  }) {
+    return _then(_$FlashcardSessionCompletedImpl(
+      easyCount: null == easyCount
+          ? _value.easyCount
+          : easyCount // ignore: cast_nullable_to_non_nullable
+              as int,
+      mediumCount: null == mediumCount
+          ? _value.mediumCount
+          : mediumCount // ignore: cast_nullable_to_non_nullable
+              as int,
+      hardCount: null == hardCount
+          ? _value.hardCount
+          : hardCount // ignore: cast_nullable_to_non_nullable
+              as int,
+    ));
+  }
+}
+
+/// @nodoc
+
+class _$FlashcardSessionCompletedImpl implements FlashcardSessionCompleted {
+  const _$FlashcardSessionCompletedImpl(
+      {required this.easyCount,
+      required this.mediumCount,
+      required this.hardCount});
+
+  @override
+  final int easyCount;
+  @override
+  final int mediumCount;
+  @override
+  final int hardCount;
+
+  @override
+  String toString() {
+    return 'FlashcardSession.completed(easyCount: $easyCount, mediumCount: $mediumCount, hardCount: $hardCount)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$FlashcardSessionCompletedImpl &&
+            (identical(other.easyCount, easyCount) ||
+                other.easyCount == easyCount) &&
+            (identical(other.mediumCount, mediumCount) ||
+                other.mediumCount == mediumCount) &&
+            (identical(other.hardCount, hardCount) ||
+                other.hardCount == hardCount));
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(runtimeType, easyCount, mediumCount, hardCount);
+
+  /// Create a copy of FlashcardSession
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$FlashcardSessionCompletedImplCopyWith<_$FlashcardSessionCompletedImpl>
+      get copyWith => __$$FlashcardSessionCompletedImplCopyWithImpl<
+          _$FlashcardSessionCompletedImpl>(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function() idle,
+    required TResult Function() loading,
+    required TResult Function(Flashcard card) viewingFront,
+    required TResult Function(Flashcard card) revealed,
+    required TResult Function(Flashcard card, FlashcardRating rating) rating,
+    required TResult Function(Flashcard card, FlashcardRatingResponse response)
+        rated,
+    required TResult Function(
+            String message, bool isNoTopics, int? retryAfterSeconds)
+        unavailable,
+    required TResult Function(String message) error,
+    required TResult Function(int easyCount, int mediumCount, int hardCount)
+        completed,
+  }) {
+    return completed(easyCount, mediumCount, hardCount);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function()? idle,
+    TResult? Function()? loading,
+    TResult? Function(Flashcard card)? viewingFront,
+    TResult? Function(Flashcard card)? revealed,
+    TResult? Function(Flashcard card, FlashcardRating rating)? rating,
+    TResult? Function(Flashcard card, FlashcardRatingResponse response)? rated,
+    TResult? Function(String message, bool isNoTopics, int? retryAfterSeconds)?
+        unavailable,
+    TResult? Function(String message)? error,
+    TResult? Function(int easyCount, int mediumCount, int hardCount)? completed,
+  }) {
+    return completed?.call(easyCount, mediumCount, hardCount);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function()? idle,
+    TResult Function()? loading,
+    TResult Function(Flashcard card)? viewingFront,
+    TResult Function(Flashcard card)? revealed,
+    TResult Function(Flashcard card, FlashcardRating rating)? rating,
+    TResult Function(Flashcard card, FlashcardRatingResponse response)? rated,
+    TResult Function(String message, bool isNoTopics, int? retryAfterSeconds)?
+        unavailable,
+    TResult Function(String message)? error,
+    TResult Function(int easyCount, int mediumCount, int hardCount)? completed,
+    required TResult orElse(),
+  }) {
+    if (completed != null) {
+      return completed(easyCount, mediumCount, hardCount);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(FlashcardSessionIdle value) idle,
+    required TResult Function(FlashcardSessionLoading value) loading,
+    required TResult Function(FlashcardSessionViewingFront value) viewingFront,
+    required TResult Function(FlashcardSessionRevealed value) revealed,
+    required TResult Function(FlashcardSessionRating value) rating,
+    required TResult Function(FlashcardSessionRated value) rated,
+    required TResult Function(FlashcardSessionUnavailable value) unavailable,
+    required TResult Function(FlashcardSessionError value) error,
+    required TResult Function(FlashcardSessionCompleted value) completed,
+  }) {
+    return completed(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(FlashcardSessionIdle value)? idle,
+    TResult? Function(FlashcardSessionLoading value)? loading,
+    TResult? Function(FlashcardSessionViewingFront value)? viewingFront,
+    TResult? Function(FlashcardSessionRevealed value)? revealed,
+    TResult? Function(FlashcardSessionRating value)? rating,
+    TResult? Function(FlashcardSessionRated value)? rated,
+    TResult? Function(FlashcardSessionUnavailable value)? unavailable,
+    TResult? Function(FlashcardSessionError value)? error,
+    TResult? Function(FlashcardSessionCompleted value)? completed,
+  }) {
+    return completed?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(FlashcardSessionIdle value)? idle,
+    TResult Function(FlashcardSessionLoading value)? loading,
+    TResult Function(FlashcardSessionViewingFront value)? viewingFront,
+    TResult Function(FlashcardSessionRevealed value)? revealed,
+    TResult Function(FlashcardSessionRating value)? rating,
+    TResult Function(FlashcardSessionRated value)? rated,
+    TResult Function(FlashcardSessionUnavailable value)? unavailable,
+    TResult Function(FlashcardSessionError value)? error,
+    TResult Function(FlashcardSessionCompleted value)? completed,
+    required TResult orElse(),
+  }) {
+    if (completed != null) {
+      return completed(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class FlashcardSessionCompleted implements FlashcardSession {
+  const factory FlashcardSessionCompleted(
+      {required final int easyCount,
+      required final int mediumCount,
+      required final int hardCount}) = _$FlashcardSessionCompletedImpl;
+
+  int get easyCount;
+  int get mediumCount;
+  int get hardCount;
+
+  /// Create a copy of FlashcardSession
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$FlashcardSessionCompletedImplCopyWith<_$FlashcardSessionCompletedImpl>
       get copyWith => throw _privateConstructorUsedError;
 }

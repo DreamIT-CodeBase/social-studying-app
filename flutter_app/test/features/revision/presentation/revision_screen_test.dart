@@ -93,23 +93,32 @@ void main() {
 
   testWidgets('shows the AppBar progress bar and first question',
       (tester) async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
 
     await tester.pumpWidget(_wrap(qRepo: qRepo, fRepo: fRepo));
     await tester.pumpAndSettle();
 
-    expect(find.text('Revision'), findsOneWidget);
+    expect(find.text('Quick Revision'), findsOneWidget);
     expect(find.text('Item 1 of 2'), findsOneWidget);
     expect(find.text('Which organelle is the site of photosynthesis?'),
         findsOneWidget);
     expect(find.text('Chloroplast'), findsOneWidget);
+    expect(find.text('04:00'), findsOneWidget);
+    expect(
+      tester.getCenter(find.text('04:00')).dx,
+      greaterThan(tester.getCenter(find.text('0 XP')).dx),
+    );
   });
 
   testWidgets('the loading state shows the item count', (tester) async {
     final completer = Completer<Question>();
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) => completer.future);
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) => completer.future);
 
     await tester.pumpWidget(_wrap(qRepo: qRepo, fRepo: fRepo));
     await tester.pump();
@@ -123,12 +132,15 @@ void main() {
 
   testWidgets('submitting a question shows the graded view with explanation',
       (tester) async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback());
 
     await tester.pumpWidget(_wrap(qRepo: qRepo, fRepo: fRepo));
@@ -139,20 +151,24 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Submit Answer'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Correct!'), findsOneWidget);
-    expect(find.textContaining('chlorophyll'), findsOneWidget);
-    expect(find.text('+15 XP'), findsOneWidget);
+    expect(find.text('Correct!', skipOffstage: false), findsOneWidget);
+    expect(find.textContaining('chlorophyll', skipOffstage: false),
+        findsOneWidget);
+    expect(find.text('+15 XP', skipOffstage: false), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Continue'), findsOneWidget);
   });
 
   testWidgets('Continue advances to the next item and flips into the flashcard',
       (tester) async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback());
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
@@ -171,14 +187,18 @@ void main() {
     expect(find.text('Item 2 of 2'), findsOneWidget);
   });
 
-  testWidgets('tapping the flashcard reveals the back and rating buttons',
+  testWidgets(
+      'tapping the flashcard reveals the back and first-card swipe hint',
       (tester) async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback());
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
@@ -196,20 +216,22 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('The mitochondrion.'), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, 'Easy'), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, 'Medium'), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, 'Hard'), findsOneWidget);
+    expect(find.textContaining('Swipe left'), findsOneWidget);
+    expect(find.textContaining('Swipe right'), findsOneWidget);
   });
 
   testWidgets(
       'rating the last flashcard and continuing transitions to the summary',
       (tester) async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback(correct: true));
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
@@ -233,9 +255,7 @@ void main() {
     // Item 2: flashcard
     await tester.tap(find.text('Powerhouse of the cell?'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Easy'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+    await tester.drag(find.text('The mitochondrion.'), const Offset(-300, 0));
     await tester.pumpAndSettle();
 
     expect(find.text('Session complete!'), findsOneWidget);
@@ -248,8 +268,10 @@ void main() {
   testWidgets('Restart from the summary kicks off a fresh session',
       (tester) async {
     var qCalls = 0;
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async {
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async {
       qCalls++;
       return _mcq();
     });
@@ -257,6 +279,7 @@ void main() {
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback());
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
@@ -276,9 +299,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Powerhouse of the cell?'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Easy'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+    await tester.drag(find.text('The mitochondrion.'), const Offset(-300, 0));
     await tester.pumpAndSettle();
 
     expect(find.text('Session complete!'), findsOneWidget);
@@ -293,21 +314,26 @@ void main() {
 
   testWidgets('no-topics state shows admin-targeted copy without retry',
       (tester) async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenThrow(const NoTopicsAvailableException());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenThrow(const NoTopicsAvailableException());
 
     await tester.pumpWidget(_wrap(qRepo: qRepo, fRepo: fRepo));
     await tester.pumpAndSettle();
 
-    expect(find.text('No content yet'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Try Again'), findsNothing);
+    expect(find.text("You're all caught up!"), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Start Study Session'),
+        findsOneWidget);
   });
 
   testWidgets('generator-busy state offers a retry that re-fetches',
       (tester) async {
     var calls = 0;
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async {
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async {
       calls++;
       if (calls == 1) {
         throw const QuestionGenerationUnavailableException();
@@ -327,8 +353,10 @@ void main() {
 
   testWidgets('generic error shows ErrorView with retry', (tester) async {
     var calls = 0;
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async {
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async {
       calls++;
       if (calls == 1) throw Exception('network down');
       return _mcq();

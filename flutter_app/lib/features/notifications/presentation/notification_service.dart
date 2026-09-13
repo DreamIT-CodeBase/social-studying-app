@@ -5,9 +5,7 @@ import 'dart:io' show Platform;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show
-    WidgetsBinding,
-    debugPrint;
+import 'package:flutter/material.dart' show WidgetsBinding, debugPrint;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -60,6 +58,13 @@ class NotificationService {
 
   StreamSubscription<RemoteMessage>? _foregroundSubscription;
   StreamSubscription<RemoteMessage>? _openedSubscription;
+  StreamSubscription<String>? _tokenRefreshSubscription;
+  Future<void>? _registrationRetry;
+  bool _localReady = false;
+  bool _initialized = false;
+  String? _lastLocalTitle;
+  DateTime? _lastLocalAt;
+  void Function(RemoteMessage message)? _onTap;
 
   /// Initialize Firebase, request permission, register the token.
   /// Returns true on full success, false on any failure path (the
@@ -67,6 +72,13 @@ class NotificationService {
   Future<bool> initialize({
     required void Function(RemoteMessage message) onTap,
   }) async {
+    _onTap = onTap;
+    if (_initialized) return true;
+    try {
+      await _initializeLocalNotifications(onTap);
+    } catch (error) {
+      debugPrint('NotificationService: Local notification init failed: $error');
+    }
     try {
       await Firebase.initializeApp();
       _messaging ??= FirebaseMessaging.instance;
@@ -86,21 +98,52 @@ class NotificationService {
       return false;
     }
 
-    final token = await _safeGetToken();
-    if (token == null) {
-      debugPrint('NotificationService: no FCM token; skipping register');
+    final recoveryInstallationId = await _installationId();
+    final recoveryPlatform = _detectPlatform();
+    if (recoveryPlatform == null) return false;
+
+    // Install recovery before the APNs wait. The previous flow returned after
+    // ten seconds and never heard Firebase's eventual token callback.
+    _tokenRefreshSubscription ??=
+        _messaging!.onTokenRefresh.listen((freshToken) async {
+      await _registerRemoteToken(
+        installationId: recoveryInstallationId,
+        token: freshToken,
+        platform: recoveryPlatform,
+      );
+    });
+
+    // Firebase Messaging on Apple platforms cannot issue a usable FCM token
+    // until APNs registration has completed. The APNs callback is asynchronous,
+    // so give it a short bounded window instead of racing getToken() on launch.
+    if (Platform.isIOS && !await _waitForApnsToken()) {
+      debugPrint(
+          'NotificationService: APNs token unavailable; skipping register');
+      _startRegistrationRetry(
+        installationId: recoveryInstallationId,
+        platform: recoveryPlatform,
+      );
       return false;
     }
 
-    debugPrint('\n\n========================================');
-    debugPrint('YOUR FCM TOKEN FOR FIREBASE CONSOLE:');
-    debugPrint(token);
-    debugPrint('========================================\n\n');
+    final token = await _safeGetToken();
+    if (token == null) {
+      debugPrint('NotificationService: no FCM token; skipping register');
+      _startRegistrationRetry(
+        installationId: recoveryInstallationId,
+        platform: recoveryPlatform,
+      );
+      return false;
+    }
+
+    // FCM tokens identify app installations and must never be printed.
+    debugPrint('NotificationService: FCM token acquired');
 
     final installationId = await _installationId();
     final platform = _detectPlatform();
     if (platform == null) {
-      debugPrint('NotificationService: unsupported platform; skipping register');
+      debugPrint(
+          'NotificationService: unsupported platform; skipping register');
       return false;
     }
 
@@ -115,49 +158,12 @@ class NotificationService {
       return false;
     }
 
-    // Hot-rotation hook: when FCM cycles the token (rarely), re-
-    // register so the backend keeps the right value for this
-    // installation. The tokenRefresh stream survives for the lifetime
-    // of the FirebaseMessaging singleton; we don't hold the
-    // subscription because there's nothing to cancel on sign-out (the
-    // delete-token endpoint handles that).
-    _messaging!.onTokenRefresh.listen((freshToken) async {
-      try {
-        await tokenRepository.register(
-          installationId: installationId,
-          token: freshToken,
-          platform: platform,
-        );
-      } catch (error) {
-        debugPrint('NotificationService: token-refresh register failed — $error');
-      }
-    });
-
-    // Initialize local notifications
-    const androidInitSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosInitSettings = DarwinInitializationSettings();
-    const initSettings = InitializationSettings(
-      android: androidInitSettings,
-      iOS: iosInitSettings,
-    );
-    
-    await _localNotifications.initialize(
-      settings: initSettings,
-      onDidReceiveNotificationResponse: (details) {
-        if (details.payload != null) {
-          try {
-            final data = jsonDecode(details.payload!) as Map<String, dynamic>;
-            onTap(RemoteMessage(data: data));
-          } catch (_) {}
-        }
-      },
-    );
-
-    // Allow iOS to show notifications in the foreground natively
+    // Foreground messages are rendered through the local plugin on both
+    // platforms, avoiding iOS-version-specific presentation differences.
     await _messaging!.setForegroundNotificationPresentationOptions(
-      alert: true,
+      alert: false,
       badge: true,
-      sound: true,
+      sound: false,
     );
 
     // Foreground messages. FCM doesn't render a system notification
@@ -165,37 +171,116 @@ class NotificationService {
     _foregroundSubscription = FirebaseMessaging.onMessage.listen((message) {
       final notification = message.notification;
       if (notification != null) {
-        _localNotifications.show(
-          id: notification.hashCode,
-          title: notification.title,
-          body: notification.body,
-          notificationDetails: const NotificationDetails(
-            android: AndroidNotificationDetails(
-              'social_study_channel',
-              'Social Study Notifications',
-              importance: Importance.max,
-              priority: Priority.high,
-            ),
-          ),
-          payload: jsonEncode(message.data),
+        showCompletionNotification(
+          title: notification.title ?? 'Social Studying',
+          body: notification.body ?? '',
+          payload: message.data,
         );
-        // Play in-app notification chime (foreground only — the system
-        // handles sound when the app is backgrounded).
-        SoundService.instance.playNotification();
       }
     });
 
     // Background → tap path. ``getInitialMessage`` covers the
     // cold-start tap (app was terminated, tap launched it).
-    _openedSubscription =
-        FirebaseMessaging.onMessageOpenedApp.listen(onTap);
+    _openedSubscription = FirebaseMessaging.onMessageOpenedApp.listen(onTap);
     final initial = await _messaging!.getInitialMessage();
     if (initial != null) {
       // Deferred so the GoRouter is mounted by the time we navigate.
       WidgetsBinding.instance.addPostFrameCallback((_) => onTap(initial));
     }
 
+    _initialized = true;
     return true;
+  }
+
+  Future<void> _initializeLocalNotifications(
+    void Function(RemoteMessage message) onTap,
+  ) async {
+    if (_localReady) return;
+    const settings = InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      iOS: DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      ),
+    );
+    await _localNotifications.initialize(
+      settings: settings,
+      onDidReceiveNotificationResponse: (details) {
+        final rawPayload = details.payload;
+        if (rawPayload == null) return;
+        try {
+          onTap(RemoteMessage(
+            data: jsonDecode(rawPayload) as Map<String, dynamic>,
+          ));
+        } catch (_) {}
+      },
+    );
+    _localReady = true;
+  }
+
+  /// Displays an immediate alert informing the student that all allotted
+  /// social media time has been consumed and their apps are blocked.
+  Future<void> showSocialTimeExhaustedNotification() async {
+    await showCompletionNotification(
+      title: "Time's Up!",
+      body: 'You have consumed your all time for social media.',
+      payload: {'type': 'screen_time_exhausted'},
+    );
+  }
+
+  /// Immediately display completion feedback with sound while the app is open.
+  /// The backend push covers background and terminated app states.
+  Future<void> showCompletionNotification({
+    required String title,
+    required String body,
+    Map<String, dynamic> payload = const {},
+  }) async {
+    // Local completion alerts do not depend on APNs/FCM registration. Ensure
+    // the notification plugin is ready here so a slow or failed remote-token
+    // registration cannot suppress the iPhone Notification Centre entry.
+    if (!_localReady) {
+      try {
+        await _initializeLocalNotifications(_onTap ?? (_) {});
+      } catch (error) {
+        debugPrint(
+          'NotificationService: local notification init failed: $error',
+        );
+        return;
+      }
+    }
+    final now = DateTime.now();
+    if (_lastLocalTitle == title &&
+        _lastLocalAt != null &&
+        now.difference(_lastLocalAt!) < const Duration(seconds: 5)) {
+      return;
+    }
+    _lastLocalTitle = title;
+    _lastLocalAt = now;
+    await _localNotifications.show(
+      id: now.millisecondsSinceEpoch.remainder(1 << 31),
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          'social_study_channel',
+          'Social Study Notifications',
+          channelDescription: 'Study and flashcard completion notifications',
+          importance: Importance.max,
+          priority: Priority.high,
+          playSound: true,
+          styleInformation: BigTextStyleInformation(body, contentTitle: title),
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          sound: 'default',
+        ),
+      ),
+      payload: jsonEncode(payload),
+    );
+    SoundService.instance.playNotification();
   }
 
   /// Clean up subscriptions. Tests use this; production tears down on
@@ -203,8 +288,10 @@ class NotificationService {
   Future<void> dispose() async {
     await _foregroundSubscription?.cancel();
     await _openedSubscription?.cancel();
+    await _tokenRefreshSubscription?.cancel();
     _foregroundSubscription = null;
     _openedSubscription = null;
+    _tokenRefreshSubscription = null;
   }
 
   /// Delete the token from the backend on explicit sign-out so the
@@ -212,8 +299,7 @@ class NotificationService {
   /// installation.
   Future<void> deregister() async {
     try {
-      final installationId =
-          await secureStorage.read(key: _installationIdKey);
+      final installationId = await secureStorage.read(key: _installationIdKey);
       if (installationId == null) return;
       await tokenRepository.delete(installationId: installationId);
     } catch (error) {
@@ -241,6 +327,64 @@ class NotificationService {
       debugPrint('NotificationService: getToken failed — $error');
       return null;
     }
+  }
+
+  Future<bool> _registerRemoteToken({
+    required String installationId,
+    required String token,
+    required DevicePlatform platform,
+  }) async {
+    try {
+      await tokenRepository.register(
+        installationId: installationId,
+        token: token,
+        platform: platform,
+      );
+      debugPrint('NotificationService: backend device registration complete');
+      return true;
+    } catch (error) {
+      debugPrint('NotificationService: backend registration failed: $error');
+      return false;
+    }
+  }
+
+  void _startRegistrationRetry({
+    required String installationId,
+    required DevicePlatform platform,
+  }) {
+    if (_registrationRetry != null) return;
+    _registrationRetry = () async {
+      // Continue for five minutes. App-resume also invokes initialize again,
+      // while Firebase token refresh remains subscribed for the app lifetime.
+      for (var attempt = 0; attempt < 60; attempt++) {
+        await Future<void>.delayed(const Duration(seconds: 5));
+        if (Platform.isIOS && !await _waitForApnsToken(maxAttempts: 2)) {
+          continue;
+        }
+        final token = await _safeGetToken();
+        if (token != null &&
+            await _registerRemoteToken(
+              installationId: installationId,
+              token: token,
+              platform: platform,
+            )) {
+          break;
+        }
+      }
+      _registrationRetry = null;
+    }();
+  }
+
+  Future<bool> _waitForApnsToken({int maxAttempts = 20}) async {
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        if (await _messaging!.getAPNSToken() != null) return true;
+      } catch (error) {
+        debugPrint('NotificationService: APNs token check failed — $error');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    return false;
   }
 
   /// Read the per-install UUID from secure storage, minting one on
@@ -291,11 +435,9 @@ class NotificationService {
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────
 // Tap routing
 // ─────────────────────────────────────────────────────────────────────────
-
 
 /// Maps a notification payload to a deep-link path. Centralised so the
 /// tap handler in the app's startup wiring and the cold-start handler
@@ -335,11 +477,9 @@ String? deepLinkFor(Map<String, dynamic> data) {
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────
 // Riverpod provider
 // ─────────────────────────────────────────────────────────────────────────
-
 
 /// Singleton ``NotificationService`` keyed off the auth-driven token
 /// repository. Held for the app lifetime so the FCM subscriptions
@@ -351,6 +491,3 @@ NotificationService notificationService(NotificationServiceRef ref) {
     secureStorage: const FlutterSecureStorage(),
   );
 }
-
-
-

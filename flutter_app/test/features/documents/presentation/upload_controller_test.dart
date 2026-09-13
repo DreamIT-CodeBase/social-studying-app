@@ -45,7 +45,8 @@ void main() {
     container = ProviderContainer(
       overrides: [
         documentsRepositoryProvider.overrideWith((_) => repo),
-        workspacesRepositoryProvider.overrideWithValue(DemoWorkspacesRepository()),
+        workspacesRepositoryProvider
+            .overrideWithValue(DemoWorkspacesRepository()),
       ],
     );
   });
@@ -68,7 +69,7 @@ void main() {
     when(() => repo.upload(
           workspaceId: any(named: 'workspaceId'),
           filename: any(named: 'filename'),
-          bytes: any(named: 'bytes'),
+          upload: any(named: 'upload'),
           contentType: any(named: 'contentType'),
         )).thenAnswer((_) async => _doc());
 
@@ -87,12 +88,13 @@ void main() {
     verify(() => repo.upload(
           workspaceId: 'wsp_test',
           filename: 'study.pdf',
-          bytes: any(named: 'bytes'),
+          upload: any(named: 'upload'),
           contentType: 'application/pdf',
         )).called(1);
   });
 
-  test('user cancels picker → null result, state back to AsyncData(null), no upload',
+  test(
+      'user cancels picker → null result, state back to AsyncData(null), no upload',
       () async {
     UploadController.pickerOverride = () async => null;
 
@@ -108,7 +110,7 @@ void main() {
     verifyNever(() => repo.upload(
           workspaceId: any(named: 'workspaceId'),
           filename: any(named: 'filename'),
-          bytes: any(named: 'bytes'),
+          upload: any(named: 'upload'),
           contentType: any(named: 'contentType'),
         ));
   });
@@ -118,7 +120,7 @@ void main() {
     when(() => repo.upload(
           workspaceId: any(named: 'workspaceId'),
           filename: any(named: 'filename'),
-          bytes: any(named: 'bytes'),
+          upload: any(named: 'upload'),
           contentType: any(named: 'contentType'),
         )).thenThrow(const EmptyUploadException());
 
@@ -132,14 +134,16 @@ void main() {
     expect((state as AsyncError).error, isA<EmptyUploadException>());
   });
 
-  test('UnsupportedFileTypeException from repo surfaces as AsyncError', () async {
+  test('UnsupportedFileTypeException from repo surfaces as AsyncError',
+      () async {
     UploadController.pickerOverride = () async => _selection();
     when(() => repo.upload(
-          workspaceId: any(named: 'workspaceId'),
-          filename: any(named: 'filename'),
-          bytes: any(named: 'bytes'),
-          contentType: any(named: 'contentType'),
-        )).thenThrow(const UnsupportedFileTypeException('xls is not supported'));
+              workspaceId: any(named: 'workspaceId'),
+              filename: any(named: 'filename'),
+              upload: any(named: 'upload'),
+              contentType: any(named: 'contentType'),
+            ))
+        .thenThrow(const UnsupportedFileTypeException('xls is not supported'));
 
     await container
         .read(uploadControllerProvider.notifier)
@@ -158,7 +162,7 @@ void main() {
     when(() => repo.upload(
           workspaceId: any(named: 'workspaceId'),
           filename: any(named: 'filename'),
-          bytes: any(named: 'bytes'),
+          upload: any(named: 'upload'),
           contentType: any(named: 'contentType'),
         )).thenThrow(Exception('network is down'));
 

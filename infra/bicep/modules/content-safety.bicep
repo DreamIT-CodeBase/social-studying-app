@@ -5,7 +5,9 @@ param environment string
 param tags object
 param keyVaultName string
 
-var accountName = 'cs-ssa-${environment}-ddjopeut37ed2'
+var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id)
+
+var accountName = 'cs-ssa-${environment}-${uniqueSuffix}'
 
 resource contentSafety 'Microsoft.CognitiveServices/accounts@2024-04-01-preview' = {
   name: accountName

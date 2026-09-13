@@ -1,34 +1,37 @@
 """API endpoints for device management, app usage, limits, and parental controls."""
 
 from __future__ import annotations
+
 import logging
+from typing import Any
 from uuid import uuid4
-from fastapi import APIRouter, Depends, status
+
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from app.core.auth import get_current_user, require_role
+from app.core.auth import get_current_user
 from app.core.database import (
-    get_collection,
-    USERS,
-    PERMISSION_STATUS,
     APP_RESTRICTIONS,
-    PARENTAL_CONTROLS,
     APP_USAGE_LOGS,
-    SCREEN_TIME_LOGS,
+    DB_STATS,
     DEVICE_USAGE_LOGS,
+    PERMISSION_STATUS,
+    SCREEN_TIME_LOGS,
+    USERS,
+    get_collection,
 )
-from app.models.user import User, UserRole, UserResponse
+from app.core.exceptions import ForbiddenError
+from app.models.base import utc_now
+from app.models.db_stats import DbStatEvent
 from app.models.device_management import (
-    PermissionStatus,
     AppRestriction,
-    ParentalControl,
     AppUsageLog,
-    ScreenTimeLog,
     DeviceUsageLog,
+    PermissionStatus,
+    ScreenTimeLog,
     TimeRange,
 )
-from app.core.exceptions import ForbiddenError, NotFoundError
-from app.models.base import utc_now
+from app.models.user import User, UserResponse, UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,7 @@ router = APIRouter(tags=["device_management"])
 
 
 # ── Wire Types ────────────────────────────────────────────────────────────────
+
 
 class PermissionStatusUpdate(BaseModel):
     overlay_permission: bool
@@ -65,7 +69,22 @@ class UsageLogsPayload(BaseModel):
     screen_time_log: ScreenTimeLog
 
 
+class DbStatEventPayload(BaseModel):
+    event_type: str
+    details: dict[str, Any] = Field(default_factory=dict)
+    occurred_at: str
+
+
+class DbStatsPayload(BaseModel):
+    events: list[DbStatEventPayload]
+
+
+DbStatEventPayload.model_rebuild()
+DbStatsPayload.model_rebuild()
+
+
 # ── Parent Endpoints ─────────────────────────────────────────────────────────
+
 
 @router.get("/parent/students", response_model=list[UserResponse])
 async def list_students(
@@ -76,7 +95,9 @@ async def list_students(
         raise ForbiddenError("Only parents or admins can view students list")
 
     col = get_collection(current_user.tenant_id, USERS)
-    cursor = col.find({"tenant_id": current_user.tenant_id, "role": UserRole.student, "deleted_at": None})
+    cursor = col.find(
+        {"tenant_id": current_user.tenant_id, "role": UserRole.student, "deleted_at": None}
+    )
     return [UserResponse.from_doc(User.model_validate(doc)) async for doc in cursor]
 
 
@@ -116,11 +137,11 @@ async def update_student_restrictions(
         raise ForbiddenError("Only parents or admins can manage app restrictions")
 
     col = get_collection(current_user.tenant_id, APP_RESTRICTIONS)
-    
+
     # Soft delete existing restrictions first
     await col.update_many(
         {"student_id": student_id, "deleted_at": None},
-        {"$set": {"deleted_at": utc_now(), "updated_at": utc_now()}}
+        {"$set": {"deleted_at": utc_now(), "updated_at": utc_now()}},
     )
 
     saved_restrictions = []
@@ -135,7 +156,9 @@ async def update_student_restrictions(
             daily_limit_minutes=r.daily_limit_minutes,
             weekly_limit_minutes=r.weekly_limit_minutes,
             study_mode_restricted=r.study_mode_restricted,
-            allowed_time_ranges=[TimeRange(start=tr.start, end=tr.end) for tr in r.allowed_time_ranges],
+            allowed_time_ranges=[
+                TimeRange(start=tr.start, end=tr.end) for tr in r.allowed_time_ranges
+            ],
         )
         await col.insert_one(doc.model_dump(by_alias=True))
         saved_restrictions.append(doc.model_dump(by_alias=True))
@@ -164,12 +187,14 @@ async def get_student_analytics(
     total_screen_seconds = 0
 
     for log in logs:
-        daily_stats.append({
-            "date": log["date"],
-            "screen_time_mins": log["total_screen_time_seconds"] // 60,
-            "learning_mins": log["learning_time_seconds"] // 60,
-            "social_media_mins": log["social_media_time_seconds"] // 60,
-        })
+        daily_stats.append(
+            {
+                "date": log["date"],
+                "screen_time_mins": log["total_screen_time_seconds"] // 60,
+                "learning_mins": log["learning_time_seconds"] // 60,
+                "social_media_mins": log["social_media_time_seconds"] // 60,
+            }
+        )
         total_study_seconds += log.get("learning_time_seconds", 0)
         total_social_seconds += log.get("social_media_time_seconds", 0)
         total_screen_seconds += log.get("total_screen_time_seconds", 0)
@@ -189,6 +214,7 @@ async def get_student_analytics(
 
 # ── Student Sync Endpoints ───────────────────────────────────────────────────
 
+
 @router.post("/student/device/permission-status", response_model=dict)
 async def report_permissions(
     body: PermissionStatusUpdate,
@@ -196,10 +222,10 @@ async def report_permissions(
 ) -> dict:
     """Sync permissions and health status from student device to cloud."""
     col = get_collection(current_user.tenant_id, PERMISSION_STATUS)
-    
+
     # Retrieve existing or insert new status
     doc = await col.find_one({"student_id": current_user.id, "deleted_at": None})
-    
+
     now = utc_now()
     if doc:
         status_obj = PermissionStatus.model_validate(doc)
@@ -243,7 +269,13 @@ async def report_usage_logs(
     # 1. Insert app usage logs
     for log in payload.app_logs:
         # Avoid duplicate logs if already synced
-        existing = await app_col.find_one({"student_id": current_user.id, "package_name": log.package_name, "open_time": log.open_time})
+        existing = await app_col.find_one(
+            {
+                "student_id": current_user.id,
+                "package_name": log.package_name,
+                "open_time": log.open_time,
+            }
+        )
         if not existing:
             doc = AppUsageLog(
                 **{"_id": f"ulog_{uuid4().hex}"},
@@ -262,8 +294,12 @@ async def report_usage_logs(
     existing_screen = await screen_col.find_one({"student_id": current_user.id, "date": date_str})
     if existing_screen:
         screen_obj = ScreenTimeLog.model_validate(existing_screen)
-        screen_obj.total_usage_seconds = max(screen_obj.total_usage_seconds, payload.screen_time_log.total_usage_seconds)
-        screen_obj.active_study_seconds = max(screen_obj.active_study_seconds, payload.screen_time_log.active_study_seconds)
+        screen_obj.total_usage_seconds = max(
+            screen_obj.total_usage_seconds, payload.screen_time_log.total_usage_seconds
+        )
+        screen_obj.active_study_seconds = max(
+            screen_obj.active_study_seconds, payload.screen_time_log.active_study_seconds
+        )
         screen_obj.idle_seconds = max(screen_obj.idle_seconds, payload.screen_time_log.idle_seconds)
         screen_obj.touch()
         await screen_col.replace_one({"_id": screen_obj.id}, screen_obj.model_dump(by_alias=True))
@@ -289,17 +325,21 @@ async def report_usage_logs(
         "com.twitter.android",
         "com.snapchat.android",
     }
-    
+
     # Retrieve all app logs for today
-    cursor = app_col.find({"student_id": current_user.id, "open_time": {"$regex": f"^{date_str}"}, "deleted_at": None})
+    cursor = app_col.find(
+        {"student_id": current_user.id, "open_time": {"$regex": f"^{date_str}"}, "deleted_at": None}
+    )
     today_logs = [AppUsageLog.model_validate(doc) async for doc in cursor]
 
     social_seconds = 0
     app_stats = {}
-    for l in today_logs:
-        app_stats[l.package_name] = app_stats.get(l.package_name, 0) + l.duration_seconds
-        if l.package_name in social_media_packages:
-            social_seconds += l.duration_seconds
+    for log_item in today_logs:
+        app_stats[log_item.package_name] = (
+            app_stats.get(log_item.package_name, 0) + log_item.duration_seconds
+        )
+        if log_item.package_name in social_media_packages:
+            social_seconds += log_item.duration_seconds
 
     existing_device = await device_col.find_one({"student_id": current_user.id, "date": date_str})
     if existing_device:
@@ -324,3 +364,46 @@ async def report_usage_logs(
         await device_col.insert_one(device_obj.model_dump(by_alias=True))
 
     return {"status": "ok"}
+
+
+@router.post("/student/device/db-stats", response_model=dict)
+async def report_db_stats(
+    payload: DbStatsPayload,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Sync telemetry / DB stats from the student device."""
+    col = get_collection(current_user.tenant_id, DB_STATS)
+    saved_count = 0
+    for event_data in payload.events:
+        doc = DbStatEvent(
+            **{"_id": f"ev_{uuid4().hex}"},
+            tenant_id=current_user.tenant_id,
+            student_id=current_user.id,
+            event_type=event_data.event_type,
+            details=event_data.details,
+            occurred_at=event_data.occurred_at,
+        )
+        await col.insert_one(doc.model_dump(by_alias=True))
+        saved_count += 1
+    return {"status": "ok", "count": saved_count}
+
+
+@router.get("/parent/students/{student_id}/db-stats", response_model=list)
+async def get_student_db_stats(
+    student_id: str,
+    current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    """Get the telemetry/DB stats log history for a specific student."""
+    if current_user.role not in (UserRole.tenant_admin, UserRole.workspace_admin):
+        raise ForbiddenError("Only parents or admins can query student DB stats")
+
+    col = get_collection(current_user.tenant_id, DB_STATS)
+    cursor = (
+        col.find({"student_id": student_id, "deleted_at": None}).sort("occurred_at", -1).limit(500)
+    )
+
+    results = []
+    async for doc in cursor:
+        doc["id"] = doc.pop("_id")
+        results.append(doc)
+    return results

@@ -5,7 +5,9 @@ param environment string
 param tags object
 param keyVaultName string
 
-var namespaceName = 'sb-ssa-${environment}-ddjopeut37ed2'
+var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id)
+
+var namespaceName = 'sb-ssa-${environment}-${uniqueSuffix}'
 
 resource namespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
   name: namespaceName

@@ -7,7 +7,7 @@ part of 'flashcard_session_notifier.dart';
 // **************************************************************************
 
 String _$flashcardSessionNotifierHash() =>
-    r'6346faffe8ebc68bd4877eb3bfbc0d680aa00679';
+    r'bffa3f7b52fa182c40a3892d20a3b18eb0e5a16d';
 
 /// Copied from Dart SDK
 class _SystemHash {

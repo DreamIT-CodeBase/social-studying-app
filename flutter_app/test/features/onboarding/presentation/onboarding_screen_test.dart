@@ -27,6 +27,9 @@ class _StubAuthRepo implements AuthRepository {
   Future<User> signInWithMicrosoft() async => _user;
 
   @override
+  Future<User> signInWithGoogle() async => _user;
+
+  @override
   Future<void> signOut() async {}
 
   @override
@@ -37,6 +40,9 @@ class _StubAuthRepo implements AuthRepository {
 
   @override
   Future<User> redeemInviteCode(String code) async => _user;
+
+  @override
+  Future<void> deleteAccount(String userId) async {}
 
   static final _user = User(
     id: 'usr_test',
@@ -49,8 +55,8 @@ class _StubAuthRepo implements AuthRepository {
   );
 }
 
-
 class _MockDioClient extends Mock implements DioClient {}
+
 class _MockDio extends Mock implements Dio {}
 
 /// Builds a minimal app that renders the onboarding screen at ``/``
@@ -74,12 +80,17 @@ Widget _wrap({required WorkspacesRepository repo}) {
       ),
     ],
   );
-  
+
   final mockDioClient = _MockDioClient();
   final mockDio = _MockDio();
   when(() => mockDioClient.dio).thenReturn(mockDio);
-  when(() => mockDio.get(any(), queryParameters: any(named: 'queryParameters'), options: any(named: 'options'), cancelToken: any(named: 'cancelToken'), onReceiveProgress: any(named: 'onReceiveProgress')))
-      .thenThrow(DioException(requestOptions: RequestOptions(path: '/users/me')));
+  when(() => mockDio.get(any(),
+          queryParameters: any(named: 'queryParameters'),
+          options: any(named: 'options'),
+          cancelToken: any(named: 'cancelToken'),
+          onReceiveProgress: any(named: 'onReceiveProgress')))
+      .thenThrow(
+          DioException(requestOptions: RequestOptions(path: '/users/me')));
 
   return ProviderScope(
     overrides: [
@@ -93,7 +104,6 @@ Widget _wrap({required WorkspacesRepository repo}) {
     ),
   );
 }
-
 
 void main() {
   setUpAll(() {
@@ -219,7 +229,8 @@ void main() {
         description: any(named: 'description'),
       ),
     ).thenThrow(
-      const WorkspaceNameConflictException('A workspace with that name already exists'),
+      const WorkspaceNameConflictException(
+          'A workspace with that name already exists'),
     );
 
     await tester.pumpWidget(_wrap(repo: repo));

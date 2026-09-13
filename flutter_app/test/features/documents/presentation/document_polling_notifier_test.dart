@@ -44,7 +44,6 @@ void main() {
     DocumentPolling.debugInterval = kDocumentPollInterval;
   });
 
-
   test('first build returns the initial fetch', () async {
     when(() => repo.get(
           workspaceId: 'wsp_test',

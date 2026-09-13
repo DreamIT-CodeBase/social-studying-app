@@ -54,6 +54,16 @@ enum DocumentStatus {
         DocumentStatus.vectorizing =>
           false,
       };
+
+  /// Returns true if document is ready or has topics/chunks available for study sessions.
+  bool get isUsableForStudy => switch (this) {
+        DocumentStatus.ready ||
+        DocumentStatus.vectorizing ||
+        DocumentStatus.chunked ||
+        DocumentStatus.topicsExtracted =>
+          true,
+        _ => false,
+      };
 }
 
 enum DocumentType {
@@ -91,13 +101,17 @@ class Document with _$Document {
     @JsonKey(name: 'doc_type') required DocumentType docType,
     required DocumentStatus status,
     @JsonKey(name: 'chunk_count') @Default(0) int chunkCount,
-    @JsonKey(name: 'topic_tags') @Default(<TopicTag>[]) List<TopicTag> topicTags,
+    @JsonKey(name: 'topic_tags')
+    @Default(<TopicTag>[])
+    List<TopicTag> topicTags,
     @JsonKey(name: 'moderation_flagged') @Default(false) bool moderationFlagged,
     @JsonKey(name: 'created_at') required String createdAt,
     @JsonKey(name: 'page_count') int? pageCount,
     @JsonKey(name: 'text_char_count') int? textCharCount,
     @Default(<String>[]) List<String> languages,
     @JsonKey(name: 'processing_error') String? processingError,
+    String? category,
+    String? subcategory,
   }) = _Document;
 
   factory Document.fromJson(Map<String, dynamic> json) =>

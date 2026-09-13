@@ -168,8 +168,7 @@ class _SettingsFormState extends ConsumerState<_SettingsForm> {
               ),
               _SettingSwitch(
                 title: 'Adaptive difficulty',
-                subtitle:
-                    'Calibrate question difficulty to each student’s '
+                subtitle: 'Calibrate question difficulty to each student’s '
                     'mastery.',
                 value: _adaptive,
                 enabled: !_saving,
@@ -300,9 +299,7 @@ class _QuestionsPerDayTile extends StatelessWidget {
               max: 20,
               divisions: 19,
               label: '$value',
-              onChanged: enabled
-                  ? (v) => onChanged(v.round())
-                  : null,
+              onChanged: enabled ? (v) => onChanged(v.round()) : null,
             ),
             Text(
               'How many questions a student is expected to answer daily.',
@@ -359,8 +356,7 @@ class _QuestionTypesTile extends StatelessWidget {
                   FilterChip(
                     label: Text(option.$2),
                     selected: selected.contains(option.$1),
-                    onSelected:
-                        enabled ? (_) => onToggle(option.$1) : null,
+                    onSelected: enabled ? (_) => onToggle(option.$1) : null,
                   ),
               ],
             ),

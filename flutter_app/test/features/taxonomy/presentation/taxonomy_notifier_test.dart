@@ -73,8 +73,7 @@ void main() {
 
     await readState();
     await container
-        .read(
-            taxonomyViewerProvider(workspaceId: 'wsp_test').notifier)
+        .read(taxonomyViewerProvider(workspaceId: 'wsp_test').notifier)
         .refresh();
 
     final state = await readState();
@@ -97,8 +96,7 @@ void main() {
 
     await readState();
     await container
-        .read(
-            taxonomyViewerProvider(workspaceId: 'wsp_test').notifier)
+        .read(taxonomyViewerProvider(workspaceId: 'wsp_test').notifier)
         .regenerate();
 
     final state = await readState();
@@ -117,12 +115,10 @@ void main() {
 
     await readState();
     await container
-        .read(
-            taxonomyViewerProvider(workspaceId: 'wsp_test').notifier)
+        .read(taxonomyViewerProvider(workspaceId: 'wsp_test').notifier)
         .regenerate();
 
-    final raw = container.read(
-        taxonomyViewerProvider(workspaceId: 'wsp_test'));
+    final raw = container.read(taxonomyViewerProvider(workspaceId: 'wsp_test'));
     expect(raw, isA<AsyncError<TaxonomyViewerState>>());
   });
 
@@ -134,12 +130,10 @@ void main() {
 
     await readState();
     await container
-        .read(
-            taxonomyViewerProvider(workspaceId: 'wsp_test').notifier)
+        .read(taxonomyViewerProvider(workspaceId: 'wsp_test').notifier)
         .regenerate();
 
-    final raw = container.read(
-        taxonomyViewerProvider(workspaceId: 'wsp_test'));
+    final raw = container.read(taxonomyViewerProvider(workspaceId: 'wsp_test'));
     expect(raw, isA<AsyncError<TaxonomyViewerState>>());
     expect(
       (raw as AsyncError).error.toString(),

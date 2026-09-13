@@ -29,9 +29,10 @@ class SelectedWorkspace extends _$SelectedWorkspace {
     final userWorkspaceId = authAsync.valueOrNull?.maybeWhen(
       authenticated: (user) {
         final adminMemberships = user.workspaceMemberships.where((m) =>
-            m.role == UserRole.tenantAdmin ||
-            m.role == UserRole.workspaceAdmin ||
-            user.role == UserRole.tenantAdmin);
+            !isSelfLearningWorkspaceId(m.workspaceId) &&
+            (m.role == UserRole.tenantAdmin ||
+                m.role == UserRole.workspaceAdmin ||
+                user.role == UserRole.tenantAdmin));
         return adminMemberships.isNotEmpty
             ? adminMemberships.first.workspaceId
             : null;
@@ -52,6 +53,7 @@ class SelectedWorkspace extends _$SelectedWorkspace {
 
   /// Manually switch to a different workspace.
   void selectWorkspace(String workspaceId) {
+    if (isSelfLearningWorkspaceId(workspaceId)) return;
     state = workspaceId;
   }
 }

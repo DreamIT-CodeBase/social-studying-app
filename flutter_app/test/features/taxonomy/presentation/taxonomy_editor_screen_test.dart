@@ -35,12 +35,12 @@ Taxonomy _tax({int version = 1, List<CanonicalTopic>? topics}) => Taxonomy(
           ],
     );
 
-Widget _wrap(_MockRepo repo) => ProviderScope(
+Widget _wrap(_MockRepo repo, {ThemeData? theme}) => ProviderScope(
       overrides: [
         taxonomyRepositoryProvider.overrideWithValue(repo),
       ],
       child: MaterialApp(
-        theme: AppTheme.light,
+        theme: theme ?? AppTheme.light,
         home: const TaxonomyEditorScreen(workspaceId: _wsId),
       ),
     );
@@ -128,10 +128,58 @@ void main() {
 
     expect(find.text('Cells'), findsOneWidget);
     expect(find.text('Photosynthesis'), findsOneWidget);
+    expect(find.text('Shape the learning path'), findsOneWidget);
+    expect(find.text('Version 1'), findsOneWidget);
+    expect(find.text('All changes saved'), findsOneWidget);
     expect(
       find.text('Drag a topic here to clear its parent'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('dark theme gives the editor overview and rows distinct surfaces',
+      (tester) async {
+    await _tallViewport(tester);
+    when(() => repo.get(workspaceId: any(named: 'workspaceId')))
+        .thenAnswer((_) async => _tax());
+
+    await tester.pumpWidget(_wrap(repo, theme: AppTheme.dark));
+    await tester.pumpAndSettle();
+
+    final overview = tester.widget<Container>(
+      find.byKey(const ValueKey('taxonomy_editor_overview')),
+    );
+    final overviewDecoration = overview.decoration! as BoxDecoration;
+    expect(
+      overviewDecoration.color,
+      AppTheme.dark.colorScheme.primaryContainer,
+    );
+
+    final topicRow = tester.widget<Container>(
+      find.byKey(const ValueKey('taxonomy_editor_row_tpc_root')),
+    );
+    final rowDecoration = topicRow.decoration! as BoxDecoration;
+    expect(
+      rowDecoration.color,
+      AppTheme.dark.colorScheme.surfaceContainerHighest,
+    );
+  });
+
+  testWidgets('complexity editor stays within the backend 1 to 5 range',
+      (tester) async {
+    await _tallViewport(tester);
+    when(() => repo.get(workspaceId: any(named: 'workspaceId')))
+        .thenAnswer((_) async => _tax());
+
+    await tester.pumpWidget(_wrap(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Cells'));
+    await tester.pumpAndSettle();
+
+    final slider = tester.widget<Slider>(find.byType(Slider));
+    expect(slider.min, 1);
+    expect(slider.max, 5);
   });
 
   testWidgets('Save is disabled until an edit lands', (tester) async {

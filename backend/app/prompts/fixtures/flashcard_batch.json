@@ -1,0 +1,76 @@
+{
+  "prompt": "flashcard_batch_v1",
+  "description": "Five diverse batch flashcard inputs: definition happy path, formula batch, history batch, advanced biology, and insufficient source.",
+  "cases": [
+    {
+      "name": "definition_happy_path",
+      "input": {
+        "topic": "Photosynthesis",
+        "difficulty": "beginner",
+        "count": "3",
+        "source_content": "Photosynthesis is the process by which plants convert light energy into chemical energy stored in glucose. It occurs in the chloroplasts and is driven by chlorophyll.",
+        "seen_cards": []
+      },
+      "expected_constraints": [
+        "valid JSON with flashcards list",
+        "returns exactly count flashcards",
+        "each front ends with ?"
+      ]
+    },
+    {
+      "name": "formula_batch",
+      "input": {
+        "topic": "Pythagorean Theorem",
+        "difficulty": "intermediate",
+        "count": "2",
+        "source_content": "In a right triangle, the square of the hypotenuse equals the sum of the squares of the other two sides: a^2 + b^2 = c^2.",
+        "seen_cards": []
+      },
+      "expected_constraints": [
+        "valid JSON with flashcards list",
+        "returns exactly count flashcards"
+      ]
+    },
+    {
+      "name": "history_batch",
+      "input": {
+        "topic": "American Revolution",
+        "difficulty": "intermediate",
+        "count": "3",
+        "source_content": "The Declaration of Independence was adopted on July 4, 1776. Thomas Jefferson was the principal author.",
+        "seen_cards": []
+      },
+      "expected_constraints": [
+        "valid JSON with flashcards list",
+        "returns exactly count flashcards"
+      ]
+    },
+    {
+      "name": "biology_advanced",
+      "input": {
+        "topic": "Cell Organelles",
+        "difficulty": "advanced",
+        "count": "2",
+        "source_content": "The mitochondrion produces ATP through aerobic respiration. The chloroplast performs photosynthesis in plant cells.",
+        "seen_cards": []
+      },
+      "expected_constraints": [
+        "valid JSON with flashcards list",
+        "returns exactly count flashcards"
+      ]
+    },
+    {
+      "name": "insufficient_source_borderline",
+      "input": {
+        "topic": "Quantum Mechanics",
+        "difficulty": "beginner",
+        "count": "2",
+        "source_content": "The cat sat on the mat.",
+        "seen_cards": []
+      },
+      "expected_constraints": [
+        "valid JSON or insufficient_source"
+      ]
+    }
+  ]
+}
