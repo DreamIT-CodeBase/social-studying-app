@@ -132,6 +132,22 @@ class DemoDocumentsRepository implements DocumentsRepository {
     _byWorkspace[workspaceId]?.remove(documentId);
   }
 
+  @override
+  Future<Document> approve({
+    required String workspaceId,
+    required String documentId,
+  }) async {
+    await _simulateNetwork();
+    final doc = await get(workspaceId: workspaceId, documentId: documentId);
+    final updated = doc.copyWith(
+      status: DocumentStatus.textExtracted,
+      processingError: null,
+    );
+    _byWorkspace[workspaceId]?[documentId] = updated;
+    _scheduleNext(workspaceId: workspaceId, documentId: documentId);
+    return updated;
+  }
+
   // ── State machine ──────────────────────────────────────────────────────────
 
   /// Schedule the next stage transition. Cancellation is implicit — we

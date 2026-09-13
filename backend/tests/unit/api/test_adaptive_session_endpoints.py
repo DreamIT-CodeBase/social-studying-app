@@ -540,12 +540,12 @@ async def test_prepare_self_study_custom_selection_bypasses_cached_open_session(
 
 
 @pytest.mark.asyncio
-async def test_prepare_enforces_daily_session_limit_of_8():
-    """Verify that attempting to prepare a 9th session in a single day raises HTTP 429."""
+async def test_prepare_enforces_daily_session_limit_of_50():
+    """Verify that attempting to prepare a 51st session in a single day raises HTTP 429."""
     from fastapi import HTTPException
 
-    # 1. When student has 7 sessions today, 8th is allowed
-    with _prepare_env(daily_count=7, prepared=[_question("qst_allowed")]):
+    # 1. When student has 49 sessions today, 50th is allowed
+    with _prepare_env(daily_count=49, prepared=[_question("qst_allowed")]):
         plan = await prepare_adaptive_session(
             workspace_id=SELF_WS,
             request=PrepareAdaptiveSessionRequest(mode=AdaptiveSessionMode.study),
@@ -555,8 +555,8 @@ async def test_prepare_enforces_daily_session_limit_of_8():
         assert plan is not None
         assert plan.item_count == 1
 
-    # 2. When student already has 8 sessions today, 9th attempt raises 429
-    with _prepare_env(daily_count=8, prepared=[_question("qst_blocked")]):
+    # 2. When student already has 50 sessions today, 51st attempt raises 429
+    with _prepare_env(daily_count=50, prepared=[_question("qst_blocked")]):
         with pytest.raises(HTTPException) as exc_info:
             await prepare_adaptive_session(
                 workspace_id=SELF_WS,

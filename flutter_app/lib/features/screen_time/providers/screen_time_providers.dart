@@ -345,6 +345,34 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
     state = AsyncData(updated);
   }
 
+  /// Sets available screen time to 0 minutes and immediately reapplies shields so testers can verify blocking.
+  Future<void> simulateZeroMinutesForTesting() async {
+    final currentWallet = state.valueOrNull;
+    if (currentWallet == null) return;
+    final available = currentWallet.availableMinutes;
+    if (available > 0) {
+      await consumeMinutes(available);
+    }
+    await reapplyShields();
+  }
+
+  /// Grants test minutes so testers can quickly verify unblocking.
+  Future<void> addTestMinutes(int minutes) async {
+    final authState = ref.read(authNotifierProvider).valueOrNull;
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final currentWallet = state.valueOrNull;
+    if (currentWallet != null) {
+      final updated = currentWallet.copyWith(
+        availableMinutes: currentWallet.availableMinutes + minutes,
+        lastSyncTime: DateTime.now(),
+      );
+      await _service.saveWallet(updated, user?.id);
+      state = AsyncData(updated);
+      await reapplyShields();
+    }
+  }
+
   Future<bool> isAccessibilityServiceEnabled() async {
     return _service.isAccessibilityServiceEnabled();
   }

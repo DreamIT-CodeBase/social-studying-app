@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import random
 import re
 import unicodedata
 from collections.abc import Iterable
@@ -124,7 +125,7 @@ _CAPPED_MODES = frozenset({AdaptiveSessionMode.study, AdaptiveSessionMode.flashc
 _QUESTION_TOPUP_MIN = 12
 _QUESTION_TOPUP_MAX = 25
 _FLASHCARD_TOPUP_MIN = 8
-_MAX_DAILY_SESSIONS_PER_USER = 8
+_MAX_DAILY_SESSIONS_PER_USER = 50
 
 
 def _is_self_study(workspace_id: str) -> bool:
@@ -716,7 +717,12 @@ async def _prepare_questions(
                 q_terms = set(re.findall(r"[a-z0-9]+", q_top))
                 return bool(sub_terms and len(sub_terms & q_terms) >= max(1, len(sub_terms) // 2))
 
-            available = [q for q in available if matches_subcat(q)]
+            subcat_matched = [q for q in available if matches_subcat(q)]
+            if len(subcat_matched) >= target:
+                available = subcat_matched
+            elif subcat_matched:
+                remaining = [q for q in available if q not in subcat_matched]
+                available = subcat_matched + remaining
 
     if question_type:
         available = [q for q in available if q.question_type == question_type]
@@ -740,7 +746,9 @@ async def _prepare_questions(
             and _question_fingerprint(question.body) not in seen_fingerprints
             and _question_fingerprint(question.body) not in reserved_fingerprints
         ]
-        if not eligible and available and not _is_self_study(workspace_id) and not subcategory and not question_type:
+        if not eligible and available:
+            # If all available questions have already been served, recycle them for revision practice
+            # with fresh option shuffling so the session never starves or drops into generic fallback
             eligible = available
 
     selected = _unique_questions(eligible)[:target]
@@ -821,7 +829,7 @@ async def _prepare_questions(
             logger.exception("Adaptive session batch generation failed")
 
     if not selected:
-        if available and not _is_self_study(workspace_id):
+        if available:
             selected = available[:target]
         else:
             fb_plan = _build_guaranteed_fallback_plan(
@@ -833,25 +841,89 @@ async def _prepare_questions(
                 mastery=0.0,
                 subject=subject,
                 subcategory=subcategory,
+                question_type=question_type,
             )
             return fb_plan.questions[:target]
 
     return [
-        PreparedQuestion(
+        _prepare_question_with_shuffled_options(question)
+        for question in selected
+    ][:target]
+
+
+def _prepare_question_with_shuffled_options(question: Question) -> PreparedQuestion:
+    """Prepare a question with deduplicated, shuffled options for MCQ questions."""
+    raw_type = (
+        question.question_type.value
+        if hasattr(question.question_type, "value")
+        else str(question.question_type)
+    )
+    options = list(question.options or [])
+    answer = question.answer
+
+    if raw_type == "mcq" and options:
+        # Deduplicate option texts
+        seen_texts: set[str] = set()
+        deduped_opts = []
+        correct_opt = None
+        for opt in options:
+            norm = opt.text.strip().lower()
+            if norm in seen_texts:
+                continue
+            seen_texts.add(norm)
+            deduped_opts.append(opt)
+            if opt.is_correct or opt.key == answer:
+                correct_opt = opt
+
+        if len(deduped_opts) >= 2:
+            options = deduped_opts
+
+        shuffled = list(options)
+        random.shuffle(shuffled)
+
+        assigned_keys = ["A", "B", "C", "D"][:len(shuffled)]
+        new_prepared_opts: list[PreparedOption] = []
+        new_answer = answer
+
+        for i, opt in enumerate(shuffled):
+            key = assigned_keys[i] if i < len(assigned_keys) else chr(ord("A") + i)
+            new_prepared_opts.append(PreparedOption(key=key, text=opt.text))
+            if opt.is_correct or (correct_opt is not None and opt.text == correct_opt.text) or opt.key == answer:
+                new_answer = key
+
+        return PreparedQuestion(
             id=question.id,
             topic=question.topic,
             question_type=question.question_type,
-            difficulty=question.difficulty.value if hasattr(question.difficulty, "value") else str(question.difficulty),
+            difficulty=(
+                question.difficulty.value
+                if hasattr(question.difficulty, "value")
+                else str(question.difficulty)
+            ),
             body=question.body,
-            options=[
-                PreparedOption(key=option.key, text=option.text) for option in question.options
-            ],
-            answer=question.answer,
+            options=new_prepared_opts,
+            answer=new_answer,
             explanation=question.explanation,
             grading_hints=question.grading_hints,
         )
-        for question in selected
-    ][:target]
+
+    return PreparedQuestion(
+        id=question.id,
+        topic=question.topic,
+        question_type=question.question_type,
+        difficulty=(
+            question.difficulty.value
+            if hasattr(question.difficulty, "value")
+            else str(question.difficulty)
+        ),
+        body=question.body,
+        options=[
+            PreparedOption(key=option.key, text=option.text) for option in options
+        ],
+        answer=question.answer,
+        explanation=question.explanation,
+        grading_hints=question.grading_hints,
+    )
 
 
 async def _generate_flashcard_batch(
@@ -1327,6 +1399,57 @@ async def _prepare_flashcards(
     return selected[:target]
 
 
+def _shuffle_prepared_mcq_options(q: PreparedQuestion) -> PreparedQuestion:
+    """Shuffle options and re-assign keys for prepared MCQ questions."""
+    raw_type = (
+        q.question_type.value
+        if hasattr(q.question_type, "value")
+        else str(q.question_type)
+    )
+    if raw_type != "mcq" or not q.options:
+        return q
+
+    seen_texts: set[str] = set()
+    unique_opts: list[PreparedOption] = []
+    correct_text: str | None = None
+    for opt in q.options:
+        norm = opt.text.strip().lower()
+        if norm in seen_texts:
+            continue
+        seen_texts.add(norm)
+        unique_opts.append(opt)
+        if opt.key == q.answer:
+            correct_text = opt.text
+
+    if len(unique_opts) < 2:
+        unique_opts = list(q.options)
+
+    shuffled = list(unique_opts)
+    random.shuffle(shuffled)
+
+    assigned_keys = ["A", "B", "C", "D"][:len(shuffled)]
+    new_opts: list[PreparedOption] = []
+    new_answer = q.answer
+
+    for i, opt in enumerate(shuffled):
+        key = assigned_keys[i] if i < len(assigned_keys) else chr(ord("A") + i)
+        new_opts.append(PreparedOption(key=key, text=opt.text))
+        if opt.key == q.answer or (correct_text is not None and opt.text == correct_text):
+            new_answer = key
+
+    return PreparedQuestion(
+        id=q.id,
+        topic=q.topic,
+        question_type=q.question_type,
+        difficulty=q.difficulty,
+        body=q.body,
+        options=new_opts,
+        answer=new_answer,
+        explanation=q.explanation,
+        grading_hints=q.grading_hints,
+    )
+
+
 def _build_guaranteed_fallback_plan(
     *,
     workspace_id: str,
@@ -1337,6 +1460,7 @@ def _build_guaranteed_fallback_plan(
     mastery: float,
     subject: str | None = None,
     subcategory: str | None = None,
+    question_type: QuestionType | str | None = None,
 ) -> AdaptiveSessionPlan:
     session_id = f"ses_{uuid4().hex}"
     subj = (subject or "").strip().lower()
@@ -1474,6 +1598,11 @@ def _build_guaranteed_fallback_plan(
         item_count = len(flashcards)
     else:
         # mode == study / revision
+        target_qtype = (
+            question_type.value
+            if hasattr(question_type, "value")
+            else (str(question_type).strip().lower() if question_type else None)
+        )
         if subj in ("chemistry", "chem"):
             questions = [
                 PreparedQuestion(
@@ -1494,6 +1623,54 @@ def _build_guaranteed_fallback_plan(
                 ),
                 PreparedQuestion(
                     id=f"qst_chem_{uuid4().hex[:8]}",
+                    topic="Mole Concept",
+                    question_type="mcq",
+                    difficulty="intermediate",
+                    body="Which formula correctly computes the number of moles (n) of a chemical sample?",
+                    options=[
+                        PreparedOption(key="A", text="n = molar mass / mass"),
+                        PreparedOption(key="B", text="n = mass / molar mass"),
+                        PreparedOption(key="C", text="n = mass × Avogadro's number"),
+                        PreparedOption(key="D", text="n = molar mass × volume"),
+                    ],
+                    answer="B",
+                    explanation="Number of moles (n) = mass (g) / molar mass (g/mol).",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_chem_{uuid4().hex[:8]}",
+                    topic="Periodic Table",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="Elements in the same column (group) of the periodic table generally share similar chemical properties because they have:",
+                    options=[
+                        PreparedOption(key="A", text="Identical numbers of neutrons"),
+                        PreparedOption(key="B", text="The same total atomic mass"),
+                        PreparedOption(key="C", text="The same number of valence electrons"),
+                        PreparedOption(key="D", text="Identical densities"),
+                    ],
+                    answer="C",
+                    explanation="Elements in the same group possess the same number of valence electrons, leading to similar chemical reactivity.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_chem_{uuid4().hex[:8]}",
+                    topic="Chemical Bonding",
+                    question_type="mcq",
+                    difficulty="intermediate",
+                    body="What type of chemical bond is primarily characterized by the electrostatic attraction between oppositely charged ions?",
+                    options=[
+                        PreparedOption(key="A", text="Covalent bond"),
+                        PreparedOption(key="B", text="Ionic bond"),
+                        PreparedOption(key="C", text="Hydrogen bond"),
+                        PreparedOption(key="D", text="Metallic bond"),
+                    ],
+                    answer="B",
+                    explanation="Ionic bonding arises from electrostatic forces between cations and anions following electron transfer.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_chem_{uuid4().hex[:8]}",
                     topic="Chemical Bonding",
                     question_type="true_false",
                     difficulty="beginner",
@@ -1504,6 +1681,20 @@ def _build_guaranteed_fallback_plan(
                     ],
                     answer="true",
                     explanation="Ionic bonding involves electron transfer forming ions; covalent bonding involves sharing valence electrons.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_chem_{uuid4().hex[:8]}",
+                    topic="Conservation of Mass",
+                    question_type="true_false",
+                    difficulty="beginner",
+                    body="According to the law of conservation of mass, total mass in a closed system must remain constant during a chemical reaction.",
+                    options=[
+                        PreparedOption(key="true", text="True"),
+                        PreparedOption(key="false", text="False"),
+                    ],
+                    answer="true",
+                    explanation="Mass cannot be created or destroyed in an ordinary chemical process; atoms are simply rearranged.",
                     grading_hints=[],
                 ),
                 PreparedQuestion(
@@ -1519,19 +1710,14 @@ def _build_guaranteed_fallback_plan(
                 ),
                 PreparedQuestion(
                     id=f"qst_chem_{uuid4().hex[:8]}",
-                    topic="Mole Concept",
-                    question_type="mcq",
-                    difficulty="intermediate",
-                    body="Which formula correctly computes the number of moles (n) of a chemical sample?",
-                    options=[
-                        PreparedOption(key="A", text="n = molar mass / mass"),
-                        PreparedOption(key="B", text="n = mass / molar mass"),
-                        PreparedOption(key="C", text="n = mass × Avogadro's number"),
-                        PreparedOption(key="D", text="n = molar mass × volume"),
-                    ],
-                    answer="B",
-                    explanation="Number of moles (n) = mass (g) / molar mass (g/mol).",
-                    grading_hints=[],
+                    topic="States of Matter",
+                    question_type="short_answer",
+                    difficulty="beginner",
+                    body="The direct phase transition from a solid directly to a gas without passing through the liquid phase is called ________.",
+                    options=[],
+                    answer="sublimation",
+                    explanation="Sublimation is the endothermic transition directly from solid to gaseous state.",
+                    grading_hints=["sublimation"],
                 ),
             ]
         elif subj in ("mathematics", "math", "maths", "algebra", "geometry", "calculus"):
@@ -1554,6 +1740,54 @@ def _build_guaranteed_fallback_plan(
                 ),
                 PreparedQuestion(
                     id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Coordinate Geometry",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="In the slope-intercept form of a linear equation, y = mx + b, what does the letter 'm' represent?",
+                    options=[
+                        PreparedOption(key="A", text="The y-intercept"),
+                        PreparedOption(key="B", text="The x-intercept"),
+                        PreparedOption(key="C", text="The slope of the line"),
+                        PreparedOption(key="D", text="The distance from the origin"),
+                    ],
+                    answer="C",
+                    explanation="In y = mx + b, m is the rate of change or slope, and b is the vertical intercept.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Quadratic Equations",
+                    question_type="mcq",
+                    difficulty="intermediate",
+                    body="If the discriminant (b² - 4ac) of a quadratic equation ax² + bx + c = 0 is greater than zero, how many distinct real solutions exist?",
+                    options=[
+                        PreparedOption(key="A", text="Zero real solutions"),
+                        PreparedOption(key="B", text="Exactly one real solution"),
+                        PreparedOption(key="C", text="Two distinct real solutions"),
+                        PreparedOption(key="D", text="Infinitely many solutions"),
+                    ],
+                    answer="C",
+                    explanation="A positive discriminant (D > 0) indicates two distinct real roots.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Calculus & Derivatives",
+                    question_type="mcq",
+                    difficulty="intermediate",
+                    body="What is the derivative of f(x) = x³ with respect to x?",
+                    options=[
+                        PreparedOption(key="A", text="f'(x) = 3x"),
+                        PreparedOption(key="B", text="f'(x) = 3x²"),
+                        PreparedOption(key="C", text="f'(x) = x² / 3"),
+                        PreparedOption(key="D", text="f'(x) = 2x³"),
+                    ],
+                    answer="B",
+                    explanation="Using the power rule d/dx[xⁿ] = n·xⁿ⁻¹, the derivative of x³ is 3x².",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
                     topic="Pythagorean Identity in Trigonometry",
                     question_type="true_false",
                     difficulty="beginner",
@@ -1568,6 +1802,20 @@ def _build_guaranteed_fallback_plan(
                 ),
                 PreparedQuestion(
                     id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Parallel Lines",
+                    question_type="true_false",
+                    difficulty="beginner",
+                    body="In Cartesian coordinate geometry, two non-vertical lines are parallel if and only if they have equal slopes.",
+                    options=[
+                        PreparedOption(key="true", text="True"),
+                        PreparedOption(key="false", text="False"),
+                    ],
+                    answer="true",
+                    explanation="Parallel lines have identical rates of change and never intersect in Euclidean plane geometry.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
                     topic="Quadratic Equations in Algebra",
                     question_type="short_answer",
                     difficulty="intermediate",
@@ -1576,6 +1824,17 @@ def _build_guaranteed_fallback_plan(
                     answer="b^2 - 4ac",
                     explanation="The discriminant D = b² - 4ac determines whether roots are real or complex.",
                     grading_hints=["b^2 - 4ac", "b^2-4ac", "b squared minus 4ac"],
+                ),
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Exponents & Logarithms",
+                    question_type="short_answer",
+                    difficulty="beginner",
+                    body="For any non-zero real number a, what is the value of a raised to the power of 0 (a⁰)?",
+                    options=[],
+                    answer="1",
+                    explanation="By exponent definition laws, any non-zero value raised to 0 equals 1.",
+                    grading_hints=["1", "one"],
                 ),
             ]
         elif subj in ("physics", "phys"):
@@ -1598,6 +1857,54 @@ def _build_guaranteed_fallback_plan(
                 ),
                 PreparedQuestion(
                     id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Kinetic Energy",
+                    question_type="mcq",
+                    difficulty="intermediate",
+                    body="If the speed of a moving object is doubled, what happens to its kinetic energy (KE = ½mv²)?",
+                    options=[
+                        PreparedOption(key="A", text="It doubles"),
+                        PreparedOption(key="B", text="It quadruples (4x)"),
+                        PreparedOption(key="C", text="It stays the same"),
+                        PreparedOption(key="D", text="It increases by eight times"),
+                    ],
+                    answer="B",
+                    explanation="Kinetic energy is proportional to the square of velocity, so doubling speed quadruples kinetic energy.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Optics & Light",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="What phenomenon describes the bending of a light wave as it passes from one medium to another with a different refractive index?",
+                    options=[
+                        PreparedOption(key="A", text="Reflection"),
+                        PreparedOption(key="B", text="Refraction"),
+                        PreparedOption(key="C", text="Diffraction"),
+                        PreparedOption(key="D", text="Polarization"),
+                    ],
+                    answer="B",
+                    explanation="Refraction is the change in direction of wave propagation due to a change in transmission speed across media.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Thermodynamics",
+                    question_type="mcq",
+                    difficulty="intermediate",
+                    body="Which law of thermodynamics states that energy cannot be created or destroyed, only transformed from one form to another?",
+                    options=[
+                        PreparedOption(key="A", text="Zeroth Law of Thermodynamics"),
+                        PreparedOption(key="B", text="First Law of Thermodynamics"),
+                        PreparedOption(key="C", text="Second Law of Thermodynamics"),
+                        PreparedOption(key="D", text="Third Law of Thermodynamics"),
+                    ],
+                    answer="B",
+                    explanation="The First Law of Thermodynamics is the law of conservation of energy.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
                     topic="Electricity Basics",
                     question_type="true_false",
                     difficulty="beginner",
@@ -1612,6 +1919,20 @@ def _build_guaranteed_fallback_plan(
                 ),
                 PreparedQuestion(
                     id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Gravitation",
+                    question_type="true_false",
+                    difficulty="beginner",
+                    body="In a vacuum where air resistance is absent, all objects fall toward the Earth with the same gravitational acceleration regardless of mass.",
+                    options=[
+                        PreparedOption(key="true", text="True"),
+                        PreparedOption(key="false", text="False"),
+                    ],
+                    answer="true",
+                    explanation="Gravitational acceleration g is independent of the falling object's mass in a vacuum.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
                     topic="Work, Energy, and Power",
                     question_type="short_answer",
                     difficulty="beginner",
@@ -1620,6 +1941,17 @@ def _build_guaranteed_fallback_plan(
                     answer="power",
                     explanation="Power P = Work / time, measured in Watts (J/s).",
                     grading_hints=["power"],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Force and Motion",
+                    question_type="short_answer",
+                    difficulty="beginner",
+                    body="The SI unit of force, named in honor of the physicist who formulated the laws of motion, is the ________.",
+                    options=[],
+                    answer="newton",
+                    explanation="Force is measured in Newtons (N = kg·m/s²).",
+                    grading_hints=["newton", "newtons"],
                 ),
             ]
         elif subj in ("biology", "bio"):
@@ -1642,6 +1974,54 @@ def _build_guaranteed_fallback_plan(
                 ),
                 PreparedQuestion(
                     id=f"qst_bio_{uuid4().hex[:8]}",
+                    topic="Genetics",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="In DNA base pairing, which nucleotide base pairs with adenine (A)?",
+                    options=[
+                        PreparedOption(key="A", text="Guanine (G)"),
+                        PreparedOption(key="B", text="Cytosine (C)"),
+                        PreparedOption(key="C", text="Thymine (T)"),
+                        PreparedOption(key="D", text="Uracil (U)"),
+                    ],
+                    answer="C",
+                    explanation="Adenine forms two hydrogen bonds with thymine in double-stranded DNA.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_bio_{uuid4().hex[:8]}",
+                    topic="Cell Biology",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="Which structure regulates what enters and exits a cell, maintaining cellular homeostasis?",
+                    options=[
+                        PreparedOption(key="A", text="Cell membrane"),
+                        PreparedOption(key="B", text="Cytoplasm"),
+                        PreparedOption(key="C", text="Nucleolus"),
+                        PreparedOption(key="D", text="Ribosome"),
+                    ],
+                    answer="A",
+                    explanation="The selectively permeable phospholipid bilayer membrane regulates transport into and out of the cell.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_bio_{uuid4().hex[:8]}",
+                    topic="Ecology & Energy Flow",
+                    question_type="mcq",
+                    difficulty="intermediate",
+                    body="In an ecological pyramid, organisms that produce their own organic food using sunlight are classified as:",
+                    options=[
+                        PreparedOption(key="A", text="Primary consumers"),
+                        PreparedOption(key="B", text="Autotrophs (producers)"),
+                        PreparedOption(key="C", text="Decomposers"),
+                        PreparedOption(key="D", text="Secondary consumers"),
+                    ],
+                    answer="B",
+                    explanation="Autotrophic producers synthesize organic compounds directly from solar energy and inorganic nutrients.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_bio_{uuid4().hex[:8]}",
                     topic="Molecular Biology",
                     question_type="true_false",
                     difficulty="beginner",
@@ -1653,6 +2033,42 @@ def _build_guaranteed_fallback_plan(
                     answer="true",
                     explanation="DNA holds the instructions required for life across all known cellular organisms.",
                     grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_bio_{uuid4().hex[:8]}",
+                    topic="Plant Biology",
+                    question_type="true_false",
+                    difficulty="beginner",
+                    body="Plant cells contain both chloroplasts for photosynthesis and mitochondria for cellular respiration.",
+                    options=[
+                        PreparedOption(key="true", text="True"),
+                        PreparedOption(key="false", text="False"),
+                    ],
+                    answer="true",
+                    explanation="Plant cells require mitochondria to break down the sugars synthesized by chloroplasts into usable ATP.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_bio_{uuid4().hex[:8]}",
+                    topic="Cell Division",
+                    question_type="short_answer",
+                    difficulty="beginner",
+                    body="The type of cell division that produces two genetically identical diploid daughter cells is ________.",
+                    options=[],
+                    answer="mitosis",
+                    explanation="Mitosis produces identical somatic cells for growth and repair.",
+                    grading_hints=["mitosis"],
+                ),
+                PreparedQuestion(
+                    id=f"qst_bio_{uuid4().hex[:8]}",
+                    topic="Biochemistry",
+                    question_type="short_answer",
+                    difficulty="beginner",
+                    body="Biological catalysts that speed up chemical reactions by lowering activation energy are called ________.",
+                    options=[],
+                    answer="enzymes",
+                    explanation="Enzymes are specialized protein catalysts.",
+                    grading_hints=["enzymes", "enzyme"],
                 ),
             ]
         else:
@@ -1677,6 +2093,54 @@ def _build_guaranteed_fallback_plan(
                 PreparedQuestion(
                     id=f"qst_gen_{uuid4().hex[:8]}",
                     topic=topic_name,
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body=f"When analyzing a complex topic in {subject or 'this curriculum'}, which strategy yields the deepest understanding?",
+                    options=[
+                        PreparedOption(key="A", text="Breaking down components and relating them to foundational rules"),
+                        PreparedOption(key="B", text="Memorizing keywords in alphabetical order"),
+                        PreparedOption(key="C", text="Skipping challenging sections entirely"),
+                        PreparedOption(key="D", text="Reviewing summaries without working through examples"),
+                    ],
+                    answer="A",
+                    explanation=f"Deconstructing complex material into foundational rules enables transferable comprehension in {subject or 'the field'}.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_gen_{uuid4().hex[:8]}",
+                    topic=topic_name,
+                    question_type="mcq",
+                    difficulty="intermediate",
+                    body=f"Why is validating answers against source principles critical in {subject or 'academic study'}?",
+                    options=[
+                        PreparedOption(key="A", text="It ensures factual correctness and eliminates unsupported assumptions"),
+                        PreparedOption(key="B", text="It artificially extends the length of a study session"),
+                        PreparedOption(key="C", text="It eliminates the need for any conceptual analysis"),
+                        PreparedOption(key="D", text="It replaces practical application with passive reading"),
+                    ],
+                    answer="A",
+                    explanation="Rigorous verification confirms that conclusions follow logically from established evidence and definitions.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_gen_{uuid4().hex[:8]}",
+                    topic=topic_name,
+                    question_type="mcq",
+                    difficulty="intermediate",
+                    body=f"How do core principles and secondary applications relate to one another in {subject or 'this domain'}?",
+                    options=[
+                        PreparedOption(key="A", text="Principles establish the foundational rules from which applications derive"),
+                        PreparedOption(key="B", text="Applications exist entirely independently of underlying principles"),
+                        PreparedOption(key="C", text="Principles only apply to introductory questions and fail in real scenarios"),
+                        PreparedOption(key="D", text="Applications contradict and replace foundational theories"),
+                    ],
+                    answer="A",
+                    explanation="Domain concepts form a hierarchy where advanced applications build upon foundational principles.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_gen_{uuid4().hex[:8]}",
+                    topic=topic_name,
                     question_type="true_false",
                     difficulty="beginner",
                     body=f"Core concepts in {subject or 'this subject'} build upon fundamental definitions established in introductory chapters.",
@@ -1688,7 +2152,44 @@ def _build_guaranteed_fallback_plan(
                     explanation="Curriculum domains are hierarchical; advanced topics require command of foundational terminology.",
                     grading_hints=[],
                 ),
+                PreparedQuestion(
+                    id=f"qst_gen_{uuid4().hex[:8]}",
+                    topic=topic_name,
+                    question_type="true_false",
+                    difficulty="beginner",
+                    body=f"Regular active recall and testing strengthens long-term memory retention more effectively than passive re-reading.",
+                    options=[
+                        PreparedOption(key="true", text="True"),
+                        PreparedOption(key="false", text="False"),
+                    ],
+                    answer="true",
+                    explanation="Cognitive science shows retrieval practice produces significantly superior neural consolidation compared to passive review.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_gen_{uuid4().hex[:8]}",
+                    topic=topic_name,
+                    question_type="short_answer",
+                    difficulty="beginner",
+                    body=f"The practice of testing yourself on key concepts to strengthen memory retention is known as active ________.",
+                    options=[],
+                    answer="recall",
+                    explanation="Active recall is the process of actively retrieving information from memory.",
+                    grading_hints=["recall", "retrieval"],
+                ),
             ]
+
+        # Strict question type filtering: if caller requested mcq, never return true_false or short_answer
+        if target_qtype:
+            filtered_q = [
+                q for q in questions
+                if (q.question_type.value if hasattr(q.question_type, "value") else str(q.question_type)).lower() == target_qtype
+            ]
+            if filtered_q:
+                questions = filtered_q
+
+        # Always shuffle MCQ options so the correct answer key is randomized (never always 'A')
+        questions = [_shuffle_prepared_mcq_options(q) for q in questions]
         flashcards = []
         item_count = len(questions)
 
@@ -2099,7 +2600,7 @@ async def prepare_adaptive_session(
         if used >= _MAX_SELF_STUDY_SESSIONS:
             return _build_exhausted_plan(mode=request.mode, level=level, mastery=mastery, subject=request.subject, subcategory=request.subcategory)
 
-    # Enforce daily session limit: maximum 8 sessions per user per day (UTC)
+    # Enforce daily session limit: maximum 50 sessions per user per day (UTC)
     daily_sessions_count = await _daily_session_count(
         tenant_id=current_user.tenant_id,
         student_id=current_user.id,
@@ -2108,7 +2609,7 @@ async def prepare_adaptive_session(
         from fastapi import HTTPException, status
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Daily session limit reached. You can complete up to 8 sessions per day. Please return tomorrow!",
+            detail="Daily session limit reached. You can complete up to 50 sessions per day. Please return tomorrow!",
         )
 
     questions: list[PreparedQuestion] = []
@@ -2147,6 +2648,7 @@ async def prepare_adaptive_session(
             mastery=mastery,
             subject=request.subject,
             subcategory=request.subcategory,
+            question_type=request.question_type,
         )
         await _persist_prepared_session(
             tenant_id=current_user.tenant_id,
@@ -2184,6 +2686,7 @@ async def prepare_adaptive_session(
             mastery=mastery,
             subject=request.subject,
             subcategory=request.subcategory,
+            question_type=request.question_type,
         )
         await _persist_prepared_session(
             tenant_id=current_user.tenant_id,

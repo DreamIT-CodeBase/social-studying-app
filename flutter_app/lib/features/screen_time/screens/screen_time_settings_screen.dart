@@ -209,7 +209,7 @@ class _ScreenTimeSettingsScreenState
               const SizedBox(height: Spacing.sm),
               _buildSocialQuestionsCard(isEditable),
               const SizedBox(height: Spacing.lg),
-              if (isFlavorAdmin && workspaceId != null) ...[
+              if ((isFlavorAdmin || isSelfLearning) && workspaceId != null) ...[
                 _buildSectionTitle('Flagged Uploads & Content Controls'),
                 const SizedBox(height: Spacing.sm),
                 _buildFlaggedUploadsCard(workspaceId),
@@ -1363,6 +1363,33 @@ class _ScreenTimeSettingsScreenState
                     }
                   : null,
             ),
+            const SizedBox(height: Spacing.md),
+            Container(
+              padding: const EdgeInsets.all(Spacing.md),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.withValues(alpha: 0.2)),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline_rounded,
+                      size: 20, color: Color(0xFF1E3A8A)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'How Screen Time works: Answering study questions earns XP. Every 10 XP automatically converts into 1 minute of social media time. When you use social apps, minutes count down. Once available minutes reach 0, selected apps are shielded until you answer more questions.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF1E3A8A),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -1372,27 +1399,80 @@ class _ScreenTimeSettingsScreenState
   Widget _buildResetCard() {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ListTile(
-        title: const Text(
-          'Reset Today\'s Screen Time Stats',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
-        ),
-        subtitle: const Text(
-            'Resets today\'s usage timer to 0 without affecting your earned balance.'),
-        trailing: const Icon(Icons.refresh_rounded, color: Colors.orange),
-        onTap: () async {
-          await ref
-              .read(screenTimeNotifierProvider.notifier)
-              .resetConsumedToday();
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Daily usage stats reset successfully.'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          }
-        },
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.shield_rounded, color: Colors.indigo),
+            title: const Text(
+              'Test App Shields Now (Simulate 0 Min)',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo),
+            ),
+            subtitle: const Text(
+                'Sets available minutes to 0 and immediately activates app shields so you can verify social apps are blocked.'),
+            trailing: const Icon(Icons.play_arrow_rounded, color: Colors.indigo),
+            onTap: () async {
+              await ref
+                  .read(screenTimeNotifierProvider.notifier)
+                  .simulateZeroMinutesForTesting();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                        'Available time set to 0 and shields activated! Try opening a blocked social app now.'),
+                    backgroundColor: Colors.indigo,
+                  ),
+                );
+              }
+            },
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.add_circle_outline_rounded, color: Colors.green),
+            title: const Text(
+              'Add 15 Test Minutes (Unblock Apps)',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
+            ),
+            subtitle: const Text('Grants 15 minutes to test that app shields release.'),
+            trailing: const Icon(Icons.add_rounded, color: Colors.green),
+            onTap: () async {
+              await ref
+                  .read(screenTimeNotifierProvider.notifier)
+                  .addTestMinutes(15);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Added 15 test minutes! App shields released.'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.refresh_rounded, color: Colors.orange),
+            title: const Text(
+              'Reset Today\'s Screen Time Stats',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
+            ),
+            subtitle: const Text(
+                'Resets today\'s usage timer to 0 without affecting your earned balance.'),
+            trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.orange),
+            onTap: () async {
+              await ref
+                  .read(screenTimeNotifierProvider.notifier)
+                  .resetConsumedToday();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Daily usage stats reset successfully.'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+          ),
+        ],
       ),
     );
   }

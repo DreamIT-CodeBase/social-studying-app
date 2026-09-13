@@ -69,13 +69,13 @@ class DocumentPollingScreen extends ConsumerWidget {
   }
 }
 
-class _Body extends StatelessWidget {
+class _Body extends ConsumerWidget {
   const _Body({required this.doc});
 
   final Document doc;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // SingleChildScrollView + Column (not ListView) on purpose: the body has
     // at most four fixed-height cards, the lazy-build optimization of a
     // ListView doesn't help here, and eager build means widget tests can
@@ -86,6 +86,10 @@ class _Body extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _CurrentStageHero(doc: doc),
+          if (doc.status == DocumentStatus.flagged) ...[
+            const SizedBox(height: Spacing.lg),
+            _FlaggedApprovalCard(doc: doc),
+          ],
           if (doc.status.isUsableForStudy) ...[
             const SizedBox(height: Spacing.lg),
             _StudyActionsCard(doc: doc),
@@ -104,6 +108,122 @@ class _Body extends StatelessWidget {
             _TopicsCard(topics: doc.topicTags),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _FlaggedApprovalCard extends ConsumerStatefulWidget {
+  const _FlaggedApprovalCard({required this.doc});
+
+  final Document doc;
+
+  @override
+  ConsumerState<_FlaggedApprovalCard> createState() =>
+      _FlaggedApprovalCardState();
+}
+
+class _FlaggedApprovalCardState extends ConsumerState<_FlaggedApprovalCard> {
+  bool _isApproving = false;
+
+  Future<void> _handleApprove() async {
+    setState(() => _isApproving = true);
+    try {
+      await ref
+          .read(
+            documentPollingProvider(
+              workspaceId: widget.doc.workspaceId,
+              documentId: widget.doc.id,
+            ).notifier,
+          )
+          .approveDocument();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Document approved! Continuing processing…'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to approve document: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isApproving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      color: Colors.amber.withValues(alpha: 0.12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.amber.withValues(alpha: 0.4)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(Spacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.verified_user_rounded,
+                  color: Colors.amber,
+                  size: 26,
+                ),
+                const SizedBox(width: Spacing.sm),
+                Expanded(
+                  child: Text(
+                    'Self-Learning Content Approval',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: Spacing.sm),
+            Text(
+              'Automated safety filters flagged this material. Since you manage your own study material, you can review and approve it to unblock extraction and generate study questions.',
+              style: TextStyle(
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: Spacing.md),
+            FilledButton.icon(
+              onPressed: _isApproving ? null : _handleApprove,
+              icon: _isApproving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.check_circle_outline_rounded),
+              label: Text(_isApproving
+                  ? 'Approving & Resuming…'
+                  : 'Approve & Unblock Document'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.amber.shade800,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

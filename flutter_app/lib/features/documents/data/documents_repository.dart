@@ -42,6 +42,11 @@ abstract class DocumentsRepository {
     required String workspaceId,
     required String documentId,
   });
+
+  Future<Document> approve({
+    required String workspaceId,
+    required String documentId,
+  });
 }
 
 /// A file source that can read a bounded range without loading the whole

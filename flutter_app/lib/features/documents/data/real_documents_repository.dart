@@ -285,6 +285,21 @@ class RealDocumentsRepository implements DocumentsRepository {
     }
   }
 
+  @override
+  Future<Document> approve({
+    required String workspaceId,
+    required String documentId,
+  }) async {
+    try {
+      final response = await dio.post<Map<String, dynamic>>(
+        '$_apiPrefix/workspaces/$workspaceId/documents/$documentId/approve',
+      );
+      return Document.fromJson(response.data!);
+    } on DioException catch (e) {
+      throw _translate(e);
+    }
+  }
+
   /// Map Dio errors into typed exceptions the UI layer can branch on.
   Exception _translate(DioException e) {
     final status = e.response?.statusCode;

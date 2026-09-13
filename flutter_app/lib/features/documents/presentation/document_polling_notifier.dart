@@ -74,6 +74,20 @@ class DocumentPolling extends _$DocumentPolling {
     });
   }
 
+  /// Approve a flagged document, clear safety flags, and resume the ingestion pipeline.
+  Future<void> approveDocument() async {
+    _cancelTimer();
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      final doc = await ref.read(documentsRepositoryProvider).approve(
+            workspaceId: _workspaceId,
+            documentId: _documentId,
+          );
+      _scheduleNext(doc);
+      return doc;
+    });
+  }
+
   void _scheduleNext(Document doc) {
     _cancelTimer();
     if (doc.status.isTerminal) return;

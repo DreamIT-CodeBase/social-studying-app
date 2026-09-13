@@ -80,9 +80,21 @@ def _assert_workspace_access(user: User, workspace_id: str) -> None:
 
 
 def _assert_admin(user: User, workspace_id: str) -> None:
-    """Raise ForbiddenError if the user is not an admin of this workspace."""
+    """Raise ForbiddenError if the user is not an admin of this workspace.
+
+    Self-learning users (in personal / self-study workspaces, or not under parental oversight)
+    have admin authority over their own workspace content.
+    """
     if user.role == UserRole.tenant_admin:
         return
+    if (
+        workspace_id.startswith("wsp_self_")
+        or workspace_id.startswith("wsp_personal_")
+        or user.id in workspace_id
+    ):
+        ids = {m.workspace_id for m in user.workspace_memberships}
+        if workspace_id in ids or user.id in workspace_id:
+            return
     admin_memberships = {
         m.workspace_id
         for m in user.workspace_memberships

@@ -347,7 +347,25 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
     if (answer.isEmpty || _answerRevealed || _answerSubmitting) return;
 
     setState(() => _answerSubmitting = true);
-    final matched = _matchesPreparedAnswer(question, answer);
+    var matched = _matchesPreparedAnswer(question, answer);
+    if (!matched &&
+        (question.questionType == 'long_answer' ||
+            question.questionType == 'short_answer')) {
+      try {
+        final eval = await ref
+            .read(adaptiveSessionRepositoryProvider)
+            .evaluateAnswer(
+              workspaceId: widget.workspaceId,
+              sessionId: plan.sessionId,
+              questionId: question.id,
+              answer: answer,
+            );
+        matched = eval.isCorrect;
+      } catch (_) {
+        // Fallback gracefully to local evaluation result on network issue
+      }
+    }
+
     if (!mounted ||
         _phase != _SessionPhase.active ||
         _plan?.questions[_index].id != question.id) {
@@ -418,10 +436,37 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
     if (question.questionType == 'long_answer') {
       if (question.gradingHints.isEmpty) return submitted.trim().isNotEmpty;
       final lower = submitted.toLowerCase();
-      final matched = question.gradingHints
-          .where((hint) => lower.contains(hint.toLowerCase()))
-          .length;
-      return matched >= (question.gradingHints.length / 2).ceil();
+      int matchedHints = 0;
+      const stopWords = {
+        'the', 'a', 'an', 'and', 'or', 'of', 'in', 'to', 'for', 'with',
+        'on', 'at', 'by', 'from', 'is', 'are', 'was', 'were', 'that', 'this',
+        'as', 'it', 'its', 'be', 'been', 'which'
+      };
+      for (final hint in question.gradingHints) {
+        final hintLower = hint.toLowerCase();
+        if (lower.contains(hintLower)) {
+          matchedHints++;
+          continue;
+        }
+        final hintTokens = hintLower
+            .replaceAll(RegExp(r'[^\w\s]'), ' ')
+            .split(RegExp(r'\s+'))
+            .where((t) => t.length > 2 && !stopWords.contains(t))
+            .toSet();
+        if (hintTokens.isEmpty) {
+          if (lower.contains(hintLower)) matchedHints++;
+          continue;
+        }
+        final studentTokens = lower
+            .replaceAll(RegExp(r'[^\w\s]'), ' ')
+            .split(RegExp(r'\s+'))
+            .toSet();
+        final overlap = hintTokens.intersection(studentTokens).length;
+        if (overlap / hintTokens.length >= 0.45) {
+          matchedHints++;
+        }
+      }
+      return matchedHints >= (question.gradingHints.length / 2).ceil();
     }
     if (question.questionType == 'mathematical') {
       return normalized(submitted).contains(normalized(question.answer));

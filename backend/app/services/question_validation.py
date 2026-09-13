@@ -302,9 +302,29 @@ def validate_and_sanitize_question(
         if option_keys != ["A", "B", "C", "D"]:
             return None
 
-        # Check option texts are not duplicates
+        # Check option texts are not duplicates (both literal and normalized value)
         norm_texts = [opt.text.strip().lower() for opt in gq.options]
         if len(set(norm_texts)) != 4:
+            return None
+
+        def _normalize_opt_val(t: str) -> str:
+            c = t.strip().lower()
+            c = re.sub(r"^[a-z]\s*=\s*", "", c)
+            c = re.sub(r"^\$+\s*", "", c)
+            c = re.sub(r"\s*\$+$", "", c)
+            num_m = re.match(r"^[-+]?\d+(?:\.\d+)?$", c)
+            if num_m:
+                try:
+                    f = float(c)
+                    if f.is_integer():
+                        return str(int(f))
+                    return str(f)
+                except Exception:
+                    pass
+            return c
+
+        norm_vals = [_normalize_opt_val(opt.text) for opt in gq.options]
+        if len(set(norm_vals)) != 4:
             return None
 
         # 1.1 Check if question is a calculus (derivative/integral) or trigonometry problem
