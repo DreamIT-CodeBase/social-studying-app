@@ -1,6 +1,7 @@
 package com.socialstudyapp.social_study_app
 
 import android.accessibilityservice.AccessibilityService
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -10,20 +11,28 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.provider.Settings
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.Space
 import android.widget.TextView
+import android.widget.Toast
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.ZoneOffset
@@ -51,6 +60,8 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
     private var breakCountdownRunnable: Runnable? = null
     private var breakCountdownText: TextView? = null
     private var breakForegroundPackage: String? = null
+    private var topBannerView: View? = null
+    private var topBannerDismissRunnable: Runnable? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -78,6 +89,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
         try {
             stopUsageTracking()
             hideOverlay()
+            removeTopBannerView()
         } catch (_: Throwable) {}
     }
 
@@ -87,6 +99,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
             foregroundVerificationRunnable = null
             stopUsageTracking()
             hideOverlay()
+            removeTopBannerView()
         } catch (_: Throwable) {}
         super.onDestroy()
     }
@@ -137,12 +150,33 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
             }
 
             val availableKey = "$KEY_AVAILABLE_MINUTES$userId"
-            val availableMinutes = if (prefs.contains(availableKey)) {
-                getSafeLongPref(prefs, availableKey, 0L)
+            var availableMinutes = 0L
+            if (prefs.contains(availableKey)) {
+                availableMinutes = getSafeLongPref(prefs, availableKey, 0L)
             } else if (prefs.contains("flutter.available_minutes")) {
-                getSafeLongPref(prefs, "flutter.available_minutes", 0L)
+                availableMinutes = getSafeLongPref(prefs, "flutter.available_minutes", 0L)
+            } else if (prefs.contains("available_minutes")) {
+                availableMinutes = getSafeLongPref(prefs, "available_minutes", 0L)
             } else {
-                getSafeLongPref(prefs, KEY_AVAILABLE_MINUTES.removeSuffix("_"), 0L)
+                var found = false
+                for (entry in prefs.all) {
+                    if (entry.key.startsWith("flutter.available_minutes") || entry.key.startsWith("available_minutes")) {
+                        val v = when (val value = entry.value) {
+                            is Long -> value
+                            is Int -> value.toLong()
+                            is Number -> value.toLong()
+                            else -> 0L
+                        }
+                        if (v > 0L) {
+                            availableMinutes = v
+                            found = true
+                            break
+                        }
+                    }
+                }
+                if (!found) {
+                    availableMinutes = 0L
+                }
             }
 
             if (availableMinutes <= 0L) {
@@ -160,6 +194,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
         try {
             stopUsageTracking()
             hideOverlay()
+            removeTopBannerView()
         } catch (_: Throwable) {}
     }
 
@@ -336,53 +371,63 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
     private fun showExhaustedOverlay(foregroundPackage: String? = null) {
         val targetPackage = foregroundPackage ?: currentForegroundPackage.orEmpty()
         try {
-            // 1. Send heads-up notification with sound every single time user attempts to open blocked app!
+            // 1. Instantly kick the user out of the blocked app back to the Home screen
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            currentForegroundPackage = null
+
+            // 2. Audible ringtone & tactile vibration immediately
+            playAudibleNotificationFeedback()
+
+            // 3. Send high-priority Heads-Up system notification from top
             sendStudySessionNeededNotification(targetPackage)
 
-            // 2. Kick out of the blocked app immediately by performing Home action
-            performGlobalAction(GLOBAL_ACTION_HOME)
+            // 4. Show guaranteed top-of-screen floating banner overlay ("from top at any cost")
+            showTopBannerNotification(targetPackage)
 
-            // 3. Launch Social Study App in foreground with unlock question action
-            try {
-                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                    putExtra("action", "unlock_question")
-                    putExtra("blocked_package", targetPackage)
-                    putExtra("source", "app_shield")
-                }
-                if (launchIntent != null) {
-                    startActivity(launchIntent)
-                }
-            } catch (_: Throwable) {}
-
-            // 4. Show Toast for instant visual feedback on any device
+            // 5. Quick toast for guaranteed visibility across all Android versions and OEM ROMs
             handler.post {
                 try {
-                    android.widget.Toast.makeText(
+                    Toast.makeText(
                         applicationContext,
                         "📚 Study Session Needed: To gain access to your app, let’s create a study session.",
-                        android.widget.Toast.LENGTH_LONG,
+                        Toast.LENGTH_LONG,
                     ).show()
                 } catch (_: Throwable) {}
             }
+        } catch (_: Throwable) {}
+    }
 
-            // 5. Also display the full screen overlay if supported
-            showOverlay(OverlayMode.EXHAUSTED) { createOverlayView(targetPackage) }
+    private fun playAudibleNotificationFeedback() {
+        try {
+            val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            val ringtone = RingtoneManager.getRingtone(applicationContext, soundUri)
+            ringtone?.play()
+        } catch (_: Throwable) {}
+
+        try {
+            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 250, 150, 250), -1))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(longArrayOf(0, 250, 150, 250), -1)
+            }
         } catch (_: Throwable) {}
     }
 
     private fun sendStudySessionNeededNotification(blockedPackage: String) {
         try {
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-            val channelId = "study_session_needed_channel"
+            val channelId = "study_session_urgent_top_banner_v10"
             val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 var channel = notificationManager.getNotificationChannel(channelId)
                 if (channel == null) {
-                    val audioAttributes = android.media.AudioAttributes.Builder()
-                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                    val audioAttributes = AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_COMMUNICATION_INSTANT)
                         .build()
                     channel = NotificationChannel(
                         channelId,
@@ -391,9 +436,12 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
                     ).apply {
                         description = "Alerts when restricted apps require a study session to unlock"
                         enableLights(true)
-                        lightColor = Color.BLUE
+                        lightColor = Color.parseColor("#3B82F6")
                         enableVibration(true)
+                        vibrationPattern = longArrayOf(0, 250, 150, 250)
                         setSound(soundUri, audioAttributes)
+                        lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                        setBypassDnd(true)
                     }
                     notificationManager.createNotificationChannel(channel)
                 }
@@ -411,31 +459,305 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
                 PendingIntent.FLAG_UPDATE_CURRENT
             }
             val contentIntent = launchIntent?.let {
-                PendingIntent.getActivity(applicationContext, System.currentTimeMillis().toInt(), it, pendingFlags)
+                PendingIntent.getActivity(applicationContext, (System.currentTimeMillis() % 100000).toInt(), it, pendingFlags)
             }
 
+            // CRITICAL: Ensure small icon belongs to this application package
+            val smallIconRes = applicationInfo.icon.takeIf { it != 0 }
+                ?: resources.getIdentifier("ic_launcher", "mipmap", packageName).takeIf { it != 0 }
+                ?: resources.getIdentifier("ic_notification", "drawable", packageName).takeIf { it != 0 }
+                ?: android.R.drawable.stat_notify_more
+
             val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                android.app.Notification.Builder(applicationContext, channelId)
+                Notification.Builder(applicationContext, channelId)
             } else {
                 @Suppress("DEPRECATION")
-                android.app.Notification.Builder(applicationContext)
+                Notification.Builder(applicationContext)
             }
 
             builder
-                .setSmallIcon(android.R.drawable.ic_lock_lock)
+                .setSmallIcon(smallIconRes)
                 .setContentTitle("Study Session Needed")
                 .setContentText("To gain access to your app, let’s create a study session.")
-                .setStyle(android.app.Notification.BigTextStyle().bigText("To gain access to your app, let’s create a study session."))
+                .setStyle(Notification.BigTextStyle().bigText("To gain access to your app, let’s create a study session."))
                 .setAutoCancel(true)
                 .setSound(soundUri)
-                .setPriority(android.app.Notification.PRIORITY_MAX)
+                .setPriority(Notification.PRIORITY_MAX)
+                .setCategory(Notification.CATEGORY_ALARM)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
 
             if (contentIntent != null) {
                 builder.setContentIntent(contentIntent)
+                // setFullScreenIntent forces Android SystemUI to drop down a heads-up banner from the top!
+                builder.setFullScreenIntent(contentIntent, true)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    val action = Notification.Action.Builder(
+                        smallIconRes,
+                        "Study Now ➔",
+                        contentIntent
+                    ).build()
+                    builder.addAction(action)
+                }
             }
 
             val notificationId = (System.currentTimeMillis() % 100000).toInt() + 1000
             notificationManager.notify(notificationId, builder.build())
+        } catch (_: Throwable) {}
+    }
+
+    private fun showTopBannerNotification(targetPackage: String) {
+        handler.post {
+            try {
+                val windowManager = getSystemService(WINDOW_SERVICE) as? WindowManager ?: return@post
+
+                // Remove previous if still visible
+                removeTopBannerView(windowManager)
+
+                val banner = createTopBannerView(targetPackage)
+                topBannerView = banner
+
+                val statusBarHeight = getStatusBarHeight()
+                val layoutParams = WindowManager.LayoutParams().apply {
+                    type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                    format = PixelFormat.TRANSLUCENT
+                    flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+                    width = WindowManager.LayoutParams.MATCH_PARENT
+                    height = WindowManager.LayoutParams.WRAP_CONTENT
+                    gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                    y = (statusBarHeight + dpToPx(6)).coerceAtLeast(dpToPx(12))
+                }
+
+                try {
+                    windowManager.addView(banner, layoutParams)
+                } catch (accessibilityError: Throwable) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
+                        layoutParams.type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                        } else {
+                            @Suppress("DEPRECATION")
+                            WindowManager.LayoutParams.TYPE_PHONE
+                        }
+                        windowManager.addView(banner, layoutParams)
+                    } else {
+                        return@post
+                    }
+                }
+
+                // Drop-down animation from top
+                banner.translationY = -dpToPx(130).toFloat()
+                banner.alpha = 0f
+                banner.animate()
+                    .translationY(0f)
+                    .alpha(1f)
+                    .setDuration(350)
+                    .setInterpolator(OvershootInterpolator(0.8f))
+                    .start()
+
+                // Auto-dismiss after 6.5 seconds
+                topBannerDismissRunnable = Runnable {
+                    dismissTopBannerWithAnimation()
+                }
+                handler.postDelayed(topBannerDismissRunnable!!, 6500L)
+            } catch (_: Throwable) {}
+        }
+    }
+
+    private fun dismissTopBannerWithAnimation() {
+        val view = topBannerView ?: return
+        topBannerDismissRunnable?.let(handler::removeCallbacks)
+        topBannerDismissRunnable = null
+
+        view.animate()
+            .translationY(-dpToPx(130).toFloat())
+            .alpha(0f)
+            .setDuration(250)
+            .withEndAction {
+                try {
+                    val windowManager = getSystemService(WINDOW_SERVICE) as? WindowManager
+                    windowManager?.removeView(view)
+                } catch (_: Throwable) {}
+                if (topBannerView === view) {
+                    topBannerView = null
+                }
+            }
+            .start()
+    }
+
+    private fun removeTopBannerView(windowManager: WindowManager? = null) {
+        topBannerDismissRunnable?.let(handler::removeCallbacks)
+        topBannerDismissRunnable = null
+        val view = topBannerView ?: return
+        try {
+            val wm = windowManager ?: (getSystemService(WINDOW_SERVICE) as? WindowManager)
+            wm?.removeView(view)
+        } catch (_: Throwable) {}
+        topBannerView = null
+    }
+
+    private fun getStatusBarHeight(): Int {
+        var result = 0
+        val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
+        if (resourceId > 0) {
+            result = resources.getDimensionPixelSize(resourceId)
+        }
+        return if (result > 0) result else dpToPx(24)
+    }
+
+    private fun createTopBannerView(targetPackage: String): View {
+        val root = FrameLayout(this).apply {
+            setPadding(dpToPx(12), 0, dpToPx(12), 0)
+        }
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(14), dpToPx(12), dpToPx(12), dpToPx(12))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dpToPx(16).toFloat()
+                setColor(Color.parseColor("#0F172A"))
+                setStroke(dpToPx(1), Color.parseColor("#3B82F6"))
+            }
+            elevation = dpToPx(12).toFloat()
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                launchStudySessionUnlock(targetPackage)
+            }
+        }
+
+        root.addView(
+            card,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            )
+        )
+
+        // Left: 📚 Icon badge
+        val iconBadge = FrameLayout(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dpToPx(10).toFloat()
+                setColor(Color.parseColor("#1E3A8A"))
+            }
+        }
+        val iconEmoji = TextView(this).apply {
+            text = "📚"
+            textSize = 20f
+            gravity = Gravity.CENTER
+        }
+        iconBadge.addView(
+            iconEmoji,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER
+            )
+        )
+        card.addView(iconBadge, LinearLayout.LayoutParams(dpToPx(42), dpToPx(42)))
+
+        card.addView(Space(this), LinearLayout.LayoutParams(dpToPx(10), 1))
+
+        // Center: Text column
+        val textColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val titleTag = TextView(this).apply {
+            text = "STUDY SESSION NEEDED"
+            textSize = 10.5f
+            setTextColor(Color.parseColor("#60A5FA"))
+            setTypeface(typeface, Typeface.BOLD)
+        }
+        val timeTag = TextView(this).apply {
+            text = " • now"
+            textSize = 10f
+            setTextColor(Color.parseColor("#94A3B8"))
+        }
+        headerRow.addView(titleTag)
+        headerRow.addView(timeTag)
+        textColumn.addView(headerRow)
+
+        textColumn.addView(Space(this), LinearLayout.LayoutParams(1, dpToPx(2)))
+
+        val bodyText = TextView(this).apply {
+            text = "To gain access to your app, let’s create a study session."
+            textSize = 12.5f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        textColumn.addView(bodyText)
+
+        val textParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f)
+        card.addView(textColumn, textParams)
+
+        card.addView(Space(this), LinearLayout.LayoutParams(dpToPx(8), 1))
+
+        // Right: "Study Now" button
+        val studyButton = TextView(this).apply {
+            text = "Study Now ➔"
+            textSize = 11.5f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(dpToPx(10), dpToPx(7), dpToPx(10), dpToPx(7))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dpToPx(8).toFloat()
+                setColor(Color.parseColor("#2563EB"))
+            }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                launchStudySessionUnlock(targetPackage)
+            }
+        }
+        card.addView(studyButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+
+        card.addView(Space(this), LinearLayout.LayoutParams(dpToPx(6), 1))
+
+        // Right-most: Close "✕" button
+        val closeButton = TextView(this).apply {
+            text = "✕"
+            textSize = 13f
+            setTextColor(Color.parseColor("#94A3B8"))
+            gravity = Gravity.CENTER
+            setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                dismissTopBannerWithAnimation()
+            }
+        }
+        card.addView(closeButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+
+        return root
+    }
+
+    private fun launchStudySessionUnlock(targetPackage: String) {
+        dismissTopBannerWithAnimation()
+        try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra("action", "unlock_question")
+                putExtra("blocked_package", targetPackage)
+                putExtra("source", "app_shield")
+            }
+            if (launchIntent != null) {
+                startActivity(launchIntent)
+            }
         } catch (_: Throwable) {}
     }
 
@@ -729,7 +1051,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
             return DEFAULT_BLOCKED_PACKAGES
         }
         val parsed = parseJsonArray(jsonString).toSet()
-        return if (parsed.isEmpty()) DEFAULT_BLOCKED_PACKAGES else parsed
+        return if (parsed.isEmpty()) DEFAULT_BLOCKED_PACKAGES else (parsed + DEFAULT_BLOCKED_PACKAGES)
     }
 
     private fun getSafeLongPref(
