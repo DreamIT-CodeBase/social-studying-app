@@ -36,17 +36,17 @@ class _Cursor:
             yield row
 
 
-def _question(question_id: str, body: str) -> Question:
+def _question(question_id: str, body: str, document_id: str = "doc_a", answer: str = "answer") -> Question:
     return Question(
         **{"_id": question_id},
         tenant_id="ten_test001",
         workspace_id="wsp_a",
-        document_id="doc_a",
+        document_id=document_id,
         topic="Biology",
         question_type=QuestionType.short_answer,
         difficulty=DifficultyLevel.beginner,
         body=body,
-        answer="answer",
+        answer=answer,
         status=QuestionStatus.approved,
     )
 
@@ -863,5 +863,238 @@ async def test_prepare_self_study_generates_five_fresh_questions_on_topic_and_ty
         extra_seen_bodies=["Old stem from session 1"],
     )
     assert all(q.id.startswith("qst_fresh_") for q in prepared)
+
+
+@pytest.mark.asyncio
+async def test_three_consecutive_sessions_across_topic_have_zero_repetition():
+    """Verify that 3 consecutive study sessions for the same topic yield 15 completely unique questions."""
+    student = make_user(user_id="stu_genetics", role=UserRole.student, workspace_ids=["wsp_genetics"])
+
+    # Document has topic "Molecular Genetics"
+    sources = CurrentStudySources(
+        document_ids=frozenset({"doc_genetics"}),
+        topic_names=("Molecular Genetics",),
+    )
+
+    # Session 1 questions: DNA Replication
+    s1_questions = [
+        _question("qst_s1_0", "How does DNA polymerase synthesize the leading strand during replication?", document_id="doc_genetics", answer="Continuously 5 to 3"),
+        _question("qst_s1_1", "What role do Okazaki fragments play on the lagging strand?", document_id="doc_genetics", answer="Discontinuous replication segments"),
+        _question("qst_s1_2", "Which enzyme unwinds the double helix at the replication fork?", document_id="doc_genetics", answer="DNA Helicase"),
+        _question("qst_s1_3", "What is the function of topoisomerase during DNA unwinding?", document_id="doc_genetics", answer="Relieves supercoiling strain"),
+        _question("qst_s1_4", "Why is RNA primase required prior to elongation?", document_id="doc_genetics", answer="Supplies free 3 hydroxyl group"),
+    ]
+    # Session 2 questions: Transcription and RNA Processing
+    s2_questions = [
+        _question("qst_s2_0", "Which enzyme synthesizes pre-mRNA from the DNA template?", document_id="doc_genetics", answer="RNA Polymerase II"),
+        _question("qst_s2_1", "What is the promoter consensus sequence recognized in eukaryotic transcription?", document_id="doc_genetics", answer="TATA box"),
+        _question("qst_s2_2", "How does the 5-prime cap structure protect eukaryotic transcripts?", document_id="doc_genetics", answer="Blocks exonuclease degradation"),
+        _question("qst_s2_3", "What complex removes introns and joins exons together?", document_id="doc_genetics", answer="Spliceosome ribonucleoprotein"),
+        _question("qst_s2_4", "What is the role of the polyadenylation tail on messenger RNA?", document_id="doc_genetics", answer="Nuclear export and stability"),
+    ]
+    # Session 3 questions: Translation and Protein Synthesis
+    s3_questions = [
+        _question("qst_s3_0", "How do transfer RNA molecules pair with codons during elongation?", document_id="doc_genetics", answer="Anticodon complementary pairing"),
+        _question("qst_s3_1", "What universal start codon initiates polypeptide chain assembly?", document_id="doc_genetics", answer="AUG codon"),
+        _question("qst_s3_2", "Which ribosomal binding site accepts the incoming aminoacyl-tRNA?", document_id="doc_genetics", answer="The A aminoacyl site"),
+        _question("qst_s3_3", "What protein binds stop codons to terminate translation?", document_id="doc_genetics", answer="Release factor"),
+        _question("qst_s3_4", "How do molecular chaperones assist newly synthesized proteins?", document_id="doc_genetics", answer="Proper tertiary folding"),
+    ]
+
+    # --- Session 1 ---
+    queue_empty = MagicMock()
+    queue_empty.find.return_value = _Cursor([])
+    with (
+        patch("app.api.adaptive_sessions._history", AsyncMock(return_value=([], {}))),
+        patch("app.api.adaptive_sessions._reserved_questions", AsyncMock(return_value=(set(), set()))),
+        patch("app.api.adaptive_sessions._question_session_history", AsyncMock(return_value=(set(), set(), []))),
+        patch("app.api.adaptive_sessions.get_collection", return_value=queue_empty),
+        patch("app.api.adaptive_sessions.study_sources.current_study_sources", AsyncMock(return_value=sources)),
+        patch("app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch", AsyncMock(return_value=s1_questions)),
+    ):
+        prep1 = await _prepare_questions(
+            user=student,
+            workspace_id="wsp_genetics",
+            target=5,
+            level=AdaptiveLevel.beginner,
+            revision=False,
+            subcategory="Molecular Genetics",
+        )
+    assert len(prep1) == 5
+    assert all(q.id.startswith("qst_s1_") for q in prep1)
+
+    # --- Session 2 (S1 questions are now in session history) ---
+    s1_ids = {q.id for q in prep1}
+    s1_fps = {_question_fingerprint(q.body) for q in prep1}
+    s1_bodies = [q.body for q in prep1]
+
+    with (
+        patch("app.api.adaptive_sessions._history", AsyncMock(return_value=([], {}))),
+        patch("app.api.adaptive_sessions._reserved_questions", AsyncMock(return_value=(set(), set()))),
+        patch("app.api.adaptive_sessions._question_session_history", AsyncMock(return_value=(s1_ids, s1_fps, s1_bodies))),
+        patch("app.api.adaptive_sessions.get_collection", return_value=queue_empty),
+        patch("app.api.adaptive_sessions.study_sources.current_study_sources", AsyncMock(return_value=sources)),
+        patch("app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch", AsyncMock(return_value=s2_questions)),
+    ):
+        prep2 = await _prepare_questions(
+            user=student,
+            workspace_id="wsp_genetics",
+            target=5,
+            level=AdaptiveLevel.beginner,
+            revision=False,
+            subcategory="Molecular Genetics",
+        )
+    assert len(prep2) == 5
+    assert all(q.id.startswith("qst_s2_") for q in prep2)
+    # Zero overlap between Session 1 and Session 2
+    assert not (set(q.id for q in prep2) & s1_ids)
+
+    # --- Session 3 (S1 + S2 questions are in session history) ---
+    s2_ids = {q.id for q in prep2}
+    all_seen_ids = s1_ids | s2_ids
+    all_seen_fps = s1_fps | {_question_fingerprint(q.body) for q in prep2}
+    all_seen_bodies = s1_bodies + [q.body for q in prep2]
+
+    with (
+        patch("app.api.adaptive_sessions._history", AsyncMock(return_value=([], {}))),
+        patch("app.api.adaptive_sessions._reserved_questions", AsyncMock(return_value=(set(), set()))),
+        patch("app.api.adaptive_sessions._question_session_history", AsyncMock(return_value=(all_seen_ids, all_seen_fps, all_seen_bodies))),
+        patch("app.api.adaptive_sessions.get_collection", return_value=queue_empty),
+        patch("app.api.adaptive_sessions.study_sources.current_study_sources", AsyncMock(return_value=sources)),
+        patch("app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch", AsyncMock(return_value=s3_questions)),
+    ):
+        prep3 = await _prepare_questions(
+            user=student,
+            workspace_id="wsp_genetics",
+            target=5,
+            level=AdaptiveLevel.beginner,
+            revision=False,
+            subcategory="Molecular Genetics",
+        )
+    assert len(prep3) == 5
+    assert all(q.id.startswith("qst_s3_") for q in prep3)
+    # Zero overlap across all 3 sessions
+    all_q_ids = [q.id for q in prep1] + [q.id for q in prep2] + [q.id for q in prep3]
+    assert len(all_q_ids) == 15
+    assert len(set(all_q_ids)) == 15
+
+
+@pytest.mark.asyncio
+async def test_semantic_rephrased_duplicate_rejected_across_sessions():
+    """Verify that questions with rephrased templates or semantic duplicates are rejected."""
+    student = make_user(user_id="stu_cell", role=UserRole.student, workspace_ids=["wsp_cell"])
+    sources = CurrentStudySources(
+        document_ids=frozenset({"doc_cell"}),
+        topic_names=("Cell Biology",),
+    )
+
+    # Historical session served:
+    past_body = "What is the primary function of ribosomes in living cells?"
+    past_sig = _question_fingerprint(past_body)
+
+    # Candidate batch from LLM: 1 reworded duplicate and 1 fresh question
+    cand_dup = _question("qst_dup", "Which of the following best describes the function of ribosomes in living cells?", document_id="doc_cell")
+    cand_fresh = _question("qst_fresh", "What is the role of the Golgi apparatus in protein modification?", document_id="doc_cell")
+
+    queue_empty = MagicMock()
+    queue_empty.find.return_value = _Cursor([])
+
+    with (
+        patch("app.api.adaptive_sessions._history", AsyncMock(return_value=([], {}))),
+        patch("app.api.adaptive_sessions._reserved_questions", AsyncMock(return_value=(set(), set()))),
+        patch("app.api.adaptive_sessions._question_session_history", AsyncMock(return_value=({"qst_past"}, {past_sig}, [past_body]))),
+        patch("app.api.adaptive_sessions.get_collection", return_value=queue_empty),
+        patch("app.api.adaptive_sessions.study_sources.current_study_sources", AsyncMock(return_value=sources)),
+        patch("app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch", AsyncMock(return_value=[cand_dup, cand_fresh])),
+    ):
+        prepared = await _prepare_questions(
+            user=student,
+            workspace_id="wsp_cell",
+            target=1,
+            level=AdaptiveLevel.beginner,
+            revision=False,
+            subcategory="Cell Biology",
+        )
+
+    # The reworded duplicate must be rejected; only the fresh Golgi question accepted
+    assert len(prepared) == 1
+    assert prepared[0].id == "qst_fresh"
+
+
+@pytest.mark.asyncio
+async def test_strict_topic_purity_never_mixes_unrelated_topics():
+    """Selecting subcategory 'Cellular Respiration' must never include questions from 'Photosynthesis'."""
+    student = make_user(user_id="stu_bio", role=UserRole.student, workspace_ids=["wsp_bio"])
+    sources = CurrentStudySources(
+        document_ids=frozenset({"doc_bio"}),
+        topic_names=("Cellular Respiration", "Photosynthesis"),
+    )
+
+    # Pool has 2 questions for Cellular Respiration and 3 for Photosynthesis
+    q_resp1 = Question(
+        **{"_id": "qst_resp1"},
+        tenant_id="ten_test001",
+        workspace_id="wsp_bio",
+        document_id="doc_bio",
+        topic="Cellular Respiration",
+        question_type=QuestionType.short_answer,
+        difficulty=DifficultyLevel.beginner,
+        body="What is the net ATP yield of glycolysis?",
+        answer="2 ATP",
+        status=QuestionStatus.approved,
+    )
+    q_photo1 = Question(
+        **{"_id": "qst_photo1"},
+        tenant_id="ten_test001",
+        workspace_id="wsp_bio",
+        document_id="doc_bio",
+        topic="Photosynthesis",
+        question_type=QuestionType.short_answer,
+        difficulty=DifficultyLevel.beginner,
+        body="Where does the light-dependent reaction occur in chloroplasts?",
+        answer="Thylakoid membrane",
+        status=QuestionStatus.approved,
+    )
+    fresh_resp = Question(
+        **{"_id": "qst_resp2"},
+        tenant_id="ten_test001",
+        workspace_id="wsp_bio",
+        document_id="doc_bio",
+        topic="Cellular Respiration",
+        question_type=QuestionType.short_answer,
+        difficulty=DifficultyLevel.beginner,
+        body="Which molecule acts as the final electron acceptor in the electron transport chain?",
+        answer="Oxygen",
+        status=QuestionStatus.approved,
+    )
+
+    queue = MagicMock()
+    queue.find.return_value = _Cursor([
+        q_resp1.model_dump(by_alias=True),
+        q_photo1.model_dump(by_alias=True),
+    ])
+
+    with (
+        patch("app.api.adaptive_sessions._history", AsyncMock(return_value=([], {}))),
+        patch("app.api.adaptive_sessions._reserved_questions", AsyncMock(return_value=(set(), set()))),
+        patch("app.api.adaptive_sessions._question_session_history", AsyncMock(return_value=(set(), set(), []))),
+        patch("app.api.adaptive_sessions.get_collection", return_value=queue),
+        patch("app.api.adaptive_sessions.study_sources.current_study_sources", AsyncMock(return_value=sources)),
+        patch("app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch", AsyncMock(return_value=[fresh_resp])),
+    ):
+        prepared = await _prepare_questions(
+            user=student,
+            workspace_id="wsp_bio",
+            target=2,
+            level=AdaptiveLevel.beginner,
+            revision=False,
+            subcategory="Cellular Respiration",
+        )
+
+    assert len(prepared) == 2
+    # Must only contain Cellular Respiration questions; Photosynthesis is excluded
+    assert all("qst_photo" not in q.id for q in prepared)
+    assert {q.id for q in prepared} == {"qst_resp1", "qst_resp2"}
+
 
 

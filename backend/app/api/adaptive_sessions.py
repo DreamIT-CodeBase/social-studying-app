@@ -7,7 +7,6 @@ import hashlib
 import logging
 import random
 import re
-import unicodedata
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
@@ -62,7 +61,6 @@ from app.models.flashcard import Flashcard, FlashcardRatingEvent, FlashcardStatu
 from app.models.question import (
     AnswerSubmission,
     DifficultyLevel,
-    McqOption,
     Question,
     QuestionStatus,
     QuestionType,
@@ -72,11 +70,15 @@ from app.services import (
     answer_evaluation,
     flashcard_generation,
     question_pipeline,
-    question_validation,
     study_sources,
 )
 from app.services import gamification as gamification_service
 from app.services import knowledge_state as knowledge_state_service
+from app.services.question_deduplication import (
+    canonical_question_signature,
+    is_candidate_duplicate,
+    normalize_question_stem,
+)
 from app.services.subject_classifier import (
     canonical_subject,
     classify_subject_from_text,
@@ -352,41 +354,28 @@ _COMMON_QUESTION_TEMPLATES = (
 def _question_fingerprint(body: str) -> str:
     """Return a stable comparison key for a question stem.
 
-    Detects mathematical equations and creates a canonical equation signature
-    (e.g. eq:2(x+3)=16, eq:8x=40), and strips conversational question templates
-    so reworded question stems or questions with shuffled options for the same
-    underlying problem are recognized as duplicates.
+    Detects mathematical equations, calculus expressions, strips cross-subject
+    conversational question templates, and returns a canonical fingerprint.
     """
-    eq_info = question_validation.extract_equation(body)
-    if eq_info is not None:
-        var_name, lhs, rhs = eq_info
-        clean_lhs = re.sub(r"\s+", "", lhs.casefold())
-        clean_rhs = re.sub(r"\s+", "", rhs.casefold())
-        return f"eq:{clean_lhs}={clean_rhs}"
-
-    normalized = unicodedata.normalize("NFKC", body).casefold()
-    normalized = re.sub(r"[^\w\s]", " ", normalized)
-    normalized = " ".join(normalized.split())
-
-    for tpl in _COMMON_QUESTION_TEMPLATES:
-        if normalized.startswith(tpl):
-            stripped = normalized[len(tpl):].strip()
-            if stripped:
-                return stripped
-
-    return normalized
+    return canonical_question_signature(body)
 
 
 def _unique_questions(items: Iterable[Question]) -> list[Question]:
     result: list[Question] = []
     seen_ids: set[str] = set()
     seen_bodies: set[str] = set()
+    seen_records: list[tuple[str, str | None]] = []
     for item in items:
-        fingerprint = _question_fingerprint(item.body)
-        if item.id in seen_ids or fingerprint in seen_bodies:
+        fingerprint = canonical_question_signature(item.body)
+        norm_body = normalize_question_stem(item.body)
+        if item.id in seen_ids or fingerprint in seen_bodies or norm_body in seen_bodies:
+            continue
+        if is_candidate_duplicate(item.body, item.answer, seen_records):
             continue
         seen_ids.add(item.id)
         seen_bodies.add(fingerprint)
+        seen_bodies.add(norm_body)
+        seen_records.append((item.body, item.answer))
         result.append(item)
     return result
 
@@ -731,23 +720,43 @@ async def _prepare_questions(
                 return bool(sub_terms and len(sub_terms & q_terms) >= max(1, len(sub_terms) // 2))
 
             subcat_matched = [q for q in available if matches_subcat(q)]
-            if len(subcat_matched) >= target:
-                available = subcat_matched
-            elif subcat_matched:
-                remaining = [q for q in available if q not in subcat_matched]
-                available = subcat_matched + remaining
+            available = subcat_matched
 
     if question_type:
         available = [q for q in available if q.question_type == question_type]
 
-    # Combine fingerprints from answer history AND session plan history (Bug 6 fix)
-    seen_fingerprints = session_seen_fingerprints | {
-        _question_fingerprint(question.body) for question in available if question.id in seen_ids
-    }
+    # Gather question bodies and answers for all answered question IDs (INTERACTIONS)
+    answered_records: list[tuple[str, str | None]] = [
+        (q.body, q.answer) for q in available if q.id in seen_ids
+    ]
+    available_ids = {q.id for q in available}
+    missing_answered_ids = [qid for qid in seen_ids if qid and qid not in session_seen_ids and qid not in available_ids]
+    if missing_answered_ids:
+        try:
+            cursor_ans = col.find({"_id": {"$in": missing_answered_ids[:300]}}, {"body": 1, "answer": 1})
+            docs_ans = await cosmos_retry(lambda: cursor_ans.to_list(length=300))
+            for da in docs_ans:
+                if da.get("_id") in missing_answered_ids and da.get("body"):
+                    answered_records.append((str(da["body"]), str(da.get("answer", "")) or None))
+        except Exception:
+            pass
 
-    # A normal study session is fresh-only. Previously answered questions and
-    # questions delivered in prior session plans (even unanswered) and questions
-    # allocated to another unfinished session are not eligible.
+    historical_seen_records: list[tuple[str, str | None]] = [
+        *[(b, None) for b in session_seen_bodies],
+        *answered_records,
+    ]
+
+    # Combine fingerprints from answer history AND session plan history
+    seen_fingerprints = (
+        session_seen_fingerprints
+        | {canonical_question_signature(b) for b, _ in historical_seen_records}
+        | {normalize_question_stem(b) for b, _ in historical_seen_records}
+        | {canonical_question_signature(question.body) for question in available if question.id in seen_ids}
+    )
+
+    # A normal study session is fresh-only. Previously answered questions,
+    # questions delivered in prior session plans, and questions equivalent in
+    # any form (canonical equation, template, or semantic duplicate) are not eligible.
     if revision:
         eligible = available
     else:
@@ -756,8 +765,10 @@ async def _prepare_questions(
             for question in available
             if question.id not in seen_ids
             and question.id not in reserved_ids
-            and _question_fingerprint(question.body) not in seen_fingerprints
-            and _question_fingerprint(question.body) not in reserved_fingerprints
+            and canonical_question_signature(question.body) not in seen_fingerprints
+            and canonical_question_signature(question.body) not in reserved_fingerprints
+            and normalize_question_stem(question.body) not in seen_fingerprints
+            and not is_candidate_duplicate(question.body, question.answer, historical_seen_records)
         ]
 
     selected = _unique_questions(eligible)[:target]
@@ -766,10 +777,9 @@ async def _prepare_questions(
         bool(current_sources.document_ids) or subcategory or question_type or _is_self_study(workspace_id)
     )
     if should_generate:
-        # In self-study workspace, grant sufficient generation time (60s) for the
-        # LLM to extract from grounding chunks and generate high quality questions freshly.
-        gen_timeout = 60.0 if _is_self_study(workspace_id) else (15.0 if (subcategory or question_type) else 5.0)
-        gen_batch = missing if _is_self_study(workspace_id) else (min(missing, 3) if (subcategory or question_type) else min(missing, 2))
+        # Provide sufficient generation headroom for LLM grounding and synthesis
+        gen_timeout = 60.0 if _is_self_study(workspace_id) else (35.0 if current_sources.document_ids else 5.0)
+        gen_batch = missing if _is_self_study(workspace_id) else (max(missing + 3, 5) if current_sources.document_ids else min(missing, 2))
         try:
             generated = await asyncio.wait_for(
                 question_pipeline._generate_and_persist_batch(
@@ -782,22 +792,24 @@ async def _prepare_questions(
                     target_topic=subcategory,
                     target_type=question_type,
                     batch_size=gen_batch,
-                    extra_seen_bodies=session_seen_bodies,
+                    extra_seen_bodies=[b for b, _ in historical_seen_records],
                 ),
                 timeout=gen_timeout,
             )
             if not revision:
-                # Filter only for integrity and historical uniqueness — do not discard
-                # freshly generated items with naive topic text heuristics
+                # Filter strictly for historical uniqueness — reject duplicates in any form
                 generated = [
                     question
                     for question in generated
                     if question.document_id in current_sources.document_ids
                     and question.id not in seen_ids
                     and question.id not in reserved_ids
-                    and _question_fingerprint(question.body) not in seen_fingerprints
-                    and _question_fingerprint(question.body) not in reserved_fingerprints
-                    and _question_fingerprint(question.body) not in session_seen_fingerprints
+                    and canonical_question_signature(question.body) not in seen_fingerprints
+                    and canonical_question_signature(question.body) not in reserved_fingerprints
+                    and canonical_question_signature(question.body) not in session_seen_fingerprints
+                    and normalize_question_stem(question.body) not in seen_fingerprints
+                    and not is_candidate_duplicate(question.body, question.answer, historical_seen_records)
+                    and not is_candidate_duplicate(question.body, question.answer, [(q.body, q.answer) for q in selected])
                     and (not question_type or question.question_type == question_type)
                 ]
             else:
@@ -820,17 +832,20 @@ async def _prepare_questions(
                             target_topic=subcategory,
                             target_type=question_type,
                             batch_size=max(topup_needed + 3, 5),
-                            extra_seen_bodies=[*session_seen_bodies, *(q.body for q in selected)],
+                            extra_seen_bodies=[*[b for b, _ in historical_seen_records], *(q.body for q in selected)],
                         ),
-                        timeout=15.0,
+                        timeout=25.0,
                     )
                     topup_clean = [
                         q for q in topup_generated
                         if q.document_id in current_sources.document_ids
                         and q.id not in seen_ids
                         and q.id not in reserved_ids
-                        and _question_fingerprint(q.body) not in seen_fingerprints
-                        and _question_fingerprint(q.body) not in session_seen_fingerprints
+                        and canonical_question_signature(q.body) not in seen_fingerprints
+                        and canonical_question_signature(q.body) not in session_seen_fingerprints
+                        and normalize_question_stem(q.body) not in seen_fingerprints
+                        and not is_candidate_duplicate(q.body, q.answer, historical_seen_records)
+                        and not is_candidate_duplicate(q.body, q.answer, [(x.body, x.answer) for x in selected])
                         and (not question_type or q.question_type == question_type)
                     ]
                     selected = _unique_questions([*selected, *topup_clean])[:target]
@@ -846,10 +861,10 @@ async def _prepare_questions(
     # A fresh study session (revision=False) must never recycle old questions.
     if revision and len(selected) < target and available:
         selected_ids = {q.id for q in selected}
-        selected_fps = {_question_fingerprint(q.body) for q in selected}
+        selected_fps = {canonical_question_signature(q.body) for q in selected}
         recycled = [
             q for q in available
-            if q.id not in selected_ids and _question_fingerprint(q.body) not in selected_fps
+            if q.id not in selected_ids and canonical_question_signature(q.body) not in selected_fps
         ]
         needed = target - len(selected)
         selected.extend(recycled[:needed])
@@ -870,46 +885,6 @@ async def _prepare_questions(
                 question_type=question_type,
             )
             return fb_plan.questions[:target]
-
-    if _is_self_study(workspace_id) and len(selected) < target and not revision:
-        # In self-study fresh sessions where queue or document content had fewer questions than requested target,
-        # supplement with guaranteed domain-aligned questions so student always gets a complete session.
-        fb_plan = _build_guaranteed_fallback_plan(
-            workspace_id=workspace_id,
-            user_id=user.id,
-            tenant_id=user.tenant_id,
-            mode=AdaptiveSessionMode.study,
-            level=level,
-            mastery=0.0,
-            subject=subject,
-            subcategory=subcategory,
-            question_type=question_type,
-        )
-        cur_fps = {_question_fingerprint(q.body) for q in selected}
-        for fb_q in fb_plan.questions:
-            if len(selected) >= target:
-                break
-            if _question_fingerprint(fb_q.body) not in cur_fps:
-                selected.append(
-                    Question(
-                        id=fb_q.id,
-                        tenant_id=user.tenant_id,
-                        workspace_id=workspace_id,
-                        document_id="doc_guaranteed",
-                        topic=fb_q.topic,
-                        question_type=QuestionType(fb_q.question_type) if isinstance(fb_q.question_type, str) else fb_q.question_type,
-                        difficulty=DifficultyLevel(fb_q.difficulty) if isinstance(fb_q.difficulty, str) else fb_q.difficulty,
-                        body=fb_q.body,
-                        options=[McqOption(key=o.key, text=o.text, is_correct=o.key == fb_q.answer) for o in fb_q.options],
-                        answer=fb_q.answer,
-                        explanation=fb_q.explanation,
-                        grading_hints=fb_q.grading_hints,
-                        source_chunk_ids=[],
-                        prompt_version="guaranteed_fallback",
-                        status=QuestionStatus.approved,
-                    )
-                )
-                cur_fps.add(_question_fingerprint(fb_q.body))
 
     return [
         _prepare_question_with_shuffled_options(question)

@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import random
-import re
 from collections.abc import Sequence
 from typing import Any
 from uuid import uuid4
@@ -12,6 +10,7 @@ from uuid import uuid4
 from fastapi import BackgroundTasks
 
 from app.core.database import (
+    ADAPTIVE_SESSIONS,
     CHUNKS,
     DOCUMENTS,
     INTERACTIONS,
@@ -44,6 +43,11 @@ from app.services.difficulty import calibrate_difficulty
 from app.services.learning_path import (
     TopicScore,
     select_next_topic,
+)
+from app.services.question_deduplication import (
+    canonical_question_signature,
+    is_candidate_duplicate,
+    normalize_question_stem,
 )
 from app.services.subject_classifier import classify_subject_from_text
 
@@ -219,21 +223,14 @@ async def _generate_and_persist_batch(
     context = await _fetch_student_context(tenant_id, workspace_id, student_id)
     all_seen_bodies = await _fetch_all_seen_and_queued_bodies(tenant_id, workspace_id, student_id)
     redis_seen = await redis.smembers(seen_key) or []
+    redis_seen_str = [s.decode() if isinstance(s, bytes) else str(s) for s in redis_seen]
 
-    # Get seen bodies from Redis temporary set to prevent repetition within current session
-    def _body_fingerprint(s: str) -> str:
-        eq_info = question_validation.extract_equation(s)
-        if eq_info is not None:
-            var_name, lhs, rhs = eq_info
-            clean_lhs = re.sub(r"\s+", "", lhs.casefold())
-            clean_rhs = re.sub(r"\s+", "", rhs.casefold())
-            return f"eq:{clean_lhs}={clean_rhs}"
-        return s.strip().lower().rstrip("?.!")
-
-    local_seen_normalized = {_body_fingerprint(s) for s in redis_seen}
-    db_seen_normalized = {_body_fingerprint(s) for s in all_seen_bodies}
-    extra_normalized = {_body_fingerprint(s) for s in (extra_seen_bodies or []) if s}
-    combined_seen = local_seen_normalized.union(db_seen_normalized).union(extra_normalized)
+    raw_seen_bodies: list[str] = list(
+        {s for s in [*redis_seen_str, *all_seen_bodies, *(extra_seen_bodies or [])] if s}
+    )
+    seen_signatures: set[str] = {
+        canonical_question_signature(s) for s in raw_seen_bodies
+    }.union({normalize_question_stem(s) for s in raw_seen_bodies})
 
     current_sources = await study_sources.current_study_sources(
         tenant_id=tenant_id,
@@ -394,7 +391,7 @@ async def _generate_and_persist_batch(
                 workspace_id=workspace_id,
                 candidate=candidate,
                 context=context,
-                seen_bodies=list(combined_seen),
+                seen_bodies=raw_seen_bodies,
                 count=items_per_topic,
                 current_document_ids=current_sources.document_ids,
                 matching_doc_ids=matching_doc_ids,
@@ -422,14 +419,21 @@ async def _generate_and_persist_batch(
             if clean_gq is None:
                 continue
 
-            # 2. Duplicate check: Question text stem & canonical equation match
-            fp = _body_fingerprint(clean_gq.body)
-            norm_body = clean_gq.body.strip().lower().rstrip("?.!")
-            if fp in combined_seen or norm_body in combined_seen:
+            # 2. Duplicate check: Question text stem, canonical equation & multi-layer equivalence
+            fp = canonical_question_signature(clean_gq.body)
+            norm_body = normalize_question_stem(clean_gq.body)
+            if fp in seen_signatures or norm_body in seen_signatures:
+                continue  # duplicate detected, skip
+            if is_candidate_duplicate(
+                candidate_body=clean_gq.body,
+                candidate_ans=clean_gq.answer,
+                seen_items=[(s, None) for s in raw_seen_bodies],
+            ):
                 continue  # duplicate detected, skip
 
-            combined_seen.add(fp)
-            combined_seen.add(norm_body)
+            seen_signatures.add(fp)
+            seen_signatures.add(norm_body)
+            raw_seen_bodies.append(clean_gq.body)
             candidate_items.append(
                 (clean_gq, candidate_obj, document_id, source_chunk_ids, all_retrieved_chunks, norm_body)
             )
@@ -553,7 +557,9 @@ async def _generate_topic_batch(
                 chunk for chunk in retrieved.chunks if chunk.document_id in effective_doc_ids
             ]
             if len(matching_chunks) > 8:
-                current_chunks = random.sample(matching_chunks, 8)
+                chunk_offset = (len(seen_bodies) * 2) % len(matching_chunks)
+                rotated = matching_chunks[chunk_offset:] + matching_chunks[:chunk_offset]
+                current_chunks = rotated[:8]
             else:
                 current_chunks = matching_chunks
     except Exception as e:
@@ -582,7 +588,9 @@ async def _generate_topic_batch(
                 if str(r.get("text", "")).strip()
             ]
             if len(parsed_chunks) > 8:
-                current_chunks = random.sample(parsed_chunks, 8)
+                chunk_offset = (len(seen_bodies) * 2) % len(parsed_chunks)
+                rotated = parsed_chunks[chunk_offset:] + parsed_chunks[:chunk_offset]
+                current_chunks = rotated[:8]
             else:
                 current_chunks = parsed_chunks
             if not all_retrieved:
@@ -635,7 +643,7 @@ async def _generate_topic_batch(
             difficulty=difficulty,
             count=count,
             grounding_chunks=grounding_chunks,
-            seen_question_bodies=seen_bodies[:50],
+            seen_question_bodies=seen_bodies[:100],
             target_type=target_type,
         )
         source_chunk_ids = [chunk.chunk_id for chunk in grounding_chunks]
@@ -667,35 +675,51 @@ async def _fetch_student_context(
 async def _fetch_all_seen_and_queued_bodies(
     tenant_id: str, workspace_id: str, student_id: str
 ) -> list[str]:
-    """Return bodies of questions this student has personally answered.
+    """Return bodies of questions this student has encountered or answered."""
+    seen_bodies: set[str] = set()
 
-    Only the student's own interaction history is used for deduplication.
-    Loading all workspace question bodies as "seen" caused regeneration
-    starvation: after 1-2 sessions on a content-rich workspace (e.g., a
-    200-equation algebra document), the full question pool was blacklisted and
-    every subsequent generate attempt fell back to the 2 static fallback
-    questions. Now only questions the student actually answered are excluded.
-    Structural deduplication against the persisted pool still occurs at
-    persist-time (line ~427) to avoid storing bit-identical question bodies.
-    """
-    col_q = get_collection(tenant_id, QUESTION_QUEUE)
-    col_i = get_collection(tenant_id, INTERACTIONS)
+    # 1. Past sessions plans in ADAPTIVE_SESSIONS
+    try:
+        col_s = get_collection(tenant_id, ADAPTIVE_SESSIONS)
+        cursor_s = col_s.find(
+            {
+                "workspace_id": workspace_id,
+                "student_id": student_id,
+                "status": {"$in": ["in_progress", "completed", "timed_out", "exited", "superseded", "prepared"]},
+            },
+            {"plan.questions.body": 1},
+        )
+        docs_s = await cosmos_retry(lambda: cursor_s.to_list(length=200))
+        for s_doc in docs_s:
+            for q in (s_doc.get("plan") or {}).get("questions", []):
+                b = q.get("body")
+                if b:
+                    seen_bodies.add(str(b))
+    except Exception as e:
+        logger.warning("Failed reading past session question bodies: %s", e)
 
-    # Fetch question IDs this student has answered (up to 2000 interactions,
-    # sliced to the 200 most-recent to bound RU consumption).
-    cursor_i = col_i.find(
-        {"workspace_id": workspace_id, "student_id": student_id},
-        {"question_id": 1},
-    )
-    docs_i = await cosmos_retry(lambda: cursor_i.to_list(length=2000))
-    interacted_ids = [doc["question_id"] for doc in docs_i if doc.get("question_id")]
-    interacted_ids = interacted_ids[-200:]
+    # 2. Interactions from INTERACTIONS collection + QUESTION_QUEUE
+    try:
+        col_q = get_collection(tenant_id, QUESTION_QUEUE)
+        col_i = get_collection(tenant_id, INTERACTIONS)
+        cursor_i = col_i.find(
+            {"workspace_id": workspace_id, "student_id": student_id},
+            {"question_id": 1},
+        )
+        docs_i = await cosmos_retry(lambda: cursor_i.to_list(length=2000))
+        interacted_ids = [doc["question_id"] for doc in docs_i if doc.get("question_id")]
+        interacted_ids = interacted_ids[-200:]
 
-    if not interacted_ids:
-        return []
+        if interacted_ids:
+            cursor_q = col_q.find(
+                {"_id": {"$in": interacted_ids}}, {"body": 1}
+            ).limit(200)
+            docs_q = await cosmos_retry(lambda: cursor_q.to_list(length=200))
+            for doc in docs_q:
+                b = doc.get("body")
+                if b:
+                    seen_bodies.add(str(b))
+    except Exception as e:
+        logger.warning("Failed reading answered question bodies: %s", e)
 
-    cursor_q = col_q.find(
-        {"_id": {"$in": interacted_ids}}, {"body": 1}
-    ).limit(200)
-    docs_q = await cosmos_retry(lambda: cursor_q.to_list(length=200))
-    return list({doc["body"] for doc in docs_q if doc.get("body")})
+    return list(seen_bodies)
