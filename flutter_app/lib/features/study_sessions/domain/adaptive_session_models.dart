@@ -181,16 +181,19 @@ class SessionQuestionAttempt {
     required this.questionId,
     required this.answer,
     required this.timeSpentSeconds,
+    this.isCorrect,
   });
 
   final String questionId;
   final String answer;
   final int timeSpentSeconds;
+  final bool? isCorrect;
 
   Map<String, dynamic> toJson() => {
         'question_id': questionId,
         'answer': answer,
         'time_spent_seconds': timeSpentSeconds,
+        if (isCorrect != null) 'is_correct': isCorrect,
       };
 }
 

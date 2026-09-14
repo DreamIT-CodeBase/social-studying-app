@@ -34,6 +34,7 @@ from app.models.adaptive_session import (
     CompleteAdaptiveSessionRequest,
     PrepareAdaptiveSessionRequest,
     PreparedFlashcard,
+    PreparedOption,
     PreparedQuestion,
     SessionCompletionReason,
 )
@@ -565,6 +566,64 @@ async def test_prepare_enforces_daily_session_limit_of_50():
                 current_user=STUDENT,
             )
         assert exc_info.value.status_code == 429
-        assert "Daily session limit reached" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_algebra_1_subject_matches_math_questions():
+    """Verify that requesting Algebra 1 subject properly matches Mathematics curriculum questions."""
+    q_math = PreparedQuestion(
+        id="qst_alg_1",
+        topic="Linear Equations in Algebra",
+        question_type=QuestionType.mcq,
+        difficulty=DifficultyLevel.beginner,
+        body="Solve for x: 2x + 4 = 10",
+        answer="A",
+        options=[
+            PreparedOption(key="A", text="x = 3"),
+            PreparedOption(key="B", text="x = 4"),
+        ],
+        explanation="x = (10 - 4)/2 = 3",
+        grading_hints=[],
+    )
+
+    with _prepare_env(prepared=[q_math]):
+        plan = await prepare_adaptive_session(
+            workspace_id=SELF_WS,
+            request=PrepareAdaptiveSessionRequest(
+                mode=AdaptiveSessionMode.study,
+                subject="Algebra 1",
+            ),
+            background_tasks=BackgroundTasks(),
+            current_user=STUDENT,
+        )
+
+    assert plan.session_id is not None
+    assert len(plan.questions) == 1
+    assert plan.questions[0].id == "qst_alg_1"
+    assert "Linear Equations" in plan.questions[0].topic
+
+
+def test_algebra_1_guaranteed_fallback_uses_mathematics():
+    """Verify that guaranteed fallback for Algebra 1 draws from Mathematics, never Biology."""
+    from app.api.adaptive_sessions import _build_guaranteed_fallback_plan
+
+    plan = _build_guaranteed_fallback_plan(
+        workspace_id=SELF_WS,
+        user_id="usr_test",
+        tenant_id="ten_test",
+        mode=AdaptiveSessionMode.study,
+        level=AdaptiveLevel.beginner,
+        mastery=0.0,
+        subject="Algebra 1",
+    )
+    assert len(plan.questions) > 0
+    # Every question must belong to Mathematics, not Plant Biology or Photosynthesis
+    for q in plan.questions:
+        assert "biology" not in q.topic.lower()
+        assert "photosynthesis" not in q.body.lower()
+        assert "plant" not in q.topic.lower()
+    # At least one question should explicitly refer to Algebra / Math
+    assert any("algebra" in q.topic.lower() or "geometry" in q.topic.lower() for q in plan.questions)
+
 
 

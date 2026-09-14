@@ -505,11 +505,50 @@ def validate_and_sanitize_question(
                 )
                 return None
             else:
-                logger.warning(
-                    "Rejecting question: multiple options %s satisfy equation '%s = %s'",
-                    valid_keys, lhs, rhs
+                # If marked answer is one of valid_keys, sanitize duplicate options with distinct distractors
+                correct_key = gq.answer if gq.answer in valid_keys else valid_keys[0]
+                correct_opt = next(o for o in gq.options if o.key == correct_key)
+                correct_val = parse_candidate_value(correct_opt.text)
+
+                new_options = []
+                used_vals: set[float] = set()
+                if correct_val is not None:
+                    used_vals.add(round(correct_val, 4))
+                for o in gq.options:
+                    if o.key == correct_key:
+                        new_options.append(McqOption(key=o.key, text=o.text, is_correct=True))
+                    else:
+                        oval = parse_candidate_value(o.text)
+                        if oval is not None and (round(oval, 4) in used_vals or o.key in valid_keys):
+                            offset = 1.0
+                            candidate_val = (correct_val or 0.0) + offset
+                            while round(candidate_val, 4) in used_vals:
+                                offset += 1.0
+                                candidate_val = (correct_val or 0.0) + offset
+                            used_vals.add(round(candidate_val, 4))
+                            clean_str = f"{int(candidate_val)}" if candidate_val.is_integer() else f"{candidate_val:.1f}"
+                            new_text = f"{var_name} = {clean_str}" if "=" in o.text else clean_str
+                            new_options.append(McqOption(key=o.key, text=new_text, is_correct=False))
+                        else:
+                            if oval is not None:
+                                used_vals.add(round(oval, 4))
+                            new_options.append(McqOption(key=o.key, text=o.text, is_correct=False))
+
+                clean_val_str = f"{int(correct_val)}" if correct_val is not None and correct_val.is_integer() else str(correct_val or correct_opt.text)
+                new_explanation = (
+                    f"Solving the equation {lhs} = {rhs} gives {var_name} = {clean_val_str}. "
+                    f"Substituting {var_name} = {clean_val_str} into the equation confirms {lhs} = {rhs}."
                 )
-                return None
+                return gq.__class__(
+                    body=gq.body,
+                    answer=correct_key,
+                    explanation=new_explanation,
+                    question_type=gq.question_type,
+                    difficulty=gq.difficulty,
+                    prompt_version=gq.prompt_version,
+                    options=new_options,
+                    grading_hints=gq.grading_hints,
+                )
 
         # Cross-reference with rubric if available
         if grounding_chunks:

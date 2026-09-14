@@ -221,11 +221,16 @@ class NotificationService {
 
   /// Displays an immediate alert informing the student that all allotted
   /// social media time has been consumed and their apps are blocked.
-  Future<void> showSocialTimeExhaustedNotification() async {
+  Future<void> showSocialTimeExhaustedNotification(
+      [String? workspaceId]) async {
     await showCompletionNotification(
-      title: "Time's Up!",
-      body: 'You have consumed your all time for social media.',
-      payload: {'type': 'screen_time_exhausted'},
+      title: 'Study Session Needed',
+      body: 'To gain access to your app, let’s create a study session.',
+      payload: {
+        'type': 'screen_time_exhausted',
+        if (workspaceId != null) 'workspace_id': workspaceId,
+      },
+      bypassDebounce: true,
     );
   }
 
@@ -235,6 +240,7 @@ class NotificationService {
     required String title,
     required String body,
     Map<String, dynamic> payload = const {},
+    bool bypassDebounce = false,
   }) async {
     // Local completion alerts do not depend on APNs/FCM registration. Ensure
     // the notification plugin is ready here so a slow or failed remote-token
@@ -250,7 +256,8 @@ class NotificationService {
       }
     }
     final now = DateTime.now();
-    if (_lastLocalTitle == title &&
+    if (!bypassDebounce &&
+        _lastLocalTitle == title &&
         _lastLocalAt != null &&
         now.difference(_lastLocalAt!) < const Duration(seconds: 5)) {
       return;
@@ -455,8 +462,15 @@ class NotificationService {
 /// - ``milestone`` → badges screen
 String? deepLinkFor(Map<String, dynamic> data) {
   final type = data['type'];
+  if (type == null) return null;
+  if (type == 'screen_time_exhausted' || type == 'unlock_question') {
+    final workspaceId = data['workspace_id'];
+    return workspaceId != null
+        ? '/student/home?action=unlock_question&workspace_id=$workspaceId'
+        : '/student/home?action=unlock_question';
+  }
   final workspaceId = data['workspace_id'];
-  if (type == null || workspaceId == null) return null;
+  if (workspaceId == null) return null;
   switch (type) {
     case 'milestone':
       // Caller needs the user id too. Embedded inline so the deep-link

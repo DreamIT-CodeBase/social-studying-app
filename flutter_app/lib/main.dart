@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/routing/router.dart';
 import 'package:social_study_app/core/theme/app_theme.dart';
+import 'package:social_study_app/shared/widgets/slow_internet_popup.dart';
 
 void main() {
   setAppFlavor(AppFlavor.admin);
@@ -22,6 +23,8 @@ class SocialStudyApp extends ConsumerWidget {
       themeMode: ThemeMode.system,
       routerConfig: router,
       debugShowCheckedModeBanner: false,
+      builder: (context, child) =>
+          NetworkStatusOverlay(child: child ?? const SizedBox.shrink()),
     );
   }
 }

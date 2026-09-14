@@ -50,8 +50,8 @@ Content rules:
 - No yes/no or true/false questions — that's a separate question type.
 
 Difficulty calibration:
-- beginner:     The answer is a single term or name appearing directly in
-                the source. ("What gas do plants release during photosynthesis?")
+- beginner:     The answer is a single term, quantity, or name appearing directly in
+                the source. ("What is the constant term in the given expression?")
 - intermediate: The answer requires a small mental step — converting units,
                 naming a concept implied by a definition, identifying a date
                 from context.

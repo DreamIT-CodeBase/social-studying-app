@@ -1,12 +1,16 @@
 package com.socialstudyapp.social_study_app
 
 import android.accessibilityservice.AccessibilityService
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.media.RingtoneManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -97,11 +101,13 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
             }
 
             val prefs = getSharedPreferences(FLUTTER_PREFS, Context.MODE_PRIVATE) ?: return
-            val userId = prefs.getString(KEY_CURRENT_USER_ID, "").orEmpty()
-            val enforcementReady = prefs.getBoolean(KEY_ENFORCEMENT_READY, false)
+            var userId = prefs.getString(KEY_CURRENT_USER_ID, "").orEmpty()
+            if (userId.isEmpty()) {
+                userId = "tester_user"
+            }
             val enableBlocking = prefs.getBoolean(KEY_ENABLE_BLOCKING, true)
 
-            if (userId.isEmpty() || !enforcementReady || !enableBlocking) {
+            if (!enableBlocking) {
                 leaveBlockedApp()
                 return
             }
@@ -130,14 +136,18 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
                     .apply()
             }
 
-            val availableMinutes = getSafeLongPref(
-                prefs,
-                "$KEY_AVAILABLE_MINUTES$userId",
-                0L,
-            )
+            val availableKey = "$KEY_AVAILABLE_MINUTES$userId"
+            val availableMinutes = if (prefs.contains(availableKey)) {
+                getSafeLongPref(prefs, availableKey, 0L)
+            } else if (prefs.contains("flutter.available_minutes")) {
+                getSafeLongPref(prefs, "flutter.available_minutes", 0L)
+            } else {
+                getSafeLongPref(prefs, KEY_AVAILABLE_MINUTES.removeSuffix("_"), 0L)
+            }
+
             if (availableMinutes <= 0L) {
                 stopUsageTracking()
-                showExhaustedOverlay()
+                showExhaustedOverlay(foregroundPackage)
                 return
             }
 
@@ -187,7 +197,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
 
                     if (resetExpiredWeeklyBalance(prefs, userId)) {
                         stopUsageTracking()
-                        showExhaustedOverlay()
+                        showExhaustedOverlay(foregroundPackage)
                         return
                     }
 
@@ -205,7 +215,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
 
                     if (availableMinutes <= 0L) {
                         stopUsageTracking()
-                        showExhaustedOverlay()
+                        showExhaustedOverlay(foregroundPackage)
                         return
                     }
 
@@ -235,7 +245,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
 
                         if (remainingMinutes <= 0L) {
                             stopUsageTracking()
-                            showExhaustedOverlay()
+                            showExhaustedOverlay(foregroundPackage)
                             return
                         }
                     } else {
@@ -323,34 +333,109 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun showExhaustedOverlay() {
+    private fun showExhaustedOverlay(foregroundPackage: String? = null) {
+        val targetPackage = foregroundPackage ?: currentForegroundPackage.orEmpty()
         try {
-            // 1. Kick out of the blocked app immediately by performing Home action
+            // 1. Send heads-up notification with sound every single time user attempts to open blocked app!
+            sendStudySessionNeededNotification(targetPackage)
+
+            // 2. Kick out of the blocked app immediately by performing Home action
             performGlobalAction(GLOBAL_ACTION_HOME)
 
-            // 2. Launch Social Study App in foreground with study tasks
+            // 3. Launch Social Study App in foreground with unlock question action
             try {
                 val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    putExtra("action", "unlock_question")
+                    putExtra("blocked_package", targetPackage)
+                    putExtra("source", "app_shield")
                 }
                 if (launchIntent != null) {
                     startActivity(launchIntent)
                 }
             } catch (_: Throwable) {}
 
-            // 3. Show Toast for instant visual feedback on any device
+            // 4. Show Toast for instant visual feedback on any device
             handler.post {
                 try {
                     android.widget.Toast.makeText(
                         applicationContext,
-                        "📚 Study Time Exhausted! Complete study tasks to earn more screen time.",
+                        "📚 Study Session Needed: To gain access to your app, let’s create a study session.",
                         android.widget.Toast.LENGTH_LONG,
                     ).show()
                 } catch (_: Throwable) {}
             }
 
-            // 4. Also display the full screen overlay if supported
-            showOverlay(OverlayMode.EXHAUSTED) { createOverlayView() }
+            // 5. Also display the full screen overlay if supported
+            showOverlay(OverlayMode.EXHAUSTED) { createOverlayView(targetPackage) }
+        } catch (_: Throwable) {}
+    }
+
+    private fun sendStudySessionNeededNotification(blockedPackage: String) {
+        try {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            val channelId = "study_session_needed_channel"
+            val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                var channel = notificationManager.getNotificationChannel(channelId)
+                if (channel == null) {
+                    val audioAttributes = android.media.AudioAttributes.Builder()
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                        .build()
+                    channel = NotificationChannel(
+                        channelId,
+                        "Study Session Needed",
+                        NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        description = "Alerts when restricted apps require a study session to unlock"
+                        enableLights(true)
+                        lightColor = Color.BLUE
+                        enableVibration(true)
+                        setSound(soundUri, audioAttributes)
+                    }
+                    notificationManager.createNotificationChannel(channel)
+                }
+            }
+
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra("action", "unlock_question")
+                putExtra("blocked_package", blockedPackage)
+                putExtra("source", "app_shield")
+            }
+            val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            } else {
+                PendingIntent.FLAG_UPDATE_CURRENT
+            }
+            val contentIntent = launchIntent?.let {
+                PendingIntent.getActivity(applicationContext, System.currentTimeMillis().toInt(), it, pendingFlags)
+            }
+
+            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                android.app.Notification.Builder(applicationContext, channelId)
+            } else {
+                @Suppress("DEPRECATION")
+                android.app.Notification.Builder(applicationContext)
+            }
+
+            builder
+                .setSmallIcon(android.R.drawable.ic_lock_lock)
+                .setContentTitle("Study Session Needed")
+                .setContentText("To gain access to your app, let’s create a study session.")
+                .setStyle(android.app.Notification.BigTextStyle().bigText("To gain access to your app, let’s create a study session."))
+                .setAutoCancel(true)
+                .setSound(soundUri)
+                .setPriority(android.app.Notification.PRIORITY_MAX)
+
+            if (contentIntent != null) {
+                builder.setContentIntent(contentIntent)
+            }
+
+            val notificationId = (System.currentTimeMillis() % 100000).toInt() + 1000
+            notificationManager.notify(notificationId, builder.build())
         } catch (_: Throwable) {}
     }
 
@@ -450,7 +535,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
         } catch (_: Throwable) {}
     }
 
-    private fun createOverlayView(): View {
+    private fun createOverlayView(targetPackage: String = ""): View {
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#0F172A"))
         }
@@ -478,7 +563,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
         container.addView(Space(this), LinearLayout.LayoutParams(1, dpToPx(24)))
         container.addView(
             TextView(this).apply {
-                text = "Study Time Exhausted"
+                text = "Study Question Challenge"
                 textSize = 24f
                 setTextColor(Color.WHITE)
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -488,7 +573,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
         container.addView(Space(this), LinearLayout.LayoutParams(1, dpToPx(12)))
         container.addView(
             TextView(this).apply {
-                text = "You have used all earned screen time. Study and earn XP to unlock more social media time."
+                text = "Screen time is currently exhausted. Answer a study question in the app to unlock your session and earn screen time!"
                 textSize = 14f
                 setTextColor(Color.parseColor("#94A3B8"))
                 gravity = Gravity.CENTER
@@ -501,10 +586,13 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
         )
-        container.addView(createActionButton("Study Now", "#1D4ED8") {
+        container.addView(createActionButton("Answer Question to Unlock", "#1D4ED8") {
             try {
                 packageManager.getLaunchIntentForPackage(packageName)?.let { intent ->
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    intent.putExtra("action", "unlock_question")
+                    intent.putExtra("blocked_package", targetPackage)
+                    intent.putExtra("source", "app_shield")
                     startActivity(intent)
                 }
             } catch (_: Throwable) {}
@@ -637,8 +725,11 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
 
     private fun getBlockedPackages(prefs: android.content.SharedPreferences): Set<String> {
         val jsonString = prefs.getString(KEY_BLOCKED_PACKAGES, null)
-            ?: return emptySet()
-        return parseJsonArray(jsonString).toSet()
+        if (jsonString.isNullOrBlank()) {
+            return DEFAULT_BLOCKED_PACKAGES
+        }
+        val parsed = parseJsonArray(jsonString).toSet()
+        return if (parsed.isEmpty()) DEFAULT_BLOCKED_PACKAGES else parsed
     }
 
     private fun getSafeLongPref(

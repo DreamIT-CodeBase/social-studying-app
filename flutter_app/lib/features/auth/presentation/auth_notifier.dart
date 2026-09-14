@@ -119,7 +119,7 @@ class AuthNotifier extends _$AuthNotifier {
       if (generation != _authGeneration) return;
 
       state = AsyncData(AuthState.authenticated(user: updatedUser));
-      await _claimDailyLogin(updatedUser);
+      unawaited(_claimDailyLogin(updatedUser));
     } catch (_) {
       if (generation != _authGeneration) return;
 
@@ -135,20 +135,22 @@ class AuthNotifier extends _$AuthNotifier {
   }
 
   Future<void> _claimDailyLogin(User user) async {
-    for (final membership in user.workspaceMemberships) {
-      try {
-        final response =
-            await ref.read(dioClientProvider).dio.post<Map<String, dynamic>>(
-                  '/api/v1/workspaces/${membership.workspaceId}/users/me/gamification/daily-login',
-                );
-        final data = response.data;
-        if (data?['awarded'] == true) {
-          ref.read(dailyLoginRewardProvider.notifier).state =
-              (data?['xp_earned'] as num?)?.toInt() ?? 2;
+    await Future.wait(
+      user.workspaceMemberships.map((membership) async {
+        try {
+          final response =
+              await ref.read(dioClientProvider).dio.post<Map<String, dynamic>>(
+                    '/api/v1/workspaces/${membership.workspaceId}/users/me/gamification/daily-login',
+                  );
+          final data = response.data;
+          if (data?['awarded'] == true) {
+            ref.read(dailyLoginRewardProvider.notifier).state =
+                (data?['xp_earned'] as num?)?.toInt() ?? 2;
+          }
+        } catch (_) {
+          // A later refresh safely retries; the backend claim is idempotent.
         }
-      } catch (_) {
-        // A later refresh safely retries; the backend claim is idempotent.
-      }
-    }
+      }),
+    );
   }
 }

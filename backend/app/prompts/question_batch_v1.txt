@@ -39,21 +39,21 @@ Otherwise return the full questions list JSON:
     },
     {
       "question_type": "short_answer",
-      "body": "Fill in the blank: The primary site of photosynthesis is the _______.",
-      "answer": "chloroplast",
-      "explanation": "concise explanation.",
-      "acceptable_variants": ["chloroplasts", "chloroplast membrane"]
+      "body": "Fill in the blank: According to the text, the key principle governing [Core Concept] is _______.",
+      "answer": "[Key Term]",
+      "explanation": "Concise explanation directly referencing the source text.",
+      "acceptable_variants": ["[Key Term Variant]", "[Alternative Term]"]
     },
     {
       "question_type": "long_answer",
-      "body": "Explain the process of photosynthesis and describe the light-dependent reactions.",
-      "reference_answer": "Photosynthesis is the process by which green plants use sunlight to synthesize nutrients. In the light-dependent reactions, energy from light is absorbed by chlorophyll and converted into chemical energy in the form of ATP and NADPH.",
-      "explanation": "Explains light absorption, electron transport, and ATP/NADPH synthesis.",
+      "body": "Explain the primary mechanism of [Main Process] and outline its key phases as described in the material.",
+      "reference_answer": "Comprehensive explanation defining [Main Process], its initial conditions, primary mechanism, and resulting outcome.",
+      "explanation": "Covers foundational principles, operational stages, and core significance.",
       "key_points": [
-        "Light energy is absorbed by chlorophyll in thylakoid membranes.",
-        "Water molecules are split (photolysis) releasing oxygen.",
-        "Excited electrons pass through transport chain to form NADPH.",
-        "Proton gradient is generated across the membrane to drive ATP synthesis."
+        "Defines the initial state or input conditions of [Main Process].",
+        "Describes the step-by-step intermediate progression.",
+        "Identifies the key rule or mechanism governing the transition.",
+        "States the resulting outcome or analytical conclusion."
       ]
     },
     {

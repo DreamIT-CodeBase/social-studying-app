@@ -155,6 +155,12 @@ def _async_iter(items):
         def __init__(self, xs):
             self._xs = iter(xs)
 
+        def sort(self, *args, **kwargs):
+            return self
+
+        def limit(self, *args, **kwargs):
+            return self
+
         def __aiter__(self):
             return self
 

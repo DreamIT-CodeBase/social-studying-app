@@ -379,6 +379,7 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
         questionId: question.id,
         answer: answer,
         timeSpentSeconds: seconds,
+        isCorrect: matched,
       ),
     );
     if (matched) {
@@ -463,6 +464,25 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
         'been',
         'which'
       };
+      final studentTokens = lower
+          .replaceAll(RegExp(r'[^\w\s]'), ' ')
+          .split(RegExp(r'\s+'))
+          .where((t) => t.length > 2 && !stopWords.contains(t))
+          .toSet();
+
+      // Check overlap against reference answer
+      final ansTokens = question.answer
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^\w\s]'), ' ')
+          .split(RegExp(r'\s+'))
+          .where((t) => t.length > 2 && !stopWords.contains(t))
+          .toSet();
+      if (ansTokens.isNotEmpty &&
+          studentTokens.intersection(ansTokens).length / ansTokens.length >=
+              0.30) {
+        return true;
+      }
+
       for (final hint in question.gradingHints) {
         final hintLower = hint.toLowerCase();
         if (lower.contains(hintLower)) {
@@ -478,12 +498,8 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
           if (lower.contains(hintLower)) matchedHints++;
           continue;
         }
-        final studentTokens = lower
-            .replaceAll(RegExp(r'[^\w\s]'), ' ')
-            .split(RegExp(r'\s+'))
-            .toSet();
         final overlap = hintTokens.intersection(studentTokens).length;
-        if (overlap / hintTokens.length >= 0.45) {
+        if (overlap / hintTokens.length >= 0.30) {
           matchedHints++;
         }
       }

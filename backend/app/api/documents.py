@@ -866,6 +866,40 @@ async def _assert_admin(user: User, workspace_id: str) -> None:
         raise ForbiddenError("You do not have admin access to this workspace")
 
 
+async def _assert_can_approve(user: User, workspace_id: str) -> None:
+    """Validate user has permission to approve flagged content.
+
+    Tenant and workspace admins can approve content in their workspace.
+    Self-learning users (in personal / self-study workspaces) or learners
+    not subject to active parental restrictions have direct authority to
+    review and approve their own study materials.
+    """
+    if user.role in (UserRole.workspace_admin, UserRole.tenant_admin):
+        return
+
+    if (
+        workspace_id.startswith("wsp_self_")
+        or workspace_id.startswith("wsp_personal_")
+        or user.id in workspace_id
+    ):
+        return
+
+    # Check if student is under active parental controls
+    try:
+        from app.core.database import PARENTAL_CONTROLS
+        pc_col = get_collection(user.tenant_id, PARENTAL_CONTROLS)
+        pc = await pc_col.find_one({"student_id": user.id, "deleted_at": None})
+        if pc and pc.get("is_active", True) and pc.get("require_parental_approval_for_flagged", True):
+            raise ForbiddenError("Content approval requires parental authorization")
+    except ForbiddenError:
+        raise
+    except Exception:
+        pass
+
+    # Non-restricted learner can approve their workspace materials
+    return
+
+
 @router.post("/{document_id}/approve", response_model=DocumentResponse)
 async def approve_document(
     workspace_id: str,
@@ -873,7 +907,7 @@ async def approve_document(
     current_user: User = Depends(get_current_user),
 ) -> DocumentResponse:
     """Approve a flagged document, clear the safety flag, and resume ingestion."""
-    await _assert_admin(current_user, workspace_id)
+    await _assert_can_approve(current_user, workspace_id)
     tenant_id = current_user.tenant_id
     doc_col = get_collection(tenant_id, DOCUMENTS)
     doc_raw = await doc_col.find_one(

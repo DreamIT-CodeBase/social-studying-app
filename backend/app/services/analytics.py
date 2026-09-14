@@ -40,6 +40,7 @@ is capped at :data:`RECENT_ACTIVITY_LIMIT` items.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
@@ -114,22 +115,23 @@ async def build_student_progress(
     model owns the wire schema — keeping aggregation here free of
     Pydantic coupling.
     """
-    gam = await get_gamification_state(
-        tenant_id=tenant_id,
-        workspace_id=workspace_id,
-        student_id=student_id,
-    )
-    knowledge = await _read_knowledge_state(
-        tenant_id=tenant_id,
-        workspace_id=workspace_id,
-        student_id=student_id,
-    )
-
-    recent = await _recent_activity(
-        tenant_id=tenant_id,
-        workspace_id=workspace_id,
-        student_id=student_id,
-        limit=RECENT_ACTIVITY_LIMIT,
+    gam, knowledge, recent = await asyncio.gather(
+        get_gamification_state(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            student_id=student_id,
+        ),
+        _read_knowledge_state(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            student_id=student_id,
+        ),
+        _recent_activity(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            student_id=student_id,
+            limit=RECENT_ACTIVITY_LIMIT,
+        ),
     )
 
     topics = []
@@ -708,8 +710,8 @@ async def _recent_activity(
     interactions_col = get_collection(tenant_id, INTERACTIONS)
     ratings_col = get_collection(tenant_id, FLASHCARD_RATINGS)
 
-    # Two narrow cursors, merged client-side. Each cursor is scoped to
-    # one student in one workspace, so the read volume stays bounded.
+    # Two narrow cursors, merged client-side. Bounded by sort/limit
+    # so we do not perform unbounded scans across historical records.
     interactions_cursor = interactions_col.find(
         {
             "student_id": student_id,
@@ -717,6 +719,11 @@ async def _recent_activity(
             "deleted_at": None,
         }
     )
+    if hasattr(interactions_cursor, "sort"):
+        interactions_cursor = interactions_cursor.sort("answered_at", -1)
+    if hasattr(interactions_cursor, "limit"):
+        interactions_cursor = interactions_cursor.limit(limit)
+
     ratings_cursor = ratings_col.find(
         {
             "student_id": student_id,
@@ -724,6 +731,10 @@ async def _recent_activity(
             "deleted_at": None,
         }
     )
+    if hasattr(ratings_cursor, "sort"):
+        ratings_cursor = ratings_cursor.sort("rated_at", -1)
+    if hasattr(ratings_cursor, "limit"):
+        ratings_cursor = ratings_cursor.limit(limit)
 
     merged: list[dict[str, Any]] = []
     async for doc in interactions_cursor:

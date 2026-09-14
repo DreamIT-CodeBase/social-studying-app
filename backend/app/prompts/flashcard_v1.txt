@@ -30,7 +30,7 @@ Otherwise return the full flashcard JSON:
 
 Field rules:
 - front: 1 sentence OR a noun phrase. If a question, ends with '?'.
-  Examples: "What is photosynthesis?" / "Photosynthesis (definition)" /
+  Examples: "What is Newton's Second Law?" / "Slope-intercept form (definition)" /
   "The chemical formula for water?". No leading numbering or markdown.
 - back: 1-2 sentences. Complete sentences, no bullet lists. The
   smallest unit that fully answers the front — flashcards work because
@@ -49,8 +49,8 @@ Content rules:
 - Front and back together must form a clean recall pair. A student who
   sees the front should be able to produce the back from memory after
   studying.
-- AVOID two-part fronts ("What is photosynthesis AND where does it
-  occur?"). Split into two flashcards if you'd be tempted.
+- AVOID two-part fronts ("What is the slope-intercept equation AND what does m
+  represent?"). Split into two flashcards if you'd be tempted.
 - AVOID front/back pairs that overlap heavily — if the front says
   "The capital of France?" the back is "Paris", not "Paris is the
   capital of France" (which gives the answer away when re-read).

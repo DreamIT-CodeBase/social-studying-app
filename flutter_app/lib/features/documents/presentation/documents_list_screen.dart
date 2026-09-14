@@ -242,21 +242,94 @@ class _DocsList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView.separated(
+    final flaggedDocs = docs
+        .where((d) => d.status == DocumentStatus.flagged || d.moderationFlagged)
+        .toList();
+
+    return ListView(
       padding: const EdgeInsets.fromLTRB(
         Spacing.lg,
         Spacing.lg,
         Spacing.lg,
-        // Bottom padding leaves room for the floating Upload button so
-        // the last row isn't covered.
         96,
       ),
-      itemCount: docs.length,
-      separatorBuilder: (_, __) => const SizedBox(height: Spacing.sm),
-      itemBuilder: (_, i) => _DocRow(
-        doc: docs[i],
-        workspaceId: workspaceId,
-        canDelete: canDelete,
+      children: [
+        if (flaggedDocs.isNotEmpty) ...[
+          _FlaggedReviewBanner(
+            count: flaggedDocs.length,
+            onReview: () => context.push(
+              _pollingRouteFor(workspaceId, flaggedDocs.first.id),
+            ),
+          ),
+          const SizedBox(height: Spacing.md),
+        ],
+        for (final doc in docs) ...[
+          _DocRow(
+            doc: doc,
+            workspaceId: workspaceId,
+            canDelete: canDelete,
+          ),
+          const SizedBox(height: Spacing.sm),
+        ],
+      ],
+    );
+  }
+}
+
+class _FlaggedReviewBanner extends StatelessWidget {
+  const _FlaggedReviewBanner({
+    required this.count,
+    required this.onReview,
+  });
+
+  final int count;
+  final VoidCallback onReview;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(Spacing.md),
+      decoration: BoxDecoration(
+        color: Colors.amber.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.amber.shade300),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.shield_outlined, color: Colors.amber.shade800),
+          const SizedBox(width: Spacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$count Document${count > 1 ? 's' : ''} Require Safety Review',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.amber.shade900,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Tap to review and approve flagged study materials.',
+                  style: TextStyle(
+                    color: Colors.amber.shade800,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          FilledButton.tonal(
+            onPressed: onReview,
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.amber.shade100,
+              foregroundColor: Colors.amber.shade900,
+            ),
+            child: const Text('Review'),
+          ),
+        ],
       ),
     );
   }

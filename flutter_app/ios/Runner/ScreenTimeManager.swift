@@ -259,17 +259,13 @@ extension DeviceActivityEvent.Name {
 
       applyShields(selection, to: store)
 
-      let wasActive = userDefaults.bool(forKey: shieldsActiveKey)
       userDefaults.set(true, forKey: shieldsActiveKey)
       userDefaults.set(Date().timeIntervalSince1970, forKey: lastShieldApplyKey)
       userDefaults.synchronize()
 
-      let lastNotif = userDefaults.double(forKey: "last_exhausted_notification_timestamp")
       let now = Date().timeIntervalSince1970
-      if !wasActive || (now - lastNotif > 60) {
-        userDefaults.set(now, forKey: "last_exhausted_notification_timestamp")
-        sendExhaustedNotification()
-      }
+      userDefaults.set(now, forKey: "last_exhausted_notification_timestamp")
+      sendExhaustedNotification()
     } else {
       // Time available — remove shields and schedule threshold monitoring
       clearShields(from: store)
@@ -417,13 +413,16 @@ extension DeviceActivityEvent.Name {
 
   @objc func sendExhaustedNotification() {
     let content = UNMutableNotificationContent()
-    content.title = "Time's Up!"
-    content.body = "You have consumed your all time for social media."
+    content.title = "Study Session Needed"
+    content.body = "To gain access to your app, let’s create a study session."
     content.sound = .default
+    if #available(iOS 15.0, *) {
+      content.interruptionLevel = .timeSensitive
+    }
 
-    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
     let request = UNNotificationRequest(
-      identifier: "ai.socialstudying.screentime.exhausted",
+      identifier: "ai.socialstudying.screentime.exhausted.\(UUID().uuidString)",
       content: content,
       trigger: trigger
     )

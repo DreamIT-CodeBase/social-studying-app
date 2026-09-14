@@ -78,7 +78,16 @@ class DemoQuestionsRepository implements QuestionsRepository {
     String? subject,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 250));
-    final fixture = _fixtures[_index % _fixtures.length];
+    final lowerSubject = (subject ?? '').toLowerCase();
+    final lowerWsp = workspaceId.toLowerCase();
+    final isMath = lowerSubject.contains('math') ||
+        lowerSubject.contains('algebra') ||
+        lowerSubject.contains('equation') ||
+        lowerWsp.contains('math') ||
+        lowerWsp.contains('algebra') ||
+        lowerWsp.contains('equation');
+    final pool = isMath ? _mathFixtures : _fixtures;
+    final fixture = pool[_index % pool.length];
     _index++;
     final id = 'qst_demo_${_index.toString().padLeft(3, '0')}';
     _served[id] = _DemoQuestionState(
@@ -131,6 +140,68 @@ class DemoQuestionsRepository implements QuestionsRepository {
   }
 
   // ── Fixtures ─────────────────────────────────────────────────────────────
+
+  static final List<_DemoFixture> _mathFixtures = [
+    _DemoFixture(
+      question: const Question(
+        id: 'placeholder',
+        topic: 'Linear Equations',
+        questionType: QuestionType.mcq,
+        difficulty: DifficultyLevel.beginner,
+        body: 'Solve for x: 2x + 6 = 14',
+        options: [
+          McqOption(key: 'A', text: 'x = 2'),
+          McqOption(key: 'B', text: 'x = 4'),
+          McqOption(key: 'C', text: 'x = 6'),
+          McqOption(key: 'D', text: 'x = 8'),
+        ],
+      ),
+      correctAnswer: 'B',
+      topic: 'Linear Equations',
+      explanation:
+          'Subtract 6 from both sides to get 2x = 8, then divide by 2 to find x = 4.',
+    ),
+    _DemoFixture(
+      question: const Question(
+        id: 'placeholder',
+        topic: 'Linear Equations',
+        questionType: QuestionType.shortAnswer,
+        difficulty: DifficultyLevel.beginner,
+        body: 'Solve for x: 3x - 9 = 0',
+      ),
+      correctAnswer: '3',
+      topic: 'Linear Equations',
+      explanation:
+          'Add 9 to both sides to get 3x = 9, then divide by 3 to get x = 3.',
+    ),
+    _DemoFixture(
+      question: const Question(
+        id: 'placeholder',
+        topic: 'Linear Equations',
+        questionType: QuestionType.trueFalse,
+        difficulty: DifficultyLevel.intermediate,
+        body: 'The equation 4x + 8 = 4(x + 2) has infinitely many solutions.',
+      ),
+      correctAnswer: 'true',
+      topic: 'Linear Equations',
+      explanation:
+          'Expanding the right side gives 4x + 8 = 4x + 8, which is an identity true for all real numbers.',
+    ),
+    _DemoFixture(
+      question: const Question(
+        id: 'placeholder',
+        topic: 'Linear Equations',
+        questionType: QuestionType.longAnswer,
+        difficulty: DifficultyLevel.intermediate,
+        body: 'Explain why the slope of any horizontal line is 0.',
+      ),
+      correctAnswer:
+          'A horizontal line has zero change in y (rise is 0) as x changes (run is nonzero). Since slope is rise over run, 0 divided by any non-zero run is 0.',
+      topic: 'Linear Equations',
+      explanation:
+          'Slope equals rise divided by run. For a horizontal line, y remains constant (rise = 0), so 0 / run = 0.',
+    ),
+  ];
 
   static final List<_DemoFixture> _fixtures = [
     _DemoFixture(

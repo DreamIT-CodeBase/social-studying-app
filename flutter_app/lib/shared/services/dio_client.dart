@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/core/config/environment.dart';
 import 'package:social_study_app/shared/services/auth_session_service.dart';
+import 'package:social_study_app/shared/services/network_status_service.dart';
 
 part 'dio_client.g.dart';
 
@@ -34,6 +35,7 @@ class DioClient {
 
   void _setupInterceptors() {
     _dio.interceptors.add(_AuthInterceptor(_dio));
+    _dio.interceptors.add(_LatencyInterceptor());
     _dio.interceptors.add(_ErrorInterceptor());
 
     if (kDebugMode) {
@@ -143,5 +145,52 @@ class _ErrorInterceptor extends Interceptor {
         message: message,
       ),
     );
+  }
+}
+
+class _LatencyInterceptor extends Interceptor {
+  int _counter = 0;
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    final requestId = '${DateTime.now().microsecondsSinceEpoch}_${++_counter}';
+    options.extra['request_id'] = requestId;
+    NetworkStatusService.instance.reportRequestStarted(
+      requestId,
+      url: options.path,
+    );
+    handler.next(options);
+  }
+
+  @override
+  void onResponse(Response response, ResponseInterceptorHandler handler) {
+    final requestId = response.requestOptions.extra['request_id'] as String?;
+    if (requestId != null) {
+      NetworkStatusService.instance.reportRequestFinished(requestId);
+    }
+    handler.next(response);
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) {
+    final requestId = err.requestOptions.extra['request_id'] as String?;
+    if (requestId != null) {
+      NetworkStatusService.instance.reportRequestFinished(requestId);
+    }
+
+    if (err.type == DioExceptionType.connectionTimeout ||
+        err.type == DioExceptionType.sendTimeout ||
+        err.type == DioExceptionType.receiveTimeout) {
+      NetworkStatusService.instance.reportSlowConnection(
+        message:
+            'Connection is taking longer than expected. We\'re keeping your study progress safe.',
+      );
+    } else if (err.type == DioExceptionType.connectionError) {
+      NetworkStatusService.instance.reportOffline(
+        message:
+            'No internet connection detected. Please check your Wi-Fi or mobile data.',
+      );
+    }
+    handler.next(err);
   }
 }

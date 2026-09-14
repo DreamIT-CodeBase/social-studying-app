@@ -331,6 +331,13 @@ def _parse_mcq(raw: dict[str, Any]) -> tuple[str, str, list[McqOption], list[str
             f"option key ({correct_keys[0]!r})."
         )
 
+    seen_texts: set[str] = set()
+    for opt in options:
+        norm = opt.text.strip().casefold()
+        if norm in seen_texts:
+            raise QuestionShapeError(f"MCQ has duplicate option text: {opt.text!r}")
+        seen_texts.add(norm)
+
     explanation = _require_string(raw, "explanation")
     return answer, explanation, options, []  # MCQ has no separate grading_hints
 

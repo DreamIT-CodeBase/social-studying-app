@@ -348,12 +348,39 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
   /// Sets available screen time to 0 minutes and immediately reapplies shields so testers can verify blocking.
   Future<void> simulateZeroMinutesForTesting() async {
     final currentWallet = state.valueOrNull;
-    if (currentWallet == null) return;
-    final available = currentWallet.availableMinutes;
-    if (available > 0) {
-      await consumeMinutes(available);
-    }
+    final authState = ref.read(authNotifierProvider).valueOrNull;
+    final user =
+        authState?.maybeWhen(authenticated: (u) => u, orElse: () => null);
+    final userId = user?.id ?? 'tester_user';
+
+    final updated = (currentWallet ??
+            ScreenTimeWallet(
+              studentId: userId,
+              availableMinutes: 0,
+              consumedMinutes: 0,
+              totalEarnedMinutes: 0,
+              lastKnownXp: 0,
+              lastSyncTime: DateTime.now(),
+            ))
+        .copyWith(
+      availableMinutes: 0,
+      lastSyncTime: DateTime.now(),
+    );
+
+    await _service.saveWallet(updated, userId);
+    await _service.saveWallet(updated, null);
+    await _service.saveEnableBlocking(true);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('current_user_id', userId);
+    await prefs.setBool('enforcement_ready', true);
+    await prefs.setBool('enable_blocking', true);
+    await prefs.setInt('available_minutes', 0);
+    await prefs.setInt('available_minutes_$userId', 0);
+
+    state = AsyncData(updated);
     await reapplyShields();
+    await _service.sendTimeExhaustedNotification();
   }
 
   /// Grants test minutes so testers can quickly verify unblocking.

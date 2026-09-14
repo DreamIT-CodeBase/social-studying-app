@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'dart:io';
 import 'dart:math' as math;
@@ -27,6 +28,7 @@ import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/models/workspace.dart';
 import 'package:social_study_app/shared/services/session_persistence_service.dart';
 import 'package:social_study_app/features/screen_time/services/telemetry_service.dart';
+import 'package:social_study_app/features/screen_time/services/screen_time_service.dart';
 import 'package:social_study_app/features/home/presentation/widgets/subject_switcher_bar.dart';
 import 'package:social_study_app/features/home/providers/self_study_subject_providers.dart';
 import 'package:social_study_app/features/screen_time/providers/screen_time_providers.dart';
@@ -51,6 +53,8 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
     with WidgetsBindingObserver {
   bool _restoring = true;
   bool _paywallDialogShown = false;
+  StreamSubscription<Map<String, dynamic>>? _unlockSubscription;
+  bool _handlingUnlockRequest = false;
 
   static const _tabs = [
     (icon: Icons.home_rounded, label: 'Home'),
@@ -63,18 +67,27 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    ScreenTimeService.initializeChannelListener();
+    _unlockSubscription =
+        ScreenTimeService.onUnlockQuestionRequested.listen((event) {
+      if (mounted) {
+        _triggerUnlockQuestionSession(event['package'] as String?);
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         TelemetryService.instance.initialize(ref);
         _restoreSession();
         ref.read(authNotifierProvider.notifier).refresh();
         _checkStudentSubscription();
+        _checkPendingUnlockRequest();
       }
     });
   }
 
   @override
   void dispose() {
+    _unlockSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -87,7 +100,75 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
       ref.read(authNotifierProvider.notifier).refresh();
       ref.read(screenTimeNotifierProvider.notifier).refreshWallet();
       _checkStudentSubscription();
+      _checkPendingUnlockRequest();
     }
+  }
+
+  Future<void> _checkPendingUnlockRequest() async {
+    try {
+      final pending = await ScreenTimeService.getPendingUnlockRequest();
+      if (pending != null && mounted) {
+        _triggerUnlockQuestionSession(pending['package'] as String?);
+      }
+    } catch (_) {}
+  }
+
+  void _triggerUnlockQuestionSession([String? blockedPackage]) {
+    if (_handlingUnlockRequest) return;
+    _handlingUnlockRequest = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _handlingUnlockRequest = false;
+        return;
+      }
+      final authState = ref.read(authNotifierProvider).valueOrNull;
+      final user = authState?.maybeWhen(
+        authenticated: (value) => value,
+        orElse: () => null,
+      );
+      final memberships = effectiveStudentMemberships(user);
+      final activeWorkspaceId = ref.read(activeWorkspaceIdProvider) ??
+          memberships.firstOrNull?.workspaceId;
+
+      if (activeWorkspaceId == null) {
+        _handlingUnlockRequest = false;
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 3),
+          content: Row(
+            children: [
+              Icon(Icons.lock_open_rounded, color: Colors.greenAccent),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '📚 Answer a study question to unlock your app!',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      final activeSubject = isSelfLearningWorkspaceId(activeWorkspaceId)
+          ? ref.read(selfStudySubjectProvider)
+          : null;
+      final subjectQuery = activeSubject != null
+          ? '&subject=${Uri.encodeComponent(activeSubject)}'
+          : '';
+
+      context.push(
+        '/student/session/$activeWorkspaceId?mode=study$subjectQuery',
+      );
+      Future.delayed(const Duration(seconds: 2), () {
+        _handlingUnlockRequest = false;
+      });
+    });
   }
 
   Future<void> _checkStudentSubscription() async {
@@ -149,6 +230,13 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
   Widget build(BuildContext context) {
     if (_restoring) {
       return const _StudentHomeScreenSkeleton();
+    }
+
+    final routerState = GoRouterState.of(context);
+    if (routerState.uri.queryParameters['action'] == 'unlock_question') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _triggerUnlockQuestionSession();
+      });
     }
 
     ref.listen<int>(studentHomeTabProvider, (previous, next) {

@@ -22,12 +22,15 @@ class MainActivity : FlutterActivity() {
     private val SCREEN_TIME_CHANNEL = "com.socialstudyapp.app/screen_time"
     private var pendingNotificationResult: MethodChannel.Result? = null
     private lateinit var googleSignInHelper: LegacyGoogleSignInHelper
+    private var screenTimeChannel: MethodChannel? = null
+    private var pendingUnlockRequest: Map<String, String>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
             window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         } catch (_: Throwable) {}
+        handleUnlockIntent(intent)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -51,11 +54,17 @@ class MainActivity : FlutterActivity() {
         }
 
         // ── Screen time / permissions channel ───────────────────────────────
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SCREEN_TIME_CHANNEL)
-            .setMethodCallHandler { call, result ->
-                try {
-                    when (call.method) {
-                        "isAccessibilityEnabled" -> {
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SCREEN_TIME_CHANNEL)
+        screenTimeChannel = channel
+        channel.setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "getPendingUnlockRequest" -> {
+                        val req = pendingUnlockRequest
+                        pendingUnlockRequest = null
+                        result.success(req)
+                    }
+                    "isAccessibilityEnabled" -> {
                             result.success(isAccessibilityServiceEnabled())
                         }
                         "openAccessibilitySettings" -> {
@@ -169,6 +178,12 @@ class MainActivity : FlutterActivity() {
                             }
                             result.success(null)
                         }
+                        "reapplyShields" -> {
+                            result.success(null)
+                        }
+                        "sendTimeExhaustedNotification" -> {
+                            result.success(true)
+                        }
                         else -> {
                             result.notImplemented()
                         }
@@ -177,6 +192,31 @@ class MainActivity : FlutterActivity() {
                     result.error("method_channel_error", t.message, null)
                 }
             }
+        handleUnlockIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleUnlockIntent(intent)
+    }
+
+    private fun handleUnlockIntent(intent: Intent?) {
+        val action = intent?.getStringExtra("action")
+        if (action == "unlock_question") {
+            val blockedPackage = intent.getStringExtra("blocked_package").orEmpty()
+            val payload = mapOf(
+                "package" to blockedPackage,
+                "source" to "app_shield",
+                "action" to "unlock_question",
+            )
+            val chan = screenTimeChannel
+            if (chan != null) {
+                chan.invokeMethod("onUnlockQuestionRequested", payload)
+            } else {
+                pendingUnlockRequest = payload
+            }
+        }
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {

@@ -15,6 +15,41 @@ class ScreenTimeService {
 
   static const _channel = MethodChannel('com.socialstudyapp.app/screen_time');
 
+  static final StreamController<Map<String, dynamic>>
+      _unlockRequestsController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
+  static Stream<Map<String, dynamic>> get onUnlockQuestionRequested {
+    initializeChannelListener();
+    return _unlockRequestsController.stream;
+  }
+
+  static bool _channelInitialized = false;
+
+  static void initializeChannelListener() {
+    if (_channelInitialized) return;
+    _channelInitialized = true;
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'onUnlockQuestionRequested') {
+        final args = call.arguments is Map
+            ? Map<String, dynamic>.from(call.arguments as Map)
+            : <String, dynamic>{};
+        _unlockRequestsController.add(args);
+      }
+    });
+  }
+
+  static Future<Map<String, dynamic>?> getPendingUnlockRequest() async {
+    try {
+      final res = await _channel
+          .invokeMethod<Map<dynamic, dynamic>>('getPendingUnlockRequest');
+      if (res != null) {
+        return Map<String, dynamic>.from(res);
+      }
+    } catch (_) {}
+    return null;
+  }
+
   static const String _keyAvailableMinutes = 'available_minutes';
   static const String _keyConsumedMinutes = 'consumed_minutes';
   static const String _keyTotalEarnedMinutes = 'total_earned_minutes';
@@ -441,9 +476,9 @@ class ScreenTimeService {
     }
   }
 
-  /// Triggers a local notification on iOS informing the user that social time is exhausted.
+  /// Triggers a local notification informing the user that study time is needed.
   Future<void> sendTimeExhaustedNotification() async {
-    if (!Platform.isIOS) return;
+    if (!Platform.isIOS && !Platform.isAndroid) return;
     try {
       await _channel.invokeMethod('sendTimeExhaustedNotification');
     } catch (_) {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import re
 from collections.abc import Sequence
 from typing import Any
@@ -543,14 +544,18 @@ async def _generate_topic_batch(
                 workspace_id=workspace_id,
                 topic_ids=topic_ids,
                 query_text=candidate.topic_name,
-                top_k=5,
+                top_k=25,
             ),
         )
         if isinstance(retrieved, RetrieveContentOutput):
             all_retrieved = retrieved.chunks
-            current_chunks = [
+            matching_chunks = [
                 chunk for chunk in retrieved.chunks if chunk.document_id in effective_doc_ids
             ]
+            if len(matching_chunks) > 8:
+                current_chunks = random.sample(matching_chunks, 8)
+            else:
+                current_chunks = matching_chunks
     except Exception as e:
         logger.warning("Search retrieval failed in topic batch for %s: %s", candidate.topic_name, e)
 
@@ -563,8 +568,8 @@ async def _generate_topic_batch(
                     "deleted_at": None,
                 }
             )
-            rows = await cosmos_retry(lambda: cursor.to_list(length=20))
-            current_chunks = [
+            rows = await cosmos_retry(lambda: cursor.to_list(length=200))
+            parsed_chunks = [
                 RetrievedChunk(
                     chunk_id=str(r["_id"]),
                     chunk_index=int(r.get("chunk_index", 0)),
@@ -575,7 +580,11 @@ async def _generate_topic_batch(
                 )
                 for r in rows
                 if str(r.get("text", "")).strip()
-            ][:5]
+            ]
+            if len(parsed_chunks) > 8:
+                current_chunks = random.sample(parsed_chunks, 8)
+            else:
+                current_chunks = parsed_chunks
             if not all_retrieved:
                 all_retrieved = current_chunks
         except Exception as e:

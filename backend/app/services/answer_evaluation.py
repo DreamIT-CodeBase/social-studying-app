@@ -31,6 +31,7 @@ mark wrong.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import unicodedata
@@ -189,11 +190,14 @@ async def _evaluate_short_answer(question: Question, submitted: str) -> Evaluati
     )
 
     try:
-        result = await azure_openai.chat_json(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            max_output_tokens=50,
-            temperature=0.0,
+        result = await asyncio.wait_for(
+            azure_openai.chat_json(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_output_tokens=50,
+                temperature=0.0,
+            ),
+            timeout=5.0,
         )
         is_correct = bool(result.get("is_correct", False))
         if is_correct:
@@ -249,43 +253,47 @@ async def _evaluate_long_answer(question: Question, submitted: str) -> Evaluatio
         if hint.lower() in norm_submitted:
             matched.append(hint)
             continue
-        # Token-overlap fallback: many key points read like noun phrases
-        # ("Chlorophyll absorbs photons") that students paraphrase
-        # ("absorption of photons by chlorophyll"). Accept when >=70%
-        # of the hint's non-trivial tokens appear (in any order).
-        if _token_overlap_at_least(hint, submitted, threshold=0.7):
+        if _token_overlap_at_least(hint, submitted, threshold=0.5):
             matched.append(hint)
 
     score = len(matched) / len(question.grading_hints)
+    ans_overlap = _token_overlap_at_least(question.answer, submitted, threshold=0.35)
+    exp_overlap = _token_overlap_at_least(question.explanation or "", submitted, threshold=0.35) if question.explanation else False
+
     threshold = 0.5
-    if score >= threshold:
+    if score >= threshold or ans_overlap or exp_overlap:
         return EvaluationResult(
             is_correct=True,
             canonical_answer=question.answer,
-            rubric_score=score,
+            rubric_score=max(score, 0.75 if ans_overlap else 0.5),
             matched_hints=matched,
         )
 
     system_prompt = (
-        "You are an expert educational grader. Evaluate the student's answer "
-        "by meaning and demonstrated understanding, not by exact wording. "
-        "Paraphrases and equivalent explanations must receive credit. The answer "
-        "is correct when it accurately covers at least half of the required key "
-        "ideas without a major conceptual error. Return only JSON with "
-        "is_correct (boolean) and rubric_score (number from 0 to 1)."
+        "You are an expert, encouraging educational grader evaluating an open-ended explanation. "
+        "Evaluate the student's answer based on conceptual understanding and reasoning, NOT exact wording. "
+        "Award credit (is_correct: true) if the student conveys the core concept, explains the correct "
+        "relationship/mechanism, or provides an accurate paraphrase of the reference answer, even if they "
+        "use different vocabulary or phrase their response informally. Only mark incorrect (is_correct: false) "
+        "if the explanation contains a fundamental factual error or is completely off-topic. "
+        "Return ONLY a JSON object with 'is_correct' (boolean) and 'rubric_score' (number from 0 to 1)."
     )
     user_prompt = (
         f"Question: {question.body}\n"
         f"Reference answer: {question.answer}\n"
-        f"Required key ideas: {'; '.join(question.grading_hints)}\n"
+        f"Explanation: {question.explanation}\n"
+        f"Key concepts: {'; '.join(question.grading_hints)}\n"
         f"Student answer: {submitted}"
     )
     try:
-        semantic = await azure_openai.chat_json(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            max_output_tokens=80,
-            temperature=0.0,
+        semantic = await asyncio.wait_for(
+            azure_openai.chat_json(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_output_tokens=100,
+                temperature=0.0,
+            ),
+            timeout=5.0,
         )
         is_correct = bool(semantic.get("is_correct", False))
         semantic_score = float(semantic.get("rubric_score", score))
@@ -298,10 +306,11 @@ async def _evaluate_long_answer(question: Question, submitted: str) -> Evaluatio
         )
     except Exception as exc:
         logger.warning("AI long_answer evaluation failed; using deterministic score: %s", exc)
+        is_substantive = len(submitted.strip().split()) >= 4 and (len(matched) > 0 or ans_overlap or exp_overlap)
         return EvaluationResult(
-            is_correct=False,
+            is_correct=is_substantive,
             canonical_answer=question.answer,
-            rubric_score=score,
+            rubric_score=0.6 if is_substantive else score,
             matched_hints=matched,
         )
 
@@ -387,11 +396,14 @@ async def _evaluate_mathematical(question: Question, submitted: str) -> Evaluati
         f"Student answer: {submitted}"
     )
     try:
-        semantic = await azure_openai.chat_json(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            max_output_tokens=50,
-            temperature=0.0,
+        semantic = await asyncio.wait_for(
+            azure_openai.chat_json(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_output_tokens=50,
+                temperature=0.0,
+            ),
+            timeout=5.0,
         )
         is_correct = bool(semantic.get("is_correct", False))
     except Exception as exc:

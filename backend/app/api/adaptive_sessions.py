@@ -55,12 +55,14 @@ from app.models.adaptive_session import (
     PreparedQuestion,
     SessionAchievementUnlock,
     SessionCompletionReason,
+    SessionQuestionAttempt,
 )
 from app.models.base import utc_now
 from app.models.flashcard import Flashcard, FlashcardRatingEvent, FlashcardStatus
 from app.models.question import (
     AnswerSubmission,
     DifficultyLevel,
+    McqOption,
     Question,
     QuestionStatus,
     QuestionType,
@@ -75,7 +77,11 @@ from app.services import (
 )
 from app.services import gamification as gamification_service
 from app.services import knowledge_state as knowledge_state_service
-from app.services.subject_classifier import classify_subject_from_text
+from app.services.subject_classifier import (
+    canonical_subject,
+    classify_subject_from_text,
+    subjects_match,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -696,16 +702,19 @@ async def _prepare_questions(
             if not s or s.casefold() == "study":
                 for tag_name in tags:
                     ts = classify_subject_from_text(tag_name)
-                    if subject and ts.casefold() == subject.casefold():
+                    if subject and subjects_match(ts, subject):
                         s = subject
                         break
             doc_subjects[str(doc_raw["_id"])] = s or ""
 
         if subject:
             def matches_subject(q: Question) -> bool:
+                q_top_subj = classify_subject_from_text(q.topic)
+                doc_subj = doc_subjects.get(q.document_id, "")
                 return (
-                    classify_subject_from_text(q.topic).casefold() == subject.casefold()
-                    or doc_subjects.get(q.document_id, "").casefold() == subject.casefold()
+                    subjects_match(q_top_subj, subject)
+                    or subjects_match(doc_subj, subject)
+                    or subjects_match(q.topic, subject)
                 )
 
             available = [q for q in available if matches_subject(q)]
@@ -750,14 +759,12 @@ async def _prepare_questions(
             and _question_fingerprint(question.body) not in seen_fingerprints
             and _question_fingerprint(question.body) not in reserved_fingerprints
         ]
-        if not eligible and available:
-            # If all available questions have already been served, recycle them for revision practice
-            # with fresh option shuffling so the session never starves or drops into generic fallback
-            eligible = available
 
     selected = _unique_questions(eligible)[:target]
     missing = target - len(selected)
-    should_generate = missing > 0 and (subcategory or question_type or len(selected) < 2 or _is_self_study(workspace_id))
+    should_generate = missing > 0 and (
+        bool(current_sources.document_ids) or subcategory or question_type or _is_self_study(workspace_id)
+    )
     if should_generate:
         # In self-study workspace, grant sufficient generation time (60s) for the
         # LLM to extract from grounding chunks and generate high quality questions freshly.
@@ -797,7 +804,9 @@ async def _prepare_questions(
                 if question_type:
                     generated = [q for q in generated if q.question_type == question_type]
             selected = _unique_questions([*selected, *generated])[:target]
-            if len(selected) < target and not revision:
+            # If after generation we still have missing slots and the workspace is self-study,
+            # do an eager top-up generation pass so the session has as many distinct questions as needed
+            if len(selected) < target and not revision and current_sources.document_ids:
                 try:
                     topup_needed = target - len(selected)
                     topup_generated = await asyncio.wait_for(
@@ -832,15 +841,28 @@ async def _prepare_questions(
         except Exception:
             logger.exception("Adaptive session batch generation failed")
 
+    # If fresh questions and generation could not fill the session target,
+    # recycle previously answered questions ONLY in revision mode.
+    # A fresh study session (revision=False) must never recycle old questions.
+    if revision and len(selected) < target and available:
+        selected_ids = {q.id for q in selected}
+        selected_fps = {_question_fingerprint(q.body) for q in selected}
+        recycled = [
+            q for q in available
+            if q.id not in selected_ids and _question_fingerprint(q.body) not in selected_fps
+        ]
+        needed = target - len(selected)
+        selected.extend(recycled[:needed])
+
     if not selected:
-        if available:
+        if revision and available:
             selected = available[:target]
         else:
             fb_plan = _build_guaranteed_fallback_plan(
                 workspace_id=workspace_id,
                 user_id=user.id,
                 tenant_id=user.tenant_id,
-                mode=AdaptiveSessionMode.study,
+                mode=AdaptiveSessionMode.study if not revision else AdaptiveSessionMode.revision,
                 level=level,
                 mastery=0.0,
                 subject=subject,
@@ -848,6 +870,46 @@ async def _prepare_questions(
                 question_type=question_type,
             )
             return fb_plan.questions[:target]
+
+    if _is_self_study(workspace_id) and len(selected) < target and not revision:
+        # In self-study fresh sessions where queue or document content had fewer questions than requested target,
+        # supplement with guaranteed domain-aligned questions so student always gets a complete session.
+        fb_plan = _build_guaranteed_fallback_plan(
+            workspace_id=workspace_id,
+            user_id=user.id,
+            tenant_id=user.tenant_id,
+            mode=AdaptiveSessionMode.study,
+            level=level,
+            mastery=0.0,
+            subject=subject,
+            subcategory=subcategory,
+            question_type=question_type,
+        )
+        cur_fps = {_question_fingerprint(q.body) for q in selected}
+        for fb_q in fb_plan.questions:
+            if len(selected) >= target:
+                break
+            if _question_fingerprint(fb_q.body) not in cur_fps:
+                selected.append(
+                    Question(
+                        id=fb_q.id,
+                        tenant_id=user.tenant_id,
+                        workspace_id=workspace_id,
+                        document_id="doc_guaranteed",
+                        topic=fb_q.topic,
+                        question_type=QuestionType(fb_q.question_type) if isinstance(fb_q.question_type, str) else fb_q.question_type,
+                        difficulty=DifficultyLevel(fb_q.difficulty) if isinstance(fb_q.difficulty, str) else fb_q.difficulty,
+                        body=fb_q.body,
+                        options=[McqOption(key=o.key, text=o.text, is_correct=o.key == fb_q.answer) for o in fb_q.options],
+                        answer=fb_q.answer,
+                        explanation=fb_q.explanation,
+                        grading_hints=fb_q.grading_hints,
+                        source_chunk_ids=[],
+                        prompt_version="guaranteed_fallback",
+                        status=QuestionStatus.approved,
+                    )
+                )
+                cur_fps.add(_question_fingerprint(fb_q.body))
 
     return [
         _prepare_question_with_shuffled_options(question)
@@ -866,18 +928,22 @@ def _prepare_question_with_shuffled_options(question: Question) -> PreparedQuest
     answer = question.answer
 
     if raw_type == "mcq" and options:
+        # Identify canonical correct option text
+        correct_text: str | None = None
+        for opt in options:
+            if opt.is_correct or opt.key.strip().upper() == str(answer).strip().upper():
+                correct_text = opt.text.strip().lower()
+                break
+
         # Deduplicate option texts
         seen_texts: set[str] = set()
         deduped_opts = []
-        correct_opt = None
         for opt in options:
             norm = opt.text.strip().lower()
             if norm in seen_texts:
                 continue
             seen_texts.add(norm)
             deduped_opts.append(opt)
-            if opt.is_correct or opt.key == answer:
-                correct_opt = opt
 
         if len(deduped_opts) >= 2:
             options = deduped_opts
@@ -887,12 +953,14 @@ def _prepare_question_with_shuffled_options(question: Question) -> PreparedQuest
 
         assigned_keys = ["A", "B", "C", "D"][:len(shuffled)]
         new_prepared_opts: list[PreparedOption] = []
-        new_answer = answer
+        new_answer = "A"
 
         for i, opt in enumerate(shuffled):
             key = assigned_keys[i] if i < len(assigned_keys) else chr(ord("A") + i)
             new_prepared_opts.append(PreparedOption(key=key, text=opt.text))
-            if opt.is_correct or (correct_opt is not None and opt.text == correct_opt.text) or opt.key == answer:
+            if (correct_text is not None and opt.text.strip().lower() == correct_text) or (
+                correct_text is None and opt.is_correct
+            ):
                 new_answer = key
 
         return PreparedQuestion(
@@ -1413,17 +1481,22 @@ def _shuffle_prepared_mcq_options(q: PreparedQuestion) -> PreparedQuestion:
     if raw_type != "mcq" or not q.options:
         return q
 
+    # 1. Identify canonical correct text
+    correct_text: str | None = None
+    for opt in q.options:
+        if opt.key.strip().upper() == str(q.answer).strip().upper():
+            correct_text = opt.text.strip().lower()
+            break
+
+    # 2. Deduplicate options by normalized text
     seen_texts: set[str] = set()
     unique_opts: list[PreparedOption] = []
-    correct_text: str | None = None
     for opt in q.options:
         norm = opt.text.strip().lower()
         if norm in seen_texts:
             continue
         seen_texts.add(norm)
         unique_opts.append(opt)
-        if opt.key == q.answer:
-            correct_text = opt.text
 
     if len(unique_opts) < 2:
         unique_opts = list(q.options)
@@ -1433,12 +1506,12 @@ def _shuffle_prepared_mcq_options(q: PreparedQuestion) -> PreparedQuestion:
 
     assigned_keys = ["A", "B", "C", "D"][:len(shuffled)]
     new_opts: list[PreparedOption] = []
-    new_answer = q.answer
+    new_answer = "A"
 
     for i, opt in enumerate(shuffled):
         key = assigned_keys[i] if i < len(assigned_keys) else chr(ord("A") + i)
         new_opts.append(PreparedOption(key=key, text=opt.text))
-        if opt.key == q.answer or (correct_text is not None and opt.text == correct_text):
+        if correct_text is not None and opt.text.strip().lower() == correct_text:
             new_answer = key
 
     return PreparedQuestion(
@@ -1467,7 +1540,14 @@ def _build_guaranteed_fallback_plan(
     question_type: QuestionType | str | None = None,
 ) -> AdaptiveSessionPlan:
     session_id = f"ses_{uuid4().hex}"
-    subj = (subject or "").strip().lower()
+    canon = canonical_subject(subject)
+    subj = canon.strip().lower() if canon else (subject or "").strip().lower()
+    if (not subj or subj == "study") and subcategory:
+        subcat_canon = canonical_subject(subcategory)
+        if subcat_canon and subcat_canon.lower() != "study":
+            subj = subcat_canon.strip().lower()
+    if not subj or subj == "study":
+        subj = "mathematics"
 
     if mode == AdaptiveSessionMode.flashcard:
         if subj in ("chemistry", "chem"):
@@ -1501,7 +1581,7 @@ def _build_guaranteed_fallback_plan(
                     explanation="One mole contains Avogadro's number (6.022 × 10²³) of particles.",
                 ),
             ]
-        elif subj in ("mathematics", "math", "maths", "algebra", "geometry", "calculus"):
+        elif subj in ("mathematics", "math", "maths", "algebra", "algebra 1", "geometry", "calculus"):
             flashcards = [
                 PreparedFlashcard(
                     id=f"fls_math_{uuid4().hex[:8]}",
@@ -1574,10 +1654,10 @@ def _build_guaranteed_fallback_plan(
                 ),
                 PreparedFlashcard(
                     id=f"fls_bio_{uuid4().hex[:8]}",
-                    topic="Photosynthesis",
-                    front="What is the primary organelle where photosynthesis occurs in plant cells?",
-                    back="The chloroplast.",
-                    explanation="Chloroplasts contain chlorophyll that captures light energy.",
+                    topic="Cell Biology",
+                    front="What is the primary function of ribosomes in living cells?",
+                    back="Protein synthesis.",
+                    explanation="Ribosomes translate genetic instructions from mRNA into functional protein chains.",
                 ),
             ]
         else:
@@ -1724,7 +1804,7 @@ def _build_guaranteed_fallback_plan(
                     grading_hints=["sublimation"],
                 ),
             ]
-        elif subj in ("mathematics", "math", "maths", "algebra", "geometry", "calculus"):
+        elif subj in ("mathematics", "math", "maths", "algebra", "algebra 1", "geometry", "calculus"):
             questions = [
                 PreparedQuestion(
                     id=f"qst_math_{uuid4().hex[:8]}",
@@ -1788,6 +1868,70 @@ def _build_guaranteed_fallback_plan(
                     ],
                     answer="B",
                     explanation="Using the power rule d/dx[xⁿ] = n·xⁿ⁻¹, the derivative of x³ is 3x².",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Systems of Linear Equations",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="If 2x + y = 10 and y = 4, what is the value of x in this linear system?",
+                    options=[
+                        PreparedOption(key="A", text="x = 2"),
+                        PreparedOption(key="B", text="x = 3"),
+                        PreparedOption(key="C", text="x = 4"),
+                        PreparedOption(key="D", text="x = 6"),
+                    ],
+                    answer="B",
+                    explanation="Substituting y = 4 yields 2x + 4 = 10 -> 2x = 6 -> x = 3.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Exponent Rules in Algebra",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="According to exponent rules, which expression represents the simplified form of (x³)²?",
+                    options=[
+                        PreparedOption(key="A", text="x⁵"),
+                        PreparedOption(key="B", text="x⁶"),
+                        PreparedOption(key="C", text="x⁸"),
+                        PreparedOption(key="D", text="x⁹"),
+                    ],
+                    answer="B",
+                    explanation="Using the power of a power rule (xᵃ)ᵇ = xᵃ·ᵇ, (x³)² = x⁶.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Factoring Polynomials",
+                    question_type="mcq",
+                    difficulty="intermediate",
+                    body="What is the complete factored form of the difference of squares x² - 16?",
+                    options=[
+                        PreparedOption(key="A", text="(x - 4)(x + 4)"),
+                        PreparedOption(key="B", text="(x - 4)²"),
+                        PreparedOption(key="C", text="(x + 4)²"),
+                        PreparedOption(key="D", text="(x - 8)(x + 2)"),
+                    ],
+                    answer="A",
+                    explanation="The difference of two squares a² - b² factors into (a - b)(a + b), so x² - 16 = (x - 4)(x + 4).",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Slope-Intercept Form",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="What is the slope of the line described by the equation y = -3x + 7?",
+                    options=[
+                        PreparedOption(key="A", text="-3"),
+                        PreparedOption(key="B", text="3"),
+                        PreparedOption(key="C", text="7"),
+                        PreparedOption(key="D", text="-7/3"),
+                    ],
+                    answer="A",
+                    explanation="In slope-intercept form y = mx + b, the slope m is the coefficient of x, which is -3.",
                     grading_hints=[],
                 ),
                 PreparedQuestion(
@@ -2040,16 +2184,16 @@ def _build_guaranteed_fallback_plan(
                 ),
                 PreparedQuestion(
                     id=f"qst_bio_{uuid4().hex[:8]}",
-                    topic="Plant Biology",
+                    topic="Cell Biology",
                     question_type="true_false",
                     difficulty="beginner",
-                    body="Plant cells contain both chloroplasts for photosynthesis and mitochondria for cellular respiration.",
+                    body="Ribosomes are the cellular structures responsible for synthesizing proteins from amino acids.",
                     options=[
                         PreparedOption(key="true", text="True"),
                         PreparedOption(key="false", text="False"),
                     ],
                     answer="true",
-                    explanation="Plant cells require mitochondria to break down the sugars synthesized by chloroplasts into usable ATP.",
+                    explanation="Ribosomes translate messenger RNA (mRNA) sequences into polypeptide protein chains.",
                     grading_hints=[],
                 ),
                 PreparedQuestion(
@@ -2191,6 +2335,97 @@ def _build_guaranteed_fallback_plan(
             ]
             if filtered_q:
                 questions = filtered_q
+            else:
+                # If the chosen subject didn't have enough questions of this type,
+                # fall back to math questions of this target type so the contract is never violated
+                math_fb = [
+                    PreparedQuestion(
+                        id=f"qst_math_{uuid4().hex[:8]}",
+                        topic="Linear Equations in Algebra",
+                        question_type="mcq",
+                        difficulty="beginner",
+                        body="What is the solution for x in the general linear equation ax + b = 0 (where a ≠ 0)?",
+                        options=[
+                            PreparedOption(key="A", text="x = b / a"),
+                            PreparedOption(key="B", text="x = -b / a"),
+                            PreparedOption(key="C", text="x = -a / b"),
+                            PreparedOption(key="D", text="x = a / b"),
+                        ],
+                        answer="B",
+                        explanation="Subtracting b gives ax = -b, and dividing by a yields x = -b/a.",
+                        grading_hints=[],
+                    ),
+                    PreparedQuestion(
+                        id=f"qst_math_{uuid4().hex[:8]}",
+                        topic="Coordinate Geometry",
+                        question_type="mcq",
+                        difficulty="beginner",
+                        body="In the slope-intercept form of a linear equation, y = mx + b, what does the letter 'm' represent?",
+                        options=[
+                            PreparedOption(key="A", text="The y-intercept"),
+                            PreparedOption(key="B", text="The x-intercept"),
+                            PreparedOption(key="C", text="The slope of the line"),
+                            PreparedOption(key="D", text="The distance from the origin"),
+                        ],
+                        answer="C",
+                        explanation="In y = mx + b, m is the rate of change or slope, and b is the vertical intercept.",
+                        grading_hints=[],
+                    ),
+                    PreparedQuestion(
+                        id=f"qst_math_{uuid4().hex[:8]}",
+                        topic="Systems of Linear Equations",
+                        question_type="mcq",
+                        difficulty="beginner",
+                        body="If 2x + y = 10 and y = 4, what is the value of x in this linear system?",
+                        options=[
+                            PreparedOption(key="A", text="x = 2"),
+                            PreparedOption(key="B", text="x = 3"),
+                            PreparedOption(key="C", text="x = 4"),
+                            PreparedOption(key="D", text="x = 6"),
+                        ],
+                        answer="B",
+                        explanation="Substituting y = 4 yields 2x + 4 = 10 -> 2x = 6 -> x = 3.",
+                        grading_hints=[],
+                    ),
+                    PreparedQuestion(
+                        id=f"qst_math_{uuid4().hex[:8]}",
+                        topic="Exponent Rules in Algebra",
+                        question_type="mcq",
+                        difficulty="beginner",
+                        body="According to exponent rules, which expression represents the simplified form of (x³)²?",
+                        options=[
+                            PreparedOption(key="A", text="x⁵"),
+                            PreparedOption(key="B", text="x⁶"),
+                            PreparedOption(key="C", text="x⁸"),
+                            PreparedOption(key="D", text="x⁹"),
+                        ],
+                        answer="B",
+                        explanation="Using the power of a power rule (xᵃ)ᵇ = xᵃ·ᵇ, (x³)² = x⁶.",
+                        grading_hints=[],
+                    ),
+                    PreparedQuestion(
+                        id=f"qst_math_{uuid4().hex[:8]}",
+                        topic="Factoring Polynomials",
+                        question_type="mcq",
+                        difficulty="intermediate",
+                        body="What is the complete factored form of the difference of squares x² - 16?",
+                        options=[
+                            PreparedOption(key="A", text="(x - 4)(x + 4)"),
+                            PreparedOption(key="B", text="(x - 4)²"),
+                            PreparedOption(key="C", text="(x + 4)²"),
+                            PreparedOption(key="D", text="(x - 8)(x + 2)"),
+                        ],
+                        answer="A",
+                        explanation="The difference of two squares a² - b² factors into (a - b)(a + b), so x² - 16 = (x - 4)(x + 4).",
+                        grading_hints=[],
+                    ),
+                ]
+                filtered_math = [
+                    q for q in math_fb
+                    if (q.question_type.value if hasattr(q.question_type, "value") else str(q.question_type)).lower() == target_qtype
+                ]
+                if filtered_math:
+                    questions = filtered_math
 
         # Always shuffle MCQ options so the correct answer key is randomized (never always 'A')
         questions = [_shuffle_prepared_mcq_options(q) for q in questions]
@@ -2932,6 +3167,7 @@ async def complete_adaptive_session(
         accuracy: float | None = None
     else:
         question_map = {question.id: question for question in plan.questions}
+        deduped_attempts: list[tuple[SessionQuestionAttempt, Question]] = []
         seen_questions: set[str] = set()
         for attempt in request.question_attempts:
             if attempt.question_id in seen_questions:
@@ -2945,7 +3181,21 @@ async def complete_adaptive_session(
                 workspace_id=workspace_id,
                 snapshot=snapshot,
             )
-            evaluation = await answer_evaluation.evaluate(question, attempt.answer)
+            deduped_attempts.append((attempt, question))
+
+        async def _eval_one(q: Question, att: SessionQuestionAttempt) -> bool:
+            if att.is_correct is not None:
+                return att.is_correct
+            try:
+                res = await asyncio.wait_for(answer_evaluation.evaluate(q, att.answer), timeout=5.0)
+                return bool(res.is_correct)
+            except Exception as exc:
+                logger.warning("Answer evaluation failed/timed out during session complete: %s", exc)
+                return False
+
+        eval_results = await asyncio.gather(*[_eval_one(q, att) for att, q in deduped_attempts]) if deduped_attempts else []
+
+        for (attempt, question), is_correct in zip(deduped_attempts, eval_results, strict=True):
             timestamp = utc_now()
             delta = await gamification_service.record_question_attempt(
                 tenant_id=current_user.tenant_id,
@@ -2953,11 +3203,11 @@ async def complete_adaptive_session(
                 student_id=current_user.id,
                 topic=question.topic,
                 difficulty=question.difficulty,
-                is_correct=evaluation.is_correct,
+                is_correct=is_correct,
                 revision=plan.mode == AdaptiveSessionMode.revision,
                 now=timestamp,
             )
-            action_xp += 1 if evaluation.is_correct else -1
+            action_xp += 1 if is_correct else -1
             await _record_interaction(
                 tenant_id=current_user.tenant_id,
                 workspace_id=workspace_id,
@@ -2968,7 +3218,7 @@ async def complete_adaptive_session(
                     answer=attempt.answer,
                     time_spent_seconds=attempt.time_spent_seconds,
                 ),
-                is_correct=evaluation.is_correct,
+                is_correct=is_correct,
                 xp_earned=delta.xp_earned,
                 timestamp=timestamp,
             )
@@ -2978,10 +3228,10 @@ async def complete_adaptive_session(
                 student_id=current_user.id,
                 topic=question.topic,
                 difficulty=question.difficulty,
-                is_correct=evaluation.is_correct,
+                is_correct=is_correct,
                 now=timestamp,
             )
-            correct_count += int(evaluation.is_correct)
+            correct_count += int(is_correct)
             xp_gained += delta.xp_earned
             for badge in delta.badges_unlocked:
                 unlocked_badges[badge.badge_id] = badge

@@ -95,6 +95,7 @@ class SessionQuestionAttempt(BaseModel):
     question_id: str
     answer: str = Field(min_length=1, max_length=4000)
     time_spent_seconds: int = Field(default=0, ge=0, le=3600)
+    is_correct: bool | None = None
 
 
 class EvaluateAdaptiveAnswerRequest(BaseModel):

@@ -8,6 +8,7 @@ and German.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from typing import TYPE_CHECKING
 
@@ -253,26 +254,47 @@ _SUBJECT_CONFIGS = [
 ]
 
 
+_COMPILED_SUBJECT_PATTERNS: list[tuple[str, list[tuple[str, re.Pattern[str]]]]] = [
+    (
+        subject,
+        [
+            (
+                term,
+                re.compile(rf"\b{re.escape(term)}s?\b")
+                if " " not in term
+                else re.compile(rf"\b{re.escape(term)}\b"),
+            )
+            for term in terms
+        ],
+    )
+    for subject, terms in _SUBJECT_CONFIGS
+]
+
+
 def _normalize(text: str) -> str:
-    return unicodedata.normalize("NFKC", text).casefold()
+    cleaned = text.replace("_", " ")
+    return unicodedata.normalize("NFKC", cleaned).casefold()
 
 
 def classify_subject_from_text(text: str) -> str:
     """Classify a subject name from a topic, document filename, or text string.
 
-    Uses weighted longest-matching scoring across domains so specific terms
+    Uses weighted longest-matching scoring across domains with word boundaries so specific terms
     (like 'chemical kinetics', 'us history', 'differential equations') win over
-    generic subwords.
+    generic subwords, and subwords (like 'gene' in 'general') do not falsely trigger.
 
     Returns one of standard US school & college subjects or 'Study'.
     """
+    if not text or not text.strip():
+        return "Study"
+
     normalized = _normalize(text)
 
     scores: dict[str, int] = {}
-    for subject, terms in _SUBJECT_CONFIGS:
+    for subject, term_patterns in _COMPILED_SUBJECT_PATTERNS:
         score = 0
-        for term in terms:
-            if term in normalized:
+        for term, pattern in term_patterns:
+            if pattern.search(normalized):
                 # Longer matches indicate much higher domain specificity
                 score += len(term) ** 2
         if score > 0:
@@ -283,6 +305,29 @@ def classify_subject_from_text(text: str) -> str:
 
     # Return the subject with highest match weight
     return max(scores.items(), key=lambda item: item[1])[0]
+
+
+def canonical_subject(text: str | None) -> str:
+    """Resolve specific course/topic names (e.g. 'Algebra 1', 'AP Calculus') to canonical high-level subject."""
+    if not text or not text.strip():
+        return ""
+    c = classify_subject_from_text(text)
+    if c and c.casefold() != "study":
+        return c
+    return text.strip()
+
+
+def subjects_match(s1: str | None, s2: str | None) -> bool:
+    """Return True if two subject strings refer to the same subject domain."""
+    if not s1 or not s2:
+        return True
+    c1 = canonical_subject(s1).strip().casefold()
+    c2 = canonical_subject(s2).strip().casefold()
+    if c1 and c2 and c1 == c2:
+        return True
+    r1 = s1.strip().casefold()
+    r2 = s2.strip().casefold()
+    return bool(r1 == r2 or r1 in r2 or r2 in r1)
 
 
 def classify_document_subject(doc: Document) -> str:

@@ -158,7 +158,7 @@ class ScreenTimeDashboardCard extends ConsumerWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                "Social Media Blocked",
+                                "Study Session Needed",
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,
@@ -167,7 +167,7 @@ class ScreenTimeDashboardCard extends ConsumerWidget {
                               ),
                               SizedBox(height: 2),
                               Text(
-                                "You have consumed your all time for social media. Study more to unlock apps!",
+                                "To gain access to your app, let’s create a study session. Complete questions to earn time!",
                                 style: TextStyle(
                                   color: Colors.white70,
                                   fontSize: 12,

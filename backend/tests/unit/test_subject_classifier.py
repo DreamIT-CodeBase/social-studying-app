@@ -4,9 +4,11 @@ import pytest
 
 from app.models.document import Document, DocumentStatus, DocumentType, TopicTag
 from app.services.subject_classifier import (
+    canonical_subject,
     classify_document_subject,
     classify_subject_from_text,
     classify_subject_with_llm,
+    subjects_match,
 )
 
 
@@ -115,4 +117,33 @@ async def test_classify_subject_with_llm():
     with patch("app.services.azure_openai.chat_json", AsyncMock(return_value={"subject": "To Kill a Mockingbird"})):
         res = await classify_subject_with_llm("Atticus Finch was a lawyer in Maycomb...", "tkam.txt")
         assert res == "To Kill a Mockingbird"
+
+
+def test_word_boundary_subwords_do_not_misclassify():
+    # Words like "General" (contains 'gene'), "Cancellation" (contains 'cell'),
+    # and "Homogeneous" (contains 'gene') must not trigger Biology!
+    assert classify_subject_from_text("General Form of Linear Equations") == "Mathematics"
+    assert classify_subject_from_text("Cancellation Method in Algebra") == "Mathematics"
+    assert classify_subject_from_text("Homogeneous Polynomials") == "Mathematics"
+    assert classify_subject_from_text("Algebra 1") == "Mathematics"
+    assert classify_subject_from_text("Linear Equations and Graphs") == "Mathematics"
+    # Ensure legitimate Biology still classifies as Biology
+    assert classify_subject_from_text("Plant Biology and Photosynthesis") == "Biology"
+    assert classify_subject_from_text("Gene Expression and Cell Structure") == "Biology"
+
+
+def test_canonical_subject_and_subjects_match():
+    assert canonical_subject("Algebra 1") == "Mathematics"
+    assert canonical_subject("Linear Algebra") == "Mathematics"
+    assert canonical_subject("AP Calculus") == "Mathematics"
+    assert canonical_subject("Plant Biology") == "Biology"
+    assert canonical_subject("Chemistry") == "Chemistry"
+
+    assert subjects_match("Algebra 1", "Mathematics") is True
+    assert subjects_match("Mathematics", "Algebra 1") is True
+    assert subjects_match("Algebra 1", "Linear Equations") is True
+    assert subjects_match("Algebra 1", "Algebra") is True
+    assert subjects_match("Algebra 1", "Biology") is False
+    assert subjects_match("Algebra 1", "Plant Biology") is False
+
 

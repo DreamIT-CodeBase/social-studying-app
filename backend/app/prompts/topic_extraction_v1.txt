@@ -6,7 +6,7 @@ extract the core discrete topics it covers — the fundamental concepts a studen
 must master to understand this material.
 
 A "topic" is a self-contained concept with a recognizable name (e.g.
-"Photosynthesis", "Quadratic Formula", "Causes of World War I").
+"Linear Equations", "Quadratic Formula", "Causes of World War I").
 
 Output STRICT JSON matching this schema:
 

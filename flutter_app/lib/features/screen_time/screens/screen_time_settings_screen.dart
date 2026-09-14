@@ -1425,6 +1425,38 @@ class _ScreenTimeSettingsScreenState
             trailing:
                 const Icon(Icons.play_arrow_rounded, color: Colors.indigo),
             onTap: () async {
+              if (Platform.isAndroid) {
+                final enabled = await ref
+                    .read(screenTimeNotifierProvider.notifier)
+                    .isAccessibilityServiceEnabled();
+                if (!enabled && mounted) {
+                  final open = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Accessibility Permission Needed'),
+                      content: const Text(
+                        'To automatically block social media apps, please enable the Social Study App in Android Accessibility settings.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancel'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Open Settings'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (open == true) {
+                    await ref
+                        .read(screenTimeNotifierProvider.notifier)
+                        .openAccessibilitySettings();
+                    return;
+                  }
+                }
+              }
               await ref
                   .read(screenTimeNotifierProvider.notifier)
                   .simulateZeroMinutesForTesting();
