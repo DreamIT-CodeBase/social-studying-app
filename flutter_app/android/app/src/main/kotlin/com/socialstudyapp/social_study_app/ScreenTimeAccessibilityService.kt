@@ -62,6 +62,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
     private var breakForegroundPackage: String? = null
     private var topBannerView: View? = null
     private var topBannerDismissRunnable: Runnable? = null
+    private var lastHandledUsageStatsTimestamp = 0L
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -109,6 +110,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
             if (foregroundPackage == packageName) {
                 if (className.contains("MainActivity")) {
                     leaveBlockedApp()
+                    removeTopBannerView()
                 }
                 return
             }
@@ -194,7 +196,8 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
         try {
             stopUsageTracking()
             hideOverlay()
-            removeTopBannerView()
+            // Keep topBannerView visible over the Home screen launcher so the user sees it.
+            // It auto-dismisses after 6.5s, on "✕", or when "Study Now" / MainActivity is opened.
         } catch (_: Throwable) {}
     }
 
@@ -349,7 +352,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
             val endTime = System.currentTimeMillis()
             val events = usageStatsManager.queryEvents(endTime - USAGE_LOOKBACK_MILLIS, endTime) ?: return null
             val event = UsageEvents.Event()
-            var latestTimestamp = Long.MIN_VALUE
+            var latestTimestamp = lastHandledUsageStatsTimestamp
             var latestPackage: String? = null
 
             while (events.hasNextEvent()) {
@@ -357,10 +360,13 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
                 val isForegroundEvent = event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND ||
                     (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
                         event.eventType == UsageEvents.Event.ACTIVITY_RESUMED)
-                if (isForegroundEvent && event.timeStamp >= latestTimestamp) {
+                if (isForegroundEvent && event.timeStamp > latestTimestamp) {
                     latestTimestamp = event.timeStamp
                     latestPackage = event.packageName
                 }
+            }
+            if (latestPackage != null) {
+                lastHandledUsageStatsTimestamp = latestTimestamp
             }
             latestPackage
         } catch (_: Throwable) {
@@ -419,8 +425,9 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
     private fun sendStudySessionNeededNotification(blockedPackage: String) {
         try {
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-            val channelId = "study_session_urgent_top_banner_v10"
+            val channelId = NOTIFICATION_CHANNEL_ID
             val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 var channel = notificationManager.getNotificationChannel(channelId)
@@ -447,6 +454,12 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
                 }
             }
 
+            // CRITICAL: Cancel the prior notification first.
+            // Android SystemUI suppresses Heads-Up drop-down alerts if an unacknowledged
+            // notification for the channel already exists in the shade. Canceling first
+            // guarantees that Android sees this as a fresh, immediate alert every time.
+            notificationManager.cancel(NOTIFICATION_ID_STUDY_NEEDED)
+
             val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 putExtra("action", "unlock_question")
@@ -459,7 +472,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
                 PendingIntent.FLAG_UPDATE_CURRENT
             }
             val contentIntent = launchIntent?.let {
-                PendingIntent.getActivity(applicationContext, (System.currentTimeMillis() % 100000).toInt(), it, pendingFlags)
+                PendingIntent.getActivity(applicationContext, NOTIFICATION_ID_STUDY_NEEDED, it, pendingFlags)
             }
 
             // CRITICAL: Ensure small icon belongs to this application package
@@ -481,6 +494,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
                 .setContentText("To gain access to your app, let’s create a study session.")
                 .setStyle(Notification.BigTextStyle().bigText("To gain access to your app, let’s create a study session."))
                 .setAutoCancel(true)
+                .setOnlyAlertOnce(false)
                 .setSound(soundUri)
                 .setPriority(Notification.PRIORITY_MAX)
                 .setCategory(Notification.CATEGORY_ALARM)
@@ -501,8 +515,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
                 }
             }
 
-            val notificationId = (System.currentTimeMillis() % 100000).toInt() + 1000
-            notificationManager.notify(notificationId, builder.build())
+            notificationManager.notify(NOTIFICATION_ID_STUDY_NEEDED, builder.build())
         } catch (_: Throwable) {}
     }
 
@@ -570,6 +583,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
         topBannerDismissRunnable?.let(handler::removeCallbacks)
         topBannerDismissRunnable = null
 
+        view.animate().cancel()
         view.animate()
             .translationY(-dpToPx(130).toFloat())
             .alpha(0f)
@@ -591,6 +605,7 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
         topBannerDismissRunnable = null
         val view = topBannerView ?: return
         try {
+            view.animate().cancel()
             val wm = windowManager ?: (getSystemService(WINDOW_SERVICE) as? WindowManager)
             wm?.removeView(view)
         } catch (_: Throwable) {}
@@ -1140,6 +1155,8 @@ class ScreenTimeAccessibilityService : AccessibilityService() {
         private const val USAGE_TICK_MILLIS = 1_000L
         private const val FOREGROUND_VERIFY_MILLIS = 1_500L
         private const val USAGE_LOOKBACK_MILLIS = 10_000L
+        private const val NOTIFICATION_ID_STUDY_NEEDED = 8801
+        private const val NOTIFICATION_CHANNEL_ID = "study_session_urgent_top_banner_v12"
 
         private val DEFAULT_BLOCKED_PACKAGES = setOf(
             "com.instagram.android",

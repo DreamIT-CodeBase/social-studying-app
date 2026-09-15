@@ -36,13 +36,19 @@ class _Cursor:
             yield row
 
 
-def _question(question_id: str, body: str, document_id: str = "doc_a", answer: str = "answer") -> Question:
+def _question(
+    question_id: str,
+    body: str,
+    document_id: str = "doc_a",
+    answer: str = "answer",
+    topic: str = "Biology",
+) -> Question:
     return Question(
         **{"_id": question_id},
         tenant_id="ten_test001",
         workspace_id="wsp_a",
         document_id=document_id,
-        topic="Biology",
+        topic=topic,
         question_type=QuestionType.short_answer,
         difficulty=DifficultyLevel.beginner,
         body=body,
@@ -878,27 +884,27 @@ async def test_three_consecutive_sessions_across_topic_have_zero_repetition():
 
     # Session 1 questions: DNA Replication
     s1_questions = [
-        _question("qst_s1_0", "How does DNA polymerase synthesize the leading strand during replication?", document_id="doc_genetics", answer="Continuously 5 to 3"),
-        _question("qst_s1_1", "What role do Okazaki fragments play on the lagging strand?", document_id="doc_genetics", answer="Discontinuous replication segments"),
-        _question("qst_s1_2", "Which enzyme unwinds the double helix at the replication fork?", document_id="doc_genetics", answer="DNA Helicase"),
-        _question("qst_s1_3", "What is the function of topoisomerase during DNA unwinding?", document_id="doc_genetics", answer="Relieves supercoiling strain"),
-        _question("qst_s1_4", "Why is RNA primase required prior to elongation?", document_id="doc_genetics", answer="Supplies free 3 hydroxyl group"),
+        _question("qst_s1_0", "How does DNA polymerase synthesize the leading strand during replication?", document_id="doc_genetics", answer="Continuously 5 to 3", topic="Molecular Genetics"),
+        _question("qst_s1_1", "What role do Okazaki fragments play on the lagging strand?", document_id="doc_genetics", answer="Discontinuous replication segments", topic="Molecular Genetics"),
+        _question("qst_s1_2", "Which enzyme unwinds the double helix at the replication fork?", document_id="doc_genetics", answer="DNA Helicase", topic="Molecular Genetics"),
+        _question("qst_s1_3", "What is the function of topoisomerase during DNA unwinding?", document_id="doc_genetics", answer="Relieves supercoiling strain", topic="Molecular Genetics"),
+        _question("qst_s1_4", "Why is RNA primase required prior to elongation?", document_id="doc_genetics", answer="Supplies free 3 hydroxyl group", topic="Molecular Genetics"),
     ]
     # Session 2 questions: Transcription and RNA Processing
     s2_questions = [
-        _question("qst_s2_0", "Which enzyme synthesizes pre-mRNA from the DNA template?", document_id="doc_genetics", answer="RNA Polymerase II"),
-        _question("qst_s2_1", "What is the promoter consensus sequence recognized in eukaryotic transcription?", document_id="doc_genetics", answer="TATA box"),
-        _question("qst_s2_2", "How does the 5-prime cap structure protect eukaryotic transcripts?", document_id="doc_genetics", answer="Blocks exonuclease degradation"),
-        _question("qst_s2_3", "What complex removes introns and joins exons together?", document_id="doc_genetics", answer="Spliceosome ribonucleoprotein"),
-        _question("qst_s2_4", "What is the role of the polyadenylation tail on messenger RNA?", document_id="doc_genetics", answer="Nuclear export and stability"),
+        _question("qst_s2_0", "Which enzyme synthesizes pre-mRNA from the DNA template?", document_id="doc_genetics", answer="RNA Polymerase II", topic="Molecular Genetics"),
+        _question("qst_s2_1", "What is the promoter consensus sequence recognized in eukaryotic transcription?", document_id="doc_genetics", answer="TATA box", topic="Molecular Genetics"),
+        _question("qst_s2_2", "How does the 5-prime cap structure protect eukaryotic transcripts?", document_id="doc_genetics", answer="Blocks exonuclease degradation", topic="Molecular Genetics"),
+        _question("qst_s2_3", "What complex removes introns and joins exons together?", document_id="doc_genetics", answer="Spliceosome ribonucleoprotein", topic="Molecular Genetics"),
+        _question("qst_s2_4", "What is the role of the polyadenylation tail on messenger RNA?", document_id="doc_genetics", answer="Nuclear export and stability", topic="Molecular Genetics"),
     ]
     # Session 3 questions: Translation and Protein Synthesis
     s3_questions = [
-        _question("qst_s3_0", "How do transfer RNA molecules pair with codons during elongation?", document_id="doc_genetics", answer="Anticodon complementary pairing"),
-        _question("qst_s3_1", "What universal start codon initiates polypeptide chain assembly?", document_id="doc_genetics", answer="AUG codon"),
-        _question("qst_s3_2", "Which ribosomal binding site accepts the incoming aminoacyl-tRNA?", document_id="doc_genetics", answer="The A aminoacyl site"),
-        _question("qst_s3_3", "What protein binds stop codons to terminate translation?", document_id="doc_genetics", answer="Release factor"),
-        _question("qst_s3_4", "How do molecular chaperones assist newly synthesized proteins?", document_id="doc_genetics", answer="Proper tertiary folding"),
+        _question("qst_s3_0", "How do transfer RNA molecules pair with codons during elongation?", document_id="doc_genetics", answer="Anticodon complementary pairing", topic="Molecular Genetics"),
+        _question("qst_s3_1", "What universal start codon initiates polypeptide chain assembly?", document_id="doc_genetics", answer="AUG codon", topic="Molecular Genetics"),
+        _question("qst_s3_2", "Which ribosomal binding site accepts the incoming aminoacyl-tRNA?", document_id="doc_genetics", answer="The A aminoacyl site", topic="Molecular Genetics"),
+        _question("qst_s3_3", "What protein binds stop codons to terminate translation?", document_id="doc_genetics", answer="Release factor", topic="Molecular Genetics"),
+        _question("qst_s3_4", "How do molecular chaperones assist newly synthesized proteins?", document_id="doc_genetics", answer="Proper tertiary folding", topic="Molecular Genetics"),
     ]
 
     # --- Session 1 ---
@@ -993,8 +999,8 @@ async def test_semantic_rephrased_duplicate_rejected_across_sessions():
     past_sig = _question_fingerprint(past_body)
 
     # Candidate batch from LLM: 1 reworded duplicate and 1 fresh question
-    cand_dup = _question("qst_dup", "Which of the following best describes the function of ribosomes in living cells?", document_id="doc_cell")
-    cand_fresh = _question("qst_fresh", "What is the role of the Golgi apparatus in protein modification?", document_id="doc_cell")
+    cand_dup = _question("qst_dup", "Which of the following best describes the function of ribosomes in living cells?", document_id="doc_cell", topic="Cell Biology")
+    cand_fresh = _question("qst_fresh", "What is the role of the Golgi apparatus in protein modification?", document_id="doc_cell", topic="Cell Biology")
 
     queue_empty = MagicMock()
     queue_empty.find.return_value = _Cursor([])
@@ -1095,6 +1101,92 @@ async def test_strict_topic_purity_never_mixes_unrelated_topics():
     # Must only contain Cellular Respiration questions; Photosynthesis is excluded
     assert all("qst_photo" not in q.id for q in prepared)
     assert {q.id for q in prepared} == {"qst_resp1", "qst_resp2"}
+
+
+@pytest.mark.asyncio
+async def test_self_study_selected_topic_never_injects_dummy_fallback_questions():
+    """When a topic is selected in self-study workspace, NEVER inject dummy math or study habit questions."""
+    student = make_user(user_id="stu_bio2", role=UserRole.student, workspace_ids=["wsp_self_test"])
+    sources = CurrentStudySources(
+        document_ids=frozenset({"doc_bio"}),
+        topic_names=("Cellular Respiration",),
+    )
+
+    queue_empty = MagicMock()
+    queue_empty.find.return_value = _Cursor([])
+
+    with (
+        patch("app.api.adaptive_sessions._history", AsyncMock(return_value=([], {}))),
+        patch("app.api.adaptive_sessions._reserved_questions", AsyncMock(return_value=(set(), set()))),
+        patch("app.api.adaptive_sessions._question_session_history", AsyncMock(return_value=(set(), set(), []))),
+        patch("app.api.adaptive_sessions.get_collection", return_value=queue_empty),
+        patch("app.api.adaptive_sessions.study_sources.current_study_sources", AsyncMock(return_value=sources)),
+        patch("app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch", AsyncMock(return_value=[])),
+    ):
+        prepared = await _prepare_questions(
+            user=student,
+            workspace_id="wsp_self_test",
+            target=5,
+            level=AdaptiveLevel.beginner,
+            revision=False,
+            subcategory="Cellular Respiration",
+        )
+
+    # Must only contain questions matching the chosen topic; NEVER dummy math or study habit questions
+    assert len(prepared) > 0
+    assert all(q.topic == "Cellular Respiration" for q in prepared)
+    assert not any("3x +" in q.body or "Linear Equations" in q.topic or "active recall" in q.body.lower() for q in prepared)
+
+
+@pytest.mark.asyncio
+async def test_generated_unrelated_topic_questions_strictly_rejected_when_subcategory_selected():
+    """If LLM generation hallucinates questions from unrelated topics, they must be rejected."""
+    student = make_user(user_id="stu_bio3", role=UserRole.student, workspace_ids=["wsp_self_test"])
+    sources = CurrentStudySources(
+        document_ids=frozenset({"doc_bio"}),
+        topic_names=("Cellular Respiration", "Linear Algebra"),
+    )
+
+    # LLM produced 1 matching question and 1 completely unrelated question from another part of document
+    q_matching = _question(
+        "qst_match",
+        "What is the role of NADH in oxidative phosphorylation?",
+        document_id="doc_bio",
+        answer="Electron donor",
+        topic="Cellular Respiration",
+    )
+    q_unrelated = _question(
+        "qst_unrelated",
+        "Solve for x: 3x + 12 = 36",
+        document_id="doc_bio",
+        answer="8",
+        topic="Linear Algebra",
+    )
+
+    queue_empty = MagicMock()
+    queue_empty.find.return_value = _Cursor([])
+
+    with (
+        patch("app.api.adaptive_sessions._history", AsyncMock(return_value=([], {}))),
+        patch("app.api.adaptive_sessions._reserved_questions", AsyncMock(return_value=(set(), set()))),
+        patch("app.api.adaptive_sessions._question_session_history", AsyncMock(return_value=(set(), set(), []))),
+        patch("app.api.adaptive_sessions.get_collection", return_value=queue_empty),
+        patch("app.api.adaptive_sessions.study_sources.current_study_sources", AsyncMock(return_value=sources)),
+        patch("app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch", AsyncMock(return_value=[q_matching, q_unrelated])),
+    ):
+        prepared = await _prepare_questions(
+            user=student,
+            workspace_id="wsp_self_test",
+            target=5,
+            level=AdaptiveLevel.beginner,
+            revision=False,
+            subcategory="Cellular Respiration",
+        )
+
+    # Unrelated question must be dropped; only the question matching the chosen subcategory is kept
+    assert len(prepared) == 1
+    assert prepared[0].id == "qst_match"
+
 
 
 

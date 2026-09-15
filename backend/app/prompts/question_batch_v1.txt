@@ -92,6 +92,10 @@ Deduplication & Diversity Mandate:
 - If the material contains a list of exercises or equations, choose a DIFFERENT exercise for each question.
 - Do NOT repeat any question or equation that appears in 'Previously served question stems'.
 
+Topic Purity Mandate:
+- STRICT TOPIC RELEVANCE: Every question must focus directly and exclusively on the assigned topic: '{{topic}}'.
+- Do NOT generate questions about other unrelated subjects, topics, or chapters that happen to appear in other parts of the document. Every question, option, answer, and explanation must directly test knowledge of '{{topic}}'. Never inject generic filler questions or questions out of nowhere.
+
 [USER]
 Generate {{count}} diverse questions on the topic: {{topic}}
 Difficulty: {{difficulty}}

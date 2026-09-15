@@ -412,25 +412,41 @@ extension DeviceActivityEvent.Name {
   // MARK: - Helpers
 
   @objc func sendExhaustedNotification() {
+    let center = UNUserNotificationCenter.current()
+    let identifier = "ai.socialstudying.screentime.exhausted"
+
+    // 1. Clear any prior delivered and pending notifications so iOS doesn't group/suppress
+    center.removeDeliveredNotifications(withIdentifiers: [identifier])
+    center.removePendingNotificationRequests(withIdentifiers: [identifier])
+
+    // 2. Build high-priority alert content
     let content = UNMutableNotificationContent()
     content.title = "Study Session Needed"
     content.body = "To gain access to your app, let’s create a study session."
     content.sound = .default
+    content.categoryIdentifier = "STUDY_SESSION_NEEDED_CATEGORY"
+    content.userInfo = [
+      "action": "unlock_question",
+      "source": "app_shield"
+    ]
     if #available(iOS 15.0, *) {
       content.interruptionLevel = .timeSensitive
+      content.relevanceScore = 1.0
     }
 
+    // 3. Fire immediately (0.1s)
     let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
     let request = UNNotificationRequest(
-      identifier: "ai.socialstudying.screentime.exhausted.\(UUID().uuidString)",
+      identifier: identifier,
       content: content,
       trigger: trigger
     )
-    UNUserNotificationCenter.current().add(request) { error in
+
+    center.add(request) { error in
       if let error = error {
         NSLog("[ScreenTimeManager] Failed to schedule notification: %@", error.localizedDescription)
       } else {
-        NSLog("[ScreenTimeManager] Exhausted notification scheduled successfully")
+        NSLog("[ScreenTimeManager] Exhausted notification scheduled successfully with identifier=%@", identifier)
       }
     }
   }

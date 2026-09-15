@@ -708,19 +708,24 @@ async def _prepare_questions(
 
             available = [q for q in available if matches_subject(q)]
 
-        if subcategory:
-            subcat_clean = subcategory.strip().casefold()
-            sub_terms = set(re.findall(r"[a-z0-9]+", subcat_clean))
+    def matches_subcat(q: Question) -> bool:
+        if not subcategory:
+            return True
+        subcat_clean = subcategory.strip().casefold()
+        q_top = q.topic.strip().casefold()
+        if subcat_clean in q_top or q_top in subcat_clean:
+            return True
+        sub_terms = set(re.findall(r"[a-z0-9]+", subcat_clean))
+        q_terms = set(re.findall(r"[a-z0-9]+", q_top))
+        if bool(sub_terms and len(sub_terms & q_terms) >= max(1, len(sub_terms) // 2)):
+            return True
+        if any(subcat_clean in dt or dt in subcat_clean for dt in doc_subcats.get(q.document_id, set())):
+            return True
+        body_terms = set(re.findall(r"[a-z0-9]+", q.body.casefold()))
+        return bool(sub_terms and len(sub_terms & body_terms) >= max(1, len(sub_terms) // 2))
 
-            def matches_subcat(q: Question) -> bool:
-                q_top = q.topic.strip().casefold()
-                if subcat_clean in q_top or q_top in subcat_clean:
-                    return True
-                q_terms = set(re.findall(r"[a-z0-9]+", q_top))
-                return bool(sub_terms and len(sub_terms & q_terms) >= max(1, len(sub_terms) // 2))
-
-            subcat_matched = [q for q in available if matches_subcat(q)]
-            available = subcat_matched
+    if subcategory:
+        available = [q for q in available if matches_subcat(q)]
 
     if question_type:
         available = [q for q in available if q.question_type == question_type]
@@ -797,11 +802,12 @@ async def _prepare_questions(
                 timeout=gen_timeout,
             )
             if not revision:
-                # Filter strictly for historical uniqueness — reject duplicates in any form
+                # Filter strictly for historical uniqueness AND topic purity — reject duplicates in any form
                 generated = [
                     question
                     for question in generated
                     if question.document_id in current_sources.document_ids
+                    and (not subcategory or matches_subcat(question))
                     and question.id not in seen_ids
                     and question.id not in reserved_ids
                     and canonical_question_signature(question.body) not in seen_fingerprints
@@ -815,6 +821,8 @@ async def _prepare_questions(
             else:
                 if question_type:
                     generated = [q for q in generated if q.question_type == question_type]
+                if subcategory:
+                    generated = [q for q in generated if matches_subcat(q)]
             selected = _unique_questions([*selected, *generated])[:target]
             # If after generation we still have missing slots and the workspace is self-study,
             # do an eager top-up generation pass so the session has as many distinct questions as needed
@@ -839,6 +847,7 @@ async def _prepare_questions(
                     topup_clean = [
                         q for q in topup_generated
                         if q.document_id in current_sources.document_ids
+                        and (not subcategory or matches_subcat(q))
                         and q.id not in seen_ids
                         and q.id not in reserved_ids
                         and canonical_question_signature(q.body) not in seen_fingerprints
@@ -855,6 +864,10 @@ async def _prepare_questions(
             logger.info("Synchronous question generation timed out; serving fast available questions")
         except Exception:
             logger.exception("Adaptive session batch generation failed")
+
+    # Strict topic purity safeguard: ensure NO question outside the subcategory leaks in
+    if subcategory:
+        selected = [q for q in selected if matches_subcat(q)]
 
     # If fresh questions and generation could not fill the session target,
     # recycle previously answered questions ONLY in revision mode.
@@ -884,10 +897,10 @@ async def _prepare_questions(
                 subcategory=subcategory,
                 question_type=question_type,
             )
-            return fb_plan.questions[:target]
+            selected = fb_plan.questions[:target]
 
     return [
-        _prepare_question_with_shuffled_options(question)
+        question if isinstance(question, PreparedQuestion) else _prepare_question_with_shuffled_options(question)
         for question in selected
     ][:target]
 
@@ -1653,6 +1666,9 @@ def _build_guaranteed_fallback_plan(
                     explanation="Connecting related concepts reinforces conceptual schemas in memory.",
                 ),
             ]
+        if subcategory:
+            for f in flashcards:
+                f.topic = subcategory.strip()
         questions = []
         item_count = len(flashcards)
     else:
@@ -2404,6 +2420,9 @@ def _build_guaranteed_fallback_plan(
 
         # Always shuffle MCQ options so the correct answer key is randomized (never always 'A')
         questions = [_shuffle_prepared_mcq_options(q) for q in questions]
+        if subcategory:
+            for q in questions:
+                q.topic = subcategory.strip()
         flashcards = []
         item_count = len(questions)
 
@@ -2852,6 +2871,15 @@ async def prepare_adaptive_session(
     except Exception as exc:
         if isinstance(exc, (ForbiddenError, NotFoundError, ConflictError)):
             raise
+        if request.subcategory or _is_self_study(workspace_id):
+            logger.exception("Adaptive session prepare error for topic=%s; returning exhausted plan", request.subcategory)
+            return _build_exhausted_plan(
+                mode=request.mode,
+                level=level,
+                mastery=mastery,
+                subject=request.subject,
+                subcategory=request.subcategory,
+            )
         logger.exception("Adaptive session prepare error; generating guaranteed plan in one go")
         plan = _build_guaranteed_fallback_plan(
             workspace_id=workspace_id,
@@ -2879,7 +2907,7 @@ async def prepare_adaptive_session(
     item_count = len(flashcards if request.mode == AdaptiveSessionMode.flashcard else questions)
 
     if item_count == 0:
-        if capped and used > 0:
+        if capped or request.subcategory or _is_self_study(workspace_id):
             return _build_exhausted_plan(
                 mode=request.mode,
                 level=level,

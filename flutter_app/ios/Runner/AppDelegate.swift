@@ -8,15 +8,70 @@ import FamilyControls
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  private var screenTimeChannel: FlutterMethodChannel?
+  private var pendingUnlockRequest: [String: Any]?
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     if #available(iOS 10.0, *) {
       UNUserNotificationCenter.current().delegate = self
+      setupNotificationCategories()
     }
     application.registerForRemoteNotifications()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  private func setupNotificationCategories() {
+    let studyAction = UNNotificationAction(
+      identifier: "STUDY_NOW_ACTION",
+      title: "Study Now ➔",
+      options: [.foreground]
+    )
+    let category = UNNotificationCategory(
+      identifier: "STUDY_SESSION_NEEDED_CATEGORY",
+      actions: [studyAction],
+      intentIdentifiers: [],
+      options: []
+    )
+    UNUserNotificationCenter.current().setNotificationCategories([category])
+  }
+
+  // Ensure notification banners drop down from the top even if the app is active
+  override func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    if #available(iOS 14.0, *) {
+      completionHandler([.banner, .list, .sound, .badge])
+    } else {
+      completionHandler([.alert, .sound, .badge])
+    }
+  }
+
+  // Handle user tapping the notification banner or the "Study Now ➔" button
+  override func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    let userInfo = response.notification.request.content.userInfo
+    let action = userInfo["action"] as? String
+    if action == "unlock_question" || response.actionIdentifier == "STUDY_NOW_ACTION" || response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+      let payload: [String: Any] = [
+        "package": userInfo["package"] as? String ?? "",
+        "source": "app_shield",
+        "action": "unlock_question"
+      ]
+      if let channel = screenTimeChannel {
+        channel.invokeMethod("onUnlockQuestionRequested", arguments: payload)
+      } else {
+        pendingUnlockRequest = payload
+      }
+    }
+    completionHandler()
   }
 
   // Re-apply shields every time the app comes to the foreground.
@@ -64,12 +119,19 @@ import FamilyControls
     }
 
     // ── Screen Time ───────────────────────────────────────────────────────────
-    let screenTimeChannel = FlutterMethodChannel(
+    let channel = FlutterMethodChannel(
       name: "com.socialstudyapp.app/screen_time",
       binaryMessenger: engineBridge.applicationRegistrar.messenger()
     )
-    screenTimeChannel.setMethodCallHandler { call, result in
+    screenTimeChannel = channel
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self = self else { return }
       switch call.method {
+
+      case "getPendingUnlockRequest":
+        let req = self.pendingUnlockRequest
+        self.pendingUnlockRequest = nil
+        result(req)
 
       // ── Authorization ──────────────────────────────────────────────────────
       case "isScreenTimeAuthorized":

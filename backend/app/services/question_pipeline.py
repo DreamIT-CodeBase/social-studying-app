@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Sequence
 from typing import Any
 from uuid import uuid4
@@ -556,6 +557,16 @@ async def _generate_topic_batch(
             matching_chunks = [
                 chunk for chunk in retrieved.chunks if chunk.document_id in effective_doc_ids
             ]
+            topic_terms = set(re.findall(r"[a-z0-9]+", candidate.topic_name.casefold())) - {
+                "in", "of", "and", "the", "to", "a", "an", "for", "on", "with", "is", "concepts", "fundamentals", "basics", "study"
+            }
+            if topic_terms and matching_chunks:
+                matching_chunks.sort(
+                    key=lambda c: (
+                        -len(topic_terms & set(re.findall(r"[a-z0-9]+", c.text.casefold()))),
+                        c.chunk_index,
+                    )
+                )
             if len(matching_chunks) > 8:
                 chunk_offset = (len(seen_bodies) * 2) % len(matching_chunks)
                 rotated = matching_chunks[chunk_offset:] + matching_chunks[:chunk_offset]
@@ -575,6 +586,16 @@ async def _generate_topic_batch(
                 }
             )
             rows = await cosmos_retry(lambda: cursor.to_list(length=200))
+            topic_terms = set(re.findall(r"[a-z0-9]+", candidate.topic_name.casefold())) - {
+                "in", "of", "and", "the", "to", "a", "an", "for", "on", "with", "is", "concepts", "fundamentals", "basics", "study"
+            }
+            if topic_terms:
+                rows.sort(
+                    key=lambda row: (
+                        -len(topic_terms & set(re.findall(r"[a-z0-9]+", str(row.get("text", "")).casefold()))),
+                        int(row.get("chunk_index", 0)),
+                    )
+                )
             parsed_chunks = [
                 RetrievedChunk(
                     chunk_id=str(r["_id"]),
