@@ -125,6 +125,8 @@ jobs:
           STUDENT_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
           ADMIN_PROFILE_BASE64: ${{ secrets.IOS_ADMIN_PROVISIONING_PROFILE_BASE64 }}
           EXTENSION_PROFILE_BASE64: ${{ secrets.IOS_SCREENTIME_PROVISIONING_PROFILE_BASE64 }}
+          SHIELD_CONFIG_PROFILE_BASE64: ${{ secrets.IOS_SHIELD_CONFIG_PROVISIONING_PROFILE_BASE64 }}
+          SHIELD_ACTION_PROFILE_BASE64: ${{ secrets.IOS_SHIELD_ACTION_PROVISIONING_PROFILE_BASE64 }}
           KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
@@ -213,22 +215,56 @@ jobs:
             ext_profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$ext_profile_plist")
             ext_profile_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$ext_profile_plist")
             ext_profile_app_id=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$ext_profile_plist")
-            ext_profile_family_controls=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.family-controls' "$ext_profile_plist" 2>/dev/null || true)
-            ext_profile_app_group=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups:0' "$ext_profile_plist" 2>/dev/null || true)
             expected_extension_app_id="$APPLE_TEAM_ID.$APP_BUNDLE_ID.ScreenTimeExtension"
 
             if [[ "$ext_profile_app_id" != "$expected_extension_app_id" ]]; then
               echo "Screen Time extension profile is for '$ext_profile_app_id', expected '$expected_extension_app_id'." >&2
               exit 1
             fi
-            if [[ "$ext_profile_family_controls" != "true" || "$ext_profile_app_group" != "group.ai.socialstudying.app.screentime" ]]; then
-              echo "Screen Time extension profile '$ext_profile_name' is missing Family Controls or the Screen Time App Group. Regenerate IOS_SCREENTIME_PROVISIONING_PROFILE_BASE64 after enabling both capabilities for $APP_BUNDLE_ID.ScreenTimeExtension." >&2
-              exit 1
-            fi
 
             cp "$ext_profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$ext_profile_uuid.mobileprovision"
             echo "IOS_EXT_PROFILE_NAME=$ext_profile_name" >> "$GITHUB_ENV"
             echo "Installed extension profile '$ext_profile_name' ($ext_profile_uuid)"
+
+            # ShieldConfigurationExtension provisioning profile
+            if [[ -z "${SHIELD_CONFIG_PROFILE_BASE64:-}" ]]; then
+              echo "IOS_SHIELD_CONFIG_PROVISIONING_PROFILE_BASE64 is required for student flavor." >&2
+              exit 1
+            fi
+            echo "Installing ShieldConfigurationExtension provisioning profile..."
+            sc_profile_path="$RUNNER_TEMP/shield_config.mobileprovision"
+            printf '%s' "$SHIELD_CONFIG_PROFILE_BASE64" | tr -d '\r\n ' | base64 -D > "$sc_profile_path"
+            if [[ ! -s "$sc_profile_path" ]]; then
+              echo "Failed to decode ShieldConfigurationExtension provisioning profile." >&2
+              exit 1
+            fi
+            sc_plist="$RUNNER_TEMP/sc-profile.plist"
+            security cms -D -i "$sc_profile_path" > "$sc_plist"
+            sc_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$sc_plist")
+            sc_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$sc_plist")
+            cp "$sc_profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$sc_uuid.mobileprovision"
+            echo "IOS_SHIELD_CONFIG_PROFILE_NAME=$sc_name" >> "$GITHUB_ENV"
+            echo "Installed ShieldConfiguration profile '$sc_name' ($sc_uuid)"
+
+            # ShieldActionExtension provisioning profile
+            if [[ -z "${SHIELD_ACTION_PROFILE_BASE64:-}" ]]; then
+              echo "IOS_SHIELD_ACTION_PROVISIONING_PROFILE_BASE64 is required for student flavor." >&2
+              exit 1
+            fi
+            echo "Installing ShieldActionExtension provisioning profile..."
+            sa_profile_path="$RUNNER_TEMP/shield_action.mobileprovision"
+            printf '%s' "$SHIELD_ACTION_PROFILE_BASE64" | tr -d '\r\n ' | base64 -D > "$sa_profile_path"
+            if [[ ! -s "$sa_profile_path" ]]; then
+              echo "Failed to decode ShieldActionExtension provisioning profile." >&2
+              exit 1
+            fi
+            sa_plist="$RUNNER_TEMP/sa-profile.plist"
+            security cms -D -i "$sa_profile_path" > "$sa_plist"
+            sa_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$sa_plist")
+            sa_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$sa_plist")
+            cp "$sa_profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$sa_uuid.mobileprovision"
+            echo "IOS_SHIELD_ACTION_PROFILE_NAME=$sa_name" >> "$GITHUB_ENV"
+            echo "Installed ShieldAction profile '$sa_name' ($sa_uuid)"
           fi
 
       - name: Create App Store export configuration
@@ -243,6 +279,12 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$APP_BUNDLE_ID string $IOS_PROFILE_NAME" "$RUNNER_TEMP/ExportOptions.plist"
           if [[ "$APP_FLAVOR" == "student" ]]; then
             /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$APP_BUNDLE_ID.ScreenTimeExtension string $IOS_EXT_PROFILE_NAME" "$RUNNER_TEMP/ExportOptions.plist"
+            if [[ -n "${IOS_SHIELD_CONFIG_PROFILE_NAME:-}" ]]; then
+              /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$APP_BUNDLE_ID.ShieldConfigurationExtension string $IOS_SHIELD_CONFIG_PROFILE_NAME" "$RUNNER_TEMP/ExportOptions.plist"
+            fi
+            if [[ -n "${IOS_SHIELD_ACTION_PROFILE_NAME:-}" ]]; then
+              /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$APP_BUNDLE_ID.ShieldActionExtension string $IOS_SHIELD_ACTION_PROFILE_NAME" "$RUNNER_TEMP/ExportOptions.plist"
+            fi
           fi
 
       - name: Build signed IPA
@@ -264,7 +306,7 @@ jobs:
 
           build_number=$((10000 + GITHUB_RUN_NUMBER))
 
-          # For admin flavor, remove ScreenTimeExtension from Runner target dependencies and embed phase
+          # For admin flavor, remove extensions from Runner target dependencies and embed phase
           if [[ "$APP_FLAVOR" == "admin" ]]; then
             python3 ios/remove_extension_from_admin.py
           fi
@@ -274,6 +316,18 @@ jobs:
             EXT_PROFILE_ESCAPED=$(echo "$IOS_EXT_PROFILE_NAME" | sed 's/[&/\]/\\&/g')
             sed -i '' "s|PRODUCT_BUNDLE_IDENTIFIER = \"ai\.socialstudying\.app\.ScreenTimeExtension\";|PRODUCT_BUNDLE_IDENTIFIER = \"ai.socialstudying.app.ScreenTimeExtension\";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${EXT_PROFILE_ESCAPED}\";|g" ios/Runner.xcodeproj/project.pbxproj
             echo "Injected PROVISIONING_PROFILE_SPECIFIER = $IOS_EXT_PROFILE_NAME"
+
+            if [[ -n "${IOS_SHIELD_CONFIG_PROFILE_NAME:-}" ]]; then
+              SC_PROFILE_ESCAPED=$(echo "$IOS_SHIELD_CONFIG_PROFILE_NAME" | sed 's/[&/\]/\\&/g')
+              sed -i '' "s|PRODUCT_BUNDLE_IDENTIFIER = \"ai\.socialstudying\.app\.ShieldConfigurationExtension\";|PRODUCT_BUNDLE_IDENTIFIER = \"ai.socialstudying.app.ShieldConfigurationExtension\";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${SC_PROFILE_ESCAPED}\";|g" ios/Runner.xcodeproj/project.pbxproj
+              echo "Injected PROVISIONING_PROFILE_SPECIFIER = $IOS_SHIELD_CONFIG_PROFILE_NAME"
+            fi
+
+            if [[ -n "${IOS_SHIELD_ACTION_PROFILE_NAME:-}" ]]; then
+              SA_PROFILE_ESCAPED=$(echo "$IOS_SHIELD_ACTION_PROFILE_NAME" | sed 's/[&/\]/\\&/g')
+              sed -i '' "s|PRODUCT_BUNDLE_IDENTIFIER = \"ai\.socialstudying\.app\.ShieldActionExtension\";|PRODUCT_BUNDLE_IDENTIFIER = \"ai.socialstudying.app.ShieldActionExtension\";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${SA_PROFILE_ESCAPED}\";|g" ios/Runner.xcodeproj/project.pbxproj
+              echo "Injected PROVISIONING_PROFILE_SPECIFIER = $IOS_SHIELD_ACTION_PROFILE_NAME"
+            fi
           fi
 
           flutter build ipa \

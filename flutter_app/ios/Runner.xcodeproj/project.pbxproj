@@ -21,6 +21,10 @@
 		ST1000000000000000000001 /* ScreenTimeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = ST2000000000000000000001 /* ScreenTimeManager.swift */; };
 		STX10000000000000000001 /* ScreenTimeExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = STX20000000000000000001 /* ScreenTimeExtensionHandler.swift */; };
 		STX10000000000000000002 /* ScreenTimeExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = STX30000000000000000001 /* ScreenTimeExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		SCX10000000000000000001 /* ShieldConfigurationExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = SCX20000000000000000001 /* ShieldConfigurationExtension.swift */; };
+		SCX10000000000000000002 /* ShieldConfigurationExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = SCX30000000000000000001 /* ShieldConfigurationExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		SAX10000000000000000001 /* ShieldActionExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = SAX20000000000000000001 /* ShieldActionExtensionHandler.swift */; };
+		SAX10000000000000000002 /* ShieldActionExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = SAX30000000000000000001 /* ShieldActionExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -37,6 +41,20 @@
 			proxyType = 1;
 			remoteGlobalIDString = STX60000000000000000001;
 			remoteInfo = ScreenTimeExtension;
+		};
+		SCXC0000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = SCX60000000000000000001;
+			remoteInfo = ShieldConfigurationExtension;
+		};
+		SAXC0000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = SAX60000000000000000001;
+			remoteInfo = ShieldActionExtension;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -58,6 +76,8 @@
 			dstSubfolderSpec = 13;
 			files = (
 				STX10000000000000000002 /* ScreenTimeExtension.appex in Embed App Extensions */,
+				SCX10000000000000000002 /* ShieldConfigurationExtension.appex in Embed App Extensions */,
+				SAX10000000000000000002 /* ShieldActionExtension.appex in Embed App Extensions */,
 			);
 			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -113,6 +133,14 @@
 		STX20000000000000000002 /* ScreenTimeExtension-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info.plist"; sourceTree = "<group>"; };
 		STX20000000000000000003 /* ScreenTimeExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "ScreenTimeExtension.entitlements"; sourceTree = "<group>"; };
 		STX30000000000000000001 /* ScreenTimeExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ScreenTimeExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		SCX20000000000000000001 /* ShieldConfigurationExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShieldConfigurationExtension.swift; sourceTree = "<group>"; };
+		SCX20000000000000000002 /* ShieldConfigurationExtension-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info.plist"; sourceTree = "<group>"; };
+		SCX20000000000000000003 /* ShieldConfigurationExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "ShieldConfigurationExtension.entitlements"; sourceTree = "<group>"; };
+		SCX30000000000000000001 /* ShieldConfigurationExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShieldConfigurationExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		SAX20000000000000000001 /* ShieldActionExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShieldActionExtensionHandler.swift; sourceTree = "<group>"; };
+		SAX20000000000000000002 /* ShieldActionExtension-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info.plist"; sourceTree = "<group>"; };
+		SAX20000000000000000003 /* ShieldActionExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "ShieldActionExtension.entitlements"; sourceTree = "<group>"; };
+		SAX30000000000000000001 /* ShieldActionExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShieldActionExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -200,6 +228,8 @@
 				9740EEB11CF90186004384FC /* Flutter */,
 				97C146F01CF9000F007C117D /* Runner */,
 				STX40000000000000000001 /* ScreenTimeExtension */,
+				SCX40000000000000000001 /* ShieldConfigurationExtension */,
+				SAX40000000000000000001 /* ShieldActionExtension */,
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
 				4C551010189F807FE7492BD8 /* Pods */,
@@ -213,8 +243,30 @@
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
 				STX30000000000000000001 /* ScreenTimeExtension.appex */,
+				SCX30000000000000000001 /* ShieldConfigurationExtension.appex */,
+				SAX30000000000000000001 /* ShieldActionExtension.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		SCX40000000000000000001 /* ShieldConfigurationExtension */ = {
+			isa = PBXGroup;
+			children = (
+				SCX20000000000000000001 /* ShieldConfigurationExtension.swift */,
+				SCX20000000000000000002 /* ShieldConfigurationExtension-Info.plist */,
+				SCX20000000000000000003 /* ShieldConfigurationExtension.entitlements */,
+			);
+			path = ShieldConfigurationExtension;
+			sourceTree = "<group>";
+		};
+		SAX40000000000000000001 /* ShieldActionExtension */ = {
+			isa = PBXGroup;
+			children = (
+				SAX20000000000000000001 /* ShieldActionExtensionHandler.swift */,
+				SAX20000000000000000002 /* ShieldActionExtension-Info.plist */,
+				SAX20000000000000000003 /* ShieldActionExtension.entitlements */,
+			);
+			path = ShieldActionExtension;
 			sourceTree = "<group>";
 		};
 		STX40000000000000000001 /* ScreenTimeExtension */ = {
@@ -286,6 +338,8 @@
 			);
 			dependencies = (
 				STXD0000000000000000001 /* PBXTargetDependency */,
+				SCXD0000000000000000001 /* PBXTargetDependency */,
+				SAXD0000000000000000001 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			productName = Runner;
@@ -309,6 +363,40 @@
 			productReference = STX30000000000000000001 /* ScreenTimeExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		SCX60000000000000000001 /* ShieldConfigurationExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = SCX70000000000000000001 /* Build configuration list for PBXNativeTarget "ShieldConfigurationExtension" */;
+			buildPhases = (
+				SCX80000000000000000001 /* Sources */,
+				SCX80000000000000000002 /* Frameworks */,
+				SCX80000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ShieldConfigurationExtension;
+			productName = ShieldConfigurationExtension;
+			productReference = SCX30000000000000000001 /* ShieldConfigurationExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		SAX60000000000000000001 /* ShieldActionExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = SAX70000000000000000001 /* Build configuration list for PBXNativeTarget "ShieldActionExtension" */;
+			buildPhases = (
+				SAX80000000000000000001 /* Sources */,
+				SAX80000000000000000002 /* Frameworks */,
+				SAX80000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ShieldActionExtension;
+			productName = ShieldActionExtension;
+			productReference = SAX30000000000000000001 /* ShieldActionExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -326,6 +414,16 @@
 					97C146ED1CF9000F007C117D = {
 						CreatedOnToolsVersion = 7.3.1;
 						LastSwiftMigration = 1100;
+					};
+					SCX60000000000000000001 = {
+						CreatedOnToolsVersion = 15.0;
+						DevelopmentTeam = B7BJ5HC53B;
+						ProvisioningStyle = Manual;
+					};
+					SAX60000000000000000001 = {
+						CreatedOnToolsVersion = 15.0;
+						DevelopmentTeam = B7BJ5HC53B;
+						ProvisioningStyle = Manual;
 					};
 					STX60000000000000000001 = {
 						CreatedOnToolsVersion = 15.0;
@@ -348,6 +446,8 @@
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
 				STX60000000000000000001 /* ScreenTimeExtension */,
+				SCX60000000000000000001 /* ShieldConfigurationExtension */,
+				SAX60000000000000000001 /* ShieldActionExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -528,6 +628,50 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		SCX80000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				SCX10000000000000000001 /* ShieldConfigurationExtension.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		SCX80000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		SCX80000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		SAX80000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				SAX10000000000000000001 /* ShieldActionExtensionHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		SAX80000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		SAX80000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -540,6 +684,16 @@
 			isa = PBXTargetDependency;
 			target = STX60000000000000000001 /* ScreenTimeExtension */;
 			targetProxy = STXC0000000000000000001 /* PBXContainerItemProxy */;
+		};
+		SCXD0000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = SCX60000000000000000001 /* ShieldConfigurationExtension */;
+			targetProxy = SCXC0000000000000000001 /* PBXContainerItemProxy */;
+		};
+		SAXD0000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = SAX60000000000000000001 /* ShieldActionExtension */;
+			targetProxy = SAXC0000000000000000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1349,6 +1503,444 @@
 			};
 			name = Profile;
 		};
+		SCX90000000000000000001 /* Debug-student */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_ENTITLEMENTS = ShieldConfigurationExtension/ShieldConfigurationExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldConfigurationExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldConfigurationExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Debug-student";
+		};
+		SCX90000000000000000002 /* Release-student */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_ENTITLEMENTS = ShieldConfigurationExtension/ShieldConfigurationExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldConfigurationExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldConfigurationExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Release-student";
+		};
+		SCX90000000000000000003 /* Profile-student */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_ENTITLEMENTS = ShieldConfigurationExtension/ShieldConfigurationExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldConfigurationExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldConfigurationExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Profile-student";
+		};
+		SCXA0000000000000000001 /* Debug-admin */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShieldConfigurationExtension/ShieldConfigurationExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldConfigurationExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldConfigurationExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Debug-admin";
+		};
+		SCXA0000000000000000002 /* Release-admin */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShieldConfigurationExtension/ShieldConfigurationExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldConfigurationExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldConfigurationExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Release-admin";
+		};
+		SCXA0000000000000000003 /* Profile-admin */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShieldConfigurationExtension/ShieldConfigurationExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldConfigurationExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldConfigurationExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Profile-admin";
+		};
+		SCXB0000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_ENTITLEMENTS = ShieldConfigurationExtension/ShieldConfigurationExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldConfigurationExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldConfigurationExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		SCXB0000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_ENTITLEMENTS = ShieldConfigurationExtension/ShieldConfigurationExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldConfigurationExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldConfigurationExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		SCXB0000000000000000003 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_ENTITLEMENTS = ShieldConfigurationExtension/ShieldConfigurationExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldConfigurationExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldConfigurationExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Profile;
+		};
+		SAX90000000000000000001 /* Debug-student */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_ENTITLEMENTS = ShieldActionExtension/ShieldActionExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldActionExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldActionExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Debug-student";
+		};
+		SAX90000000000000000002 /* Release-student */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_ENTITLEMENTS = ShieldActionExtension/ShieldActionExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldActionExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldActionExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Release-student";
+		};
+		SAX90000000000000000003 /* Profile-student */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_ENTITLEMENTS = ShieldActionExtension/ShieldActionExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldActionExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldActionExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Profile-student";
+		};
+		SAXA0000000000000000001 /* Debug-admin */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShieldActionExtension/ShieldActionExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldActionExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldActionExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Debug-admin";
+		};
+		SAXA0000000000000000002 /* Release-admin */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShieldActionExtension/ShieldActionExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldActionExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldActionExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Release-admin";
+		};
+		SAXA0000000000000000003 /* Profile-admin */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShieldActionExtension/ShieldActionExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldActionExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldActionExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = "Profile-admin";
+		};
+		SAXB0000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_ENTITLEMENTS = ShieldActionExtension/ShieldActionExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldActionExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldActionExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		SAXB0000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_ENTITLEMENTS = ShieldActionExtension/ShieldActionExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldActionExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldActionExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		SAXB0000000000000000003 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_ENTITLEMENTS = ShieldActionExtension/ShieldActionExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = B7BJ5HC53B;
+				INFOPLIST_FILE = ShieldActionExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "ai.socialstudying.app.ShieldActionExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Profile;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1415,6 +2007,38 @@
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = "Release-student";
+		};
+		SCX70000000000000000001 /* Build configuration list for PBXNativeTarget "ShieldConfigurationExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				SCX90000000000000000001 /* Debug-student */,
+				SCX90000000000000000002 /* Release-student */,
+				SCX90000000000000000003 /* Profile-student */,
+				SCXA0000000000000000001 /* Debug-admin */,
+				SCXA0000000000000000002 /* Release-admin */,
+				SCXA0000000000000000003 /* Profile-admin */,
+				SCXB0000000000000000001 /* Debug */,
+				SCXB0000000000000000002 /* Release */,
+				SCXB0000000000000000003 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		SAX70000000000000000001 /* Build configuration list for PBXNativeTarget "ShieldActionExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				SAX90000000000000000001 /* Debug-student */,
+				SAX90000000000000000002 /* Release-student */,
+				SAX90000000000000000003 /* Profile-student */,
+				SAXA0000000000000000001 /* Debug-admin */,
+				SAXA0000000000000000002 /* Release-admin */,
+				SAXA0000000000000000003 /* Profile-admin */,
+				SAXB0000000000000000001 /* Debug */,
+				SAXB0000000000000000002 /* Release */,
+				SAXB0000000000000000003 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
