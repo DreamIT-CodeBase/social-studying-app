@@ -39,18 +39,14 @@ class SoundService {
 
   // ── Asset paths ───────────────────────────────────────────────────
 
-  static const _correctAnswer =
-      'audio/meldix-success-340660.mp3';
-  static const _wrongAnswer =
-      'audio/universfield-wrong-answer-129254.mp3';
-  static const _levelUp =
-      'audio/universfield-level-up-06-370051.mp3';
+  static const _correctAnswer = 'audio/meldix-success-340660.mp3';
+  static const _wrongAnswer = 'audio/universfield-wrong-answer-129254.mp3';
+  static const _levelUp = 'audio/universfield-level-up-06-370051.mp3';
   static const _badgeUnlock =
       'audio/latent-rick-achievement-badge-pop-sound-2-547865.mp3';
   static const _notification =
       'audio/universfield-new-notification-051-494246.mp3';
-  static const _cardFlip =
-      'audio/u_vdwj1c20kz-coin-collision-sound-342335.mp3';
+  static const _cardFlip = 'audio/u_vdwj1c20kz-coin-collision-sound-342335.mp3';
 
   // ── Public API ────────────────────────────────────────────────────
 

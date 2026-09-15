@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
+import 'package:social_study_app/core/utils/subject_classifier.dart';
 import 'package:social_study_app/features/documents/data/demo_documents_repository.dart'
     show DocumentNotFoundException;
 import 'package:social_study_app/features/documents/presentation/document_polling_notifier.dart';
@@ -67,13 +69,13 @@ class DocumentPollingScreen extends ConsumerWidget {
   }
 }
 
-class _Body extends StatelessWidget {
+class _Body extends ConsumerWidget {
   const _Body({required this.doc});
 
   final Document doc;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // SingleChildScrollView + Column (not ListView) on purpose: the body has
     // at most four fixed-height cards, the lazy-build optimization of a
     // ListView doesn't help here, and eager build means widget tests can
@@ -84,6 +86,14 @@ class _Body extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _CurrentStageHero(doc: doc),
+          if (doc.status == DocumentStatus.flagged) ...[
+            const SizedBox(height: Spacing.lg),
+            _FlaggedApprovalCard(doc: doc),
+          ],
+          if (doc.status.isUsableForStudy) ...[
+            const SizedBox(height: Spacing.lg),
+            _StudyActionsCard(doc: doc),
+          ],
           const SizedBox(height: Spacing.xl),
           Card(
             child: Padding(
@@ -98,6 +108,122 @@ class _Body extends StatelessWidget {
             _TopicsCard(topics: doc.topicTags),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _FlaggedApprovalCard extends ConsumerStatefulWidget {
+  const _FlaggedApprovalCard({required this.doc});
+
+  final Document doc;
+
+  @override
+  ConsumerState<_FlaggedApprovalCard> createState() =>
+      _FlaggedApprovalCardState();
+}
+
+class _FlaggedApprovalCardState extends ConsumerState<_FlaggedApprovalCard> {
+  bool _isApproving = false;
+
+  Future<void> _handleApprove() async {
+    setState(() => _isApproving = true);
+    try {
+      await ref
+          .read(
+            documentPollingProvider(
+              workspaceId: widget.doc.workspaceId,
+              documentId: widget.doc.id,
+            ).notifier,
+          )
+          .approveDocument();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Document approved! Continuing processing…'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to approve document: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isApproving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      color: Colors.amber.withValues(alpha: 0.12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.amber.withValues(alpha: 0.4)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(Spacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.verified_user_rounded,
+                  color: Colors.amber,
+                  size: 26,
+                ),
+                const SizedBox(width: Spacing.sm),
+                Expanded(
+                  child: Text(
+                    'Self-Learning Content Approval',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: Spacing.sm),
+            Text(
+              'Automated safety filters flagged this material. Since you manage your own study material, you can review and approve it to unblock extraction and generate study questions.',
+              style: TextStyle(
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: Spacing.md),
+            FilledButton.icon(
+              onPressed: _isApproving ? null : _handleApprove,
+              icon: _isApproving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.check_circle_outline_rounded),
+              label: Text(_isApproving
+                  ? 'Approving & Resuming…'
+                  : 'Approve & Unblock Document'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.amber.shade800,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -168,9 +294,7 @@ PipelineStage _activeStage(DocumentStatus status) {
     DocumentStatus.vectorizing =>
       PipelineStage.vectorizing,
     DocumentStatus.ready => PipelineStage.ready,
-    DocumentStatus.flagged ||
-    DocumentStatus.failed =>
-      PipelineStage.uploaded,
+    DocumentStatus.flagged || DocumentStatus.failed => PipelineStage.uploaded,
   };
 }
 
@@ -278,8 +402,7 @@ class _MetadataCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final entries = <(String, String)>[
       ('File type', doc.docType.name.toUpperCase()),
-      if (doc.pageCount != null)
-        ('Pages', '${doc.pageCount}'),
+      if (doc.pageCount != null) ('Pages', '${doc.pageCount}'),
       if (doc.textCharCount != null)
         ('Characters extracted', _formatNumber(doc.textCharCount!)),
       if (doc.languages.isNotEmpty)
@@ -416,4 +539,114 @@ String _formatNumber(int n) {
     buffer.write(s[i]);
   }
   return buffer.toString();
+}
+
+class _StudyActionsCard extends StatelessWidget {
+  const _StudyActionsCard({required this.doc});
+
+  final Document doc;
+
+  @override
+  Widget build(BuildContext context) {
+    final subject = subjectForDocument(doc);
+    final subjectParam =
+        subject.isNotEmpty ? '&subject=${Uri.encodeComponent(subject)}' : '';
+
+    return Container(
+      padding: const EdgeInsets.all(Spacing.lg),
+      decoration: BoxDecoration(
+        color: context.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: context.colorScheme.primary.withAlpha(40),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: context.colorScheme.primary.withAlpha(15),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.withAlpha(30),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.bolt_rounded,
+                    color: Colors.green, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Material Ready for Study!',
+                      style: context.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      'Launch an adaptive session directly from this content in one go.',
+                      style: context.textTheme.bodySmall?.copyWith(
+                        color: context.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Spacing.md),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  key: const Key('start_study_session_button'),
+                  onPressed: () {
+                    context.push(
+                        '/student/session/${doc.workspaceId}?mode=study$subjectParam');
+                  },
+                  icon: const Icon(Icons.school_rounded, size: 18),
+                  label: const Text('Start Study'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: Spacing.md),
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('review_flashcards_button'),
+                  onPressed: () {
+                    context.push(
+                        '/student/session/${doc.workspaceId}?mode=flashcard$subjectParam');
+                  },
+                  icon: const Icon(Icons.style_rounded, size: 18),
+                  label: const Text('Flashcards'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }

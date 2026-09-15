@@ -73,8 +73,7 @@ void main() {
     expect(find.text('Try Again'), findsOneWidget);
   });
 
-  testWidgets('a missing workspace shows the not-found state',
-      (tester) async {
+  testWidgets('a missing workspace shows the not-found state', (tester) async {
     when(repo.list).thenAnswer(
       (_) async => [
         Workspace(
@@ -181,8 +180,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilterChip, 'Short answer'));
     await tester.pumpAndSettle();
 
-    expect(
-        find.text('Select at least one question format.'), findsOneWidget);
+    expect(find.text('Select at least one question format.'), findsOneWidget);
     final button = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Save Changes'),
     );

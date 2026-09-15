@@ -71,5 +71,34 @@ void main() {
         isNull,
       );
     });
+
+    test(
+        'screen_time_exhausted routes to student home with unlock_question action',
+        () {
+      expect(
+        deepLinkFor({
+          'type': 'screen_time_exhausted',
+          'workspace_id': 'wsp_a',
+        }),
+        '/student/home?action=unlock_question&workspace_id=wsp_a',
+      );
+      expect(
+        deepLinkFor({
+          'type': 'screen_time_exhausted',
+        }),
+        '/student/home?action=unlock_question',
+      );
+    });
+
+    test('unlock_question routes to student home with unlock_question action',
+        () {
+      expect(
+        deepLinkFor({
+          'type': 'unlock_question',
+          'workspace_id': 'wsp_b',
+        }),
+        '/student/home?action=unlock_question&workspace_id=wsp_b',
+      );
+    });
   });
 }

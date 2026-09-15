@@ -53,8 +53,9 @@ List<TopicTreeRow> buildTopicTree(List<CanonicalTopic> topics) {
   for (final t in topics) {
     // A non-null parent_id that doesn't resolve in this list is treated
     // as a root — the topic still gets rendered.
-    final parent =
-        t.parentId == null || !byId.containsKey(t.parentId!) ? null : t.parentId;
+    final parent = t.parentId == null || !byId.containsKey(t.parentId!)
+        ? null
+        : t.parentId;
     childrenByParent.putIfAbsent(parent, () => []).add(t);
   }
   for (final list in childrenByParent.values) {
@@ -64,8 +65,8 @@ List<TopicTreeRow> buildTopicTree(List<CanonicalTopic> topics) {
   final out = <TopicTreeRow>[];
   final emitted = <String>{};
   for (final root in childrenByParent[null] ?? const <CanonicalTopic>[]) {
-    _walk(root, 0, byId, childrenByParent, out, visited: {root.id},
-        emitted: emitted);
+    _walk(root, 0, byId, childrenByParent, out,
+        visited: {root.id}, emitted: emitted);
   }
 
   // Pure cycles (A ↔ B with no real root anywhere) leave topics
@@ -78,8 +79,8 @@ List<TopicTreeRow> buildTopicTree(List<CanonicalTopic> topics) {
     ..sort((a, b) => a.name.compareTo(b.name));
   for (final orphan in unreached) {
     if (emitted.contains(orphan.id)) continue; // covered by a prior walk
-    _walk(orphan, 0, byId, childrenByParent, out, visited: {orphan.id},
-        emitted: emitted);
+    _walk(orphan, 0, byId, childrenByParent, out,
+        visited: {orphan.id}, emitted: emitted);
   }
   return out;
 }

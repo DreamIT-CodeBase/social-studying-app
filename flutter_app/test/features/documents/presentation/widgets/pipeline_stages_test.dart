@@ -27,7 +27,8 @@ void main() {
       final rows = buildStageRows(_doc(status: DocumentStatus.pending));
       expect(rows[0].state, StageRowState.active);
       expect(rows[0].stage, PipelineStage.uploaded);
-      expect(rows.skip(1).every((r) => r.state == StageRowState.upcoming), true);
+      expect(
+          rows.skip(1).every((r) => r.state == StageRowState.upcoming), true);
     });
 
     test('extracting → uploaded done, extracting active', () {
@@ -48,7 +49,8 @@ void main() {
     );
 
     test('extracting_topics → topics active', () {
-      final rows = buildStageRows(_doc(status: DocumentStatus.extractingTopics));
+      final rows =
+          buildStageRows(_doc(status: DocumentStatus.extractingTopics));
       expect(rows[2].stage, PipelineStage.topics);
       expect(rows[2].state, StageRowState.active);
     });
@@ -88,7 +90,8 @@ void main() {
       expect(rows[2].state, StageRowState.error);
     });
 
-    test('failed with topics but no chunks → topics done, chunking errored', () {
+    test('failed with topics but no chunks → topics done, chunking errored',
+        () {
       final rows = buildStageRows(_doc(
         status: DocumentStatus.failed,
         textCharCount: 1000,
@@ -113,7 +116,8 @@ void main() {
       final rows = buildStageRows(_doc(status: DocumentStatus.flagged));
       expect(rows[0].state, StageRowState.done);
       expect(rows[1].state, StageRowState.error);
-      expect(rows.skip(2).every((r) => r.state == StageRowState.upcoming), true);
+      expect(
+          rows.skip(2).every((r) => r.state == StageRowState.upcoming), true);
     });
   });
 

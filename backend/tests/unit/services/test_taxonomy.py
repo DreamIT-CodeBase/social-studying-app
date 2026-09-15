@@ -78,9 +78,12 @@ def _mock_collection(workspace_doc: dict | None) -> MagicMock:
 @pytest.mark.asyncio
 async def test_merge_with_no_new_topics_short_circuits():
     """A doc with zero extracted topics should NOT call OpenAI or write."""
-    workspace = _ws(version=2, topics=[
-        CanonicalTopic(id="tpc_x", name="Cells", source_document_ids=["doc_old"]),
-    ])
+    workspace = _ws(
+        version=2,
+        topics=[
+            CanonicalTopic(id="tpc_x", name="Cells", source_document_ids=["doc_old"]),
+        ],
+    )
     col = _mock_collection(workspace.model_dump(by_alias=True))
 
     with (
@@ -164,7 +167,7 @@ async def test_ai_merge_keeps_existing_topic_ids_and_appends_new_ones():
     col = _mock_collection(workspace.model_dump(by_alias=True))
 
     new_topics = [
-        _topic_tag("Plant Energy", complexity=3),     # matches existing
+        _topic_tag("Plant Energy", complexity=3),  # matches existing
         _topic_tag("Cellular Respiration", complexity=4),  # new
     ]
 
@@ -210,7 +213,7 @@ async def test_ai_merge_keeps_existing_topic_ids_and_appends_new_ones():
     openai.assert_awaited_once()
     assert outcome.seeded is False
     assert outcome.topics_total == 2
-    assert outcome.topics_added == 1     # only Cellular Respiration is new
+    assert outcome.topics_added == 1  # only Cellular Respiration is new
     assert outcome.taxonomy_version == 6  # bumped from 5
 
     written_topics = col.update_one.await_args.args[1]["$set"]["taxonomy"]["topics"]
@@ -218,7 +221,7 @@ async def test_ai_merge_keeps_existing_topic_ids_and_appends_new_ones():
     by_name = {t["name"]: t for t in written_topics}
 
     photo = by_name["Photosynthesis"]
-    assert photo["id"] == "tpc_keep_me"          # preserved
+    assert photo["id"] == "tpc_keep_me"  # preserved
     assert "Plant Energy" in photo["aliases"]
     # "NEW" resolved to doc_new + dedupe preserved doc_old
     assert "doc_new" in photo["source_document_ids"]
@@ -226,7 +229,7 @@ async def test_ai_merge_keeps_existing_topic_ids_and_appends_new_ones():
 
     resp = by_name["Cellular Respiration"]
     assert resp["id"].startswith("tpc_")
-    assert resp["id"] != "NEW"                   # fresh id assigned
+    assert resp["id"] != "NEW"  # fresh id assigned
     assert resp["source_document_ids"] == ["doc_new"]
 
 
@@ -385,13 +388,15 @@ async def test_all_rows_malformed_raises():
         patch("app.services.taxonomy.get_collection", return_value=col),
         patch(
             "app.services.taxonomy.azure_openai.chat_json",
-            AsyncMock(return_value={
-                "merged_topics": [
-                    {"id": "tpc_x", "name": ""},     # empty name → dropped
-                    "not a dict",                     # bad row → dropped
-                    {"id": "tpc_x"},                  # no name → dropped
-                ]
-            }),
+            AsyncMock(
+                return_value={
+                    "merged_topics": [
+                        {"id": "tpc_x", "name": ""},  # empty name → dropped
+                        "not a dict",  # bad row → dropped
+                        {"id": "tpc_x"},  # no name → dropped
+                    ]
+                }
+            ),
         ),
         pytest.raises(TaxonomyMergeError),
     ):
@@ -411,9 +416,12 @@ async def test_new_topic_without_doc_ref_still_attaches_current_doc():
     """If the model forgets to mark a brand-new topic with the source doc, we
     still attach the current document_id so attribution is preserved.
     """
-    workspace = _ws(version=0, topics=[
-        CanonicalTopic(id="tpc_old", name="Old", source_document_ids=["doc_old"]),
-    ]).model_dump(by_alias=True)
+    workspace = _ws(
+        version=0,
+        topics=[
+            CanonicalTopic(id="tpc_old", name="Old", source_document_ids=["doc_old"]),
+        ],
+    ).model_dump(by_alias=True)
     col = _mock_collection(workspace)
 
     response = {
@@ -460,9 +468,12 @@ async def test_new_topic_without_doc_ref_still_attaches_current_doc():
 @pytest.mark.asyncio
 async def test_out_of_range_complexity_dropped_to_none():
     """Complexity >5 or <1 is dropped silently (not clamped)."""
-    workspace = _ws(version=0, topics=[
-        CanonicalTopic(id="tpc_x", name="X"),
-    ]).model_dump(by_alias=True)
+    workspace = _ws(
+        version=0,
+        topics=[
+            CanonicalTopic(id="tpc_x", name="X"),
+        ],
+    ).model_dump(by_alias=True)
     col = _mock_collection(workspace)
 
     response = {
@@ -517,9 +528,7 @@ async def test_infer_deps_skipped_on_empty_taxonomy():
         patch("app.services.taxonomy.get_collection", return_value=col),
         patch("app.services.taxonomy.azure_openai.chat_json", AsyncMock()) as openai,
     ):
-        outcome = await taxonomy.infer_dependencies(
-            tenant_id="ten_abc", workspace_id="wsp_abc"
-        )
+        outcome = await taxonomy.infer_dependencies(tenant_id="ten_abc", workspace_id="wsp_abc")
 
     openai.assert_not_awaited()
     col.update_one.assert_not_awaited()
@@ -530,18 +539,19 @@ async def test_infer_deps_skipped_on_empty_taxonomy():
 
 @pytest.mark.asyncio
 async def test_infer_deps_skipped_on_single_topic():
-    workspace = _ws_with(version=5, topics=[
-        CanonicalTopic(id="tpc_a", name="Only"),
-    ])
+    workspace = _ws_with(
+        version=5,
+        topics=[
+            CanonicalTopic(id="tpc_a", name="Only"),
+        ],
+    )
     col = _mock_collection(workspace.model_dump(by_alias=True))
 
     with (
         patch("app.services.taxonomy.get_collection", return_value=col),
         patch("app.services.taxonomy.azure_openai.chat_json", AsyncMock()) as openai,
     ):
-        outcome = await taxonomy.infer_dependencies(
-            tenant_id="ten_abc", workspace_id="wsp_abc"
-        )
+        outcome = await taxonomy.infer_dependencies(tenant_id="ten_abc", workspace_id="wsp_abc")
 
     openai.assert_not_awaited()
     col.update_one.assert_not_awaited()
@@ -585,17 +595,15 @@ async def test_infer_deps_happy_path_writes_parent_ids():
             AsyncMock(return_value=response),
         ) as openai,
     ):
-        outcome = await taxonomy.infer_dependencies(
-            tenant_id="ten_abc", workspace_id="wsp_abc"
-        )
+        outcome = await taxonomy.infer_dependencies(tenant_id="ten_abc", workspace_id="wsp_abc")
 
     openai.assert_awaited_once()
     assert outcome.skipped is False
     assert outcome.topics_total == 3
-    assert outcome.edges_set == 2          # tpc_mid, tpc_top
-    assert outcome.edges_changed == 2      # both went None → real id
+    assert outcome.edges_set == 2  # tpc_mid, tpc_top
+    assert outcome.edges_changed == 2  # both went None → real id
     assert outcome.edges_dropped_invalid == 0
-    assert outcome.taxonomy_version == 3   # bumped from 2
+    assert outcome.taxonomy_version == 3  # bumped from 2
 
     written = col.update_one.await_args.args[1]["$set"]["taxonomy"]["topics"]
     by_id = {t["id"]: t for t in written}
@@ -631,14 +639,12 @@ async def test_infer_deps_drops_unknown_parent_id():
             AsyncMock(return_value=response),
         ),
     ):
-        outcome = await taxonomy.infer_dependencies(
-            tenant_id="ten_abc", workspace_id="wsp_abc"
-        )
+        outcome = await taxonomy.infer_dependencies(tenant_id="ten_abc", workspace_id="wsp_abc")
 
     written = col.update_one.await_args.args[1]["$set"]["taxonomy"]["topics"]
     by_id = {t["id"]: t for t in written}
     assert by_id["tpc_a"]["parent_id"] is None
-    assert by_id["tpc_b"]["parent_id"] is None   # hallucination scrubbed
+    assert by_id["tpc_b"]["parent_id"] is None  # hallucination scrubbed
     assert outcome.edges_set == 0
     assert outcome.edges_dropped_invalid == 1
 
@@ -654,7 +660,7 @@ async def test_infer_deps_drops_self_reference():
 
     response = {
         "edges": [
-            {"topic_id": "tpc_a", "parent_id": "tpc_a"},   # self-loop
+            {"topic_id": "tpc_a", "parent_id": "tpc_a"},  # self-loop
             {"topic_id": "tpc_b", "parent_id": "tpc_a"},
         ]
     }
@@ -666,14 +672,12 @@ async def test_infer_deps_drops_self_reference():
             AsyncMock(return_value=response),
         ),
     ):
-        outcome = await taxonomy.infer_dependencies(
-            tenant_id="ten_abc", workspace_id="wsp_abc"
-        )
+        outcome = await taxonomy.infer_dependencies(tenant_id="ten_abc", workspace_id="wsp_abc")
 
     written = col.update_one.await_args.args[1]["$set"]["taxonomy"]["topics"]
     by_id = {t["id"]: t for t in written}
-    assert by_id["tpc_a"]["parent_id"] is None        # self-ref dropped
-    assert by_id["tpc_b"]["parent_id"] == "tpc_a"     # valid edge kept
+    assert by_id["tpc_a"]["parent_id"] is None  # self-ref dropped
+    assert by_id["tpc_b"]["parent_id"] == "tpc_a"  # valid edge kept
     assert outcome.edges_dropped_invalid == 1
 
 
@@ -705,9 +709,7 @@ async def test_infer_deps_breaks_two_node_cycle():
             AsyncMock(return_value=response),
         ),
     ):
-        outcome = await taxonomy.infer_dependencies(
-            tenant_id="ten_abc", workspace_id="wsp_abc"
-        )
+        outcome = await taxonomy.infer_dependencies(tenant_id="ten_abc", workspace_id="wsp_abc")
 
     written = col.update_one.await_args.args[1]["$set"]["taxonomy"]["topics"]
     by_id = {t["id"]: t for t in written}
@@ -745,9 +747,7 @@ async def test_infer_deps_breaks_three_node_cycle():
             AsyncMock(return_value=response),
         ),
     ):
-        outcome = await taxonomy.infer_dependencies(
-            tenant_id="ten_abc", workspace_id="wsp_abc"
-        )
+        outcome = await taxonomy.infer_dependencies(tenant_id="ten_abc", workspace_id="wsp_abc")
 
     written = col.update_one.await_args.args[1]["$set"]["taxonomy"]["topics"]
     parents = {t["id"]: t["parent_id"] for t in written}
@@ -781,8 +781,8 @@ async def test_infer_deps_retries_on_version_conflict():
     col.find_one = AsyncMock(side_effect=[workspace_v0, workspace_v1])
     col.update_one = AsyncMock(
         side_effect=[
-            MagicMock(matched_count=0),     # lost the race
-            MagicMock(matched_count=1),     # won on retry
+            MagicMock(matched_count=0),  # lost the race
+            MagicMock(matched_count=1),  # won on retry
         ]
     )
 
@@ -800,9 +800,7 @@ async def test_infer_deps_retries_on_version_conflict():
             AsyncMock(return_value=response),
         ),
     ):
-        outcome = await taxonomy.infer_dependencies(
-            tenant_id="ten_abc", workspace_id="wsp_abc"
-        )
+        outcome = await taxonomy.infer_dependencies(tenant_id="ten_abc", workspace_id="wsp_abc")
 
     assert col.find_one.await_count == 2
     assert col.update_one.await_count == 2
@@ -823,10 +821,12 @@ async def test_infer_deps_cas_exhaustion_raises():
     col.find_one = AsyncMock(return_value=workspace)
     col.update_one = AsyncMock(return_value=MagicMock(matched_count=0))
 
-    response = {"edges": [
-        {"topic_id": "tpc_a", "parent_id": None},
-        {"topic_id": "tpc_b", "parent_id": "tpc_a"},
-    ]}
+    response = {
+        "edges": [
+            {"topic_id": "tpc_a", "parent_id": None},
+            {"topic_id": "tpc_b", "parent_id": "tpc_a"},
+        ]
+    }
 
     with (
         patch("app.services.taxonomy.get_collection", return_value=col),
@@ -836,9 +836,7 @@ async def test_infer_deps_cas_exhaustion_raises():
         ),
         pytest.raises(DependencyInferenceError),
     ):
-        await taxonomy.infer_dependencies(
-            tenant_id="ten_abc", workspace_id="wsp_abc"
-        )
+        await taxonomy.infer_dependencies(tenant_id="ten_abc", workspace_id="wsp_abc")
 
     assert col.update_one.await_count == 3
 
@@ -865,9 +863,7 @@ async def test_infer_deps_missing_edges_array_raises():
         ),
         pytest.raises(DependencyInferenceError),
     ):
-        await taxonomy.infer_dependencies(
-            tenant_id="ten_abc", workspace_id="wsp_abc"
-        )
+        await taxonomy.infer_dependencies(tenant_id="ten_abc", workspace_id="wsp_abc")
 
     col.update_one.assert_not_awaited()
 
@@ -885,9 +881,7 @@ async def test_infer_deps_missing_workspace_raises():
         patch("app.services.taxonomy.get_collection", return_value=col),
         pytest.raises(DependencyInferenceError),
     ):
-        await taxonomy.infer_dependencies(
-            tenant_id="ten_abc", workspace_id="wsp_nope"
-        )
+        await taxonomy.infer_dependencies(tenant_id="ten_abc", workspace_id="wsp_nope")
 
     col.update_one.assert_not_awaited()
 
@@ -903,65 +897,81 @@ def test_validate_empty_taxonomy_is_allowed():
 
 
 def test_validate_happy_path():
-    taxonomy.validate_taxonomy_shape([
-        CanonicalTopic(id="tpc_a", name="Cells"),
-        CanonicalTopic(id="tpc_b", name="Photosynthesis", parent_id="tpc_a"),
-        CanonicalTopic(id="tpc_c", name="Mitosis", parent_id="tpc_a"),
-    ])
+    taxonomy.validate_taxonomy_shape(
+        [
+            CanonicalTopic(id="tpc_a", name="Cells"),
+            CanonicalTopic(id="tpc_b", name="Photosynthesis", parent_id="tpc_a"),
+            CanonicalTopic(id="tpc_c", name="Mitosis", parent_id="tpc_a"),
+        ]
+    )
 
 
 def test_validate_rejects_duplicate_ids():
     with pytest.raises(TaxonomyValidationError, match="Duplicate topic id"):
-        taxonomy.validate_taxonomy_shape([
-            CanonicalTopic(id="tpc_a", name="One"),
-            CanonicalTopic(id="tpc_a", name="Two"),  # same id
-        ])
+        taxonomy.validate_taxonomy_shape(
+            [
+                CanonicalTopic(id="tpc_a", name="One"),
+                CanonicalTopic(id="tpc_a", name="Two"),  # same id
+            ]
+        )
 
 
 def test_validate_rejects_dangling_parent_id():
     with pytest.raises(TaxonomyValidationError, match="unknown parent_id"):
-        taxonomy.validate_taxonomy_shape([
-            CanonicalTopic(id="tpc_a", name="One", parent_id="tpc_ghost"),
-        ])
+        taxonomy.validate_taxonomy_shape(
+            [
+                CanonicalTopic(id="tpc_a", name="One", parent_id="tpc_ghost"),
+            ]
+        )
 
 
 def test_validate_rejects_self_parent():
     with pytest.raises(TaxonomyValidationError, match="cannot be its own parent"):
-        taxonomy.validate_taxonomy_shape([
-            CanonicalTopic(id="tpc_a", name="One", parent_id="tpc_a"),
-        ])
+        taxonomy.validate_taxonomy_shape(
+            [
+                CanonicalTopic(id="tpc_a", name="One", parent_id="tpc_a"),
+            ]
+        )
 
 
 def test_validate_rejects_two_node_cycle():
     with pytest.raises(TaxonomyValidationError, match="Cycle"):
-        taxonomy.validate_taxonomy_shape([
-            CanonicalTopic(id="tpc_a", name="A", parent_id="tpc_b"),
-            CanonicalTopic(id="tpc_b", name="B", parent_id="tpc_a"),
-        ])
+        taxonomy.validate_taxonomy_shape(
+            [
+                CanonicalTopic(id="tpc_a", name="A", parent_id="tpc_b"),
+                CanonicalTopic(id="tpc_b", name="B", parent_id="tpc_a"),
+            ]
+        )
 
 
 def test_validate_rejects_three_node_cycle():
     with pytest.raises(TaxonomyValidationError, match="Cycle"):
-        taxonomy.validate_taxonomy_shape([
-            CanonicalTopic(id="tpc_a", name="A", parent_id="tpc_b"),
-            CanonicalTopic(id="tpc_b", name="B", parent_id="tpc_c"),
-            CanonicalTopic(id="tpc_c", name="C", parent_id="tpc_a"),
-        ])
+        taxonomy.validate_taxonomy_shape(
+            [
+                CanonicalTopic(id="tpc_a", name="A", parent_id="tpc_b"),
+                CanonicalTopic(id="tpc_b", name="B", parent_id="tpc_c"),
+                CanonicalTopic(id="tpc_c", name="C", parent_id="tpc_a"),
+            ]
+        )
 
 
 def test_validate_rejects_case_insensitive_duplicate_names():
     with pytest.raises(TaxonomyValidationError, match="Duplicate topic name"):
-        taxonomy.validate_taxonomy_shape([
-            CanonicalTopic(id="tpc_a", name="Photosynthesis"),
-            CanonicalTopic(id="tpc_b", name="photosynthesis"),  # case differs
-        ])
+        taxonomy.validate_taxonomy_shape(
+            [
+                CanonicalTopic(id="tpc_a", name="Photosynthesis"),
+                CanonicalTopic(id="tpc_b", name="photosynthesis"),  # case differs
+            ]
+        )
 
 
 def test_validate_rejects_empty_name():
     with pytest.raises(TaxonomyValidationError, match="empty name"):
-        taxonomy.validate_taxonomy_shape([
-            CanonicalTopic(id="tpc_a", name="   "),  # whitespace only
-        ])
+        taxonomy.validate_taxonomy_shape(
+            [
+                CanonicalTopic(id="tpc_a", name="   "),  # whitespace only
+            ]
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -971,17 +981,25 @@ def test_validate_rejects_empty_name():
 
 @pytest.mark.asyncio
 async def test_replace_taxonomy_happy_path_writes_and_returns_refreshed():
-    initial = _ws(version=4, topics=[
-        CanonicalTopic(id="tpc_old", name="Old"),
-    ])
-    refreshed = _ws(version=5, topics=[
-        CanonicalTopic(id="tpc_new", name="Renamed"),
-    ])
+    initial = _ws(
+        version=4,
+        topics=[
+            CanonicalTopic(id="tpc_old", name="Old"),
+        ],
+    )
+    refreshed = _ws(
+        version=5,
+        topics=[
+            CanonicalTopic(id="tpc_new", name="Renamed"),
+        ],
+    )
     col = MagicMock()
-    col.find_one = AsyncMock(side_effect=[
-        initial.model_dump(by_alias=True),    # initial read
-        refreshed.model_dump(by_alias=True),  # post-write re-read
-    ])
+    col.find_one = AsyncMock(
+        side_effect=[
+            initial.model_dump(by_alias=True),  # initial read
+            refreshed.model_dump(by_alias=True),  # post-write re-read
+        ]
+    )
     col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
 
     with patch("app.services.taxonomy.get_collection", return_value=col):
@@ -1081,9 +1099,7 @@ def _doc_row(doc_id: str, *, created_at: str, topic_names: list[str]) -> dict:
         "status": "ready",
         "chunk_count": 0,
         "moderation_flagged": False,
-        "topic_tags": [
-            {"name": n, "confidence": 1.0, "source": "ai"} for n in topic_names
-        ],
+        "topic_tags": [{"name": n, "confidence": 1.0, "source": "ai"} for n in topic_names],
         "created_at": created_at,
         "updated_at": created_at,
     }
@@ -1130,26 +1146,25 @@ def _route_collections(
 @pytest.mark.asyncio
 async def test_regenerate_with_no_docs_clears_taxonomy_and_skips_replay():
     """Workspace with zero documents → taxonomy reset only, no merge calls."""
-    initial = _ws(version=4, topics=[
-        CanonicalTopic(id="tpc_old", name="Stale"),
-    ])
+    initial = _ws(
+        version=4,
+        topics=[
+            CanonicalTopic(id="tpc_old", name="Stale"),
+        ],
+    )
     reset = _ws(version=5, topics=[])
     _docs_col, ws_col, route = _route_collections(
         workspace_states=[
-            initial.model_dump(by_alias=True),   # initial read
-            reset.model_dump(by_alias=True),     # final read
+            initial.model_dump(by_alias=True),  # initial read
+            reset.model_dump(by_alias=True),  # final read
         ],
         doc_rows=[],
     )
 
     with (
         patch("app.services.taxonomy.get_collection", side_effect=route),
-        patch(
-            "app.services.taxonomy.merge_into_workspace", AsyncMock()
-        ) as mock_merge,
-        patch(
-            "app.services.taxonomy.infer_dependencies", AsyncMock()
-        ) as mock_deps,
+        patch("app.services.taxonomy.merge_into_workspace", AsyncMock()) as mock_merge,
+        patch("app.services.taxonomy.infer_dependencies", AsyncMock()) as mock_deps,
     ):
         outcome = await taxonomy.regenerate_from_documents(
             tenant_id="ten_abc", workspace_id="wsp_abc"
@@ -1177,16 +1192,17 @@ async def test_regenerate_replays_docs_in_upload_order():
     """Each doc's topic_tags should get merged exactly once, in created_at
     order, before final dep inference."""
     initial = _ws(version=2, topics=[CanonicalTopic(id="tpc_old", name="Stale")])
-    final = _ws(version=5, topics=[
-        CanonicalTopic(id="tpc_new1", name="Cells"),
-        CanonicalTopic(id="tpc_new2", name="Photosynthesis"),
-    ])
+    final = _ws(
+        version=5,
+        topics=[
+            CanonicalTopic(id="tpc_new1", name="Cells"),
+            CanonicalTopic(id="tpc_new2", name="Photosynthesis"),
+        ],
+    )
 
     docs = [
-        _doc_row("doc_a", created_at="2026-05-01T00:00:00+00:00",
-                 topic_names=["Cells"]),
-        _doc_row("doc_b", created_at="2026-05-02T00:00:00+00:00",
-                 topic_names=["Photosynthesis"]),
+        _doc_row("doc_a", created_at="2026-05-01T00:00:00+00:00", topic_names=["Cells"]),
+        _doc_row("doc_b", created_at="2026-05-02T00:00:00+00:00", topic_names=["Photosynthesis"]),
     ]
     # regenerate_from_documents reads workspace twice: once at start
     # (initial), once at the end after merge+deps (final). Merges + deps
@@ -1201,12 +1217,8 @@ async def test_regenerate_replays_docs_in_upload_order():
 
     with (
         patch("app.services.taxonomy.get_collection", side_effect=route),
-        patch(
-            "app.services.taxonomy.merge_into_workspace", AsyncMock()
-        ) as mock_merge,
-        patch(
-            "app.services.taxonomy.infer_dependencies", AsyncMock()
-        ) as mock_deps,
+        patch("app.services.taxonomy.merge_into_workspace", AsyncMock()) as mock_merge,
+        patch("app.services.taxonomy.infer_dependencies", AsyncMock()) as mock_deps,
     ):
         outcome = await taxonomy.regenerate_from_documents(
             tenant_id="ten_abc", workspace_id="wsp_abc"
@@ -1232,10 +1244,8 @@ async def test_regenerate_continues_when_one_docs_merge_fails():
     initial = _ws(version=0, topics=[])
     final = _ws(version=2, topics=[CanonicalTopic(id="tpc_only", name="Cells")])
     docs = [
-        _doc_row("doc_a", created_at="2026-05-01T00:00:00+00:00",
-                 topic_names=["Cells"]),
-        _doc_row("doc_b", created_at="2026-05-02T00:00:00+00:00",
-                 topic_names=["Bogus"]),
+        _doc_row("doc_a", created_at="2026-05-01T00:00:00+00:00", topic_names=["Cells"]),
+        _doc_row("doc_b", created_at="2026-05-02T00:00:00+00:00", topic_names=["Bogus"]),
     ]
     _docs_col, _ws_col, route = _route_collections(
         workspace_states=[
@@ -1259,9 +1269,7 @@ async def test_regenerate_continues_when_one_docs_merge_fails():
             "app.services.taxonomy.merge_into_workspace",
             AsyncMock(side_effect=_merge_side),
         ) as mock_merge,
-        patch(
-            "app.services.taxonomy.infer_dependencies", AsyncMock()
-        ) as mock_deps,
+        patch("app.services.taxonomy.infer_dependencies", AsyncMock()) as mock_deps,
     ):
         outcome = await taxonomy.regenerate_from_documents(
             tenant_id="ten_abc", workspace_id="wsp_abc"
@@ -1280,8 +1288,7 @@ async def test_regenerate_continues_when_dep_inference_fails():
     initial = _ws(version=0, topics=[])
     final = _ws(version=2, topics=[CanonicalTopic(id="tpc_only", name="X")])
     docs = [
-        _doc_row("doc_a", created_at="2026-05-01T00:00:00+00:00",
-                 topic_names=["X"]),
+        _doc_row("doc_a", created_at="2026-05-01T00:00:00+00:00", topic_names=["X"]),
     ]
     _docs_col, _ws_col, route = _route_collections(
         workspace_states=[
@@ -1316,6 +1323,4 @@ async def test_regenerate_missing_workspace_raises():
         patch("app.services.taxonomy.get_collection", return_value=col),
         pytest.raises(RuntimeError, match="not found"),
     ):
-        await taxonomy.regenerate_from_documents(
-            tenant_id="ten_abc", workspace_id="wsp_missing"
-        )
+        await taxonomy.regenerate_from_documents(tenant_id="ten_abc", workspace_id="wsp_missing")

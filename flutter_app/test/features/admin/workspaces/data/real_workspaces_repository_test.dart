@@ -74,8 +74,7 @@ Map<String, dynamic> _workspaceJson({
 
 void main() {
   group('RealWorkspacesRepository.list', () {
-    test('GETs /api/v1/workspaces/ and parses snake_case payload',
-        () async {
+    test('GETs /api/v1/workspaces/ and parses snake_case payload', () async {
       final adapter = _FakeAdapter(
         (opts) => _json(jsonEncode([_workspaceJson()])),
       );
@@ -95,8 +94,8 @@ void main() {
   group('RealWorkspacesRepository.create', () {
     test('POSTs name + description and parses the response', () async {
       final adapter = _FakeAdapter(
-        (opts) => _json(jsonEncode(_workspaceJson(name: 'Chemistry')),
-            status: 201),
+        (opts) =>
+            _json(jsonEncode(_workspaceJson(name: 'Chemistry')), status: 201),
       );
       final repo = RealWorkspacesRepository(dio: _dio(adapter));
       final created =
@@ -112,8 +111,7 @@ void main() {
 
     test('409 → WorkspaceNameConflictException', () async {
       final adapter = _FakeAdapter(
-        (opts) => _json(jsonEncode({'detail': 'already exists'}),
-            status: 409),
+        (opts) => _json(jsonEncode({'detail': 'already exists'}), status: 409),
       );
       final repo = RealWorkspacesRepository(dio: _dio(adapter));
       expect(

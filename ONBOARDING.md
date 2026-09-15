@@ -53,7 +53,7 @@ docs/             ADRs, API specs, notifications-setup.md
 - **Container Apps** (all share the one API image; workers differ by command override):
   `ca-api-dev` (API + the notification scheduler endpoint), `ca-worker-dev`,
   `ca-topic-extractor-dev`, `ca-chunker-dev`, `ca-vectorizer-dev`
-- **API URL**: https://ca-api-dev.salmonmushroom-d5e027eb.centralus.azurecontainerapps.io
+- **API URL**: https://ca-api-dev.ambitiouswave-1e406ff3.centralus.azurecontainerapps.io
 - **Notification Hub**: namespace `nh-ns-ssa-dev-ddjopeut37ed2`, hub `study-app-dev`
 - **Auth**: Microsoft **Entra External ID** (ciamlogin.com), NOT classic B2C —
   affects JWKS URL, claim mapping, OAuth flows. B2C_* env values are

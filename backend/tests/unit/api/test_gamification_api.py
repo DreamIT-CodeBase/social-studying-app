@@ -21,7 +21,6 @@ from app.models.workspace import Workspace, WorkspaceSettings
 from app.services.badges import BADGES
 from tests.unit.conftest import make_user
 
-
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
 
@@ -66,9 +65,13 @@ def _state(
     questions_answered: int = 12,
     questions_correct: int = 9,
     flashcards_reviewed: int = 3,
+    study_sessions_completed: int = 4,
+    revision_sessions_completed: int = 2,
+    flashcard_sessions_completed: int = 3,
     badges: list[Badge] | None = None,
     xp_by_topic: dict[str, int] | None = None,
     daily_activity: dict[str, int] | None = None,
+    daily_xp: dict[str, int] | None = None,
 ) -> GamificationState:
     return GamificationState(
         **{"_id": f"gam_{student_id}"},
@@ -83,9 +86,13 @@ def _state(
         questions_answered=questions_answered,
         questions_correct=questions_correct,
         flashcards_reviewed=flashcards_reviewed,
+        study_sessions_completed=study_sessions_completed,
+        revision_sessions_completed=revision_sessions_completed,
+        flashcard_sessions_completed=flashcard_sessions_completed,
         badges=badges or [],
         xp_by_topic=xp_by_topic or {"Photosynthesis": 250},
         daily_activity=daily_activity or {"2026-05-23": 5},
+        daily_xp=daily_xp or {"2026-05-23": 42},
     )
 
 
@@ -125,6 +132,10 @@ def test_profile_returns_full_view_with_progress_hints(client, student):
     assert body["xp_for_next_level"] == 300
     assert body["xp_by_topic"] == {"Photosynthesis": 250}
     assert body["daily_activity"] == {"2026-05-23": 5}
+    assert body["daily_xp"] == {"2026-05-23": 42}
+    assert body["study_sessions_completed"] == 4
+    assert body["revision_sessions_completed"] == 2
+    assert body["flashcard_sessions_completed"] == 3
 
 
 def test_profile_student_cannot_read_other_students(client, student):
@@ -307,9 +318,7 @@ def test_leaderboard_visible_to_admins_even_when_setting_off(client, admin):
     workspaces_col = MagicMock()
     workspaces_col.find_one = AsyncMock(return_value=workspace)
     users_col = MagicMock()
-    users_col.find = MagicMock(
-        return_value=_async_iter([{"_id": "stu_a", "display_name": "Aki"}])
-    )
+    users_col.find = MagicMock(return_value=_async_iter([{"_id": "stu_a", "display_name": "Aki"}]))
 
     def _factory(_tid, collection):
         from app.core.database import USERS, WORKSPACES

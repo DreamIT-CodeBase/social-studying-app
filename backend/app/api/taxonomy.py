@@ -16,7 +16,7 @@ import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, status
 
-from app.core.auth import get_current_user, require_role
+from app.core.auth import get_current_user
 from app.core.database import WORKSPACES, get_collection
 from app.core.exceptions import (
     ConflictError,

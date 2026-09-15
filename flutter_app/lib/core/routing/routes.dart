@@ -1,5 +1,7 @@
 abstract final class AppRoutes {
   static const String login = '/login';
+  static const String terms = '/terms';
+  static const String privacy = '/privacy';
   static const String adminDashboard = '/admin/dashboard';
   static const String adminDocuments = '/admin/documents';
   static const String adminTaxonomy = '/admin/taxonomy';
@@ -8,12 +10,15 @@ abstract final class AppRoutes {
   static const String adminWorkspaceSettings = '/admin/settings';
   static const String studentHome = '/student/home';
   static const String studentRevision = '/student/revision';
+  static const String studentAdaptiveSession = '/student/session/:workspaceId';
   static const String profile = '/profile';
-  static const String studentScreenTimeSettings = '/student/screen-time-settings';
+  static const String studentScreenTimeSettings =
+      '/student/screen-time-settings';
   static const String studentDocuments = '/student/documents/:workspaceId';
-  static const String studentDocumentPolling = '/student/documents/:workspaceId/:documentId';
+  static const String studentDocumentPolling =
+      '/student/documents/:workspaceId/:documentId';
   static const String studentOnboarding = '/student/onboarding';
-
+  static const String themeSelection = '/theme-selection';
 
   /// Sprint 2.10 polling screen route. The list screen pushes onto
   /// this with `context.push('${adminDocuments}/$workspaceId/$documentId')`.
@@ -22,13 +27,11 @@ abstract final class AppRoutes {
 
   /// Sprint 2.13 taxonomy viewer route. Pushed from the AppBar action
   /// on the documents list screen.
-  static const String adminTaxonomyViewer =
-      '$adminTaxonomy/:workspaceId';
+  static const String adminTaxonomyViewer = '$adminTaxonomy/:workspaceId';
 
   /// Sprint 4.3 taxonomy editor route. Pushed from the AppBar action on
   /// the taxonomy viewer screen.
-  static const String adminTaxonomyEditor =
-      '$adminTaxonomy/:workspaceId/edit';
+  static const String adminTaxonomyEditor = '$adminTaxonomy/:workspaceId/edit';
 
   /// Sprint 4.5 moderation dashboard. Pushed from the admin Settings
   /// tab, scoped to the active workspace.
@@ -42,16 +45,14 @@ abstract final class AppRoutes {
 
   /// Sprint 4.10 revision mode — a bounded mixed question + flashcard
   /// session. Pushed from the student Home tab.
-  static const String studentRevisionSession =
-      '$studentRevision/:workspaceId';
+  static const String studentRevisionSession = '$studentRevision/:workspaceId';
 
   /// Sprint 5.4 student gamification screens. Pushed from the student
   /// home + progress views. Badges is per-student (workspace + user id);
   /// leaderboard is workspace-scoped and reads the caller's identity
   /// from the auth state for highlighting.
   static const String studentBadges = '/student/badges/:workspaceId/:userId';
-  static const String studentLeaderboard =
-      '/student/leaderboard/:workspaceId';
+  static const String studentLeaderboard = '/student/leaderboard/:workspaceId';
 
   /// Sprint 5.10 admin per-student progress detail. Pushed from the
   /// workspace user roster (``users_screen.dart``). The display name
@@ -62,12 +63,18 @@ abstract final class AppRoutes {
 
   /// Sprint 5.11 admin workspace analytics dashboard. Pushed from the
   /// admin Settings tab once a workspace is active.
-  static const String adminWorkspaceAnalytics =
-      '/admin/analytics/:workspaceId';
+  static const String adminWorkspaceAnalytics = '/admin/analytics/:workspaceId';
 
   /// Sprint 6.9 first-launch onboarding wizard. Redirected to by the
   /// router when an authenticated admin has zero workspace
   /// memberships. The redirect stops firing the moment the first
   /// workspace exists, so the wizard truly only appears on day 1.
   static const String adminOnboarding = '/admin/onboarding';
+
+  /// Stripe Admin subscription paywall & plan selection
+  static const String adminSubscription = '/admin/subscription';
+
+  /// Deep linking return destination from Stripe checkout
+  static const String paymentSuccess = '/payment-success';
+  static const String paymentCancelled = '/payment-cancelled';
 }

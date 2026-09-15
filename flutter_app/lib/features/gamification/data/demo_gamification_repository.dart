@@ -69,6 +69,24 @@ class DemoGamificationRepository implements GamificationRepository {
     );
   }
 
+  @override
+  Future<SessionCompletionFeedback> completeSession({
+    required String workspaceId,
+    required String userId,
+    required String sessionType,
+  }) async {
+    await Future<void>.delayed(_latency);
+    int xp = sessionType == "study" ? 8 : 5;
+    return SessionCompletionFeedback(
+      xpEarned: xp,
+      newLevel: 3,
+      leveledUp: false,
+      streakDays: 4,
+      streakExtended: false,
+      badgesUnlocked: const [],
+    );
+  }
+
   // ── Fixture data ──────────────────────────────────────────────────
 
   static const GamificationProfile _profile = GamificationProfile(
@@ -91,6 +109,9 @@ class DemoGamificationRepository implements GamificationRepository {
     questionsAnswered: 33,
     questionsCorrect: 24,
     flashcardsReviewed: 17,
+    studySessionsCompleted: 5,
+    revisionSessionsCompleted: 2,
+    flashcardSessionsCompleted: 3,
     badges: [
       EarnedBadge(
         badgeId: 'first_steps',
@@ -288,4 +309,21 @@ class EmptyDemoGamificationRepository implements GamificationRepository {
     required String workspaceId,
   }) async =>
       const LeaderboardResponse(workspaceId: '');
+
+  @override
+  Future<SessionCompletionFeedback> completeSession({
+    required String workspaceId,
+    required String userId,
+    required String sessionType,
+  }) async {
+    int xp = sessionType == "study" ? 8 : 5;
+    return SessionCompletionFeedback(
+      xpEarned: xp,
+      newLevel: 1,
+      leveledUp: false,
+      streakDays: 1,
+      streakExtended: true,
+      badgesUnlocked: const [],
+    );
+  }
 }

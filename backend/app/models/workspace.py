@@ -70,7 +70,7 @@ class Workspace(CosmosDocument):
     type: str = "personal"  # "personal" or "collaborative"
     owner_id: str | None = None
     join_code: str | None = None
-    admin_ids: list[str] = Field(default_factory=list)   # user_ids with workspace_admin role
+    admin_ids: list[str] = Field(default_factory=list)  # user_ids with workspace_admin role
     student_ids: list[str] = Field(default_factory=list)
     settings: WorkspaceSettings = Field(default_factory=WorkspaceSettings)
     invite_codes: list[InviteCode] = Field(default_factory=list)

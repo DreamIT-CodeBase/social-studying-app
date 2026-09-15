@@ -1,6 +1,6 @@
 {
-    "name": "social_study_app",
-    "short_name": "social_study_app",
+    "name": "Social Studying AI",
+    "short_name": "Social Studying AI",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

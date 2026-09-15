@@ -6,7 +6,7 @@ part of 'documents_notifier.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$documentsListHash() => r'a29c038c8d5a832474cc71d3afd655456d4a67a6';
+String _$documentsListHash() => r'3dcd74719c904067e0534534531e55e6b6642a38';
 
 /// Copied from Dart SDK
 class _SystemHash {

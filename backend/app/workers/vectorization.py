@@ -35,6 +35,7 @@ import logging
 import os
 import signal
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 
@@ -98,8 +99,7 @@ async def _set_status(
     )
     if result.matched_count == 0:
         logger.warning(
-            "Document not found during vectorization status update: "
-            "tenant=%s workspace=%s doc=%s",
+            "Document not found during vectorization status update: tenant=%s workspace=%s doc=%s",
             tenant_id,
             workspace_id,
             document_id,
@@ -132,6 +132,29 @@ async def _handle(msg: ReceivedVectorizationMessage) -> None:
         payload.chunk_count,
     )
 
+    renewal_task: asyncio.Task[None] | None = None
+
+    async def _keep_alive() -> None:
+        while True:
+            await asyncio.sleep(60)  # renew every 60s
+            try:
+                await msg.renew_lock()
+                logger.debug("Renewed SB lock for vectorization doc=%s", payload.document_id)
+            except Exception:
+                logger.exception("SB lock renewal failed for vectorization doc=%s", payload.document_id)
+
+    try:
+        renewal_task = asyncio.create_task(_keep_alive())
+        return await _handle_inner(msg)
+    finally:
+        if renewal_task is not None:
+            renewal_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await renewal_task
+
+
+async def _handle_inner(msg: ReceivedVectorizationMessage) -> None:
+    payload = msg.payload
     await _set_status(
         tenant_id=payload.tenant_id,
         workspace_id=payload.workspace_id,
@@ -170,8 +193,7 @@ async def _handle(msg: ReceivedVectorizationMessage) -> None:
         },
     )
     logger.info(
-        "Vectorization complete doc=%s indexed=%d deleted_stale=%d topics=%d "
-        "workspace_missing=%s",
+        "Vectorization complete doc=%s indexed=%d deleted_stale=%d topics=%d workspace_missing=%s",
         payload.document_id,
         outcome.chunks_indexed,
         outcome.deleted_stale,
@@ -187,11 +209,15 @@ _MAX_DELIVERY = 3  # matches queue maxDeliveryCount in service-bus.bicep
 
 
 async def run_forever(*, max_wait_seconds: int = 30) -> None:
-    """Consume the vectorization queue until cancelled."""
+    """Keep the worker alive across idle Service Bus receive windows."""
     logger.info("Vectorization worker starting")
-    async with consume_vectorization_messages(
-        max_wait_seconds=max_wait_seconds
-    ) as messages:
+    while True:
+        await _consume_until_idle(max_wait_seconds=max_wait_seconds)
+
+
+async def _consume_until_idle(*, max_wait_seconds: int) -> None:
+    """Consume the vectorization queue until cancelled."""
+    async with consume_vectorization_messages(max_wait_seconds=max_wait_seconds) as messages:
         async for msg in messages:
             try:
                 res = await _handle(msg)
@@ -212,9 +238,7 @@ async def run_forever(*, max_wait_seconds: int = 30) -> None:
                     exc,
                 )
                 if msg.delivery_count >= _MAX_DELIVERY:
-                    await _mark_failed(
-                        msg.payload, f"Max retries exceeded: {exc}"
-                    )
+                    await _mark_failed(msg.payload, f"Max retries exceeded: {exc}")
                 await msg.abandon()
 
 

@@ -57,6 +57,35 @@ def test_get_me_returns_current_user(client):
     assert response.json()["email"] == user.email
 
 
+def test_get_me_hides_legacy_self_learning_membership_from_admin(client):
+    admin = make_user(
+        role=UserRole.workspace_admin,
+        workspace_ids=["wsp_self_usr_test001", "wsp_classroom"],
+    )
+    app.dependency_overrides[get_current_user] = lambda: admin
+
+    response = client.get("/api/v1/users/me")
+
+    assert response.status_code == 200
+    memberships = response.json()["workspace_memberships"]
+    assert [membership["workspace_id"] for membership in memberships] == ["wsp_classroom"]
+
+
+def test_get_me_keeps_self_learning_membership_for_student(client):
+    student = make_user(
+        user_id="usr_student",
+        role=UserRole.student,
+        workspace_ids=["wsp_self_usr_student"],
+    )
+    app.dependency_overrides[get_current_user] = lambda: student
+
+    response = client.get("/api/v1/users/me")
+
+    assert response.status_code == 200
+    memberships = response.json()["workspace_memberships"]
+    assert memberships[0]["workspace_id"] == "wsp_self_usr_student"
+
+
 # ── POST /api/v1/users/ ───────────────────────────────────────────────────────
 
 

@@ -7,7 +7,7 @@ part of 'question_session_notifier.dart';
 // **************************************************************************
 
 String _$questionSessionNotifierHash() =>
-    r'8e3cab370add81782c06ba7e7ab9fa27c7560296';
+    r'831edbbf902590e6537a840a6909fca3a8338cef';
 
 /// Copied from Dart SDK
 class _SystemHash {

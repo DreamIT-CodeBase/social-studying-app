@@ -25,9 +25,6 @@ class WorkspacesScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final workspacesAsync = ref.watch(workspacesListProvider);
-    final workspaces = workspacesAsync.valueOrNull ?? [];
-    // Only allow creating a workspace if none exist yet.
-    final canCreate = workspacesAsync.hasValue && workspaces.isEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -36,8 +33,10 @@ class WorkspacesScreen extends ConsumerWidget {
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
-      // The FAB only appears when the admin has no workspace yet.
-      floatingActionButton: canCreate
+      // An admin may create and manage any number of workspaces.
+      // Keep this available whenever the list has loaded, including when the
+      // first workspace already exists.
+      floatingActionButton: workspacesAsync.hasValue
           ? FloatingActionButton.extended(
               heroTag: null,
               onPressed: () => _openForm(context, ref),
@@ -52,8 +51,7 @@ class WorkspacesScreen extends ConsumerWidget {
         loading: () => const LoadingIndicator(message: 'Loading workspaces…'),
         error: (error, _) => ErrorView(
           message: error.toString(),
-          onRetry: () =>
-              ref.read(workspacesListProvider.notifier).refresh(),
+          onRetry: () => ref.read(workspacesListProvider.notifier).refresh(),
         ),
       ),
     );
@@ -136,7 +134,7 @@ class _WorkspacesList extends ConsumerWidget {
           Spacing.xl,
         ),
         children: [
-          // Info banner — each admin account gets one workspace.
+          // Workspaces are independent classrooms or family groups.
           Container(
             padding: const EdgeInsets.all(Spacing.md),
             decoration: BoxDecoration(
@@ -153,7 +151,7 @@ class _WorkspacesList extends ConsumerWidget {
                 const SizedBox(width: Spacing.sm),
                 Expanded(
                   child: Text(
-                    'Each admin account manages one workspace. Edit your workspace below.',
+                    'Create a workspace for each classroom or family group you manage.',
                     style: context.textTheme.bodySmall?.copyWith(
                       color: context.colorScheme.onSecondaryContainer,
                     ),
@@ -234,20 +232,20 @@ class _WorkspaceCard extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: Spacing.md),
-            Row(
+            Wrap(
+              spacing: Spacing.sm,
+              runSpacing: Spacing.xs,
               children: [
                 _CountChip(
                   icon: Icons.people_rounded,
                   value: workspace.studentCount,
                   label: 'students',
                 ),
-                const SizedBox(width: Spacing.sm),
                 _CountChip(
                   icon: Icons.description_rounded,
                   value: workspace.documentCount,
                   label: 'documents',
                 ),
-                const SizedBox(width: Spacing.sm),
                 _CountChip(
                   icon: Icons.shield_rounded,
                   value: workspace.adminCount,

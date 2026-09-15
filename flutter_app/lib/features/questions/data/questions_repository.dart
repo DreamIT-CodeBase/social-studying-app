@@ -32,7 +32,11 @@ abstract class QuestionsRepository {
   /// - [QuestionGenerationUnavailableException] (503) when the
   ///   pipeline exhausted its retries. Include `retryAfterSeconds`
   ///   from the `Retry-After` header so the UI can back off intelligently.
-  Future<Question> next({required String workspaceId});
+  Future<Question> next({
+    required String workspaceId,
+    bool revision = false,
+    String? subject,
+  });
 
   /// Submit a student's answer to a previously-served question.
   ///
@@ -49,6 +53,7 @@ abstract class QuestionsRepository {
     required String workspaceId,
     required String questionId,
     required AnswerSubmission submission,
+    bool revision = false,
   });
 }
 

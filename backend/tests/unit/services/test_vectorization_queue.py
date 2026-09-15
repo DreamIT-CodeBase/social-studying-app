@@ -78,9 +78,7 @@ async def test_publish_sends_one_message_with_doc_id_as_message_id():
     sb_client.__aexit__ = AsyncMock(return_value=None)
 
     with (
-        patch.object(
-            vectorization_queue.settings, "service_bus_connection", "Endpoint=sb://test"
-        ),
+        patch.object(vectorization_queue.settings, "service_bus_connection", "Endpoint=sb://test"),
         patch.object(
             vectorization_queue.settings,
             "service_bus_vectorization_queue",

@@ -18,18 +18,20 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
 from app.core.config import settings
-from app.core.database import USERS, get_collection
+from app.core.database import USERS, WORKSPACES, get_collection
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.redis_client import get_redis
-from app.models.user import User, UserRole
+from app.models.base import utc_now
+from app.models.user import User, UserRole, WorkspaceMembership
+from app.models.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
 _bearer = HTTPBearer(auto_error=False)
 
 # Redis TTLs
-_JWKS_TTL_SECONDS = 86_400   # 24 h — JWKS rotates infrequently
-_USER_TTL_SECONDS = 300       # 5 min — role/membership changes should propagate quickly
+_JWKS_TTL_SECONDS = 86_400  # 24 h — JWKS rotates infrequently
+_USER_TTL_SECONDS = 300  # 5 min — role/membership changes should propagate quickly
 
 
 def _jwks_url() -> str:
@@ -39,10 +41,7 @@ def _jwks_url() -> str:
     ``{subdomain}.ciamlogin.com/{tenant_guid}/discovery/v2.0/keys``.
     """
     subdomain = settings.b2c_tenant_subdomain or settings.b2c_tenant_id
-    return (
-        f"https://{subdomain}.ciamlogin.com/"
-        f"{settings.b2c_tenant_id}/discovery/v2.0/keys"
-    )
+    return f"https://{subdomain}.ciamlogin.com/{settings.b2c_tenant_id}/discovery/v2.0/keys"
 
 
 async def _get_jwks() -> dict[str, Any]:
@@ -61,24 +60,59 @@ async def _get_jwks() -> dict[str, Any]:
     return jwks  # type: ignore[no-any-return]
 
 
+async def _get_google_jwks() -> dict[str, Any]:
+    """Fetch JWKS from Google, cached in Redis."""
+    redis = await get_redis()
+    cached = await redis.get("google:jwks")
+    if cached:
+        return json.loads(cached)  # type: ignore[no-any-return]
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get("https://www.googleapis.com/oauth2/v3/certs", timeout=10)
+        response.raise_for_status()
+        jwks = response.json()
+
+    await redis.setex("google:jwks", _JWKS_TTL_SECONDS, json.dumps(jwks))
+    return jwks  # type: ignore[no-any-return]
+
+
 async def _validate_token(token: str) -> dict[str, Any]:
-    """Validate an Azure AD B2C RS256 JWT and return its claims."""
+    """Validate a JWT token (either Azure AD B2C or Google OAuth2 ID Token) and return its claims."""
     try:
-        # Azure AD B2C RS256 validation
-        jwks = await _get_jwks()
-        claims = jwt.decode(
-            token,
-            jwks,
-            algorithms=["RS256"],
-            audience=settings.b2c_client_id,
-            options={"verify_at_hash": False},
-        )
-        return claims
+        try:
+            unverified_claims = jwt.get_unverified_claims(token)
+            iss = unverified_claims.get("iss", "")
+        except Exception:
+            iss = ""
+
+        if "accounts.google.com" in iss:
+            # Google ID Token validation
+            jwks = await _get_google_jwks()
+            claims = jwt.decode(
+                token,
+                jwks,
+                algorithms=["RS256"],
+                options={"verify_at_hash": False, "verify_aud": False},
+            )
+            return claims
+        else:
+            # Azure AD B2C RS256 validation
+            jwks = await _get_jwks()
+            claims = jwt.decode(
+                token,
+                jwks,
+                algorithms=["RS256"],
+                audience=settings.b2c_client_id,
+                options={"verify_at_hash": False},
+            )
+            return claims
     except JWTError as exc:
         raise UnauthorizedError(f"Invalid token: {exc}") from exc
 
 
-async def _lookup_or_create_user(b2c_object_id: str, tenant_id: str, claims: dict[str, Any]) -> User:
+async def _lookup_or_create_user(
+    b2c_object_id: str, tenant_id: str, claims: dict[str, Any]
+) -> User:
     """Look up the User document, or auto-create/provision it if it doesn't exist."""
     redis = await get_redis()
     cache_key = f"user:{tenant_id}:{b2c_object_id}"
@@ -98,19 +132,24 @@ async def _lookup_or_create_user(b2c_object_id: str, tenant_id: str, claims: dic
             or claims.get("preferred_username")
             or claims.get("unique_name")
             or claims.get("upn")
-            or (claims["emails"][0] if isinstance(claims.get("emails"), list) and claims["emails"] else None)
+            or (
+                claims["emails"][0]
+                if isinstance(claims.get("emails"), list) and claims["emails"]
+                else None
+            )
             or claims.get("emails")
             or _PLACEHOLDER_EMAIL
         )
         if isinstance(real_email, str):
             real_email = real_email.split("?")[0].strip().lower()
-            
+
         doc = await collection.find_one({"email": real_email, "deleted_at": None})
         if doc is not None:
             # Found the invited user, link their b2c_object_id
-            await collection.update_one({"_id": doc["_id"]}, {"$set": {"b2c_object_id": b2c_object_id}})
+            await collection.update_one(
+                {"_id": doc["_id"]}, {"$set": {"b2c_object_id": b2c_object_id}}
+            )
             doc["b2c_object_id"] = b2c_object_id
-
 
     # --- Extract real values from token claims ----------------------------
     # Entra External ID (CIAM) may put the email in any of these claims
@@ -118,15 +157,15 @@ async def _lookup_or_create_user(b2c_object_id: str, tenant_id: str, claims: dic
     _PLACEHOLDER_EMAIL = "user@socialstudyapp.com"
     real_email: str = (
         claims.get("email")
-        or claims.get("preferred_username")   # Entra External ID default
-        or claims.get("unique_name")          # classic B2C / AAD
-        or claims.get("upn")                  # enterprise fallback
+        or claims.get("preferred_username")  # Entra External ID default
+        or claims.get("unique_name")  # classic B2C / AAD
+        or claims.get("upn")  # enterprise fallback
         or (
             claims["emails"][0]
             if isinstance(claims.get("emails"), list) and claims["emails"]
             else None
         )
-        or claims.get("emails")               # sometimes a bare string
+        or claims.get("emails")  # sometimes a bare string
         or _PLACEHOLDER_EMAIL
     )
     # Strip any query-string suffix that CIAM sometimes appends to preferred_username
@@ -134,7 +173,13 @@ async def _lookup_or_create_user(b2c_object_id: str, tenant_id: str, claims: dic
 
     given_name = claims.get("given_name") or claims.get("givenName")
     family_name = claims.get("family_name") or claims.get("surname")
-    if given_name and family_name:
+    is_google_identity = "accounts.google.com" in str(claims.get("iss", ""))
+    # The student UI greets people by their given name. Google reliably sends
+    # that value separately, so retain it instead of persisting an email-style
+    # account label (for example ``tarunjuneja471``) or a full legal name.
+    if is_google_identity and given_name:
+        real_display_name = str(given_name).strip()
+    elif given_name and family_name:
         real_display_name = f"{given_name} {family_name}".strip()
     elif given_name:
         real_display_name = given_name
@@ -144,7 +189,7 @@ async def _lookup_or_create_user(b2c_object_id: str, tenant_id: str, claims: dic
         real_display_name = (
             claims.get("name")
             or claims.get("displayName")
-            or real_email.split("@")[0]           # last-resort: use local part of email
+            or real_email.split("@")[0]  # last-resort: use local part of email
         )
 
     if doc is None:
@@ -152,8 +197,9 @@ async def _lookup_or_create_user(b2c_object_id: str, tenant_id: str, claims: dic
         role_str = claims.get("extension_Role") or "student"
 
         # Ensure tenant exists
-        from app.models.tenant import Tenant, TenantType
         from uuid import uuid4
+
+        from app.models.tenant import Tenant, TenantType
 
         tenants_col = get_collection("platform", "tenants")
         tenant_doc = await tenants_col.find_one({"_id": tenant_id})
@@ -193,9 +239,7 @@ async def _lookup_or_create_user(b2c_object_id: str, tenant_id: str, claims: dic
     patch: dict[str, Any] = {}
     if user.email == _PLACEHOLDER_EMAIL and real_email != _PLACEHOLDER_EMAIL:
         patch["email"] = real_email
-        logger.info(
-            "Patching placeholder email for user=%s → %s", user.id, real_email
-        )
+        logger.info("Patching placeholder email for user=%s → %s", user.id, real_email)
     if user.display_name != real_display_name and real_display_name:
         patch["display_name"] = real_display_name
 
@@ -210,6 +254,58 @@ async def _lookup_or_create_user(b2c_object_id: str, tenant_id: str, claims: dic
     await redis.setex(cache_key, _USER_TTL_SECONDS, user.model_dump_json())
     return user
 
+
+async def _ensure_self_learning_workspace(user: User) -> User:
+    """Ensure the user has a self-learning workspace.
+
+    Self-learning is a student-app product surface. Older Google-linked
+    student records can carry ``workspace_admin`` as their global role because
+    their personal workspace originally made them its owner. Provision those
+    records too; admin APIs continue to filter self workspaces from admin UI.
+
+    Creates ``wsp_self_{user_id}`` for eligible users when missing and appends the
+    membership. Existing admin self-workspaces are left untouched in storage;
+    the workspace and profile APIs filter them from admin responses.
+    """
+    if user.role not in (UserRole.student, UserRole.workspace_admin):
+        return user
+
+    self_ws_id = f"wsp_self_{user.id}"
+    has_self = any(m.workspace_id == self_ws_id for m in user.workspace_memberships)
+    if not has_self:
+        col = get_collection(user.tenant_id, WORKSPACES)
+        ws = await col.find_one({"_id": self_ws_id})
+        if not ws:
+            workspace = Workspace(
+                **{"_id": self_ws_id},
+                tenant_id=user.tenant_id,
+                name="Self Learning Workspace",
+                description="Your personal self-learning workspace",
+                admin_ids=[user.id],
+            )
+            await col.insert_one(workspace.model_dump(by_alias=True))
+            logger.info("Auto-created self-learning workspace %s for user %s", self_ws_id, user.id)
+
+        user.workspace_memberships.append(
+            WorkspaceMembership(
+                workspace_id=self_ws_id,
+                role=UserRole.workspace_admin,
+                joined_at=utc_now(),
+            )
+        )
+        user.touch()
+        user_col = get_collection(user.tenant_id, USERS)
+        await user_col.replace_one({"_id": user.id}, user.model_dump(by_alias=True))
+
+        # Bust the Redis cache so updates propagate
+        if user.b2c_object_id:
+            try:
+                redis = await get_redis()
+                cache_key = f"user:{user.tenant_id}:{user.b2c_object_id}"
+                await redis.delete(cache_key)
+            except Exception as e:
+                logger.warning("Failed to invalidate cache after adding self workspace: %s", e)
+    return user
 
 
 async def get_current_user(
@@ -239,6 +335,7 @@ async def get_current_user(
                 f"Dev auth user {user_id} not found in database for tenant {tenant_id}."
             )
         user = User.model_validate(doc)
+        user = await _ensure_self_learning_workspace(user)
         request.state.user = user
         return user
 
@@ -254,6 +351,7 @@ async def get_current_user(
     if not user.is_active:
         raise UnauthorizedError("Account is disabled")
 
+    user = await _ensure_self_learning_workspace(user)
     request.state.user = user
     return user
 
@@ -286,4 +384,3 @@ async def invalidate_user_cache(user: User) -> None:
         logger.info(f"Invalidated Redis cache for user {user.id}")
     except Exception as e:
         logger.error(f"Failed to invalidate user cache for user {user.id}: {e}")
-

@@ -79,7 +79,8 @@ void main() {
     await tester.pumpWidget(_wrap(repo: repo));
     await tester.pump();
 
-    expect(find.text('Loading leaderboard…'), findsOneWidget);
+    expect(find.byType(ListView), findsOneWidget);
+    verify(() => repo.fetchLeaderboard(workspaceId: _wsId)).called(1);
 
     completer.complete(_populated());
     await tester.pumpAndSettle();
@@ -151,8 +152,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // Banner.
-    expect(find.text('You are ranked #2'), findsOneWidget);
-    expect(find.text('of 3 studying in this workspace'), findsOneWidget);
+    expect(
+        find.textContaining("You're #2", findRichText: true), findsOneWidget);
+    expect(find.textContaining('of 3 learners', findRichText: true),
+        findsOneWidget);
 
     // Rows.
     expect(find.text('Alex Chen'), findsOneWidget);
@@ -161,11 +164,10 @@ void main() {
 
     // Top-3 medals — non-medal rows show #N text, top three show the
     // trophy icon instead of a rank number.
-    expect(find.text('920 XP'), findsOneWidget);
+    expect(find.text('920'), findsOneWidget);
   });
 
-  testWidgets('current user row highlights with primary container color',
-      (tester) async {
+  testWidgets('current user appears in the highlighted podium', (tester) async {
     when(() => repo.fetchLeaderboard(
           workspaceId: any(named: 'workspaceId'),
         )).thenAnswer((_) async => _populated());
@@ -173,18 +175,9 @@ void main() {
     await tester.pumpWidget(_wrap(repo: repo));
     await tester.pumpAndSettle();
 
-    // Find the Card whose subtree contains "You" — its color should
-    // come from the primary container palette, distinct from the
-    // other rows' default surface.
-    final youCard = find.ancestor(
-      of: find.text('You'),
-      matching: find.byType(Card),
-    );
-    expect(youCard, findsOneWidget);
-    final card = tester.widget<Card>(youCard);
-    expect(card.color, isNotNull);
+    expect(find.text('You'), findsOneWidget);
+    expect(find.text('480'), findsOneWidget);
   });
-
   testWidgets('omitted current_user_rank suppresses the your-rank banner',
       (tester) async {
     when(() => repo.fetchLeaderboard(

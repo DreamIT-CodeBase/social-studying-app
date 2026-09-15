@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +18,11 @@ import 'package:social_study_app/shared/models/question.dart';
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
+import 'package:social_study_app/features/notifications/data/notification_token_repository.dart';
+import 'package:social_study_app/features/notifications/presentation/notification_service.dart';
+import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
+import 'package:social_study_app/features/home/presentation/student_home_screen.dart'
+    show studentHomeTabProvider;
 
 /// Revision mode (Sprint 4.10).
 ///
@@ -30,9 +37,14 @@ import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 /// inside revision are deliberately leaner than the standalone screens'
 /// — revision keeps the student moving through items.
 class RevisionScreen extends ConsumerStatefulWidget {
-  const RevisionScreen({super.key, required this.workspaceId});
+  const RevisionScreen({
+    super.key,
+    required this.workspaceId,
+    this.autoStart = false,
+  });
 
   final String workspaceId;
+  final bool autoStart;
 
   /// Test hook — when set, [RevisionSessionNotifier.start] is invoked
   /// with this count instead of the production default of 10. Lets
@@ -45,38 +57,160 @@ class RevisionScreen extends ConsumerStatefulWidget {
 }
 
 class _RevisionScreenState extends ConsumerState<RevisionScreen> {
+  Timer? _timer;
+  int _secondsRemaining = 0;
+
   RevisionSessionNotifier get _notifier =>
       ref.read(revisionSessionNotifierProvider(widget.workspaceId).notifier);
+
+  String get _timerText {
+    final minutes = (_secondsRemaining ~/ 60).toString().padLeft(2, '0');
+    final seconds = (_secondsRemaining % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  void _startTimer(int itemCount) {
+    _timer?.cancel();
+    setState(() => _secondsRemaining = itemCount * 2 * 60);
+    // Widget tests use a shortened debug session and should not keep a
+    // periodic timer alive between pumpAndSettle calls.
+    if (RevisionScreen.debugItemCount != null) return;
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      if (_secondsRemaining <= 1) {
+        timer.cancel();
+        setState(() => _secondsRemaining = 0);
+        if (context.canPop()) context.pop();
+        return;
+      }
+      setState(() => _secondsRemaining--);
+    });
+  }
+
+  Future<void> _startSession({int? itemCount}) async {
+    final mastery = ref
+        .read(studentProgressNotifierProvider(widget.workspaceId))
+        .valueOrNull
+        ?.overallMastery;
+    await (itemCount == null
+        ? _notifier.start(mastery: mastery)
+        : _notifier.start(itemCount: itemCount, mastery: mastery));
+    if (mounted) _startTimer(_notifier.itemCount);
+  }
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final count = RevisionScreen.debugItemCount;
-      count == null ? _notifier.start() : _notifier.start(itemCount: count);
-    });
+    if (widget.autoStart || RevisionScreen.debugItemCount != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _startSession(itemCount: RevisionScreen.debugItemCount);
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 
   /// Reset the family provider to a fresh idle session, then fetch —
   /// the only escape hatch from `error` / `unavailable` / `complete`.
   void _restart() {
     ref.invalidate(revisionSessionNotifierProvider(widget.workspaceId));
-    final notifier = ref
-        .read(revisionSessionNotifierProvider(widget.workspaceId).notifier);
+    final notifier =
+        ref.read(revisionSessionNotifierProvider(widget.workspaceId).notifier);
     final count = RevisionScreen.debugItemCount;
-    count == null ? notifier.start() : notifier.start(itemCount: count);
+    final progressVal = ref
+        .read(studentProgressNotifierProvider(widget.workspaceId))
+        .valueOrNull;
+    final start = count == null
+        ? notifier.start(mastery: progressVal?.overallMastery)
+        : notifier.start(
+            itemCount: count, mastery: progressVal?.overallMastery);
+    start.then((_) {
+      if (mounted) _startTimer(notifier.itemCount);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(
+      revisionSessionNotifierProvider(widget.workspaceId),
+      (prev, next) {
+        if (next is RevisionSessionComplete &&
+            prev is! RevisionSessionComplete) {
+          _timer?.cancel();
+          ref.read(notificationServiceProvider).showCompletionNotification(
+            title: 'Revision session complete',
+            body: 'Great job! Your revision progress has been saved.',
+            payload: {
+              'type': 'study_reminder',
+              'workspace_id': widget.workspaceId,
+            },
+          ).ignore();
+          ref
+              .read(notificationTokenRepositoryProvider)
+              .sendActivityPush(
+                title: 'Revision session complete',
+                body: 'Great job! Your revision progress has been saved.',
+                workspaceId: widget.workspaceId,
+              )
+              .ignore();
+        }
+      },
+    );
+
     final session =
         ref.watch(revisionSessionNotifierProvider(widget.workspaceId));
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Revision',
-          style: TextStyle(fontWeight: FontWeight.w700),
+        actions: [
+          if (_secondsRemaining > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _RevisionHeaderPill(
+                    icon: Icons.star_rounded,
+                    iconColor: const Color(0xFFFFC93C),
+                    label: '${_notifier.xpEarned} XP',
+                  ),
+                  const SizedBox(width: 6),
+                  _RevisionHeaderPill(
+                    icon: Icons.timer_outlined,
+                    iconColor: const Color(0xFF6366F1),
+                    label: _timerText,
+                  ),
+                ],
+              ),
+            ),
+        ],
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Quick Revision',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 18,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Review your weak areas and strengthen your memory.',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
         leading: IconButton(
           tooltip: 'Close',
@@ -86,7 +220,67 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
         bottom: _RevisionProgressBar(progress: _progressFor(session)),
       ),
       body: session.when(
-        idle: () => const LoadingIndicator(),
+        idle: () {
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          return Scaffold(
+            backgroundColor:
+                isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+            body: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(Spacing.xl),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(Spacing.lg),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withOpacity(0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.psychology_rounded,
+                          size: 72,
+                          color: Theme.of(context).colorScheme.primary),
+                    ),
+                    const SizedBox(height: Spacing.xl),
+                    Text(
+                      'Quick Revision',
+                      style:
+                          Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                    ),
+                    const SizedBox(height: Spacing.sm),
+                    Text(
+                      'Review your weak areas and strengthen your memory.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    const SizedBox(height: Spacing.xl),
+                    FilledButton.icon(
+                      onPressed: () {
+                        _startSession();
+                      },
+                      icon: const Icon(Icons.play_arrow_rounded),
+                      label: const Text('Start Revision Session'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
         loading: (progress) => LoadingIndicator(
           message: 'Loading item ${progress.position} of ${progress.total}…',
         ),
@@ -114,22 +308,26 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
           workspaceId: widget.workspaceId,
           card: card,
           phase: _FlashcardPhase.front,
+          showGestureHint: progress.position <= 2,
         ),
         flashcardBack: (card, progress) => _FlashcardItem(
           workspaceId: widget.workspaceId,
           card: card,
           phase: _FlashcardPhase.back,
+          showGestureHint: progress.position <= 2,
         ),
         flashcardRating: (card, rating, progress) => _FlashcardItem(
           workspaceId: widget.workspaceId,
           card: card,
           phase: _FlashcardPhase.rating,
+          showGestureHint: progress.position <= 2,
           pendingRating: rating,
         ),
         flashcardRated: (card, rating, progress) => _FlashcardItem(
           workspaceId: widget.workspaceId,
           card: card,
           phase: _FlashcardPhase.rated,
+          showGestureHint: progress.position <= 2,
           recordedRating: rating,
         ),
         complete: (summary) => _SummaryView(
@@ -139,15 +337,21 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
         ),
         unavailable: (message, isNoTopics) => EmptyStateView(
           icon: isNoTopics
-              ? Icons.menu_book_rounded
+              ? Icons.check_circle_outline_rounded
               : Icons.hourglass_empty_rounded,
-          title: isNoTopics ? 'No content yet' : 'Generator is busy',
+          title: isNoTopics ? "You're all caught up!" : 'Generator is busy',
           subtitle: isNoTopics
-              ? 'Your teacher needs to upload study material before '
-                  'revision can run.'
+              ? "Complete a few study sessions first, then we'll automatically create personalized revision sessions based on your learning progress."
               : message,
           action: isNoTopics
-              ? null
+              ? FilledButton.icon(
+                  onPressed: () {
+                    ref.read(studentHomeTabProvider.notifier).state = 1;
+                    context.pop();
+                  },
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: const Text('Start Study Session'),
+                )
               : FilledButton.icon(
                   onPressed: _restart,
                   icon: const Icon(Icons.refresh_rounded),
@@ -155,6 +359,44 @@ class _RevisionScreenState extends ConsumerState<RevisionScreen> {
                 ),
         ),
         error: (message) => ErrorView(message: message, onRetry: _restart),
+      ),
+    );
+  }
+}
+
+class _RevisionHeaderPill extends StatelessWidget {
+  const _RevisionHeaderPill({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: iconColor),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+          ),
+        ],
       ),
     );
   }
@@ -247,8 +489,7 @@ class _QuestionItem extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final notifier =
         ref.read(revisionSessionNotifierProvider(workspaceId).notifier);
-    final canSubmit =
-        !submitting && (draftAnswer?.trim().isNotEmpty ?? false);
+    final canSubmit = !submitting && (draftAnswer?.trim().isNotEmpty ?? false);
 
     return Column(
       children: [
@@ -578,11 +819,12 @@ class _RewardChip extends StatelessWidget {
 
 enum _FlashcardPhase { front, back, rating, rated }
 
-class _FlashcardItem extends ConsumerWidget {
+class _FlashcardItem extends ConsumerStatefulWidget {
   const _FlashcardItem({
     required this.workspaceId,
     required this.card,
     required this.phase,
+    required this.showGestureHint,
     this.pendingRating,
     this.recordedRating,
   });
@@ -590,15 +832,77 @@ class _FlashcardItem extends ConsumerWidget {
   final String workspaceId;
   final Flashcard card;
   final _FlashcardPhase phase;
+  final bool showGestureHint;
   final FlashcardRating? pendingRating;
   final FlashcardRating? recordedRating;
 
   bool get _showBack => phase != _FlashcardPhase.front;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_FlashcardItem> createState() => _FlashcardItemState();
+}
+
+class _FlashcardItemState extends ConsumerState<_FlashcardItem>
+    with SingleTickerProviderStateMixin {
+  double _dragOffset = 0;
+  bool _committing = false;
+  late final AnimationController _controller;
+  Animation<double>? _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    )..addListener(() {
+        final animation = _animation;
+        if (animation != null && mounted) {
+          setState(() => _dragOffset = animation.value);
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _animateTo(double destination) async {
+    _controller
+      ..stop()
+      ..reset();
+    _animation = Tween<double>(begin: _dragOffset, end: destination).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: destination == 0 ? Curves.easeOutBack : Curves.easeInCubic,
+      ),
+    );
+    await _controller.forward();
+  }
+
+  Future<void> _commitSwipe(bool forgot) async {
+    if (_committing) return;
+    _committing = true;
+    HapticFeedback.mediumImpact();
+    await _animateTo(
+      (forgot ? 1 : -1) * (MediaQuery.sizeOf(context).width + 180),
+    );
+    if (!mounted) return;
+    final notifier = ref.read(
+      revisionSessionNotifierProvider(widget.workspaceId).notifier,
+    );
+    await notifier.rate(forgot ? FlashcardRating.hard : FlashcardRating.easy);
+    if (mounted) notifier.advance();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final notifier =
-        ref.read(revisionSessionNotifierProvider(workspaceId).notifier);
+        ref.read(revisionSessionNotifierProvider(widget.workspaceId).notifier);
+    final canSwipe = widget.phase == _FlashcardPhase.back && !_committing;
+    final swipeColor = _dragOffset >= 0 ? AppColors.error : AppColors.tertiary;
 
     return Column(
       children: [
@@ -606,23 +910,65 @@ class _FlashcardItem extends ConsumerWidget {
           child: Padding(
             padding: const EdgeInsets.all(Spacing.lg),
             child: GestureDetector(
-              onTap: phase == _FlashcardPhase.front
+              onTap: widget.phase == _FlashcardPhase.front
                   ? () {
                       HapticFeedback.selectionClick();
                       notifier.flip();
                     }
                   : null,
-              child: FlipCard(
-                key: ValueKey('rev:card:${card.id}'),
-                showBack: _showBack,
-                front: FlashcardFace(card: card, side: FlashcardSide.front),
-                back: FlashcardFace(card: card, side: FlashcardSide.back),
+              onHorizontalDragUpdate: canSwipe
+                  ? (details) => setState(() => _dragOffset += details.delta.dx)
+                  : null,
+              onHorizontalDragEnd: canSwipe
+                  ? (details) async {
+                      final velocity = details.primaryVelocity ?? 0;
+                      if (_dragOffset.abs() > 96 || velocity.abs() > 700) {
+                        await _commitSwipe(
+                          velocity.abs() > 700 ? velocity > 0 : _dragOffset > 0,
+                        );
+                      } else {
+                        await _animateTo(0);
+                      }
+                    }
+                  : null,
+              child: Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()
+                  ..translate(_dragOffset, 0.0, 0.0)
+                  ..rotateZ(_dragOffset / 1000),
+                child: Stack(
+                  children: [
+                    FlipCard(
+                      key: ValueKey('rev:card:${widget.card.id}'),
+                      showBack: widget._showBack,
+                      front: FlashcardFace(
+                        card: widget.card,
+                        side: FlashcardSide.front,
+                      ),
+                      back: FlashcardFace(
+                        card: widget.card,
+                        side: FlashcardSide.back,
+                        swipeColor: _dragOffset.abs() > 8 ? swipeColor : null,
+                      ),
+                    ),
+                    if (_dragOffset.abs() > 20)
+                      Positioned(
+                        top: 32,
+                        left: _dragOffset > 0 ? 24 : null,
+                        right: _dragOffset < 0 ? 24 : null,
+                        child: _SwipeStamp(
+                          label: _dragOffset > 0 ? 'FORGOT' : 'REMEMBERED',
+                          color: swipeColor,
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
         _BottomBar(
-          child: switch (phase) {
+          child: switch (widget.phase) {
             _FlashcardPhase.front => Text(
                 'Recall the answer, then tap the card.',
                 textAlign: TextAlign.center,
@@ -630,18 +976,16 @@ class _FlashcardItem extends ConsumerWidget {
                   color: context.colorScheme.onSurfaceVariant,
                 ),
               ),
-            _FlashcardPhase.back => _CompactRatingRow(
-                enabled: true,
-                pendingRating: null,
-                onRate: notifier.rate,
-              ),
+            _FlashcardPhase.back => widget.showGestureHint
+                ? const _RevisionSwipeHint()
+                : const SizedBox(height: 12),
             _FlashcardPhase.rating => _CompactRatingRow(
                 enabled: false,
-                pendingRating: pendingRating,
+                pendingRating: widget.pendingRating,
                 onRate: notifier.rate,
               ),
             _FlashcardPhase.rated => _RatedRow(
-                recordedRating: recordedRating!,
+                recordedRating: widget.recordedRating!,
                 onContinue: () => notifier.advance(),
               ),
           },
@@ -649,6 +993,64 @@ class _FlashcardItem extends ConsumerWidget {
       ],
     );
   }
+}
+
+class _SwipeStamp extends StatelessWidget {
+  const _SwipeStamp({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Transform.rotate(
+        angle: label == 'FORGOT' ? -0.16 : 0.16,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.1,
+            ),
+          ),
+        ),
+      );
+}
+
+class _RevisionSwipeHint extends StatelessWidget {
+  const _RevisionSwipeHint();
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          Expanded(
+            child: Text(
+              '←  Swipe left\nRemembered',
+              textAlign: TextAlign.center,
+              style: context.textTheme.labelLarge?.copyWith(
+                color: AppColors.tertiary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Container(
+              width: 1, height: 36, color: context.colorScheme.outlineVariant),
+          Expanded(
+            child: Text(
+              'Swipe right  →\nForgot',
+              textAlign: TextAlign.center,
+              style: context.textTheme.labelLarge?.copyWith(
+                color: AppColors.error,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      );
 }
 
 ({String label, Color color, IconData icon}) _ratingStyle(

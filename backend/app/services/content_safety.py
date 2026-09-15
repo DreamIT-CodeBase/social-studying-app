@@ -128,8 +128,7 @@ def _threshold_for(category: str) -> int:
 def _client() -> ContentSafetyClient:
     if not settings.content_safety_endpoint or not settings.content_safety_key:
         raise ServiceUnavailableError(
-            "Content Safety is not configured "
-            "(set CONTENT_SAFETY_ENDPOINT and CONTENT_SAFETY_KEY)."
+            "Content Safety is not configured (set CONTENT_SAFETY_ENDPOINT and CONTENT_SAFETY_KEY)."
         )
     return ContentSafetyClient(
         endpoint=settings.content_safety_endpoint,
@@ -222,8 +221,7 @@ async def analyze_extracted_text(text: str) -> SafetyVerdict:
                     aggregate[cat] = sev
 
     flagged = [
-        cat for cat in (c.value for c in _CATEGORIES)
-        if aggregate[cat] >= _threshold_for(cat)
+        cat for cat in (c.value for c in _CATEGORIES) if aggregate[cat] >= _threshold_for(cat)
     ]
 
     verdict = SafetyVerdict(severities=aggregate, flagged_categories=flagged)

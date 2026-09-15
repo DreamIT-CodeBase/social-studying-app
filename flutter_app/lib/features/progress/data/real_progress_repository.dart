@@ -28,7 +28,11 @@ class RealProgressRepository implements ProgressRepository {
       final response = await dio.get<Map<String, dynamic>>(
         '$_apiPrefix/workspaces/$workspaceId/users/$userId/progress',
       );
-      return StudentProgress.fromJson(response.data!);
+      final data = response.data;
+      if (data == null) {
+        return StudentProgress.empty;
+      }
+      return StudentProgress.fromJson(data);
     } on DioException catch (e) {
       // No progress document yet → zero state, not a failure.
       if (e.response?.statusCode == 404) {

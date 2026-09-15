@@ -119,11 +119,21 @@ _$GamificationProfileImpl _$$GamificationProfileImplFromJson(
       questionsAnswered: (json['questions_answered'] as num?)?.toInt() ?? 0,
       questionsCorrect: (json['questions_correct'] as num?)?.toInt() ?? 0,
       flashcardsReviewed: (json['flashcards_reviewed'] as num?)?.toInt() ?? 0,
+      studySessionsCompleted:
+          (json['study_sessions_completed'] as num?)?.toInt() ?? 0,
+      revisionSessionsCompleted:
+          (json['revision_sessions_completed'] as num?)?.toInt() ?? 0,
+      flashcardSessionsCompleted:
+          (json['flashcard_sessions_completed'] as num?)?.toInt() ?? 0,
       badges: (json['badges'] as List<dynamic>?)
               ?.map((e) => EarnedBadge.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const <EarnedBadge>[],
       dailyActivity: (json['daily_activity'] as Map<String, dynamic>?)?.map(
+            (k, e) => MapEntry(k, (e as num).toInt()),
+          ) ??
+          const <String, int>{},
+      dailyXp: (json['daily_xp'] as Map<String, dynamic>?)?.map(
             (k, e) => MapEntry(k, (e as num).toInt()),
           ) ??
           const <String, int>{},
@@ -146,8 +156,12 @@ Map<String, dynamic> _$$GamificationProfileImplToJson(
       'questions_answered': instance.questionsAnswered,
       'questions_correct': instance.questionsCorrect,
       'flashcards_reviewed': instance.flashcardsReviewed,
+      'study_sessions_completed': instance.studySessionsCompleted,
+      'revision_sessions_completed': instance.revisionSessionsCompleted,
+      'flashcard_sessions_completed': instance.flashcardSessionsCompleted,
       'badges': instance.badges,
       'daily_activity': instance.dailyActivity,
+      'daily_xp': instance.dailyXp,
     };
 
 _$LeaderboardEntryImpl _$$LeaderboardEntryImplFromJson(
@@ -193,4 +207,29 @@ Map<String, dynamic> _$$LeaderboardResponseImplToJson(
       'entries': instance.entries,
       'current_user_rank': instance.currentUserRank,
       'visible': instance.visible,
+    };
+
+_$SessionCompletionFeedbackImpl _$$SessionCompletionFeedbackImplFromJson(
+        Map<String, dynamic> json) =>
+    _$SessionCompletionFeedbackImpl(
+      xpEarned: (json['xp_earned'] as num).toInt(),
+      newLevel: (json['new_level'] as num).toInt(),
+      leveledUp: json['leveled_up'] as bool,
+      streakDays: (json['streak_days'] as num).toInt(),
+      streakExtended: json['streak_extended'] as bool,
+      badgesUnlocked: (json['badges_unlocked'] as List<dynamic>?)
+              ?.map((e) => EarnedBadge.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const <EarnedBadge>[],
+    );
+
+Map<String, dynamic> _$$SessionCompletionFeedbackImplToJson(
+        _$SessionCompletionFeedbackImpl instance) =>
+    <String, dynamic>{
+      'xp_earned': instance.xpEarned,
+      'new_level': instance.newLevel,
+      'leveled_up': instance.leveledUp,
+      'streak_days': instance.streakDays,
+      'streak_extended': instance.streakExtended,
+      'badges_unlocked': instance.badgesUnlocked,
     };

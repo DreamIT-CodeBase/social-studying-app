@@ -11,7 +11,6 @@ from __future__ import annotations
 from app.models.gamification import Badge, GamificationState
 from app.services.badges import BADGES, by_id, evaluate_badges
 
-
 # ── Catalog integrity ──────────────────────────────────────────────────────
 
 

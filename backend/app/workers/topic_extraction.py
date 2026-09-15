@@ -37,6 +37,7 @@ import logging
 import os
 import signal
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 
@@ -154,6 +155,29 @@ async def _handle(msg: ReceivedTopicMessage) -> None:
         payload.extracted_text_blob_path,
     )
 
+    renewal_task: asyncio.Task[None] | None = None
+
+    async def _keep_alive() -> None:
+        while True:
+            await asyncio.sleep(60)  # renew every 60s
+            try:
+                await msg.renew_lock()
+                logger.debug("Renewed SB lock for topic doc=%s", payload.document_id)
+            except Exception:
+                logger.exception("SB lock renewal failed for topic doc=%s", payload.document_id)
+
+    try:
+        renewal_task = asyncio.create_task(_keep_alive())
+        return await _handle_inner(msg)
+    finally:
+        if renewal_task is not None:
+            renewal_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await renewal_task
+
+
+async def _handle_inner(msg: ReceivedTopicMessage) -> None:
+    payload = msg.payload
     await _set_status(
         tenant_id=payload.tenant_id,
         workspace_id=payload.workspace_id,
@@ -165,9 +189,7 @@ async def _handle(msg: ReceivedTopicMessage) -> None:
     # 1. Pull extracted text from blob. Sprint 2.3 wrote it; 2.4 confirmed
     #    it's safe; we now mine it for topics.
     try:
-        content_bytes = await blob_storage.download_document(
-            payload.extracted_text_blob_path
-        )
+        content_bytes = await blob_storage.download_document(payload.extracted_text_blob_path)
     except ResourceNotFoundError as exc:
         # Extracted-text blob is gone — permanent.
         await _mark_failed(
@@ -182,6 +204,7 @@ async def _handle(msg: ReceivedTopicMessage) -> None:
     #    ServiceUnavailableError → transient (let SB redeliver).
     try:
         topics = await topic_extraction.extract_topics(text)
+        judged_subject = getattr(topic_extraction, "get_last_extracted_subject", lambda: None)()
     except ValueError as exc:
         await _mark_failed(payload, f"Topic extraction prompt failure: {exc}")
         await msg.dead_letter("PromptFailure", str(exc))
@@ -250,28 +273,31 @@ async def _handle(msg: ReceivedTopicMessage) -> None:
             )
 
     # 5. Persist topics + advance status.
+    extra_payload: dict[str, object] = {
+        "topic_tags": _serialize_topics(topics),
+        "processing_completed_at": utc_now(),
+        "processing_error": None,
+    }
+    if judged_subject:
+        extra_payload["category"] = judged_subject
+
     await _set_status(
         tenant_id=payload.tenant_id,
         workspace_id=payload.workspace_id,
         document_id=payload.document_id,
         status=DocumentStatus.topics_extracted,
-        extra={
-            "topic_tags": _serialize_topics(topics),
-            "processing_completed_at": utc_now(),
-            "processing_error": None,
-        },
+        extra=extra_payload,
     )
     logger.info(
-        "Extracted topics doc=%s count=%d",
+        "Extracted topics doc=%s count=%d judged_subject=%s",
         payload.document_id,
         len(topics),
+        judged_subject,
     )
 
-    # 6. Hand off to the chunking worker (Sprint 2.8). Best-effort, same
-    #    pattern as the document_ingestion → topic_extraction handoff: if
-    #    the publish fails the doc is already at topics_extracted and a
-    #    re-run of THIS worker would re-pay for extract + merge + deps. A
-    #    sweep job (TBD) catches docs stuck without a matching chunk row.
+    # 6. Hand off to the chunking worker. The caller retries this whole
+    #    message if Service Bus is unavailable, which keeps completed topic
+    #    extraction and its chunking request from becoming disconnected.
     #
     # Canonical topic_ids are intentionally left empty here for v1. The
     # per-doc TopicTags hold names, but the canonical taxonomy ids live on
@@ -280,35 +306,37 @@ async def _handle(msg: ReceivedTopicMessage) -> None:
     # or a second workspace read here. Sprint 2.9 vectorization will need
     # them on the AI Search index for filtered retrieval — solving the
     # mapping at THAT seam keeps 2.8's scope honest.
-    try:
-        await publish_chunking_message(
-            ChunkingMessage(
-                document_id=payload.document_id,
-                tenant_id=payload.tenant_id,
-                workspace_id=payload.workspace_id,
-                extracted_text_blob_path=payload.extracted_text_blob_path,
-                topic_ids=[],
-            )
+    # A handoff failure must propagate so Service Bus retries it. Keeping a
+    # successful topic result without its next-stage message strands the UI
+    # at "Splitting content" indefinitely.
+    await publish_chunking_message(
+        ChunkingMessage(
+            document_id=payload.document_id,
+            tenant_id=payload.tenant_id,
+            workspace_id=payload.workspace_id,
+            extracted_text_blob_path=payload.extracted_text_blob_path,
+            topic_ids=[],
         )
-    except Exception:
-        logger.exception(
-            "Failed to enqueue chunking handoff for doc=%s — "
-            "document is stuck at topics_extracted",
-            payload.document_id,
-        )
+    )
 
 
 # ── Main loop ────────────────────────────────────────────────────────────────
 
 
 async def run_forever(*, max_wait_seconds: int = 30) -> None:
+    """Keep the worker alive across idle Service Bus receive windows."""
+    logger.info("Topic extraction worker starting")
+    while True:
+        await _consume_until_idle(max_wait_seconds=max_wait_seconds)
+
+
+async def _consume_until_idle(*, max_wait_seconds: int) -> None:
     """Consume the topic-extraction queue until cancelled.
 
     Cancellation comes from SIGTERM (Container Apps shutdown) or SIGINT
     (local dev Ctrl-C). On cancel, the current message in flight is
     abandoned (not completed) so a sibling replica will retry it.
     """
-    logger.info("Topic extraction worker starting")
     async with consume_topic_messages(max_wait_seconds=max_wait_seconds) as messages:
         async for msg in messages:
             try:
@@ -331,9 +359,7 @@ async def run_forever(*, max_wait_seconds: int = 30) -> None:
                 )
                 # maxDeliveryCount=3 for this queue (see service-bus.bicep).
                 if msg.delivery_count >= 3:
-                    await _mark_failed(
-                        msg.payload, f"Max retries exceeded: {exc}"
-                    )
+                    await _mark_failed(msg.payload, f"Max retries exceeded: {exc}")
                 await msg.abandon()
 
 

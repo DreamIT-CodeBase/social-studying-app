@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -27,6 +28,9 @@ class _FakeAdapter implements HttpClientAdapter {
 }
 
 ResponseBody _json(Map<String, dynamic> body, {int status = 200}) {
+  if (body.containsKey('document_id')) {
+    return _jsonRaw(jsonEncode(body), status: status);
+  }
   final json = '{"id":"${body['id'] ?? ''}",'
       '"workspace_id":"${body['workspace_id'] ?? ''}",'
       '"filename":"${body['filename'] ?? ''}",'
@@ -125,20 +129,42 @@ void main() {
   });
 
   group('upload', () {
-    test('POSTs multipart and parses returned doc', () async {
+    test('POSTs direct upload and parses returned doc', () async {
+      int step = 0;
       final adapter = _FakeAdapter(
         (options) {
-          expect(options.method, 'POST');
-          expect(options.data, isA<FormData>());
-          return _json({
-            'id': 'doc_new',
-            'workspace_id': 'wsp_test',
-            'filename': 'study.pdf',
-            'status': 'pending',
-          }, status: 201);
+          step++;
+          if (step == 1) {
+            expect(options.method, 'POST');
+            expect(options.path, contains('/documents/uploads'));
+            return _json({
+              'document_id': 'doc_new',
+              'upload_token': 'token123',
+              'upload_url': 'https://storage.azure.com/blob?sig=xyz',
+              'block_size_bytes': 4194304,
+            }, status: 201);
+          } else if (step == 2) {
+            // Stage blocks (PUT to upload_url)
+            return ResponseBody.fromString('', 201);
+          } else if (step == 3) {
+            // Commit block list (PUT to upload_url with comp=blocklist)
+            return ResponseBody.fromString('', 201);
+          } else {
+            // Complete upload
+            expect(options.path, contains('/complete'));
+            return _json({
+              'id': 'doc_new',
+              'workspace_id': 'wsp_test',
+              'filename': 'study.pdf',
+              'status': 'pending',
+            }, status: 201);
+          }
         },
       );
-      final repo = RealDocumentsRepository(dio: _dioWith(adapter));
+      final repo = RealDocumentsRepository(
+        dio: _dioWith(adapter),
+        blobDio: _dioWith(adapter),
+      );
       final doc = await repo.upload(
         workspaceId: 'wsp_test',
         filename: 'study.pdf',

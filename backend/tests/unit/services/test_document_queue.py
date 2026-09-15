@@ -70,12 +70,8 @@ async def test_publish_sends_one_message_with_doc_id_as_message_id():
     sb_client.__aexit__ = AsyncMock(return_value=None)
 
     with (
-        patch.object(
-            document_queue.settings, "service_bus_connection", "Endpoint=sb://test"
-        ),
-        patch.object(
-            document_queue.settings, "service_bus_documents_queue", "document-ingestion"
-        ),
+        patch.object(document_queue.settings, "service_bus_connection", "Endpoint=sb://test"),
+        patch.object(document_queue.settings, "service_bus_documents_queue", "document-ingestion"),
         patch(
             "app.services.document_queue.ServiceBusClient.from_connection_string",
             return_value=sb_client,
@@ -110,9 +106,7 @@ async def test_received_message_complete_calls_receiver():
     receiver = MagicMock()
     receiver.complete_message = AsyncMock()
     raw = MagicMock()
-    rec = ReceivedExtractionMessage(
-        payload=_msg(), delivery_count=1, _receiver=receiver, _raw=raw
-    )
+    rec = ReceivedExtractionMessage(payload=_msg(), delivery_count=1, _receiver=receiver, _raw=raw)
     await rec.complete()
     receiver.complete_message.assert_awaited_once_with(raw)
 
@@ -122,9 +116,7 @@ async def test_received_message_abandon_calls_receiver():
     receiver = MagicMock()
     receiver.abandon_message = AsyncMock()
     raw = MagicMock()
-    rec = ReceivedExtractionMessage(
-        payload=_msg(), delivery_count=2, _receiver=receiver, _raw=raw
-    )
+    rec = ReceivedExtractionMessage(payload=_msg(), delivery_count=2, _receiver=receiver, _raw=raw)
     await rec.abandon()
     receiver.abandon_message.assert_awaited_once_with(raw)
 
@@ -134,9 +126,7 @@ async def test_received_message_dead_letter_passes_reason():
     receiver = MagicMock()
     receiver.dead_letter_message = AsyncMock()
     raw = MagicMock()
-    rec = ReceivedExtractionMessage(
-        payload=_msg(), delivery_count=3, _receiver=receiver, _raw=raw
-    )
+    rec = ReceivedExtractionMessage(payload=_msg(), delivery_count=3, _receiver=receiver, _raw=raw)
     await rec.dead_letter("UnsupportedContent", "DOCX is corrupt")
     receiver.dead_letter_message.assert_awaited_once_with(
         raw, reason="UnsupportedContent", error_description="DOCX is corrupt"

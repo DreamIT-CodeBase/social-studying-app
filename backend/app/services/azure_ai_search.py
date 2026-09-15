@@ -102,8 +102,7 @@ def index_name_for(tenant_id: str) -> str:
 def _require_credentials() -> tuple[str, AzureKeyCredential]:
     if not settings.search_endpoint or not settings.search_key:
         raise ServiceUnavailableError(
-            "Azure AI Search is not configured "
-            "(set SEARCH_ENDPOINT and SEARCH_KEY)."
+            "Azure AI Search is not configured (set SEARCH_ENDPOINT and SEARCH_KEY)."
         )
     return settings.search_endpoint, AzureKeyCredential(settings.search_key)
 
@@ -258,12 +257,8 @@ async def upsert_chunks(
         async with _data_client(name) as client:
             results = await client.merge_or_upload_documents(documents=documents)
     except HttpResponseError as exc:
-        logger.exception(
-            "AI Search upsert failed: index=%s docs=%d", name, len(documents)
-        )
-        raise ServiceUnavailableError(
-            f"AI Search upsert failed for index {name}: {exc}"
-        ) from exc
+        logger.exception("AI Search upsert failed: index=%s docs=%d", name, len(documents))
+        raise ServiceUnavailableError(f"AI Search upsert failed for index {name}: {exc}") from exc
 
     succeeded = sum(1 for r in results if getattr(r, "succeeded", False))
     if succeeded != len(documents):
@@ -313,23 +308,17 @@ async def delete_for_document(
             keys = await _collect_chunk_ids(client, document_id=document_id)
             if not keys:
                 return 0
-            results = await client.delete_documents(
-                documents=[{"id": k} for k in keys]
-            )
+            results = await client.delete_documents(documents=[{"id": k} for k in keys])
     except ResourceNotFoundError:
         # Index doesn't exist yet (first vectorization for this tenant) —
         # nothing to delete. Not an error.
-        logger.debug(
-            "AI Search delete skipped: index %s does not exist yet", name
-        )
+        logger.debug("AI Search delete skipped: index %s does not exist yet", name)
         return 0
     except HttpResponseError as exc:
         # Some SDK paths surface "index not found" as a 404 HttpResponseError
         # rather than ResourceNotFoundError. Treat it the same way.
         if getattr(exc, "status_code", None) == 404:
-            logger.debug(
-                "AI Search delete skipped (404): index %s does not exist yet", name
-            )
+            logger.debug("AI Search delete skipped (404): index %s does not exist yet", name)
             return 0
         logger.exception(
             "AI Search delete failed: index=%s document=%s",
@@ -343,8 +332,7 @@ async def delete_for_document(
     succeeded = sum(1 for r in results if getattr(r, "succeeded", False))
     if succeeded != len(keys):
         failures = [
-            getattr(r, "error_message", "") for r in results
-            if not getattr(r, "succeeded", False)
+            getattr(r, "error_message", "") for r in results if not getattr(r, "succeeded", False)
         ]
         logger.error(
             "AI Search delete partial failure: index=%s document=%s ok=%d/%d failures=%s",
@@ -544,9 +532,7 @@ async def search_chunks(
         return []
     except HttpResponseError as exc:
         if getattr(exc, "status_code", None) == 404:
-            logger.debug(
-                "AI Search retrieval (404): index %s does not exist yet", name
-            )
+            logger.debug("AI Search retrieval (404): index %s does not exist yet", name)
             return []
         logger.exception("AI Search retrieval failed: index=%s", name)
         raise ServiceUnavailableError(
@@ -593,9 +579,7 @@ def _build_filter(*, workspace_id: str, topic_ids: list[str]) -> str:
     if topic_ids:
         # OData ``any`` over a collection field. Build one ``t eq '<id>'``
         # disjunct per requested topic.
-        ored = " or ".join(
-            f"t eq '{_escape_odata(tid)}'" for tid in topic_ids
-        )
+        ored = " or ".join(f"t eq '{_escape_odata(tid)}'" for tid in topic_ids)
         parts.append(f"topic_ids/any(t: {ored})")
     return " and ".join(parts)
 

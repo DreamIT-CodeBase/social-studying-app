@@ -10,7 +10,9 @@ class ScreenTimeSettings with _$ScreenTimeSettings {
   const factory ScreenTimeSettings({
     @JsonKey(name: 'workspace_id') required String workspaceId,
     @JsonKey(name: 'enable_blocking') @Default(true) bool enableBlocking,
-    @JsonKey(name: 'blocked_packages') @Default([]) List<String> blockedPackages,
+    @JsonKey(name: 'blocked_packages')
+    @Default([])
+    List<String> blockedPackages,
     @JsonKey(name: 'xp_to_minute_ratio') @Default(10) int xpToMinuteRatio,
     @JsonKey(name: 'updated_at') required String updatedAt,
   }) = _ScreenTimeSettings;

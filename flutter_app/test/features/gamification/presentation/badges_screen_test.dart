@@ -113,6 +113,10 @@ void main() {
 
     // Progress header counts the unlocks.
     expect(find.text('2 of 3 unlocked'), findsOneWidget);
+    // Filter/category/view controls are intentionally removed.
+    expect(find.byIcon(Icons.tune_rounded), findsNothing);
+    expect(find.byIcon(Icons.category_rounded), findsNothing);
+    expect(find.byIcon(Icons.list_alt_rounded), findsNothing);
     // Both section headers render.
     expect(find.text('EARNED'), findsOneWidget);
     expect(find.text('UP NEXT'), findsOneWidget);
@@ -167,10 +171,22 @@ void main() {
     // Sheet shows the description + an "Earned ..." chip.
     expect(find.text('Answer your first question.'), findsOneWidget);
     expect(find.textContaining('Earned'), findsWidgets);
+    final firstSize =
+        tester.getSize(find.byKey(const ValueKey('badge-detail-sheet')));
+
+    Navigator.of(
+      tester.element(find.byKey(const ValueKey('badge-detail-sheet'))),
+    ).pop();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Warming Up'));
+    await tester.pumpAndSettle();
+
+    final secondSize =
+        tester.getSize(find.byKey(const ValueKey('badge-detail-sheet')));
+    expect(secondSize, firstSize);
   });
 
-  testWidgets('tapping a locked tile opens the criteria sheet',
-      (tester) async {
+  testWidgets('tapping a locked tile opens the criteria sheet', (tester) async {
     // Tall viewport so the "Up next" section sits inside the laid-out
     // tree at hit-test time — the default 800x600 viewport leaves the
     // locked tile below the fold.
@@ -203,5 +219,20 @@ void main() {
       find.descendant(of: sheet, matching: find.textContaining('Earned ')),
       findsNothing,
     );
+    final lockedSize =
+        tester.getSize(find.byKey(const ValueKey('badge-detail-sheet')));
+
+    Navigator.of(
+      tester.element(find.byKey(const ValueKey('badge-detail-sheet'))),
+    ).pop();
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('First Steps'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('First Steps'));
+    await tester.pumpAndSettle();
+
+    final earnedSize =
+        tester.getSize(find.byKey(const ValueKey('badge-detail-sheet')));
+    expect(earnedSize, lockedSize);
   });
 }

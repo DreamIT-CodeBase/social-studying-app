@@ -25,7 +25,6 @@ from pathlib import Path
 
 import pytest
 
-
 PROMPTS_DIR = Path(__file__).resolve().parents[3] / "app" / "prompts"
 FIXTURES_DIR = PROMPTS_DIR / "fixtures"
 
@@ -61,8 +60,7 @@ def test_every_prompt_has_a_fixture_file():
         # Strip the trailing ``_v<digits>`` to match the fixture name.
         base = re.sub(r"_v\d+$", "", prompt.stem)
         assert base in fixture_stems, (
-            f"prompt {prompt.name} has no matching fixture "
-            f"{base}.json under {FIXTURES_DIR}"
+            f"prompt {prompt.name} has no matching fixture {base}.json under {FIXTURES_DIR}"
         )
 
 
@@ -104,9 +102,7 @@ def test_fixture_has_at_least_five_cases(fixture_path: Path):
 def test_fixture_case_names_are_unique(fixture_path: Path):
     payload = _load_fixture(fixture_path)
     names = [case.get("name") for case in payload["cases"]]
-    assert len(names) == len(set(names)), (
-        f"{fixture_path.name} has duplicate case names: {names}"
-    )
+    assert len(names) == len(set(names)), f"{fixture_path.name} has duplicate case names: {names}"
 
 
 @pytest.mark.parametrize(
@@ -140,9 +136,7 @@ def test_fixture_inputs_match_a_prompt_template(fixture_path: Path):
     base_name = fixture_path.stem  # e.g. "question_mcq"
     # Find the highest-version prompt template for this fixture.
     candidates = sorted(PROMPTS_DIR.glob(f"{base_name}_v*.txt"))
-    assert candidates, (
-        f"no prompt template found for fixture {fixture_path.name}"
-    )
+    assert candidates, f"no prompt template found for fixture {fixture_path.name}"
     template = candidates[-1]
     variables = _template_variables(template)
     for case in fixture["cases"]:

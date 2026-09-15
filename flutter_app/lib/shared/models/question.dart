@@ -161,3 +161,31 @@ class AnswerBadgeUnlock with _$AnswerBadgeUnlock {
   factory AnswerBadgeUnlock.fromJson(Map<String, dynamic> json) =>
       _$AnswerBadgeUnlockFromJson(json);
 }
+
+/// Counts blank spaces in a question body (e.g. `_______`, `[___]`, `[blank]`, `(blank)`).
+int countQuestionBlanks(String body) {
+  if (body.isEmpty) return 0;
+  final blankRegex = RegExp(
+    r'_{2,}|\[\s*(?:blank|\.{2,}|_*)\s*\]|\(\s*(?:blank|\.{2,}|_*)\s*\)',
+    caseSensitive: false,
+  );
+  return blankRegex.allMatches(body).length;
+}
+
+/// Returns true if the question body contains two or more blank spaces,
+/// or explicitly asks to fill in both/two blanks.
+bool hasMultipleBlanks(String body) {
+  final count = countQuestionBlanks(body);
+  if (count >= 2) return true;
+  final lower = body.toLowerCase();
+  if ((lower.contains('two blanks') || lower.contains('both blanks')) &&
+      count >= 1) {
+    return true;
+  }
+  return false;
+}
+
+extension QuestionBlankExtension on Question {
+  int get blankCount => countQuestionBlanks(body);
+  bool get hasMultipleBlanksQuestion => hasMultipleBlanks(body);
+}

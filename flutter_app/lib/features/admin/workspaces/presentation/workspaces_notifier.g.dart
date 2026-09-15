@@ -6,7 +6,7 @@ part of 'workspaces_notifier.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$workspacesListHash() => r'01909066fed9ace16454d4162799b5b9fbf3d54d';
+String _$workspacesListHash() => r'0f3c5b990e5218f261220cf2f1681afcd8102c8a';
 
 /// The admin's list of workspaces. Backs the workspace management
 /// screen (4.1).

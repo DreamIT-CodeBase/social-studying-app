@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
-import logging
-
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.api import (
+    adaptive_sessions,
     analytics,
     device_management,
     documents,
@@ -21,6 +22,7 @@ from app.api import (
     notifications,
     questions,
     screen_time,
+    subscriptions,
     taxonomy,
     tenants,
     users,
@@ -34,13 +36,16 @@ from app.core.versioning import API_VERSIONS, VersionResponseMiddleware
 _startup_logger = logging.getLogger("app.main")
 
 # ── Inline worker loop ────────────────────────────────────────────────────────
-# In local / non-production mode the pipeline workers run as asyncio tasks
-# inside the same uvicorn process so you don't need a separate terminal.
-# In production the workers are separate Container Apps, so this is a no-op.
+# Local developers can opt into running the pipeline workers as asyncio tasks
+# inside the same uvicorn process. Deployed environments use dedicated
+# Container Apps, even when their API environment is "development" for the
+# dev-auth bypass.
+
 
 async def _run_worker_loop(name: str) -> None:
     """Import and run a worker's run_forever(), restarting when it exits."""
     import importlib
+
     while True:
         try:
             mod = importlib.import_module(f"app.workers.{name}")
@@ -68,23 +73,19 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     startup_logger.info("MongoDB databases configured on startup:")
     startup_logger.info(f"  - Tenant 'ten_smoke001' maps to database: {settings.db_name_smoke}")
     startup_logger.info(f"  - Tenant 'ten_demo_001' maps to database: {settings.db_name_demo}")
-    startup_logger.info(f"  - Tenant '93e3ce50-a29e-462b-8956-85674a34d167' maps to database: {settings.db_name_uuid}")
+    startup_logger.info(
+        f"  - Tenant '93e3ce50-a29e-462b-8956-85674a34d167' maps to database: {settings.db_name_uuid}"
+    )
 
-    # Start inline workers (non-production only)
+    # Start inline workers only when explicitly enabled for local development.
     worker_tasks: list[asyncio.Task] = []
-    if settings.environment != "production" and settings.service_bus_connection:
+    if settings.inline_workers_enabled and settings.service_bus_connection:
         for worker_name in _INLINE_WORKERS:
-            task = asyncio.create_task(
-                _run_worker_loop(worker_name), name=f"worker-{worker_name}"
-            )
+            task = asyncio.create_task(_run_worker_loop(worker_name), name=f"worker-{worker_name}")
             worker_tasks.append(task)
-        startup_logger.info(
-            "Inline workers started: %s", ", ".join(_INLINE_WORKERS)
-        )
+        startup_logger.info("Inline workers started: %s", ", ".join(_INLINE_WORKERS))
     else:
-        startup_logger.info(
-            "Inline workers skipped (production mode or SERVICE_BUS_CONNECTION not set)."
-        )
+        startup_logger.info("Inline workers skipped (disabled or SERVICE_BUS_CONNECTION not set).")
 
     yield
 
@@ -179,6 +180,10 @@ _OPENAPI_TAGS = [
         "description": "Flashcard generation + self-rating.",
     },
     {
+        "name": "adaptive-sessions",
+        "description": "Prepare-once adaptive study, revision, and flashcard sessions.",
+    },
+    {
         "name": "gamification",
         "description": (
             "XP / level / streak / badges / leaderboard. The engine "
@@ -188,8 +193,7 @@ _OPENAPI_TAGS = [
     {
         "name": "analytics",
         "description": (
-            "Student progress + workspace dashboard + tenant "
-            "roll-up. Read-only aggregation."
+            "Student progress + workspace dashboard + tenant roll-up. Read-only aggregation."
         ),
     },
     {
@@ -204,11 +208,12 @@ _OPENAPI_TAGS = [
         "description": "Admin review of flagged content.",
     },
     {
+        "name": "subscriptions",
+        "description": "Stripe checkout, subscription management, and admin workspace gating.",
+    },
+    {
         "name": "meta",
-        "description": (
-            "Discovery + version metadata. Stable across API "
-            "versions."
-        ),
+        "description": ("Discovery + version metadata. Stable across API versions."),
     },
 ]
 
@@ -237,16 +242,12 @@ _logger = logging.getLogger(__name__)
 
 
 @app.exception_handler(Exception)
-async def _unhandled_exception_handler(
-    request: Request, exc: Exception
-) -> JSONResponse:
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Catch-all for unhandled exceptions — logs the full traceback and
     returns a clean 500 JSON body so clients always see structured errors.
     FastAPI/Starlette's default is a plain-text 500; this replaces it.
     """
-    _logger.exception(
-        "Unhandled exception: %s %s", request.method, request.url, exc_info=exc
-    )
+    _logger.exception("Unhandled exception: %s %s", request.method, request.url, exc_info=exc)
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error. Check server logs."},
@@ -260,9 +261,7 @@ app.add_middleware(
     # (random port per run) aren't CORS-blocked. None in prod → explicit
     # allowed_origins is the sole allowlist. See settings.allowed_origin_regex.
     allow_origin_regex=(
-        settings.allowed_origin_regex
-        if settings.environment != "production"
-        else None
+        settings.allowed_origin_regex if settings.environment != "production" else None
     ),
     allow_credentials=True,
     allow_methods=["*"],
@@ -312,6 +311,7 @@ async def list_api_versions() -> ApiVersionsResponse:
         ]
     )
 
+
 app.include_router(tenants.router, prefix="/api/v1")
 app.include_router(workspaces.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
@@ -320,6 +320,7 @@ app.include_router(taxonomy.router, prefix="/api/v1")
 app.include_router(moderation.router, prefix="/api/v1")
 app.include_router(questions.router, prefix="/api/v1")
 app.include_router(flashcards.router, prefix="/api/v1")
+app.include_router(adaptive_sessions.router, prefix="/api/v1")
 app.include_router(gamification.router, prefix="/api/v1")
 app.include_router(analytics.workspace_router, prefix="/api/v1")
 app.include_router(analytics.tenant_router, prefix="/api/v1")
@@ -327,6 +328,19 @@ app.include_router(notifications.users_router, prefix="/api/v1")
 app.include_router(notifications.admin_router, prefix="/api/v1")
 app.include_router(screen_time.router, prefix="/api/v1")
 app.include_router(device_management.router, prefix="/api/v1")
+app.include_router(subscriptions.router, prefix="/api/v1")
+
+
+@app.post("/api/stripe/webhook", tags=["subscriptions"])
+async def direct_stripe_webhook(
+    request: Request,
+    stripe_signature: str | None = Header(None, alias="stripe-signature"),
+) -> dict[str, Any]:
+    """Public Stripe webhook endpoint at /api/stripe/webhook."""
+    from app.services import stripe_service
+
+    payload = await request.body()
+    return await stripe_service.handle_webhook_event(payload, stripe_signature)
 
 
 @app.get("/health")

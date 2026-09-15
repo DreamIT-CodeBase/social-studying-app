@@ -96,8 +96,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Cellular Respiration'), findsOneWidget);
-    expect(
-        find.text('Which process releases energy in the cell?'),
+    expect(find.text('Which process releases energy in the cell?'),
         findsOneWidget);
     expect(find.textContaining('Violence'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Approve'), findsOneWidget);
@@ -187,7 +186,10 @@ void main() {
         .thenAnswer((_) async => <FlaggedItem>[]);
     when(() => repo.listLog(any())).thenAnswer(
       (_) async => [
-        _item(id: 'mod_9', topic: 'Genetics', verdict: ModerationVerdict.approved),
+        _item(
+            id: 'mod_9',
+            topic: 'Genetics',
+            verdict: ModerationVerdict.approved),
       ],
     );
 

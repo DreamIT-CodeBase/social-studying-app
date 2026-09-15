@@ -1,11 +1,15 @@
+import 'package:flutter/foundation.dart';
+import 'package:social_study_app/core/config/app_flavor.dart';
+
 abstract final class Environment {
-  // Default points at the host machine from the Android emulator (10.0.2.2).
-  // Override for production deploys:
-  //   --dart-define=API_BASE_URL=https://ca-api-dev.salmonmushroom-d5e027eb.centralus.azurecontainerapps.io
-  static const String apiBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8000',
-  );
+  static const String _defaultApiUrl =
+      'https://ca-api-dev.ambitiouswave-1e406ff3.centralus.azurecontainerapps.io';
+
+  static String get apiBaseUrl {
+    const fromEnv = String.fromEnvironment('API_BASE_URL');
+    if (fromEnv.isNotEmpty) return fromEnv;
+    return _defaultApiUrl;
+  }
 
   // When true, all repository providers route through Dio → real backend.
   // When false, demo/offline repositories are used for users matching the
@@ -36,8 +40,33 @@ abstract final class Environment {
     defaultValue: 'B2C_1_signupsignin',
   );
 
-  static const String b2cRedirectUri = String.fromEnvironment(
+  static const String _b2cRedirectUri = String.fromEnvironment(
     'B2C_REDIRECT_URI',
     defaultValue: 'msauth://com.socialstudyapp.app/callback',
+  );
+
+  static const String _b2cStudentIosRedirectUri = String.fromEnvironment(
+    'B2C_STUDENT_IOS_REDIRECT_URI',
+    defaultValue: 'msauth.ai.socialstudying.app://auth',
+  );
+
+  static const String _b2cAdminIosRedirectUri = String.fromEnvironment(
+    'B2C_ADMIN_IOS_REDIRECT_URI',
+    defaultValue: 'msauth.ai.socialstudying.app.admin://auth',
+  );
+
+  static String get b2cIosRedirectUri => currentFlavor == AppFlavor.admin
+      ? _b2cAdminIosRedirectUri
+      : _b2cStudentIosRedirectUri;
+
+  static String get b2cRedirectUri =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS
+          ? b2cIosRedirectUri
+          : _b2cRedirectUri;
+
+  static const String googleWebClientId = String.fromEnvironment(
+    'GOOGLE_WEB_CLIENT_ID',
+    defaultValue:
+        '140186450317-6d8qopjlvvmlad2847o3i8nru0saclv9.apps.googleusercontent.com',
   );
 }

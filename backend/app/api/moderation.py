@@ -34,8 +34,8 @@ import logging
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from app.core.auth import get_current_user, require_role
-from app.core.database import DOCUMENTS, MODERATION_LOG, QUESTION_QUEUE, FLASHCARDS, get_collection
+from app.core.auth import get_current_user
+from app.core.database import DOCUMENTS, FLASHCARDS, MODERATION_LOG, QUESTION_QUEUE, get_collection
 from app.core.exceptions import ForbiddenError, NotFoundError
 from app.models.base import utc_now
 from app.models.document import DocumentStatus
@@ -58,13 +58,13 @@ class FlaggedItemResponse(BaseModel):
     """Matches the Flutter ``FlaggedItem`` (snake_case JSON keys)."""
 
     id: str
-    content_kind: str            # "document" | "question" | "flashcard"
+    content_kind: str  # "document" | "question" | "flashcard"
     topic: str
     excerpt: str
     reason: str
-    severity: int                # raw Azure severity 0–6
+    severity: int  # raw Azure severity 0–6
     flagged_at: str
-    verdict: str                 # "pending" | "approved" | "rejected"
+    verdict: str  # "pending" | "approved" | "rejected"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -80,9 +80,21 @@ def _assert_workspace_access(user: User, workspace_id: str) -> None:
 
 
 def _assert_admin(user: User, workspace_id: str) -> None:
-    """Raise ForbiddenError if the user is not an admin of this workspace."""
+    """Raise ForbiddenError if the user is not an admin of this workspace.
+
+    Self-learning users (in personal / self-study workspaces, or not under parental oversight)
+    have admin authority over their own workspace content.
+    """
     if user.role == UserRole.tenant_admin:
         return
+    if (
+        workspace_id.startswith("wsp_self_")
+        or workspace_id.startswith("wsp_personal_")
+        or user.id in workspace_id
+    ):
+        ids = {m.workspace_id for m in user.workspace_memberships}
+        if workspace_id in ids or user.id in workspace_id:
+            return
     admin_memberships = {
         m.workspace_id
         for m in user.workspace_memberships
@@ -121,9 +133,9 @@ async def _project(
 
     if entry.target_type == ModerationTarget.document:
         if entry.target_id not in doc_cache:
-            doc_cache[entry.target_id] = await get_collection(
-                tenant_id, DOCUMENTS
-            ).find_one({"_id": entry.target_id})
+            doc_cache[entry.target_id] = await get_collection(tenant_id, DOCUMENTS).find_one(
+                {"_id": entry.target_id}
+            )
         doc = doc_cache[entry.target_id]
         if doc is not None:
             topic = doc.get("filename", topic)
@@ -135,16 +147,12 @@ async def _project(
                 detail = "passed content safety during ingestion"
             excerpt = f"{doc.get('filename', topic)} — {page_str}; {detail}"
     elif entry.target_type == ModerationTarget.question:
-        qst = await get_collection(tenant_id, QUESTION_QUEUE).find_one(
-            {"_id": entry.target_id}
-        )
+        qst = await get_collection(tenant_id, QUESTION_QUEUE).find_one({"_id": entry.target_id})
         if qst is not None:
             topic = qst.get("topic", topic)
             excerpt = qst.get("body", excerpt)
     elif entry.target_type == ModerationTarget.flashcard:
-        fc = await get_collection(tenant_id, FLASHCARDS).find_one(
-            {"_id": entry.target_id}
-        )
+        fc = await get_collection(tenant_id, FLASHCARDS).find_one({"_id": entry.target_id})
         if fc is not None:
             topic = fc.get("topic", topic)
             excerpt = fc.get("front", excerpt)
@@ -177,9 +185,7 @@ async def _list_by_actions(
     # the default indexing policy), so sort in-process. Newest first.
     entries.sort(key=lambda e: e.created_at, reverse=True)
     doc_cache: dict[str, dict | None] = {}
-    return [
-        await _project(e, tenant_id=tenant_id, doc_cache=doc_cache) for e in entries
-    ]
+    return [await _project(e, tenant_id=tenant_id, doc_cache=doc_cache) for e in entries]
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -317,11 +323,9 @@ async def _apply_document_decision(
         )
         # Update workspace document count
         from app.core.database import WORKSPACES
+
         wsp_col = get_collection(tenant_id, WORKSPACES)
-        await wsp_col.update_one(
-            {"_id": workspace_id},
-            {"$inc": {"document_count": -1}}
-        )
+        await wsp_col.update_one({"_id": workspace_id}, {"$inc": {"document_count": -1}})
         return
 
     # Approved: clear the flag, rewind to text_extracted, and re-enqueue the
@@ -373,9 +377,7 @@ async def _apply_question_decision(
     *, tenant_id: str, workspace_id: str, question_id: str, approved: bool
 ) -> None:
     qst_col = get_collection(tenant_id, QUESTION_QUEUE)
-    qst = await qst_col.find_one(
-        {"_id": question_id, "workspace_id": workspace_id}
-    )
+    qst = await qst_col.find_one({"_id": question_id, "workspace_id": workspace_id})
     if qst is None:
         raise NotFoundError("Question", question_id)
 
@@ -396,9 +398,7 @@ async def _apply_flashcard_decision(
     *, tenant_id: str, workspace_id: str, flashcard_id: str, approved: bool
 ) -> None:
     fc_col = get_collection(tenant_id, FLASHCARDS)
-    fc = await fc_col.find_one(
-        {"_id": flashcard_id, "workspace_id": workspace_id}
-    )
+    fc = await fc_col.find_one({"_id": flashcard_id, "workspace_id": workspace_id})
     if fc is None:
         raise NotFoundError("Flashcard", flashcard_id)
 

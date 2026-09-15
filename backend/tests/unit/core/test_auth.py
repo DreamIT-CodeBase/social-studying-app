@@ -7,15 +7,50 @@ from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials
 
 from app.core.auth import (
+    _ensure_self_learning_workspace,
+    _lookup_or_create_user,
     _validate_token,
     get_current_user,
     require_role,
-    _lookup_or_create_user,
 )
-from app.core.config import settings
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.models.user import UserRole
 from tests.unit.conftest import make_user
+
+
+@pytest.mark.asyncio
+async def test_self_learning_workspace_is_not_created_for_admins():
+    admin = make_user(role=UserRole.tenant_admin)
+
+    with patch("app.core.auth.get_collection") as get_collection:
+        result = await _ensure_self_learning_workspace(admin)
+
+    assert result is admin
+    assert result.workspace_memberships == []
+    get_collection.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_self_learning_workspace_is_still_created_for_students():
+    student = make_user(user_id="usr_student", role=UserRole.student)
+    workspace_col = MagicMock()
+    workspace_col.find_one = AsyncMock(return_value=None)
+    workspace_col.insert_one = AsyncMock()
+    user_col = MagicMock()
+    user_col.replace_one = AsyncMock()
+
+    def collection_for(_tenant_id, collection_name):
+        return user_col if collection_name == "users" else workspace_col
+
+    with (
+        patch("app.core.auth.get_collection", side_effect=collection_for),
+        patch("app.core.auth.get_redis", AsyncMock(side_effect=RuntimeError)),
+    ):
+        result = await _ensure_self_learning_workspace(student)
+
+    assert result.workspace_memberships[0].workspace_id == "wsp_self_usr_student"
+    workspace_col.insert_one.assert_awaited_once()
+
 
 # ── _validate_token ───────────────────────────────────────────────────────────
 
@@ -39,6 +74,27 @@ async def test_validate_token_valid_returns_claims():
         claims = await _validate_token("valid.token.here")
     assert claims["sub"] == "obj_123"
     assert claims["extension_TenantId"] == "ten_001"
+
+
+@pytest.mark.asyncio
+async def test_validate_token_google_returns_claims():
+    google_claims = {
+        "sub": "google_123",
+        "iss": "https://accounts.google.com",
+        "email": "google@example.com",
+        "name": "Google User",
+    }
+    with (
+        patch("app.core.auth._get_google_jwks", AsyncMock(return_value={"keys": []})),
+        patch(
+            "app.core.auth.jwt.get_unverified_claims",
+            return_value={"iss": "https://accounts.google.com"},
+        ),
+        patch("app.core.auth.jwt.decode", return_value=google_claims),
+    ):
+        claims = await _validate_token("google.token.here")
+    assert claims["sub"] == "google_123"
+    assert claims["iss"] == "https://accounts.google.com"
 
 
 # ── get_current_user ──────────────────────────────────────────────────────────
@@ -101,6 +157,7 @@ async def test_get_current_user_happy_path_returns_user_and_sets_state():
             AsyncMock(return_value={"sub": "obj_123", "extension_TenantId": "ten_test001"}),
         ),
         patch("app.core.auth._lookup_or_create_user", AsyncMock(return_value=expected_user)),
+        patch("app.core.auth._ensure_self_learning_workspace", AsyncMock(side_effect=lambda u: u)),
     ):
         user = await get_current_user(request, credentials=creds)
 
@@ -189,20 +246,28 @@ async def test_lookup_or_create_user_not_found_creates_user():
 
     # DB collection simulation: return None (user not found), then simulate insert and subsequent find returning the user doc
     fake_users_col = MagicMock()
-    fake_users_col.find_one = AsyncMock(side_effect=[None, None, {
-        "_id": "usr_created_123",
-        "tenant_id": "ten_test001",
-        "email": "test@example.com",
-        "display_name": "Test User",
-        "b2c_object_id": "unknown",
-        "role": "student",
-        "is_active": True,
-        "created_at": "2026-06-08T00:00:00",
-    }])
+    fake_users_col.find_one = AsyncMock(
+        side_effect=[
+            None,
+            None,
+            {
+                "_id": "usr_created_123",
+                "tenant_id": "ten_test001",
+                "email": "test@example.com",
+                "display_name": "Test User",
+                "b2c_object_id": "unknown",
+                "role": "student",
+                "is_active": True,
+                "created_at": "2026-06-08T00:00:00",
+            },
+        ]
+    )
     fake_users_col.insert_one = AsyncMock()
 
     fake_tenants_col = MagicMock()
-    fake_tenants_col.find_one = AsyncMock(return_value={"_id": "ten_test001", "name": "Test Tenant"})
+    fake_tenants_col.find_one = AsyncMock(
+        return_value={"_id": "ten_test001", "name": "Test Tenant"}
+    )
 
     def get_collection_mock(db_name, col_name):
         if db_name == "platform" and col_name == "tenants":

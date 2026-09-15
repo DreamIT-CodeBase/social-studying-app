@@ -117,8 +117,7 @@ def _matches(doc: dict, filter_: dict) -> bool:
     for key, expected in filter_.items():
         if isinstance(expected, dict):
             raise NotImplementedError(
-                f"Fake collection matcher does not support operator filters: "
-                f"{key!r} → {expected!r}"
+                f"Fake collection matcher does not support operator filters: {key!r} → {expected!r}"
             )
         if doc.get(key) != expected:
             return False
@@ -178,11 +177,7 @@ class _FakeCollection:
         return None
 
     def find(self, filter_: dict) -> _FakeCursor:
-        matches = [
-            json.loads(json.dumps(d))
-            for d in self.docs.values()
-            if _matches(d, filter_)
-        ]
+        matches = [json.loads(json.dumps(d)) for d in self.docs.values() if _matches(d, filter_)]
         return _FakeCursor(matches)
 
     async def insert_one(self, doc: dict) -> Any:
@@ -225,11 +220,7 @@ class _FakeCollection:
         return MagicMock(matched_count=1)
 
     async def delete_many(self, filter_: dict) -> Any:
-        to_drop = [
-            doc_id
-            for doc_id, d in self.docs.items()
-            if _matches(d, filter_)
-        ]
+        to_drop = [doc_id for doc_id, d in self.docs.items() if _matches(d, filter_)]
         for doc_id in to_drop:
             del self.docs[doc_id]
         return MagicMock(deleted_count=len(to_drop))
@@ -366,17 +357,11 @@ def pipeline(monkeypatch) -> Iterator[_PipelineState]:
 
     async def fake_download_extracted_text(blob_path: str) -> str:
         if blob_path not in text_blobs:
-            raise AssertionError(
-                f"fake download_extracted_text: unknown blob_path={blob_path!r}"
-            )
+            raise AssertionError(f"fake download_extracted_text: unknown blob_path={blob_path!r}")
         return text_blobs[blob_path]
 
-    monkeypatch.setattr(
-        "app.services.blob_storage.upload_document", fake_upload_document
-    )
-    monkeypatch.setattr(
-        "app.services.blob_storage.download_document", fake_download_document
-    )
+    monkeypatch.setattr("app.services.blob_storage.upload_document", fake_upload_document)
+    monkeypatch.setattr("app.services.blob_storage.download_document", fake_download_document)
     monkeypatch.setattr(
         "app.services.blob_storage.upload_extracted_text", fake_upload_extracted_text
     )
@@ -415,9 +400,7 @@ def pipeline(monkeypatch) -> Iterator[_PipelineState]:
     )
     # Each worker imports the next stage's publisher by name — patch the local
     # rebound name at each call site.
-    monkeypatch.setattr(
-        "app.workers.document_ingestion.publish_topic_message", fake_publish_topic
-    )
+    monkeypatch.setattr("app.workers.document_ingestion.publish_topic_message", fake_publish_topic)
     monkeypatch.setattr(
         "app.workers.topic_extraction.publish_chunking_message",
         fake_publish_chunking,
@@ -442,17 +425,13 @@ def pipeline(monkeypatch) -> Iterator[_PipelineState]:
             raise state_holder["di_error"]
         return state_holder["extracted"]
 
-    monkeypatch.setattr(
-        "app.services.document_intelligence.extract_text", fake_extract_text
-    )
+    monkeypatch.setattr("app.services.document_intelligence.extract_text", fake_extract_text)
 
     # ── Content Safety fake ─────────────────────────────────────────────────
     async def fake_analyze(text: str) -> SafetyVerdict:
         return state_holder["verdict"]
 
-    monkeypatch.setattr(
-        "app.services.content_safety.analyze_extracted_text", fake_analyze
-    )
+    monkeypatch.setattr("app.services.content_safety.analyze_extracted_text", fake_analyze)
 
     # ── Azure OpenAI fakes ──────────────────────────────────────────────────
     topics_payload: list[dict] = [
@@ -497,14 +476,10 @@ def pipeline(monkeypatch) -> Iterator[_PipelineState]:
         # Topic extraction — the only remaining caller.
         return {"topics": list(topics_payload)}
 
-    monkeypatch.setattr(
-        "app.services.azure_openai.chat_json", fake_chat_json
-    )
+    monkeypatch.setattr("app.services.azure_openai.chat_json", fake_chat_json)
 
     embedding_dim = 8
-    monkeypatch.setattr(
-        "app.core.config.settings.azure_openai_embedding_dim", embedding_dim
-    )
+    monkeypatch.setattr("app.core.config.settings.azure_openai_embedding_dim", embedding_dim)
     monkeypatch.setattr(
         "app.core.config.settings.azure_openai_embedding_deployment",
         "text-embedding-3-small",
@@ -518,13 +493,9 @@ def pipeline(monkeypatch) -> Iterator[_PipelineState]:
     ) -> list[list[float]]:
         # Deterministic per-text vectors. Length is the configured dim so
         # the vectorization service's length-mismatch guard stays green.
-        return [
-            [float((i + 1) * 0.01) for i in range(embedding_dim)] for _ in texts
-        ]
+        return [[float((i + 1) * 0.01) for i in range(embedding_dim)] for _ in texts]
 
-    monkeypatch.setattr(
-        "app.services.azure_openai.embed_texts", fake_embed_texts
-    )
+    monkeypatch.setattr("app.services.azure_openai.embed_texts", fake_embed_texts)
 
     # ── Azure AI Search fake ────────────────────────────────────────────────
     search_index: dict[str, list[dict]] = {}
@@ -554,17 +525,11 @@ def pipeline(monkeypatch) -> Iterator[_PipelineState]:
         if name not in search_index:
             return 0
         before = len(search_index[name])
-        search_index[name] = [
-            d for d in search_index[name] if d.get("document_id") != document_id
-        ]
+        search_index[name] = [d for d in search_index[name] if d.get("document_id") != document_id]
         return before - len(search_index[name])
 
-    monkeypatch.setattr(
-        "app.services.azure_ai_search.ensure_index", fake_ensure_index
-    )
-    monkeypatch.setattr(
-        "app.services.azure_ai_search.upsert_chunks", fake_upsert_chunks
-    )
+    monkeypatch.setattr("app.services.azure_ai_search.ensure_index", fake_ensure_index)
+    monkeypatch.setattr("app.services.azure_ai_search.upsert_chunks", fake_upsert_chunks)
     monkeypatch.setattr(
         "app.services.azure_ai_search.delete_for_document", fake_delete_for_document
     )
@@ -801,9 +766,7 @@ async def test_pipeline_happy_path(client: TestClient, pipeline: _PipelineState)
 
 
 @pytest.mark.asyncio
-async def test_pipeline_content_safety_flagged(
-    client: TestClient, pipeline: _PipelineState
-):
+async def test_pipeline_content_safety_flagged(client: TestClient, pipeline: _PipelineState):
     """A flagged content-safety verdict halts the pipeline at the extraction
     stage. Downstream queues stay empty, no taxonomy gets written, no
     chunks are persisted, no vectors get indexed.
@@ -903,9 +866,9 @@ async def test_pipeline_document_intelligence_unsupported(
     assert pipeline.queues["vectorization"] == []
 
     # Raw upload blob is still there for forensic review.
-    assert any(
-        document_id in path for path in pipeline.raw_blobs
-    ), f"raw upload blob should be retained on DI failure; have {list(pipeline.raw_blobs)}"
+    assert any(document_id in path for path in pipeline.raw_blobs), (
+        f"raw upload blob should be retained on DI failure; have {list(pipeline.raw_blobs)}"
+    )
     # No extracted-text blob was written (DI never produced text).
     assert pipeline.text_blobs == {}
 

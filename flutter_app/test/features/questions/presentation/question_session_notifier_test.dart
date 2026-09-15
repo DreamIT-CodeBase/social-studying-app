@@ -64,8 +64,7 @@ void main() {
 
   group('start', () {
     test('idle → loading → ready on successful fetch', () async {
-      when(() => repo.next(workspaceId: 'wsp_a'))
-          .thenAnswer((_) async => _q());
+      when(() => repo.next(workspaceId: 'wsp_a')).thenAnswer((_) async => _q());
 
       final notifier = container.read(
         questionSessionNotifierProvider('wsp_a').notifier,
@@ -145,8 +144,7 @@ void main() {
     });
 
     test('start is a no-op when already past idle', () async {
-      when(() => repo.next(workspaceId: 'wsp_a'))
-          .thenAnswer((_) async => _q());
+      when(() => repo.next(workspaceId: 'wsp_a')).thenAnswer((_) async => _q());
 
       final notifier = container.read(
         questionSessionNotifierProvider('wsp_a').notifier,
@@ -160,8 +158,7 @@ void main() {
 
   group('setDraftAnswer', () {
     test('updates the draftAnswer in ready state', () async {
-      when(() => repo.next(workspaceId: 'wsp_a'))
-          .thenAnswer((_) async => _q());
+      when(() => repo.next(workspaceId: 'wsp_a')).thenAnswer((_) async => _q());
       final notifier = container.read(
         questionSessionNotifierProvider('wsp_a').notifier,
       );
@@ -189,10 +186,8 @@ void main() {
   });
 
   group('submit', () {
-    test('ready → submitting → feedback on successful submission',
-        () async {
-      when(() => repo.next(workspaceId: 'wsp_a'))
-          .thenAnswer((_) async => _q());
+    test('ready → submitting → feedback on successful submission', () async {
+      when(() => repo.next(workspaceId: 'wsp_a')).thenAnswer((_) async => _q());
       when(
         () => repo.submitAnswer(
           workspaceId: 'wsp_a',
@@ -219,8 +214,7 @@ void main() {
     });
 
     test('submit with no draft is a no-op', () async {
-      when(() => repo.next(workspaceId: 'wsp_a'))
-          .thenAnswer((_) async => _q());
+      when(() => repo.next(workspaceId: 'wsp_a')).thenAnswer((_) async => _q());
 
       final notifier = container.read(
         questionSessionNotifierProvider('wsp_a').notifier,
@@ -245,8 +239,7 @@ void main() {
     });
 
     test('submit with whitespace-only draft is a no-op', () async {
-      when(() => repo.next(workspaceId: 'wsp_a'))
-          .thenAnswer((_) async => _q());
+      when(() => repo.next(workspaceId: 'wsp_a')).thenAnswer((_) async => _q());
 
       final notifier = container.read(
         questionSessionNotifierProvider('wsp_a').notifier,
@@ -264,10 +257,8 @@ void main() {
       );
     });
 
-    test(
-        'QuestionNotFoundException during submit → error state', () async {
-      when(() => repo.next(workspaceId: 'wsp_a'))
-          .thenAnswer((_) async => _q());
+    test('QuestionNotFoundException during submit → error state', () async {
+      when(() => repo.next(workspaceId: 'wsp_a')).thenAnswer((_) async => _q());
       when(
         () => repo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
@@ -343,8 +334,7 @@ void main() {
     });
 
     test('next is a no-op when not in feedback state', () async {
-      when(() => repo.next(workspaceId: 'wsp_a'))
-          .thenAnswer((_) async => _q());
+      when(() => repo.next(workspaceId: 'wsp_a')).thenAnswer((_) async => _q());
 
       final notifier = container.read(
         questionSessionNotifierProvider('wsp_a').notifier,

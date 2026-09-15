@@ -102,10 +102,7 @@ async def test_handle_happy_path_persists_chunks_and_advances_status():
         assert built.chunker_version == "v1"
 
     # Status transitions: chunking → chunked.
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses == [DocumentStatus.chunking.value, DocumentStatus.chunked.value]
 
     final_update = col.update_one.await_args_list[-1].args[1]["$set"]
@@ -186,10 +183,7 @@ async def test_handle_empty_chunker_output_still_advances():
     ):
         await worker._handle(msg)
 
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses[-1] == DocumentStatus.chunked.value
     final_update = col.update_one.await_args_list[-1].args[1]["$set"]
     assert final_update["chunk_count"] == 0
@@ -219,10 +213,7 @@ async def test_handle_blob_not_found_marks_failed_and_dead_letters():
         await worker._handle(msg)
 
     msg._receiver.dead_letter_message.assert_awaited_once()
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses == [DocumentStatus.chunking.value, DocumentStatus.failed.value]
     final_update = col.update_one.await_args_list[-1].args[1]["$set"]
     assert "Extracted text blob not found" in final_update["processing_error"]
@@ -253,10 +244,7 @@ async def test_handle_chunker_value_error_marks_failed_and_dead_letters():
         await worker._handle(msg)
 
     msg._receiver.dead_letter_message.assert_awaited_once()
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses[-1] == DocumentStatus.failed.value
     final_update = col.update_one.await_args_list[-1].args[1]["$set"]
     assert "Chunker rejected input" in final_update["processing_error"]
@@ -291,22 +279,16 @@ async def test_handle_transient_cosmos_failure_propagates():
         await worker._handle(msg)
 
     # We set status=chunking but never advanced to chunked — SB will redeliver.
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses == [DocumentStatus.chunking.value]
 
 
-# ── Sprint 2.9 — vectorization handoff failure must not crash worker ────────
+# ── Sprint 2.9 — vectorization handoff failure is retried ───────────────────
 
 
 @pytest.mark.asyncio
-async def test_handle_vectorization_handoff_failure_does_not_crash():
-    """If publish_vectorization_message raises, the doc still lands at
-    chunked. Worker logs but doesn't surface — re-running the chunker would
-    pay for the chunker pass again, acceptable for the cheap CPU stage.
-    """
+async def test_handle_vectorization_handoff_failure_propagates_for_retry():
+    """A publish outage must not silently strand a chunked document."""
     msg = _msg()
     col = _mock_collection()
 
@@ -328,11 +310,9 @@ async def test_handle_vectorization_handoff_failure_does_not_crash():
             "app.workers.chunking.publish_vectorization_message",
             AsyncMock(side_effect=RuntimeError("SB unreachable")),
         ),
+        pytest.raises(RuntimeError, match="SB unreachable"),
     ):
-        await worker._handle(msg)  # must NOT raise
+        await worker._handle(msg)
 
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses[-1] == DocumentStatus.chunked.value

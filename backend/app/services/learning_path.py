@@ -236,15 +236,11 @@ async def select_next_topic(
     # foundational topics on ties), then by name (deterministic across
     # runs — crucial so the same student-state always picks the same
     # topic).
-    scored.sort(
-        key=lambda s: (-s.score, s.complexity_level or 0.0, s.topic_name.casefold())
-    )
+    scored.sort(key=lambda s: (-s.score, s.complexity_level or 0.0, s.topic_name.casefold()))
 
     selected = scored[0]
     candidates = (
-        scored[: 1 + config.candidates_limit]
-        if config.candidates_limit is not None
-        else scored
+        scored[: 1 + config.candidates_limit] if config.candidates_limit is not None else scored
     )
     rationale = _build_rationale(selected, context_result)
 
@@ -299,9 +295,7 @@ def _score_all_topics(
     by_id = {t.id: t for t in topics}
 
     # Build a recent-topics list (most-recent-first) for variety + recency.
-    recent_topics: list[str] = [
-        ix.topic.casefold() for ix in context.recent_interactions
-    ]
+    recent_topics: list[str] = [ix.topic.casefold() for ix in context.recent_interactions]
 
     scored: list[TopicScore] = []
     for t in topics:
@@ -502,10 +496,7 @@ def _build_rationale(
     elif prereq < 0:
         parts.append("note: parent topic not yet at mastery floor")
 
-    return (
-        f"Selected {selected.topic_name!r} — score={selected.score:.2f} "
-        f"({', '.join(parts)})"
-    )
+    return f"Selected {selected.topic_name!r} — score={selected.score:.2f} ({', '.join(parts)})"
 
 
 # ── Cosmos read ─────────────────────────────────────────────────────────────
@@ -515,7 +506,5 @@ async def _read_workspace(tenant_id: str, workspace_id: str) -> Workspace:
     col = get_collection(tenant_id, WORKSPACES)
     raw = await col.find_one({"_id": workspace_id})
     if raw is None:
-        raise WorkspaceNotFound(
-            f"Workspace {workspace_id} not found in tenant {tenant_id}"
-        )
+        raise WorkspaceNotFound(f"Workspace {workspace_id} not found in tenant {tenant_id}")
     return Workspace.model_validate(raw)

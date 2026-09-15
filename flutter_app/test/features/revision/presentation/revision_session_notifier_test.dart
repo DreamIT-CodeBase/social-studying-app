@@ -91,19 +91,18 @@ void main() {
   });
 
   test('build returns idle', () {
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final state = container.read(revisionSessionNotifierProvider(_wsId));
     expect(state, isA<RevisionSessionIdle>());
   });
 
-  test('start builds an alternating plan and fetches the first item',
-      () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+  test('start builds an alternating plan and fetches the first item', () async {
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     await container
         .read(revisionSessionNotifierProvider(_wsId).notifier)
         .start(itemCount: 4);
@@ -114,20 +113,21 @@ void main() {
     expect(state.progress.total, 4);
   });
 
-  test('alternating plan: Q → graded → advance fetches a flashcard',
-      () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+  test('alternating plan: Q → graded → advance fetches a flashcard', () async {
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback());
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start(itemCount: 4);
@@ -146,12 +146,15 @@ void main() {
   });
 
   test('flashcard phase: front → flip → back → rate → rated', () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback());
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
@@ -161,8 +164,7 @@ void main() {
           submission: any(named: 'submission'),
         )).thenAnswer((_) async => _rateResponse(FlashcardRating.easy));
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start(itemCount: 2);
@@ -180,17 +182,21 @@ void main() {
     await notifier.rate(FlashcardRating.easy);
     final state = container.read(revisionSessionNotifierProvider(_wsId));
     expect(state, isA<RevisionSessionFlashcardRated>());
-    expect((state as RevisionSessionFlashcardRated).rating, FlashcardRating.easy);
+    expect(
+        (state as RevisionSessionFlashcardRated).rating, FlashcardRating.easy);
   });
 
   test('advancing past the last item transitions to complete with tallies',
       () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback(correct: true));
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
@@ -200,8 +206,7 @@ void main() {
           submission: any(named: 'submission'),
         )).thenAnswer((_) async => _rateResponse(FlashcardRating.medium));
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start(itemCount: 2);
@@ -226,16 +231,18 @@ void main() {
   });
 
   test('incorrect answers do not bump the correct tally', () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback(correct: false));
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start(itemCount: 1);
@@ -251,11 +258,12 @@ void main() {
 
   test('a NoTopicsAvailable from the question fetch lands in unavailable',
       () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenThrow(const NoTopicsAvailableException());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenThrow(const NoTopicsAvailableException());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     await container
         .read(revisionSessionNotifierProvider(_wsId).notifier)
         .start();
@@ -266,18 +274,20 @@ void main() {
   });
 
   test('a NoFlashcardTopics surfaces unavailable as well', () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback());
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenThrow(const NoFlashcardTopicsException());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start(itemCount: 2);
@@ -292,11 +302,12 @@ void main() {
 
   test('a generator-busy exception lands in unavailable without no-topics',
       () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenThrow(const QuestionGenerationUnavailableException());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenThrow(const QuestionGenerationUnavailableException());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     await container
         .read(revisionSessionNotifierProvider(_wsId).notifier)
         .start();
@@ -307,11 +318,12 @@ void main() {
   });
 
   test('a generic transport error lands in error', () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenThrow(Exception('network down'));
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenThrow(Exception('network down'));
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     await container
         .read(revisionSessionNotifierProvider(_wsId).notifier)
         .start();
@@ -323,18 +335,20 @@ void main() {
   });
 
   test('submitAnswer is a no-op from a flashcard state', () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
     when(() => qRepo.submitAnswer(
           workspaceId: any(named: 'workspaceId'),
           questionId: any(named: 'questionId'),
           submission: any(named: 'submission'),
+          revision: any(named: 'revision'),
         )).thenAnswer((_) async => _feedback());
     when(() => fRepo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start(itemCount: 2);
@@ -350,11 +364,12 @@ void main() {
   });
 
   test('rate is a no-op from a question state', () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start();
@@ -367,11 +382,12 @@ void main() {
   });
 
   test('start is a no-op when not idle', () async {
-    when(() => qRepo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async => _mcq());
+    when(() => qRepo.next(
+          workspaceId: any(named: 'workspaceId'),
+          revision: any(named: 'revision'),
+        )).thenAnswer((_) async => _mcq());
 
-    final container =
-        _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
+    final container = _container(questionsRepo: qRepo, flashcardsRepo: fRepo);
     final notifier =
         container.read(revisionSessionNotifierProvider(_wsId).notifier);
     await notifier.start(itemCount: 5);
@@ -380,7 +396,10 @@ void main() {
     final state = container.read(revisionSessionNotifierProvider(_wsId));
     expect((state as RevisionSessionQuestion).progress.total, 5);
 
-    verify(() => qRepo.next(workspaceId: _wsId)).called(1);
+    verify(() => qRepo.next(
+          workspaceId: _wsId,
+          revision: any(named: 'revision'),
+        )).called(1);
   });
 
   test('the demo repositories drive a real revision session', () async {

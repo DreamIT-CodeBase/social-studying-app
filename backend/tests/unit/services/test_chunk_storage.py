@@ -12,6 +12,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pymongo.errors import BulkWriteError
 
 from app.models.chunk import Chunk
 from app.services import chunk_storage
@@ -41,6 +42,7 @@ def _mock_collection(*, deleted: int = 0, inserted_count: int = 0) -> MagicMock:
     col.insert_many = AsyncMock(
         return_value=MagicMock(inserted_ids=[f"chk_{i}" for i in range(inserted_count)])
     )
+    col.replace_one = AsyncMock()
     col.count_documents = AsyncMock(return_value=0)
     return col
 
@@ -61,9 +63,8 @@ async def test_replace_chunks_deletes_then_inserts():
         )
 
     col.delete_many.assert_awaited_once_with({"document_id": "doc_abc"})
-    col.insert_many.assert_awaited_once()
-    docs = col.insert_many.await_args.args[0]
-    assert len(docs) == 3
+    assert col.replace_one.await_count == 3
+    docs = [call.args[1] for call in col.replace_one.await_args_list]
     assert all(d["document_id"] == "doc_abc" for d in docs)
     assert inserted == 3
 
@@ -96,9 +97,9 @@ async def test_replace_chunks_assigns_id_when_missing():
             document_id="doc_abc",
             chunks=[chunk],
         )
-    docs = col.insert_many.await_args.args[0]
-    assert docs[0]["_id"].startswith("chk_")
-    assert docs[0]["_id"] != ""
+    doc = col.replace_one.await_args.args[1]
+    assert doc["_id"].startswith("chk_")
+    assert doc["_id"] != ""
 
 
 @pytest.mark.asyncio
@@ -111,8 +112,51 @@ async def test_replace_chunks_preserves_provided_id():
             document_id="doc_abc",
             chunks=[chunk],
         )
-    docs = col.insert_many.await_args.args[0]
-    assert docs[0]["_id"] == "chk_explicit"
+    doc = col.replace_one.await_args.args[1]
+    assert doc["_id"] == "chk_explicit"
+
+
+@pytest.mark.asyncio
+async def test_replace_chunks_writes_chunks_as_idempotent_upserts():
+    col = _mock_collection()
+    chunks = [_chunk(chunk_index=i, id=f"chk_{i}") for i in range(3)]
+
+    with (
+        patch("app.services.chunk_storage.get_collection", return_value=col),
+        patch("app.services.chunk_storage.asyncio.sleep", new_callable=AsyncMock) as sleep,
+    ):
+        inserted = await chunk_storage.replace_chunks(
+            tenant_id="ten_abc", document_id="doc_abc", chunks=chunks
+        )
+
+    assert col.replace_one.await_count == len(chunks)
+    assert [call.args[0] for call in col.replace_one.await_args_list] == [
+        {"_id": "chk_0"},
+        {"_id": "chk_1"},
+        {"_id": "chk_2"},
+    ]
+    assert sleep.await_count == len(chunks) - 1
+    assert inserted == len(chunks)
+
+
+@pytest.mark.asyncio
+async def test_replace_chunks_retries_cosmos_throttling_from_a_clean_state():
+    col = _mock_collection()
+    throttled = BulkWriteError({"writeErrors": [{"code": 16500, "errmsg": "RetryAfterMs=15"}]})
+    col.replace_one.side_effect = [throttled, MagicMock()]
+
+    with (
+        patch("app.services.chunk_storage.get_collection", return_value=col),
+        patch("app.services.chunk_storage.asyncio.sleep", new_callable=AsyncMock) as sleep,
+    ):
+        inserted = await chunk_storage.replace_chunks(
+            tenant_id="ten_abc", document_id="doc_abc", chunks=[_chunk()]
+        )
+
+    assert inserted == 1
+    assert col.delete_many.await_count == 1
+    assert col.replace_one.await_count == 2
+    sleep.assert_awaited_once_with(0.25)
 
 
 # ── count_for_document ──────────────────────────────────────────────────────
@@ -124,9 +168,7 @@ async def test_count_for_document_filters_by_document_id():
     col.count_documents = AsyncMock(return_value=42)
 
     with patch("app.services.chunk_storage.get_collection", return_value=col):
-        n = await chunk_storage.count_for_document(
-            tenant_id="ten_abc", document_id="doc_abc"
-        )
+        n = await chunk_storage.count_for_document(tenant_id="ten_abc", document_id="doc_abc")
 
     assert n == 42
     col.count_documents.assert_awaited_once_with({"document_id": "doc_abc"})
@@ -147,7 +189,7 @@ class _FakeCursor:
         self._docs = docs
         self.sort_called_with: tuple | None = None
 
-    def sort(self, key: str, direction: int) -> "_FakeCursor":
+    def sort(self, key: str, direction: int) -> _FakeCursor:
         self.sort_called_with = (key, direction)
         return self
 
@@ -167,17 +209,14 @@ async def test_find_for_document_returns_chunks_sorted_by_index():
     verify the ordering is enforced by the service, not by the cursor.
     """
     raw_docs = [
-        {**_chunk(chunk_index=i, id=f"chk_{i}").model_dump(by_alias=True)}
-        for i in (2, 0, 1)
+        {**_chunk(chunk_index=i, id=f"chk_{i}").model_dump(by_alias=True)} for i in (2, 0, 1)
     ]
     cursor = _FakeCursor(raw_docs)
     col = MagicMock()
     col.find = MagicMock(return_value=cursor)
 
     with patch("app.services.chunk_storage.get_collection", return_value=col):
-        chunks = await chunk_storage.find_for_document(
-            tenant_id="ten_abc", document_id="doc_abc"
-        )
+        chunks = await chunk_storage.find_for_document(tenant_id="ten_abc", document_id="doc_abc")
 
     col.find.assert_called_once_with({"document_id": "doc_abc"})
     # The service must NOT call cursor.sort() — Cosmos would reject it.

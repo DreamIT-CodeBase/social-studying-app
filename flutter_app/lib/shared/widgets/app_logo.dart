@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:social_study_app/core/theme/app_colors.dart';
 
 class AppLogo extends StatelessWidget {
   const AppLogo({
@@ -13,6 +12,11 @@ class AppLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final logoAsset = isDark
+        ? 'assets/icons/socialstudylogo-removebg-preview.png'
+        : 'assets/branding/app_logo.jpg';
+
     return Container(
       width: size,
       height: size,
@@ -23,28 +27,11 @@ class AppLogo extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(size / 2),
         child: Image.asset(
-          'assets/branding/app_logo.jpg',
+          logoAsset,
           width: size,
           height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [AppColors.primary, Color(0xFF6366F1)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Center(
-                child: Icon(
-                  Icons.auto_stories_rounded,
-                  size: size * 0.5,
-                  color: Colors.white,
-                ),
-              ),
-            );
-          },
+          fit: isDark ? BoxFit.contain : BoxFit.cover,
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
         ),
       ),
     );
