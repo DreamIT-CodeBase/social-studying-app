@@ -389,7 +389,9 @@ jobs:
           upload_status=$?
           set -e
           echo "$upload_output"
-          if [[ $upload_status -ne 0 ]] || echo "$upload_output" | grep -qiE "failed|error"; then
+          if echo "$upload_output" | grep -qi "UPLOAD SUCCEEDED"; then
+            echo "Package successfully uploaded and accepted by App Store Connect!"
+          elif [[ $upload_status -ne 0 ]] || echo "$upload_output" | grep -qiE "UPLOAD FAILED|Validation failed"; then
             echo "TestFlight upload failed or was rejected during App Store validation." >&2
             exit 1
           fi
