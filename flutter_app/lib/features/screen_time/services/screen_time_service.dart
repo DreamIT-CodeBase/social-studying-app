@@ -140,7 +140,6 @@ class ScreenTimeService {
         await prefs.setInt('$_keyAvailableMinutes$suffix', 0);
         await prefs.setInt('$_keyConsumedMinutes$suffix', consumedMinutes);
         await prefs.setInt('$_keyConsumedToday$suffix', consumedToday);
-        unawaited(sendTimeExhaustedNotification());
       }
 
       // Write consumed_today back to native for display consistency

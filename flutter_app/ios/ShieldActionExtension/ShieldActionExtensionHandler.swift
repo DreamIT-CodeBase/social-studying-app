@@ -14,7 +14,7 @@ class ShieldActionExtensionHandler: ShieldActionDelegate {
     case .primaryButtonPressed:
       // "Study Now" tapped on the blocked app's shield screen
       sendStudyNotification()
-      completionHandler(.defer)
+      completionHandler(.close)
 
     case .secondaryButtonPressed:
       completionHandler(.close)
@@ -31,7 +31,7 @@ class ShieldActionExtensionHandler: ShieldActionDelegate {
   ) {
     if action == .primaryButtonPressed {
       sendStudyNotification()
-      completionHandler(.defer)
+      completionHandler(.close)
     } else {
       completionHandler(.close)
     }
@@ -44,7 +44,7 @@ class ShieldActionExtensionHandler: ShieldActionDelegate {
   ) {
     if action == .primaryButtonPressed {
       sendStudyNotification()
-      completionHandler(.defer)
+      completionHandler(.close)
     } else {
       completionHandler(.close)
     }

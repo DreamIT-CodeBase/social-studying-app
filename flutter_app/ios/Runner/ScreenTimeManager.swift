@@ -265,7 +265,8 @@ extension DeviceActivityEvent.Name {
 
       let now = Date().timeIntervalSince1970
       userDefaults.set(now, forKey: "last_exhausted_notification_timestamp")
-      sendExhaustedNotification()
+      // Do NOT send notification here. The user may be inside the main app.
+      // Notifications are reserved for when a blocked app is accessed or threshold is reached.
     } else {
       // Time available — remove shields and schedule threshold monitoring
       clearShields(from: store)
@@ -412,6 +413,13 @@ extension DeviceActivityEvent.Name {
   // MARK: - Helpers
 
   @objc func sendExhaustedNotification() {
+    // If the main app is active in foreground, do not show this notification.
+    // The user is already in the study app.
+    if UIApplication.shared.applicationState == .active {
+      NSLog("[ScreenTimeManager] App is active in foreground — skipping exhausted notification")
+      return
+    }
+
     let center = UNUserNotificationCenter.current()
     let identifier = "ai.socialstudying.screentime.exhausted"
 

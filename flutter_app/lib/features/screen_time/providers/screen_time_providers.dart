@@ -380,7 +380,6 @@ class ScreenTimeNotifier extends _$ScreenTimeNotifier {
 
     state = AsyncData(updated);
     await reapplyShields();
-    await _service.sendTimeExhaustedNotification();
   }
 
   /// Grants test minutes so testers can quickly verify unblocking.

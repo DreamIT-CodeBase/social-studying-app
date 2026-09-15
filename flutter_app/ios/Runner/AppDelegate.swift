@@ -38,12 +38,18 @@ import FamilyControls
     UNUserNotificationCenter.current().setNotificationCategories([category])
   }
 
-  // Ensure notification banners drop down from the top even if the app is active
+  // Ensure notification banners drop down from the top, but suppress screen time exhausted alerts if the app is already active
   override func userNotificationCenter(
     _ center: UNUserNotificationCenter,
     willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
+    let identifier = notification.request.identifier
+    if identifier.contains("exhausted") || identifier.contains("screentime") {
+      // User is already inside the study app — do not show study session prompt banner
+      completionHandler([])
+      return
+    }
     if #available(iOS 14.0, *) {
       completionHandler([.banner, .list, .sound, .badge])
     } else {
