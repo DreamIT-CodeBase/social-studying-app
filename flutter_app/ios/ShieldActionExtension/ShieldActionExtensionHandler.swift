@@ -12,9 +12,12 @@ class ShieldActionExtensionHandler: ShieldActionDelegate {
   ) {
     switch action {
     case .primaryButtonPressed:
-      // "Study Now" tapped on the blocked app's shield screen
-      sendStudyNotification()
-      completionHandler(.close)
+      // "Study Now" tapped on the blocked app's shield screen:
+      // Post notification, wait for registration, and defer so shield stays up
+      // and the alert banner drops down at the top for the student to tap.
+      sendStudyNotification {
+        completionHandler(.defer)
+      }
 
     case .secondaryButtonPressed:
       completionHandler(.close)
@@ -30,8 +33,9 @@ class ShieldActionExtensionHandler: ShieldActionDelegate {
     completionHandler: @escaping (ShieldActionResponse) -> Void
   ) {
     if action == .primaryButtonPressed {
-      sendStudyNotification()
-      completionHandler(.close)
+      sendStudyNotification {
+        completionHandler(.defer)
+      }
     } else {
       completionHandler(.close)
     }
@@ -43,22 +47,20 @@ class ShieldActionExtensionHandler: ShieldActionDelegate {
     completionHandler: @escaping (ShieldActionResponse) -> Void
   ) {
     if action == .primaryButtonPressed {
-      sendStudyNotification()
-      completionHandler(.close)
+      sendStudyNotification {
+        completionHandler(.defer)
+      }
     } else {
       completionHandler(.close)
     }
   }
 
-  private func sendStudyNotification() {
+  private func sendStudyNotification(completion: @escaping () -> Void) {
     let center = UNUserNotificationCenter.current()
-    let identifier = "ai.socialstudying.screentime.studynow"
-
-    center.removeDeliveredNotifications(withIdentifiers: [identifier])
-    center.removePendingNotificationRequests(withIdentifiers: [identifier])
+    let identifier = "ai.socialstudying.screentime.studynow.\(Int(Date().timeIntervalSince1970 * 1000))"
 
     let content = UNMutableNotificationContent()
-    content.title = "Ready to Unlock?"
+    content.title = "📚 Study Session Ready"
     content.body = "Tap here to start your study session and unlock your apps!"
     content.sound = .default
     content.categoryIdentifier = "STUDY_SESSION_NEEDED_CATEGORY"
@@ -72,18 +74,20 @@ class ShieldActionExtensionHandler: ShieldActionDelegate {
       content.relevanceScore = 1.0
     }
 
+    // trigger: nil delivers immediately without timer delay
     let request = UNNotificationRequest(
       identifier: identifier,
       content: content,
-      trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
+      trigger: nil
     )
 
     center.add(request) { error in
       if let error = error {
         NSLog("[ShieldAction] Error posting notification: %@", error.localizedDescription)
       } else {
-        NSLog("[ShieldAction] Notification posted successfully")
+        NSLog("[ShieldAction] Notification posted successfully with ID %@", identifier)
       }
+      completion()
     }
   }
 }
