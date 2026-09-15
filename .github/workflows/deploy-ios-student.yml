@@ -379,12 +379,20 @@ jobs:
           ISSUER_ID=$(echo "$APP_STORE_CONNECT_ISSUER_ID" | tr -d '\r\n ')
           ipa_path=$(find build/ios/ipa -maxdepth 1 -name '*.ipa' -print -quit)
           test -n "$ipa_path"
-          xcrun altool --upload-app \
+          set +e
+          upload_output=$(xcrun altool --upload-app \
             --type ios \
             --file "$ipa_path" \
             --apiKey "$KEY_ID" \
             --apiIssuer "$ISSUER_ID" \
-            --show-progress
+            --show-progress 2>&1)
+          upload_status=$?
+          set -e
+          echo "$upload_output"
+          if [[ $upload_status -ne 0 ]] || echo "$upload_output" | grep -qiE "failed|error"; then
+            echo "TestFlight upload failed or was rejected during App Store validation." >&2
+            exit 1
+          fi
 
       - name: Remove signing credentials
         if: always()
