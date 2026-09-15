@@ -19,14 +19,11 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
         color: UIColor(red: 148/255.0, green: 163/255.0, blue: 184/255.0, alpha: 1.0)
       ),
       primaryButtonLabel: ShieldConfiguration.Label(
-        text: "Study Now",
+        text: "Close",
         color: .white
       ),
       primaryButtonBackgroundColor: UIColor(red: 37/255.0, green: 99/255.0, blue: 235/255.0, alpha: 1.0),
-      secondaryButtonLabel: ShieldConfiguration.Label(
-        text: "Close",
-        color: UIColor(red: 148/255.0, green: 163/255.0, blue: 184/255.0, alpha: 1.0)
-      )
+      secondaryButtonLabel: nil
     )
   }
 
@@ -48,14 +45,11 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
         color: UIColor(red: 148/255.0, green: 163/255.0, blue: 184/255.0, alpha: 1.0)
       ),
       primaryButtonLabel: ShieldConfiguration.Label(
-        text: "Study Now",
+        text: "Close",
         color: .white
       ),
       primaryButtonBackgroundColor: UIColor(red: 37/255.0, green: 99/255.0, blue: 235/255.0, alpha: 1.0),
-      secondaryButtonLabel: ShieldConfiguration.Label(
-        text: "Close",
-        color: UIColor(red: 148/255.0, green: 163/255.0, blue: 184/255.0, alpha: 1.0)
-      )
+      secondaryButtonLabel: nil
     )
   }
 
