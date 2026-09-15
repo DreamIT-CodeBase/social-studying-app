@@ -153,6 +153,22 @@ def test_student_progress_tenant_admin_bypasses_workspace_check(client, tenant_a
     assert response.status_code == 200
 
 
+def test_student_progress_fallback_on_service_exception(client, student):
+    with patch(
+        "app.api.analytics.analytics_service.build_student_progress",
+        AsyncMock(side_effect=RuntimeError("Cosmos DB simulated error")),
+    ):
+        response = client.get(
+            "/api/v1/workspaces/wsp_a/users/stu_a/progress",
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["level"] == 1
+    assert body["total_xp"] == 0
+    assert body["topics"] == []
+    assert body["recent_activity"] == []
+
+
 # ── Workspace analytics endpoint ───────────────────────────────────────────
 
 

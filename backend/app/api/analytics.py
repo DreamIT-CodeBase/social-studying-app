@@ -204,12 +204,24 @@ async def get_student_progress(
     anyone in their workspace.
     """
     _assert_can_view(current_user, workspace_id=workspace_id, target_user_id=user_id)
-    payload = await analytics_service.build_student_progress(
-        tenant_id=current_user.tenant_id,
-        workspace_id=workspace_id,
-        student_id=user_id,
-    )
-    return StudentProgressView(**payload)
+    try:
+        payload = await analytics_service.build_student_progress(
+            tenant_id=current_user.tenant_id,
+            workspace_id=workspace_id,
+            student_id=user_id,
+        )
+        return StudentProgressView(**payload)
+    except Exception as exc:
+        logger.exception("Failed to build student progress for %s in %s: %s", user_id, workspace_id, exc)
+        return StudentProgressView(
+            level=1,
+            total_xp=0,
+            xp_into_level=0,
+            xp_for_next_level=100,
+            overall_mastery=0.0,
+            topics=[],
+            recent_activity=[],
+        )
 
 
 # ── Workspace analytics endpoint ────────────────────────────────────────────

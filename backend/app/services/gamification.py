@@ -784,7 +784,16 @@ async def _read_or_init(
             workspace_id=workspace_id,
             student_id=student_id,
         )
-    return GamificationState.model_validate(raw)
+    try:
+        return GamificationState.model_validate(raw)
+    except Exception as exc:
+        logger.warning("Failed to validate gamification state for %s: %s", student_id, exc)
+        return GamificationState(
+            **{"_id": f"gam_{uuid4().hex}"},
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            student_id=student_id,
+        )
 
 
 async def _persist(*, tenant_id: str, state: GamificationState) -> None:

@@ -176,9 +176,10 @@ async def get_student_analytics(
         raise ForbiddenError("Only parents or admins can view student analytics")
 
     col = get_collection(current_user.tenant_id, DEVICE_USAGE_LOGS)
-    await col.create_index([("date", -1)])
-    cursor = col.find({"student_id": student_id, "deleted_at": None}).sort("date", -1).limit(30)
+    cursor = col.find({"student_id": student_id, "deleted_at": None})
     logs = [doc async for doc in cursor]
+    logs.sort(key=lambda d: str(d.get("date") or ""), reverse=True)
+    logs = logs[:30]
 
     # Compute summaries
     daily_stats = []
@@ -398,12 +399,12 @@ async def get_student_db_stats(
         raise ForbiddenError("Only parents or admins can query student DB stats")
 
     col = get_collection(current_user.tenant_id, DB_STATS)
-    cursor = (
-        col.find({"student_id": student_id, "deleted_at": None}).sort("occurred_at", -1).limit(500)
-    )
+    cursor = col.find({"student_id": student_id, "deleted_at": None})
+    raw_docs = [doc async for doc in cursor]
+    raw_docs.sort(key=lambda d: str(d.get("occurred_at") or ""), reverse=True)
 
     results = []
-    async for doc in cursor:
+    for doc in raw_docs[:500]:
         doc["id"] = doc.pop("_id")
         results.append(doc)
     return results

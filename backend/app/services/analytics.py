@@ -636,7 +636,13 @@ async def _read_knowledge_state(
             "deleted_at": None,
         }
     )
-    return KnowledgeState.model_validate(raw) if raw is not None else None
+    if raw is None:
+        return None
+    try:
+        return KnowledgeState.model_validate(raw)
+    except Exception as exc:
+        logger.warning("Failed to validate knowledge state for %s: %s", student_id, exc)
+        return None
 
 
 async def _read_workspace_states(*, tenant_id: str, workspace_id: str) -> list[KnowledgeState]:
@@ -710,8 +716,9 @@ async def _recent_activity(
     interactions_col = get_collection(tenant_id, INTERACTIONS)
     ratings_col = get_collection(tenant_id, FLASHCARD_RATINGS)
 
-    # Two narrow cursors, merged client-side. Bounded by sort/limit
-    # so we do not perform unbounded scans across historical records.
+    # Two narrow queries, merged client-side.
+    # Note: Cosmos DB MongoDB API rejects cursor.sort() when order-by paths are excluded.
+    # We sort client-side in Python before taking the top `limit` entries.
     interactions_cursor = interactions_col.find(
         {
             "student_id": student_id,
@@ -719,11 +726,6 @@ async def _recent_activity(
             "deleted_at": None,
         }
     )
-    if hasattr(interactions_cursor, "sort"):
-        interactions_cursor = interactions_cursor.sort("answered_at", -1)
-    if hasattr(interactions_cursor, "limit"):
-        interactions_cursor = interactions_cursor.limit(limit)
-
     ratings_cursor = ratings_col.find(
         {
             "student_id": student_id,
@@ -731,32 +733,44 @@ async def _recent_activity(
             "deleted_at": None,
         }
     )
-    if hasattr(ratings_cursor, "sort"):
-        ratings_cursor = ratings_cursor.sort("rated_at", -1)
-    if hasattr(ratings_cursor, "limit"):
-        ratings_cursor = ratings_cursor.limit(limit)
 
     merged: list[dict[str, Any]] = []
     async for doc in interactions_cursor:
+        occurred = doc.get("answered_at")
+        if isinstance(occurred, datetime):
+            occurred = occurred.isoformat()
+        elif not isinstance(occurred, str):
+            occurred = ""
+        is_corr = doc.get("is_correct")
+        if is_corr is not None:
+            is_corr = bool(is_corr)
         merged.append(
             {
                 "kind": "question",
-                "topic": doc.get("topic", ""),
-                "is_correct": doc.get("is_correct"),
-                "xp_earned": doc.get("xp_earned", 0),
-                "occurred_at": doc.get("answered_at", ""),
+                "topic": str(doc.get("topic") or ""),
+                "is_correct": is_corr,
+                "xp_earned": int(doc.get("xp_earned") or 0),
+                "occurred_at": occurred,
             }
         )
     async for doc in ratings_cursor:
+        occurred = doc.get("rated_at")
+        if isinstance(occurred, datetime):
+            occurred = occurred.isoformat()
+        elif not isinstance(occurred, str):
+            occurred = ""
+        is_corr = doc.get("is_correct")
+        if is_corr is not None:
+            is_corr = bool(is_corr)
         merged.append(
             {
                 "kind": "flashcard",
-                "topic": doc.get("topic", ""),
+                "topic": str(doc.get("topic") or ""),
                 # Current flashcards use an MCQ response and persist the real
                 # verdict. Older self-rated events legitimately remain null.
-                "is_correct": doc.get("is_correct"),
+                "is_correct": is_corr,
                 "xp_earned": FLASHCARD_XP,
-                "occurred_at": doc.get("rated_at", ""),
+                "occurred_at": occurred,
             }
         )
 
