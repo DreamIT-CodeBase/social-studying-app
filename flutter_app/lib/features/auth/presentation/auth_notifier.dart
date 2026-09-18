@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/features/auth/data/auth_repository.dart';
 import 'package:social_study_app/features/auth/domain/auth_state.dart';
 import 'package:social_study_app/shared/models/user.dart';
@@ -19,6 +20,11 @@ class AuthNotifier extends _$AuthNotifier {
   Future<AuthState> build() async {
     final storedUser = await ref.read(authRepositoryProvider).getStoredUser();
     if (storedUser != null) {
+      if (storedUser.gradeLevel != null) {
+        unawaited(ref
+            .read(appThemeModeProvider.notifier)
+            .setThemeModeFromGradeLevel(storedUser.gradeLevel));
+      }
       _refreshBackground();
       return AuthState.authenticated(user: storedUser);
     }
@@ -101,6 +107,12 @@ class AuthNotifier extends _$AuthNotifier {
     final data = <String, dynamic>{};
     if (displayName != null) data['display_name'] = displayName;
     if (gradeLevel != null) data['grade_level'] = gradeLevel;
+
+    if (gradeLevel != null) {
+      unawaited(ref
+          .read(appThemeModeProvider.notifier)
+          .setThemeModeFromGradeLevel(gradeLevel));
+    }
 
     try {
       final dio = ref.read(dioClientProvider).dio;

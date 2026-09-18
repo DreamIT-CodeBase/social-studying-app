@@ -1062,10 +1062,10 @@ class _SignOutTile extends StatelessWidget {
                 color: iconBg,
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.logout_rounded, size: 20, color: iconColor),
+              child: const Icon(Icons.logout_rounded, size: 20, color: iconColor),
             ),
             const SizedBox(width: 14),
-            Expanded(
+            const Expanded(
               child: Text(
                 'Sign Out',
                 style: TextStyle(
@@ -1087,8 +1087,9 @@ class _SignOutTile extends StatelessWidget {
 // ─── Profile editing helpers ──────────────────────────────────────────────────
 
 String _formatGradeLevel(int grade) {
-  if (grade <= 5) return 'Elementary';
+  if (grade <= 5) return 'Grade 5 (Elementary)';
   if (grade <= 8) return 'Middle School (Grade $grade)';
+  if (grade == 9) return 'Grade 9 (Freshman)';
   if (grade <= 12) return 'Grade $grade';
   if (grade == 13) return 'College / University';
   return 'Adult Learner';
@@ -1109,6 +1110,7 @@ void _showEditProfileDialog(
         builder: (context, setState) {
           final isDark = Theme.of(context).brightness == Brightness.dark;
           final grades = <int, String>{
+            5: 'Grade 5 / Year 6 (Elementary)',
             6: 'Grade 6 / Year 7',
             7: 'Grade 7 / Year 8',
             8: 'Grade 8 / Year 9',
@@ -1158,7 +1160,7 @@ void _showEditProfileDialog(
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Calibrates AI questions and flashcards to your exact learning level.',
+                    'Calibrates AI questions and automatically switches your experience theme.',
                     style: TextStyle(
                       fontSize: 11,
                       color: isDark ? Colors.white60 : const Color(0xFF64748B),
@@ -1191,6 +1193,56 @@ void _showEditProfileDialog(
                       });
                     },
                   ),
+                  if (selectedGrade != null) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: selectedGrade! <= 9
+                            ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                            : const Color(0xFF6366F1).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: selectedGrade! <= 9
+                              ? const Color(0xFF10B981).withValues(alpha: 0.3)
+                              : const Color(0xFF6366F1).withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            selectedGrade! <= 9
+                                ? Icons.child_care_rounded
+                                : Icons.school_rounded,
+                            size: 18,
+                            color: selectedGrade! <= 9
+                                ? const Color(0xFF10B981)
+                                : const Color(0xFF6366F1),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              selectedGrade! <= 9
+                                  ? 'Auto Theme: Kids Mascot Mode (Playful & Bronto 🦕)'
+                                  : 'Auto Theme: Mature Normal Mode (Clean & Focused 🎓)',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: selectedGrade! <= 9
+                                    ? (isDark
+                                        ? const Color(0xFF34D399)
+                                        : const Color(0xFF065F46))
+                                    : (isDark
+                                        ? const Color(0xFFA5B4FC)
+                                        : const Color(0xFF3730A3)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1212,11 +1264,26 @@ void _showEditProfileDialog(
                           displayName: newName,
                           gradeLevel: selectedGrade,
                         );
+
+                    if (selectedGrade != null) {
+                      await ref
+                          .read(appThemeModeProvider.notifier)
+                          .setThemeModeFromGradeLevel(selectedGrade);
+                    }
+
                     if (context.mounted) {
+                      final themeText =
+                          (selectedGrade != null && selectedGrade! <= 9)
+                              ? 'Kids Mascot Mode'
+                              : 'Mature Mode';
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Profile updated successfully!'),
-                          duration: Duration(seconds: 2),
+                        SnackBar(
+                          content: Text(
+                            selectedGrade != null
+                                ? 'Profile updated! Theme switched to $themeText.'
+                                : 'Profile updated successfully!',
+                          ),
+                          duration: const Duration(seconds: 3),
                         ),
                       );
                     }

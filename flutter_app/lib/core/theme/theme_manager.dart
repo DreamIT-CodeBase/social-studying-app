@@ -36,4 +36,13 @@ class AppThemeModeNotifier extends StateNotifier<AppThemeMode> {
       await prefs.setString(_prefKey, mode.name);
     } catch (_) {}
   }
+
+  /// Automatically updates the theme mode based on student grade level:
+  /// - Grade 5 to Grade 9 -> AppThemeMode.kids (playful mascot mode)
+  /// - Grade 10+ (and College/Adult) -> AppThemeMode.mature (normal mature mode)
+  Future<void> setThemeModeFromGradeLevel(int? gradeLevel) async {
+    if (gradeLevel == null) return;
+    final mode = gradeLevel <= 9 ? AppThemeMode.kids : AppThemeMode.mature;
+    await setThemeMode(mode);
+  }
 }
