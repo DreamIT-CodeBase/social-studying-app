@@ -959,8 +959,7 @@ class _HomeTab extends ConsumerWidget {
       final counts = isSelfStudy
           ? ref.watch(selfStudySubjectCountsProvider(workspaceId!))
           : const <String, int>{};
-      final totalDocs =
-          counts.values.fold<int>(0, (sum, count) => sum + count);
+      final totalDocs = counts.values.fold<int>(0, (sum, count) => sum + count);
       final hasNoDocuments = isSelfStudy && totalDocs == 0;
 
       return ListView(

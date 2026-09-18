@@ -103,7 +103,8 @@ class ProfileScreen extends ConsumerWidget {
                         Navigator.of(context).pop();
                       }
                     },
-                    onEdit: () => _showEditProfileDialog(context, ref, currentUser),
+                    onEdit: () =>
+                        _showEditProfileDialog(context, ref, currentUser),
                   ),
 
                   // space before avatar — leaves room for sky section
@@ -111,7 +112,8 @@ class ProfileScreen extends ConsumerWidget {
 
                   // Avatar centred with edit badge
                   GestureDetector(
-                    onTap: () => _showEditProfileDialog(context, ref, currentUser),
+                    onTap: () =>
+                        _showEditProfileDialog(context, ref, currentUser),
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
@@ -126,7 +128,9 @@ class ProfileScreen extends ConsumerWidget {
                               color: const Color(0xFF6366F1),
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: isDark ? const Color(0xFF070714) : Colors.white,
+                                color: isDark
+                                    ? const Color(0xFF070714)
+                                    : Colors.white,
                                 width: 2,
                               ),
                             ),
@@ -145,10 +149,12 @@ class ProfileScreen extends ConsumerWidget {
 
                   // Name with edit pencil
                   InkWell(
-                    onTap: () => _showEditProfileDialog(context, ref, currentUser),
+                    onTap: () =>
+                        _showEditProfileDialog(context, ref, currentUser),
                     borderRadius: BorderRadius.circular(8),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -186,17 +192,21 @@ class ProfileScreen extends ConsumerWidget {
                   // Grade Level Badge
                   const SizedBox(height: 8),
                   InkWell(
-                    onTap: () => _showEditProfileDialog(context, ref, currentUser),
+                    onTap: () =>
+                        _showEditProfileDialog(context, ref, currentUser),
                     borderRadius: BorderRadius.circular(12),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 5),
                       decoration: BoxDecoration(
                         color: isDark
                             ? const Color(0xFF312E81).withValues(alpha: 0.5)
                             : const Color(0xFFEEF2FF),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: isDark ? const Color(0xFF4F46E5) : const Color(0xFFC7D2FE),
+                          color: isDark
+                              ? const Color(0xFF4F46E5)
+                              : const Color(0xFFC7D2FE),
                         ),
                       ),
                       child: Row(
@@ -205,7 +215,9 @@ class ProfileScreen extends ConsumerWidget {
                           Icon(
                             Icons.school_rounded,
                             size: 14,
-                            color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4F46E5),
+                            color: isDark
+                                ? const Color(0xFFA5B4FC)
+                                : const Color(0xFF4F46E5),
                           ),
                           const SizedBox(width: 5),
                           Text(
@@ -215,7 +227,9 @@ class ProfileScreen extends ConsumerWidget {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
-                              color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4F46E5),
+                              color: isDark
+                                  ? const Color(0xFFA5B4FC)
+                                  : const Color(0xFF4F46E5),
                             ),
                           ),
                         ],
@@ -242,7 +256,8 @@ class ProfileScreen extends ConsumerWidget {
                         _MenuItem(
                           icon: Icons.person_outline_rounded,
                           label: 'Edit Profile & Grade Level',
-                          onTap: () => _showEditProfileDialog(context, ref, currentUser),
+                          onTap: () =>
+                              _showEditProfileDialog(context, ref, currentUser),
                         ),
                         _MenuItem(
                           icon: Icons.palette_rounded,
@@ -411,19 +426,24 @@ class _CollegeProfileScreen extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 6),
                       InkWell(
-                        onTap: () => _showEditProfileDialog(context, ref, currentUser),
+                        onTap: () =>
+                            _showEditProfileDialog(context, ref, currentUser),
                         borderRadius: BorderRadius.circular(10),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                            color: isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFF1F5F9),
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(color: border),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.school_rounded, size: 12, color: secondaryText),
+                              Icon(Icons.school_rounded,
+                                  size: 12, color: secondaryText),
                               const SizedBox(width: 4),
                               Text(
                                 gradeLevel != null
@@ -443,7 +463,8 @@ class _CollegeProfileScreen extends ConsumerWidget {
                   ),
                 ),
                 IconButton(
-                  onPressed: () => _showEditProfileDialog(context, ref, currentUser),
+                  onPressed: () =>
+                      _showEditProfileDialog(context, ref, currentUser),
                   icon: const Icon(Icons.edit_outlined),
                   tooltip: 'Edit Profile',
                 ),

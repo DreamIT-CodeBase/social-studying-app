@@ -14,7 +14,14 @@ from app.core.auth import get_current_user, invalidate_user_cache, require_role
 from app.core.database import USERS, WORKSPACES, cosmos_retry, get_collection
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.models.base import utc_now
-from app.models.user import User, UserCreate, UserResponse, UserRole, UserUpdate, WorkspaceMembership
+from app.models.user import (
+    User,
+    UserCreate,
+    UserResponse,
+    UserRole,
+    UserUpdate,
+    WorkspaceMembership,
+)
 from app.models.workspace import InviteCode, Workspace
 
 router = APIRouter(prefix="/users", tags=["users"])

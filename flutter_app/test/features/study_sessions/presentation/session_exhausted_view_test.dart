@@ -83,7 +83,8 @@ void main() {
       expect(closes, 1);
     });
 
-    testWidgets('shows softer retry message on first-use when sessionsUsed is 0',
+    testWidgets(
+        'shows softer retry message on first-use when sessionsUsed is 0',
         (tester) async {
       await tester.pumpWidget(
         MaterialApp(

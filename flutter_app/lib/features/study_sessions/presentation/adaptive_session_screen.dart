@@ -652,7 +652,6 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
                 ? _prepare
                 : () => context.pop(),
           ),
-
         _SessionPhase.error => _ErrorView(
             message: _error ?? 'Something went wrong.',
             saving: _completionFailed,
