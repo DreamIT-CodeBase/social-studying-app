@@ -445,50 +445,6 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
                 final isSelected = selectedIndex == index;
                 return GestureDetector(
                   onTap: () {
-                    if (workspaceId != null && index == 1) {
-                      final activeSubject =
-                          isSelfLearningWorkspaceId(workspaceId)
-                              ? ref.read(selfStudySubjectProvider)
-                              : null;
-                      final activeSubcat =
-                          isSelfLearningWorkspaceId(workspaceId)
-                              ? ref.read(selfStudySubcategoryProvider)
-                              : null;
-                      final activeType = isSelfLearningWorkspaceId(workspaceId)
-                          ? ref.read(selfStudyQuestionTypeProvider)
-                          : null;
-                      final subjectQuery = activeSubject != null
-                          ? '&subject=${Uri.encodeComponent(activeSubject)}'
-                          : '';
-                      final subcatQuery = activeSubcat != null
-                          ? '&subcategory=${Uri.encodeComponent(activeSubcat)}'
-                          : '';
-                      final typeQuery = activeType != null
-                          ? '&question_type=${Uri.encodeComponent(activeType)}'
-                          : '';
-                      context.push(
-                          '/student/session/$workspaceId?mode=study$subjectQuery$subcatQuery$typeQuery');
-                      return;
-                    }
-                    if (workspaceId != null && index == 2) {
-                      final activeSubject =
-                          isSelfLearningWorkspaceId(workspaceId)
-                              ? ref.read(selfStudySubjectProvider)
-                              : null;
-                      final activeSubcat =
-                          isSelfLearningWorkspaceId(workspaceId)
-                              ? ref.read(selfStudySubcategoryProvider)
-                              : null;
-                      final subjectQuery = activeSubject != null
-                          ? '&subject=${Uri.encodeComponent(activeSubject)}'
-                          : '';
-                      final subcatQuery = activeSubcat != null
-                          ? '&subcategory=${Uri.encodeComponent(activeSubcat)}'
-                          : '';
-                      context.push(
-                          '/student/session/$workspaceId?mode=flashcard$subjectQuery$subcatQuery');
-                      return;
-                    }
                     ref.read(studentHomeTabProvider.notifier).state = index;
                   },
                   behavior: HitTestBehavior.opaque,
@@ -4156,9 +4112,10 @@ class _StudyTab extends StatelessWidget {
   Widget build(BuildContext context) {
     if (workspaceId == null) {
       return const EmptyStateView(
-        icon: Icons.workspaces_outline,
-        title: 'No workspace yet',
-        subtitle: 'Join a workspace with an invite code to start studying.',
+        icon: Icons.menu_book_rounded,
+        title: 'Welcome to Practice & Study',
+        subtitle:
+            'Upload study notes, worksheets, or equations to practice questions.',
       );
     }
     // Sprint 4.7 / 4.8 — the full question-answering loop.
@@ -4175,9 +4132,9 @@ class _FlashcardsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     if (workspaceId == null) {
       return const EmptyStateView(
-        icon: Icons.workspaces_outline,
-        title: 'No workspace yet',
-        subtitle: 'Join a workspace with an invite code to review flashcards.',
+        icon: Icons.style_rounded,
+        title: 'Welcome to Flashcards',
+        subtitle: 'Upload study material to review active-recall flashcards.',
       );
     }
     // Sprint 4.9 — the swipe-and-flip flashcard review loop.
@@ -4194,9 +4151,10 @@ class _ProgressTab extends StatelessWidget {
   Widget build(BuildContext context) {
     if (workspaceId == null) {
       return const EmptyStateView(
-        icon: Icons.workspaces_outline,
-        title: 'No workspace yet',
-        subtitle: 'Join a workspace with an invite code to track progress.',
+        icon: Icons.bar_chart_rounded,
+        title: 'Learning Progress',
+        subtitle:
+            'Complete practice questions and flashcards to view your knowledge mastery.',
       );
     }
     // Sprint 4.11 — level/XP card, mastery bars, activity timeline.
