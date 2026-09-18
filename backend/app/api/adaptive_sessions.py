@@ -93,12 +93,12 @@ router = APIRouter(
 )
 
 _QUESTION_RANGES = {
-    AdaptiveLevel.beginner: (5, 7),
+    AdaptiveLevel.beginner: (10, 12),      # increased from (5,7) — new users need a real session
     AdaptiveLevel.intermediate: (12, 15),
     AdaptiveLevel.expert: (20, 25),
 }
 _FLASHCARD_RANGES = {
-    AdaptiveLevel.beginner: (3, 4),
+    AdaptiveLevel.beginner: (8, 10),       # increased from (3,4) — 3 cards was too small
     AdaptiveLevel.intermediate: (10, 13),
     AdaptiveLevel.expert: (18, 25),
 }
@@ -125,7 +125,9 @@ _MAX_GENERATED_FLASHCARDS_PER_PREPARE = 25
 # sessions per mode; once consumed the learner is told to upload more material.
 # Revision is deliberately uncapped — it re-practises previously wrong answers.
 _SELF_STUDY_PREFIX = "wsp_self_"
-_MAX_SELF_STUDY_SESSIONS = 50
+# Increased from 50 — 50 sessions is only ~2 days for an active student doing 3 sessions/day.
+# 200 sessions per snapshot gives months of headroom before needing to upload new material.
+_MAX_SELF_STUDY_SESSIONS = 200
 _CAPPED_MODES = frozenset({AdaptiveSessionMode.study, AdaptiveSessionMode.flashcard})
 # Background top-up sizes — generated after a session is served so the next
 # session reads from a warm pool instead of blocking on generation. Bounded so
@@ -2567,6 +2569,7 @@ def _build_exhausted_plan(
     mastery: float,
     subject: str | None = None,
     subcategory: str | None = None,
+    sessions_used: int = 0,
 ) -> AdaptiveSessionPlan:
     """A zero-item plan telling the learner to upload more study material.
 
@@ -2574,6 +2577,10 @@ def _build_exhausted_plan(
     has been consumed (the cap, or thin material exhausted early). The client
     renders a call-to-action instead of a runnable session and never posts
     ``complete`` for it, so it is intentionally not persisted.
+
+    ``sessions_used`` is forwarded to the client so the UI can distinguish a
+    genuine exhaustion (many sessions completed) from an early failure
+    (sessions_used == 0) and show an appropriate message.
     """
     return AdaptiveSessionPlan(
         session_id=f"ses_{uuid4().hex}",
@@ -2590,7 +2597,9 @@ def _build_exhausted_plan(
         exhausted=True,
         subject=subject,
         subcategory=subcategory,
+        sessions_used=sessions_used,
     )
+
 
 
 async def _persist_prepared_session(
@@ -2775,7 +2784,7 @@ async def prepare_adaptive_session(
     ranges = (
         _FLASHCARD_RANGES if request.mode == AdaptiveSessionMode.flashcard else _QUESTION_RANGES
     )
-    target = 5 if _is_self_study(workspace_id) else _adaptive_count(mastery, level, ranges[level])
+    target = _adaptive_count(mastery, level, ranges[level])
 
     # Self-study bounds each material snapshot to a fixed number of
     # non-repeating sessions per mode.
@@ -2831,7 +2840,8 @@ async def prepare_adaptive_session(
             snapshot=snapshot,
         )
         if used >= _MAX_SELF_STUDY_SESSIONS:
-            return _build_exhausted_plan(mode=request.mode, level=level, mastery=mastery, subject=request.subject, subcategory=request.subcategory)
+            return _build_exhausted_plan(mode=request.mode, level=level, mastery=mastery, subject=request.subject, subcategory=request.subcategory, sessions_used=used)
+
 
     # Enforce daily session limit: maximum 50 sessions per user per day (UTC)
     daily_sessions_count = await _daily_session_count(
@@ -2871,7 +2881,10 @@ async def prepare_adaptive_session(
     except Exception as exc:
         if isinstance(exc, (ForbiddenError, NotFoundError, ConflictError)):
             raise
-        if request.subcategory or _is_self_study(workspace_id):
+        if request.subcategory:
+            # Topic-specific failure: the subcategory content may be genuinely exhausted
+            # or the topic is too narrow to generate questions. Signal exhausted so the
+            # UI can prompt the user to pick a different topic or upload more material.
             logger.exception("Adaptive session prepare error for topic=%s; returning exhausted plan", request.subcategory)
             return _build_exhausted_plan(
                 mode=request.mode,
@@ -2880,7 +2893,11 @@ async def prepare_adaptive_session(
                 subject=request.subject,
                 subcategory=request.subcategory,
             )
+        # For self-study and general workspace errors, always serve the guaranteed
+        # fallback plan rather than exhausted — new users should never see "All caught
+        # up" just because generation failed on first use.
         logger.exception("Adaptive session prepare error; generating guaranteed plan in one go")
+
         plan = _build_guaranteed_fallback_plan(
             workspace_id=workspace_id,
             user_id=current_user.id,
@@ -2907,7 +2924,9 @@ async def prepare_adaptive_session(
     item_count = len(flashcards if request.mode == AdaptiveSessionMode.flashcard else questions)
 
     if item_count == 0:
-        if capped or request.subcategory or _is_self_study(workspace_id):
+        if (capped and used > 0) or request.subcategory:
+            # Capped = session limit reached for this material snapshot (and at least 1 session used). Show exhausted.
+            # Subcategory = that specific topic has no more content. Show exhausted.
             return _build_exhausted_plan(
                 mode=request.mode,
                 level=level,
@@ -2915,10 +2934,14 @@ async def prepare_adaptive_session(
                 subject=request.subject,
                 subcategory=request.subcategory,
             )
+        # Self-study or general workspace returned 0 items (generation may not have
+        # run yet or dedup filtered everything). Serve the guaranteed fallback plan so
+        # new users always get something rather than seeing "All caught up" on first use.
         logger.info(
             "Item count 0 for workspace=%s; serving guaranteed plan in one go",
             workspace_id,
         )
+
         plan = _build_guaranteed_fallback_plan(
             workspace_id=workspace_id,
             user_id=current_user.id,

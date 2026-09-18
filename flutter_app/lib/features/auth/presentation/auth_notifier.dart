@@ -6,7 +6,6 @@ import 'package:social_study_app/features/auth/data/auth_repository.dart';
 import 'package:social_study_app/features/auth/domain/auth_state.dart';
 import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/services/dio_client.dart';
-import 'package:social_study_app/shared/services/session_persistence_service.dart';
 
 part 'auth_notifier.g.dart';
 
@@ -89,6 +88,35 @@ class AuthNotifier extends _$AuthNotifier {
     _authGeneration += 1;
     await ref.read(authRepositoryProvider).signOut();
     state = const AsyncData(AuthState.unauthenticated());
+  }
+
+  /// Update the current user's display name and/or grade level.
+  Future<void> updateProfile({String? displayName, int? gradeLevel}) async {
+    final currentUser = state.valueOrNull?.maybeWhen(
+      authenticated: (user) => user,
+      orElse: () => null,
+    );
+    if (currentUser == null) return;
+
+    final data = <String, dynamic>{};
+    if (displayName != null) data['display_name'] = displayName;
+    if (gradeLevel != null) data['grade_level'] = gradeLevel;
+
+    try {
+      final dio = ref.read(dioClientProvider).dio;
+      final response = await dio.patch('/api/v1/users/me', data: data);
+      final updatedUser = User.fromJson(response.data as Map<String, dynamic>);
+      await ref.read(authRepositoryProvider).updateStoredUser(updatedUser);
+      state = AsyncData(AuthState.authenticated(user: updatedUser));
+    } catch (_) {
+      // Fallback: update local user object so offline or demo mode still works seamlessly
+      final updatedUser = currentUser.copyWith(
+        displayName: displayName ?? currentUser.displayName,
+        gradeLevel: gradeLevel ?? currentUser.gradeLevel,
+      );
+      await ref.read(authRepositoryProvider).updateStoredUser(updatedUser);
+      state = AsyncData(AuthState.authenticated(user: updatedUser));
+    }
   }
 
   Future<void> deleteAccount() async {

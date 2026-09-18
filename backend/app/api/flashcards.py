@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends
@@ -211,11 +212,61 @@ async def next_flashcard(
         ]
 
     if not interactions:
+        # Fallback 1: Return an existing approved flashcard if one is already saved
+        fc_col = get_collection(current_user.tenant_id, FLASHCARDS)
+        fc_filter: dict[str, Any] = {
+            "workspace_id": workspace_id,
+            "status": FlashcardStatus.approved.value,
+            "deleted_at": None,
+        }
+        if request_data and request_data.topics:
+            allowed_names = _resolve_descendants(workspace, request_data.topics)
+            if allowed_names:
+                fc_filter["topic"] = {"$in": allowed_names}
+        existing_fc_doc = await fc_col.find_one(fc_filter)
+        if existing_fc_doc:
+            try:
+                card = Flashcard.model_validate(existing_fc_doc)
+                return FlashcardForStudent.from_doc(card)
+            except Exception:
+                pass
+
+        # Fallback 2: For users who have uploaded documents but haven't answered questions
+        # correctly yet, derive flashcards directly from approved questions in QUESTION_QUEUE.
+        q_col = get_collection(current_user.tenant_id, QUESTION_QUEUE)
+        q_filter: dict[str, Any] = {
+            "workspace_id": workspace_id,
+            "status": "approved",
+            "deleted_at": None,
+        }
+        if request_data and request_data.topics:
+            allowed_names = _resolve_descendants(workspace, request_data.topics)
+            if allowed_names:
+                q_filter["topic"] = {"$in": allowed_names}
+        q_cursor = q_col.find(q_filter).limit(100)
+        q_docs = await q_cursor.to_list(length=100)
+        if request_data and request_data.subject:
+            q_docs = [
+                q for q in q_docs
+                if classify_subject_from_text(str(q.get("topic", ""))).casefold()
+                == request_data.subject.casefold()
+            ]
+        if q_docs:
+            interactions = [
+                {
+                    "question_id": str(q.get("_id")),
+                    "topic": q.get("topic"),
+                    "answered_at": utc_now().isoformat(),
+                }
+                for q in q_docs
+            ]
+
+    if not interactions:
         msg = (
-            f"You haven't answered any {request_data.subject} questions correctly yet! "
-            f"Go to the Study tab and answer {request_data.subject} questions correctly to unlock flashcards."
+            f"You haven't answered any {request_data.subject} questions correctly yet, and no study material is available. "
+            f"Go to the Study tab and answer {request_data.subject} questions or upload study material to unlock flashcards."
             if request_data and request_data.subject
-            else "You haven't answered any questions correctly yet! Go to the Study tab and answer questions correctly to unlock flashcards."
+            else "No study material or question history available yet. Please upload study materials or answer questions to unlock flashcards."
         )
         raise ConflictError(msg)
 

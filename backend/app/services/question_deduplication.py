@@ -47,7 +47,11 @@ _STOP_WORDS: frozenset[str] = frozenset(
     }
 )
 
-# Generic question structural/pedagogical tokens to filter when comparing content keywords
+# Generic question structural/pedagogical tokens to filter when comparing content keywords.
+# NOTE: Math action verbs (solve, calculate, evaluate, simplify, find, determine) are intentionally
+# EXCLUDED from this set so that algebraic equations retain their distinguishing verb tokens
+# during Jaccard/containment comparisons. Including them caused false-positive duplicate
+# detection between distinct equations that share the same operation word.
 _QUESTION_FRAME_WORDS: frozenset[str] = frozenset(
     {
         "according", "passage", "text", "material", "source", "provided", "given", "based",
@@ -61,12 +65,14 @@ _QUESTION_FRAME_WORDS: frozenset[str] = frozenset(
         "choosing", "option", "options", "example", "examples", "primary", "primarily",
         "main", "major", "key", "role", "function", "functions", "purpose", "purposes",
         "concept", "concepts", "term", "terms", "principle", "principles",
-        "value", "values", "find", "finding", "calculate", "calculates", "calculated",
-        "calculating", "calculation", "determine", "determines", "determined",
-        "determining", "determination", "solve", "solves", "solved", "solving",
-        "solution", "solutions", "equation", "equations", "expression", "expressions",
-        "evaluate", "evaluates", "evaluated", "evaluating", "evaluation", "simplify",
-        "simplifies", "simplified", "simplifying", "fill", "blank", "blanks",
+        # Math action verbs intentionally removed — kept as distinguishing keywords:
+        # "value", "values", "find", "finding", "calculate", "calculates", "calculated",
+        # "calculating", "calculation", "determine", "determines", "determined",
+        # "determining", "determination", "solve", "solves", "solved", "solving",
+        # "solution", "solutions", "equation", "equations", "expression", "expressions",
+        # "evaluate", "evaluates", "evaluated", "evaluating", "evaluation", "simplify",
+        # "simplifies", "simplified", "simplifying",
+        "fill", "blank", "blanks",
         "question", "questions", "problem", "problems", "exercise", "exercises",
         "answer", "answers", "answered", "answering", "state", "states", "stated",
         "responsible", "carries", "carry", "carrying", "contains", "contain",
@@ -396,6 +402,11 @@ def are_questions_equivalent(
         return True
 
     # 4 & 5. Content-keyword Jaccard and containment overlap
+    # Thresholds are intentionally strict to avoid false positives on math content
+    # where many distinct equations share surface tokens (x, solve, equation, value).
+    # A Jaccard of 0.82 with ≥5 shared keywords is required to call two questions
+    # equivalent — this threshold was raised from 0.65/3 after TestFlight feedback
+    # showed algebra questions being falsely deduplicated.
     kw1 = extract_content_keywords(q1_body)
     kw2 = extract_content_keywords(q2_body)
     if kw1 and kw2:
@@ -404,15 +415,15 @@ def are_questions_equivalent(
         shared_count = len(intersection)
         min_len = min(len(kw1), len(kw2))
 
-        # Jaccard similarity
+        # Jaccard similarity — raised threshold prevents false duplicates on math
         jaccard = shared_count / len(union) if union else 0.0
-        if jaccard >= 0.65 and shared_count >= 3:
+        if jaccard >= 0.82 and shared_count >= 5:
             return True
 
-        # Containment similarity (one stem is a paraphrase/subset of another)
-        if min_len >= 3:
+        # Containment similarity (one stem is a near-subset of another)
+        if min_len >= 5:
             containment = shared_count / min_len
-            if containment >= 0.78:
+            if containment >= 0.85:
                 return True
 
     # 6. Same answer + core topic keywords match

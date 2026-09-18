@@ -82,6 +82,11 @@ class AdaptiveSessionPlan(BaseModel):
     subject: str | None = None
     subcategory: str | None = None
     question_type: QuestionType | None = None
+    # How many sessions have been completed from this material snapshot.
+    # The UI uses this to distinguish a genuine exhaustion (many sessions done)
+    # from a first-use generation failure (sessions_used == 0), and adjusts
+    # the messaging accordingly so new users aren't told "All caught up" immediately.
+    sessions_used: int = Field(default=0, ge=0)
 
 
 class PrepareAdaptiveSessionRequest(BaseModel):

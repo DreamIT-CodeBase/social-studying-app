@@ -956,12 +956,28 @@ class _HomeTab extends ConsumerWidget {
           isSelfStudy ? ref.watch(selfStudySubcategoryProvider) : null;
       final activeQuestionType =
           isSelfStudy ? ref.watch(selfStudyQuestionTypeProvider) : null;
+      final counts = isSelfStudy
+          ? ref.watch(selfStudySubjectCountsProvider(workspaceId!))
+          : const <String, int>{};
+      final totalDocs =
+          counts.values.fold<int>(0, (sum, count) => sum + count);
+      final hasNoDocuments = isSelfStudy && totalDocs == 0;
 
       return ListView(
         padding: const EdgeInsets.only(bottom: 100),
         children: [
           hero,
           const SizedBox(height: 15),
+          if (hasNoDocuments && onManageStudy != null) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _GettingStartedOnboardingBanner(
+                onUpload: onManageStudy!,
+                isDark: isDark,
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           if (isSelfStudy)
             SubjectSwitcherBar(
               workspaceId: workspaceId!,
@@ -1906,6 +1922,193 @@ class _QuestionTypeDropdownSelector extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// A welcoming onboarding banner displayed to new learners before they upload study materials.
+class _GettingStartedOnboardingBanner extends StatelessWidget {
+  const _GettingStartedOnboardingBanner({
+    required this.onUpload,
+    required this.isDark,
+  });
+
+  final VoidCallback onUpload;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = isDark ? const Color(0xFF1E1B4B) : const Color(0xFFEEF2FF);
+    final border = isDark ? const Color(0xFF4338CA) : const Color(0xFFC7D2FE);
+    final titleCol = isDark ? Colors.white : const Color(0xFF1E1B4B);
+    final bodyCol = isDark ? const Color(0xFFC7D2FE) : const Color(0xFF3730A3);
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: border, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: (isDark ? Colors.black : const Color(0xFF4F46E5))
+                .withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text('🚀', style: TextStyle(fontSize: 20)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Welcome to Your Study Hub!',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: titleCol,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '3 quick steps to start studying your material:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: bodyCol,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildStepRow(
+            number: '1',
+            icon: Icons.upload_file_rounded,
+            title: 'Upload Study Material',
+            desc:
+                'Add notes, equations, or PDF documents to unlock questions and cards.',
+            titleCol: titleCol,
+            bodyCol: bodyCol,
+          ),
+          const SizedBox(height: 10),
+          _buildStepRow(
+            number: '2',
+            icon: Icons.psychology_rounded,
+            title: 'Practice Adaptive Questions',
+            desc:
+                'AI generates questions that adapt dynamically to your mastery.',
+            titleCol: titleCol,
+            bodyCol: bodyCol,
+          ),
+          const SizedBox(height: 10),
+          _buildStepRow(
+            number: '3',
+            icon: Icons.style_rounded,
+            title: 'Review Flashcards',
+            desc:
+                'Reinforce learned concepts through spaced-repetition flashcards.',
+            titleCol: titleCol,
+            bodyCol: bodyCol,
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: onUpload,
+              icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
+              label: const Text(
+                'Upload Your First Document',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF6366F1),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                elevation: 0,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStepRow({
+    required String number,
+    required IconData icon,
+    required String title,
+    required String desc,
+    required Color titleCol,
+    required Color bodyCol,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            number,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF6366F1),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: titleCol,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                desc,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: bodyCol.withValues(alpha: 0.85),
+                  height: 1.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

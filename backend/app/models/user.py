@@ -30,6 +30,7 @@ class User(CosmosDocument):
     workspace_memberships: list[WorkspaceMembership] = Field(default_factory=list)
     subscription_id: str | None = None
     last_login_at: str | None = None
+    grade_level: int | None = None
     is_active: bool = True
 
 
@@ -42,6 +43,11 @@ class UserCreate(CosmosDocument.__base__):
     role: UserRole
 
 
+class UserUpdate(CosmosDocument.__base__):
+    display_name: str | None = None
+    grade_level: int | None = None
+
+
 class UserResponse(CosmosDocument.__base__):
     id: str
     tenant_id: str
@@ -50,6 +56,7 @@ class UserResponse(CosmosDocument.__base__):
     role: UserRole
     workspace_memberships: list[WorkspaceMembership] = Field(default_factory=list)
     subscription_id: str | None = None
+    grade_level: int | None = None
     is_active: bool
     created_at: str
 
@@ -63,6 +70,7 @@ class UserResponse(CosmosDocument.__base__):
             role=doc.role,
             workspace_memberships=doc.workspace_memberships,
             subscription_id=doc.subscription_id,
+            grade_level=doc.grade_level,
             is_active=doc.is_active,
             created_at=doc.created_at,
         )

@@ -398,7 +398,7 @@ async def test_prepare_self_study_with_subject():
     env.questions.assert_awaited_once_with(
         user=STUDENT,
         workspace_id=SELF_WS,
-        target=5,
+        target=10,
         level=AdaptiveLevel.beginner,
         revision=False,
         subject="Physics",
@@ -437,7 +437,7 @@ async def test_prepare_self_study_with_subject_and_subcategory():
     env.questions.assert_awaited_once_with(
         user=STUDENT,
         workspace_id=SELF_WS,
-        target=5,
+        target=10,
         level=AdaptiveLevel.beginner,
         revision=False,
         subject="Chemistry",
@@ -476,7 +476,7 @@ async def test_prepare_self_study_with_question_type():
     env.questions.assert_awaited_once_with(
         user=STUDENT,
         workspace_id=SELF_WS,
-        target=5,
+        target=10,
         level=AdaptiveLevel.beginner,
         revision=False,
         subject="Physics",

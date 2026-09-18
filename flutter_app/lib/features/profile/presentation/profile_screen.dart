@@ -6,6 +6,7 @@ import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/screen_time/widgets/accessibility_disclosure_dialog.dart';
+import 'package:social_study_app/shared/models/user.dart';
 
 // ─── Colours matching the reference exactly ───────────────────────────────
 const _kSkyTop = Color(0xFFB8EBF7); // pale sky blue
@@ -32,12 +33,14 @@ class ProfileScreen extends ConsumerWidget {
     }
 
     final authState = ref.watch(authNotifierProvider).valueOrNull;
+    final currentUser = authState?.maybeWhen(
+      authenticated: (user) => user,
+      orElse: () => null,
+    );
 
-    final (displayName, email) = authState?.maybeWhen(
-          authenticated: (user) => (user.displayName, user.email),
-          orElse: () => ('User', 'user@example.com'),
-        ) ??
-        ('User', 'user@example.com');
+    final displayName = currentUser?.displayName ?? 'User';
+    final email = currentUser?.email ?? 'user@example.com';
+    final gradeLevel = currentUser?.gradeLevel;
 
     // avatar initial
     final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
@@ -100,37 +103,123 @@ class ProfileScreen extends ConsumerWidget {
                         Navigator.of(context).pop();
                       }
                     },
-                    onEdit: () {},
+                    onEdit: () => _showEditProfileDialog(context, ref, currentUser),
                   ),
 
                   // space before avatar — leaves room for sky section
                   const SizedBox(height: 36),
 
-                  // Avatar centred
-                  _AvatarBadge(
-                      initial: initial, radius: avatarR, isDark: isDark),
+                  // Avatar centred with edit badge
+                  GestureDetector(
+                    onTap: () => _showEditProfileDialog(context, ref, currentUser),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        _AvatarBadge(
+                            initial: initial, radius: avatarR, isDark: isDark),
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF6366F1),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isDark ? const Color(0xFF070714) : Colors.white,
+                                width: 2,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.edit_rounded,
+                              size: 13,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
 
                   const SizedBox(height: 14),
 
-                  // Name
-                  Text(
-                    displayName,
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: isDark ? Colors.white : _kNameColor,
-                      letterSpacing: 0.2,
+                  // Name with edit pencil
+                  InkWell(
+                    onTap: () => _showEditProfileDialog(context, ref, currentUser),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            displayName,
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: isDark ? Colors.white : _kNameColor,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Icon(
+                            Icons.edit_outlined,
+                            size: 16,
+                            color: isDark ? Colors.white54 : _kSubColor,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 4),
 
-                  // Email (user requested email instead of ID)
+                  // Email
                   Text(
                     email,
                     style: TextStyle(
                       fontSize: 13,
                       color: isDark ? const Color(0xFF8888AA) : _kSubColor,
                       fontWeight: FontWeight.w500,
+                    ),
+                  ),
+
+                  // Grade Level Badge
+                  const SizedBox(height: 8),
+                  InkWell(
+                    onTap: () => _showEditProfileDialog(context, ref, currentUser),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF312E81).withValues(alpha: 0.5)
+                            : const Color(0xFFEEF2FF),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isDark ? const Color(0xFF4F46E5) : const Color(0xFFC7D2FE),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.school_rounded,
+                            size: 14,
+                            color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4F46E5),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            gradeLevel != null
+                                ? _formatGradeLevel(gradeLevel)
+                                : 'Tap to set grade level',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4F46E5),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
 
@@ -150,6 +239,11 @@ class ProfileScreen extends ConsumerWidget {
                     child: _MenuCard(
                       isDark: isDark,
                       items: [
+                        _MenuItem(
+                          icon: Icons.person_outline_rounded,
+                          label: 'Edit Profile & Grade Level',
+                          onTap: () => _showEditProfileDialog(context, ref, currentUser),
+                        ),
                         _MenuItem(
                           icon: Icons.palette_rounded,
                           label: 'Experience Style',
@@ -241,11 +335,14 @@ class _CollegeProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authNotifierProvider).valueOrNull;
-    final (displayName, email) = authState?.maybeWhen(
-          authenticated: (user) => (user.displayName, user.email),
-          orElse: () => ('User', 'user@example.com'),
-        ) ??
-        ('User', 'user@example.com');
+    final currentUser = authState?.maybeWhen(
+      authenticated: (user) => user,
+      orElse: () => null,
+    );
+    final displayName = currentUser?.displayName ?? 'User';
+    final email = currentUser?.email ?? 'user@example.com';
+    final gradeLevel = currentUser?.gradeLevel;
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final background = isDark ? const Color(0xFF0F172A) : Colors.white;
     final surface = isDark ? const Color(0xFF172033) : Colors.white;
@@ -268,6 +365,13 @@ class _CollegeProfileScreen extends ConsumerWidget {
         title: const Text('Profile',
             style: TextStyle(fontWeight: FontWeight.w700)),
         centerTitle: true,
+        actions: [
+          IconButton(
+            onPressed: () => _showEditProfileDialog(context, ref, currentUser),
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: 'Edit Profile',
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
@@ -305,8 +409,43 @@ class _CollegeProfileScreen extends ConsumerWidget {
                       Text(email,
                           style: TextStyle(fontSize: 13, color: secondaryText),
                           overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 6),
+                      InkWell(
+                        onTap: () => _showEditProfileDialog(context, ref, currentUser),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: border),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.school_rounded, size: 12, color: secondaryText),
+                              const SizedBox(width: 4),
+                              Text(
+                                gradeLevel != null
+                                    ? _formatGradeLevel(gradeLevel)
+                                    : 'Set study level',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: secondaryText,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
                   ),
+                ),
+                IconButton(
+                  onPressed: () => _showEditProfileDialog(context, ref, currentUser),
+                  icon: const Icon(Icons.edit_outlined),
+                  tooltip: 'Edit Profile',
                 ),
               ],
             ),
@@ -322,6 +461,12 @@ class _CollegeProfileScreen extends ConsumerWidget {
             surface: surface,
             border: border,
             children: [
+              _CollegeSettingsTile(
+                icon: Icons.badge_outlined,
+                title: 'Edit Profile & Grade Level',
+                subtitle: 'Update your display name and academic level',
+                onTap: () => _showEditProfileDialog(context, ref, currentUser),
+              ),
               _CollegeSettingsTile(
                 icon: Icons.palette_outlined,
                 title: 'Experience style',
@@ -871,8 +1016,8 @@ class _SignOutTile extends StatelessWidget {
     final borderColor =
         isDark ? const Color(0xFF2A2A50) : const Color(0xFFF0F0F0);
     final iconBg = isDark ? const Color(0xFF451A1A) : const Color(0xFFFEEAEA);
-    final iconColor = const Color(0xFFE53935);
-    final textCol = const Color(0xFFE53935);
+    const iconColor = Color(0xFFE53935);
+    const textCol = Color(0xFFE53935);
 
     return GestureDetector(
       onTap: onTap,
@@ -916,4 +1061,155 @@ class _SignOutTile extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── Profile editing helpers ──────────────────────────────────────────────────
+
+String _formatGradeLevel(int grade) {
+  if (grade <= 5) return 'Elementary';
+  if (grade <= 8) return 'Middle School (Grade $grade)';
+  if (grade <= 12) return 'Grade $grade';
+  if (grade == 13) return 'College / University';
+  return 'Adult Learner';
+}
+
+void _showEditProfileDialog(
+  BuildContext context,
+  WidgetRef ref,
+  User? user,
+) {
+  final nameController = TextEditingController(text: user?.displayName ?? '');
+  int? selectedGrade = user?.gradeLevel;
+
+  showDialog<void>(
+    context: context,
+    builder: (dialogCtx) {
+      return StatefulBuilder(
+        builder: (context, setState) {
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          final grades = <int, String>{
+            6: 'Grade 6 / Year 7',
+            7: 'Grade 7 / Year 8',
+            8: 'Grade 8 / Year 9',
+            9: 'Grade 9 / Year 10 (Freshman)',
+            10: 'Grade 10 / Year 11 (Sophomore)',
+            11: 'Grade 11 / Year 12 (Junior)',
+            12: 'Grade 12 / Year 13 (Senior)',
+            13: 'College / University',
+            14: 'Lifelong / Adult Learner',
+          };
+
+          return AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Row(
+              children: [
+                Icon(Icons.edit_note_rounded, color: Color(0xFF6366F1)),
+                SizedBox(width: 8),
+                Text('Edit Profile',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Display Name',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: nameController,
+                    decoration: InputDecoration(
+                      hintText: 'Enter your name',
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Grade / Study Level',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Calibrates AI questions and flashcards to your exact learning level.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<int>(
+                    initialValue: grades.containsKey(selectedGrade)
+                        ? selectedGrade
+                        : null,
+                    decoration: InputDecoration(
+                      hintText: 'Select your grade level',
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                    ),
+                    items: grades.entries
+                        .map(
+                          (entry) => DropdownMenuItem<int>(
+                            value: entry.key,
+                            child: Text(entry.value,
+                                style: const TextStyle(fontSize: 13)),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (val) {
+                      setState(() {
+                        selectedGrade = val;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogCtx).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF6366F1),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () async {
+                  final newName = nameController.text.trim();
+                  if (newName.isNotEmpty) {
+                    await ref.read(authNotifierProvider.notifier).updateProfile(
+                          displayName: newName,
+                          gradeLevel: selectedGrade,
+                        );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Profile updated successfully!'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  }
+                  if (dialogCtx.mounted) {
+                    Navigator.of(dialogCtx).pop();
+                  }
+                },
+                child: const Text('Save Changes'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
 }

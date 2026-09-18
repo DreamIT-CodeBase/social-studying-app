@@ -82,5 +82,26 @@ void main() {
 
       expect(closes, 1);
     });
+
+    testWidgets('shows softer retry message on first-use when sessionsUsed is 0',
+        (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SessionExhaustedView(
+              mode: AdaptiveSessionMode.study,
+              canUpload: true,
+              sessionsUsed: 0,
+              onUpload: () {},
+              onClose: () {},
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Almost ready!'), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
+      expect(find.text('All caught up!'), findsNothing);
+    });
   });
 }

@@ -563,13 +563,13 @@ def test_mastery_level_count_ranges_match_specification():
         _level_for_mastery,
     )
 
-    # Beginner (score < 0.40): 5-7 questions, 3-4 flashcards
+    # Beginner (score < 0.40): 10-12 questions, 8-10 flashcards (increased for meaningful sessions)
     beg_level = _level_for_mastery(0.0)
     assert beg_level == AdaptiveLevel.beginner
     beg_q_count = _adaptive_count(0.0, beg_level, _QUESTION_RANGES[beg_level])
-    assert 5 <= beg_q_count <= 7
+    assert 10 <= beg_q_count <= 12
     beg_f_count = _adaptive_count(0.0, beg_level, _FLASHCARD_RANGES[beg_level])
-    assert 3 <= beg_f_count <= 4
+    assert 8 <= beg_f_count <= 10
 
     # Intermediate (score 0.40 - 0.75): 12-15 questions, 10-13 flashcards
     inter_level = _level_for_mastery(0.55)

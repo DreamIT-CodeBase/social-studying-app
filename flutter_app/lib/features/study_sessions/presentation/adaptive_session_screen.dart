@@ -642,11 +642,17 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
         _SessionPhase.exhausted => SessionExhaustedView(
             mode: widget.mode,
             canUpload: isSelfLearningWorkspaceId(widget.workspaceId),
+            sessionsUsed: _plan?.sessionsUsed ?? 0,
             onUpload: () => context.pushReplacement(
               '/student/documents/${widget.workspaceId}',
             ),
-            onClose: () => context.pop(),
+            // For first-use (sessionsUsed == 0), onClose retries preparation
+            // so the "Try again" button actually re-runs session generation.
+            onClose: (_plan?.sessionsUsed ?? 0) == 0
+                ? _prepare
+                : () => context.pop(),
           ),
+
         _SessionPhase.error => _ErrorView(
             message: _error ?? 'Something went wrong.',
             saving: _completionFailed,

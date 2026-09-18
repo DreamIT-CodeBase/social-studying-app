@@ -305,12 +305,15 @@ class LegacyAdaptiveFlashcardView extends StatelessWidget {
 }
 
 /// Shown when the current study material has produced every non-repeating
-/// session it can.
+/// session it can, OR when the very first session could not be generated.
 ///
-/// This is a success state, not an error: the learner has genuinely worked
-/// through everything the uploaded material supports, so the copy and colours
-/// are encouraging and the primary action is uploading more material. The
-/// backend signals it with `exhausted: true` on an otherwise empty plan.
+/// Two states:
+/// 1. Genuine exhaustion (sessionsUsed > 0): learner has worked through
+///    everything, encourage uploading more material.
+/// 2. First-use failure (sessionsUsed == 0): generation hasn't run yet;
+///    show a softer "try again" message rather than a misleading "All caught up".
+///
+/// The backend signals it with `exhausted: true` on an otherwise empty plan.
 class SessionExhaustedView extends StatelessWidget {
   const SessionExhaustedView({
     super.key,
@@ -318,6 +321,8 @@ class SessionExhaustedView extends StatelessWidget {
     required this.canUpload,
     required this.onUpload,
     required this.onClose,
+    this.sessionsUsed,
+    this.isFirstUse = false,
   });
 
   final AdaptiveSessionMode mode;
@@ -328,13 +333,33 @@ class SessionExhaustedView extends StatelessWidget {
   final VoidCallback onUpload;
   final VoidCallback onClose;
 
-  String get _detail => switch (mode) {
-        AdaptiveSessionMode.flashcard =>
-          'You have reviewed every flashcard your current study material can '
-              'make. Upload more material to unlock a fresh set.',
-        _ => 'You have answered every question your current study material can '
+  /// How many sessions have been completed.
+  final int? sessionsUsed;
+
+  /// Explicit flag indicating this is a first-use initialization state.
+  final bool isFirstUse;
+
+  bool get _effectiveFirstUse =>
+      isFirstUse || (sessionsUsed != null && sessionsUsed == 0);
+
+  String get _title => _effectiveFirstUse ? 'Almost ready!' : 'All caught up!';
+
+  String get _detail {
+    if (_effectiveFirstUse) {
+      return mode == AdaptiveSessionMode.flashcard
+          ? 'We are preparing your first flashcard session. Tap "Try again" '
+              'in a moment and your cards will be ready to go!'
+          : 'We are generating your first questions from your study material. '
+              'Tap "Try again" in a moment and your session will be ready!';
+    }
+    return switch (mode) {
+      AdaptiveSessionMode.flashcard =>
+        'You have reviewed every flashcard your current study material can '
             'make. Upload more material to unlock a fresh set.',
-      };
+      _ => 'You have answered every question your current study material can '
+          'make. Upload more material to unlock a fresh set.',
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -353,14 +378,16 @@ class SessionExhaustedView extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                Icons.auto_stories_rounded,
+                _effectiveFirstUse
+                    ? Icons.hourglass_top_rounded
+                    : Icons.auto_stories_rounded,
                 size: 46,
                 color: scheme.onPrimaryContainer,
               ),
             ),
             const SizedBox(height: 20),
             Text(
-              'All caught up!',
+              _title,
               textAlign: TextAlign.center,
               style: Theme.of(context)
                   .textTheme
@@ -374,18 +401,29 @@ class SessionExhaustedView extends StatelessWidget {
               style: TextStyle(height: 1.45, color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 24),
-            if (canUpload) ...[
+            if (_effectiveFirstUse) ...[
+              FilledButton.icon(
+                onPressed: onClose,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Try again'),
+              ),
+            ] else if (canUpload) ...[
               FilledButton.icon(
                 onPressed: onUpload,
                 icon: const Icon(Icons.upload_file_rounded),
                 label: const Text('Upload more study material'),
               ),
               const SizedBox(height: 8),
+              TextButton(
+                onPressed: onClose,
+                child: const Text('Not now'),
+              ),
+            ] else ...[
+              TextButton(
+                onPressed: onClose,
+                child: const Text('Close'),
+              ),
             ],
-            TextButton(
-              onPressed: onClose,
-              child: Text(canUpload ? 'Not now' : 'Close'),
-            ),
           ],
         ),
       ),

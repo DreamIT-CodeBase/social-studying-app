@@ -144,6 +144,25 @@ async def get_next_question(
     )
 
     if not generated_list:
+        # First attempt produced nothing — retry with allow_repeats=True so the user
+        # always gets questions rather than seeing "session could not be prepared".
+        # This handles the case where dedup filtering is too aggressive for a topic.
+        logger.info(
+            "Synchronous batch returned 0 questions for student=%s, retrying with allow_repeats=True",
+            student_id,
+        )
+        generated_list = await _generate_and_persist_batch(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            student_id=student_id,
+            user_obj=user_obj,
+            revision=revision,
+            subject=subject,
+            batch_size=20,
+            allow_repeats=True,
+        )
+
+    if not generated_list:
         raise ServiceUnavailableError(
             "Could not generate a study question at this time. Please retry."
         )
@@ -207,6 +226,7 @@ async def _generate_and_persist_batch(
     target_type: QuestionType | None = None,
     batch_size: int = 20,
     extra_seen_bodies: Sequence[str] | None = None,
+    allow_repeats: bool = False,
 ) -> list[Question]:
     """Generate questions in parallel across top candidate topics.
     Filter out duplicate questions using temporary Redis set and historical stems.
@@ -216,15 +236,33 @@ async def _generate_and_persist_batch(
     This produces fresh, focused questions for the student's explicitly
     chosen subcategory (e.g. "Atomic Structure") without mixing in
     unrelated topics.
+
+    When *allow_repeats* is True, the seen-body deduplication step is skipped.
+    This is a fallback path used when dedup is filtering so aggressively that
+    no new questions can be generated (e.g. dense algebraic content where many
+    equations share surface tokens). Repeating questions is preferable to
+    showing an empty session.
     """
     redis = await get_redis()
     seen_key = f"{SEEN_KEY_PREFIX}:{workspace_id}:{student_id}"
 
     # Fetch student context and seen/queued question bodies
     context = await _fetch_student_context(tenant_id, workspace_id, student_id)
-    all_seen_bodies = await _fetch_all_seen_and_queued_bodies(tenant_id, workspace_id, student_id)
-    redis_seen = await redis.smembers(seen_key) or []
-    redis_seen_str = [s.decode() if isinstance(s, bytes) else str(s) for s in redis_seen]
+    if allow_repeats:
+        # Skip seen-body lookback entirely — allow the LLM to generate questions
+        # even if they've been seen before. Used as a fallback when dedup is too
+        # aggressive and returns 0 results for dense/repeated content.
+        logger.info(
+            "allow_repeats=True: skipping seen-body dedup for student=%s workspace=%s",
+            student_id,
+            workspace_id,
+        )
+        all_seen_bodies = []
+        redis_seen_str = []
+    else:
+        all_seen_bodies = await _fetch_all_seen_and_queued_bodies(tenant_id, workspace_id, student_id)
+        redis_seen = await redis.smembers(seen_key) or []
+        redis_seen_str = [s.decode() if isinstance(s, bytes) else str(s) for s in redis_seen]
 
     raw_seen_bodies: list[str] = list(
         {s for s in [*redis_seen_str, *all_seen_bodies, *(extra_seen_bodies or [])] if s}
@@ -729,13 +767,17 @@ async def _fetch_all_seen_and_queued_bodies(
         )
         docs_i = await cosmos_retry(lambda: cursor_i.to_list(length=2000))
         interacted_ids = [doc["question_id"] for doc in docs_i if doc.get("question_id")]
-        interacted_ids = interacted_ids[-200:]
 
         if interacted_ids:
+            # Cap lookback: only block the most recent 50 questions from exact-match dedup.
+            # Using 200 caused over-filtering for algebra students who quickly accumulate
+            # many interaction records with equations sharing the same surface tokens.
+            # 50 is enough to prevent same-session repeats while keeping the seen-set small.
+            interacted_ids = interacted_ids[-50:]
             cursor_q = col_q.find(
                 {"_id": {"$in": interacted_ids}}, {"body": 1}
-            ).limit(200)
-            docs_q = await cosmos_retry(lambda: cursor_q.to_list(length=200))
+            ).limit(50)
+            docs_q = await cosmos_retry(lambda: cursor_q.to_list(length=50))
             for doc in docs_q:
                 b = doc.get("body")
                 if b:

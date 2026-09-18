@@ -126,6 +126,7 @@ class AdaptiveSessionPlan {
     this.exhausted = false,
     this.subject,
     this.questionType,
+    this.sessionsUsed = 0,
   });
 
   factory AdaptiveSessionPlan.fromJson(Map<String, dynamic> json) =>
@@ -153,6 +154,7 @@ class AdaptiveSessionPlan {
             json['exhausted'] is bool ? json['exhausted'] as bool : false,
         subject: json['subject'] as String?,
         questionType: json['question_type'] as String?,
+        sessionsUsed: (json['sessions_used'] as num?)?.toInt() ?? 0,
       );
 
   final String sessionId;
@@ -174,6 +176,12 @@ class AdaptiveSessionPlan {
   /// "upload more study material" call-to-action instead of a runnable session,
   /// and never posts `complete` for such a plan.
   final bool exhausted;
+
+  /// How many study sessions have been completed from this material snapshot.
+  /// Used by the UI to distinguish a genuine exhaustion (sessionsUsed > 5) from
+  /// a first-use or generation failure (sessionsUsed == 0), so it can display
+  /// an appropriate message instead of falsely saying "All caught up!".
+  final int sessionsUsed;
 }
 
 class SessionQuestionAttempt {
