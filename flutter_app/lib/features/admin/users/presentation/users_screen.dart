@@ -12,6 +12,7 @@ import 'package:social_study_app/shared/models/invite_code.dart';
 import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/widgets/error_view.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
+import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 
 /// Workspace user management (Sprint 4.2).
 ///
@@ -374,13 +375,23 @@ class _UserRow extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      user.displayName,
-                      style: context.textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            user.displayName,
+                            style: context.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (context.isMobile) ...[
+                          const SizedBox(width: Spacing.xs),
+                          _RoleChip(role: user.role),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -394,8 +405,10 @@ class _UserRow extends ConsumerWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: Spacing.sm),
-              _RoleChip(role: user.role),
+              if (!context.isMobile) ...[
+                const SizedBox(width: Spacing.sm),
+                _RoleChip(role: user.role),
+              ],
               _UserMenu(workspaceId: workspaceId, user: user),
             ],
           ),
@@ -467,16 +480,24 @@ class _UserMenu extends ConsumerWidget {
       return const SizedBox(width: 48);
     }
 
+    final currentUser = ref.watch(authNotifierProvider).valueOrNull?.maybeWhen(
+          authenticated: (u) => u,
+          orElse: () => null,
+        );
+    final isTenantAdmin = currentUser?.role == UserRole.tenantAdmin;
     final isStudent = user.role == UserRole.student;
+
     return PopupMenuButton<_UserAction>(
       icon: Icon(
         Icons.more_vert_rounded,
         color: context.colorScheme.onSurfaceVariant,
       ),
       onSelected: (action) => switch (action) {
-        _UserAction.promote => _changeRole(context, ref, UserRole.workspaceAdmin),
+        _UserAction.promote =>
+          _changeRole(context, ref, UserRole.workspaceAdmin),
         _UserAction.demote => _changeRole(context, ref, UserRole.student),
         _UserAction.remove => _confirmRemove(context, ref),
+        _UserAction.delete => _confirmDelete(context, ref),
       },
       itemBuilder: (_) => [
         if (isStudent)
@@ -501,10 +522,21 @@ class _UserMenu extends ConsumerWidget {
           value: _UserAction.remove,
           child: ListTile(
             leading: Icon(Icons.person_remove_outlined),
-            title: Text('Remove'),
+            title: Text('Remove from workspace'),
             contentPadding: EdgeInsets.zero,
           ),
         ),
+        if (isTenantAdmin)
+          PopupMenuItem(
+            value: _UserAction.delete,
+            child: ListTile(
+              leading: Icon(Icons.delete_forever_rounded,
+                  color: context.colorScheme.error),
+              title: Text('Delete student',
+                  style: TextStyle(color: context.colorScheme.error)),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
       ],
     );
   }
@@ -563,7 +595,7 @@ class _UserMenu extends ConsumerWidget {
     try {
       await ref
           .read(workspaceUsersListProvider(workspaceId).notifier)
-          .deactivateUser(user.id);
+          .removeMember(user.id);
       if (context.mounted) {
         _snack(context, '${user.displayName} removed');
       }
@@ -575,9 +607,51 @@ class _UserMenu extends ConsumerWidget {
       }
     }
   }
+
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete student completely?'),
+        content: Text(
+          '${user.displayName} will be deactivated and removed from all workspaces in this tenant. '
+          'They will immediately lose login access.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: context.colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      await ref
+          .read(workspaceUsersListProvider(workspaceId).notifier)
+          .deactivateUser(user.id);
+      if (context.mounted) {
+        _snack(context, '${user.displayName} deleted');
+      }
+    } on UserNotFoundException {
+      if (context.mounted) _snack(context, 'That user was already deleted');
+    } catch (error) {
+      if (context.mounted) {
+        _snack(context, 'Could not delete user: $error');
+      }
+    }
+  }
 }
 
-enum _UserAction { promote, demote, remove }
+enum _UserAction { promote, demote, remove, delete }
 
 /// Opens the add-user bottom sheet and confirms the result.
 Future<void> _openAddUserForm(

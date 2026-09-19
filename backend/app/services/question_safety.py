@@ -158,8 +158,7 @@ async def review_question(question: GeneratedQuestion) -> QuestionReview:
         reason = "Approved: Content Safety clean and structural checks passed."
 
     logger.info(
-        "Question review topic=%s type=%s verdict=%s safety_flagged=%s "
-        "structural_failures=%d",
+        "Question review topic=%s type=%s verdict=%s safety_flagged=%s structural_failures=%d",
         question.question_type.value,
         question.difficulty.value,
         verdict.value,
@@ -210,8 +209,7 @@ def _structural_checks(question: GeneratedQuestion) -> list[str]:
     # ── Universal ──
     if len(question.body) > _MAX_BODY_CHARS:
         failures.append(
-            f"body exceeds {_MAX_BODY_CHARS}-char sanity limit "
-            f"(got {len(question.body)})"
+            f"body exceeds {_MAX_BODY_CHARS}-char sanity limit (got {len(question.body)})"
         )
 
     # Anti-leakage: the body must not reveal the answer verbatim.
@@ -225,10 +223,7 @@ def _structural_checks(question: GeneratedQuestion) -> list[str]:
         # Only check meaningful-length answers; "is" or "a" would
         # false-positive on any sentence.
         if len(ans_lower) >= 4 and ans_lower in body_lower:
-            failures.append(
-                f"body leaks the reference answer ({question.answer!r}) "
-                "verbatim"
-            )
+            failures.append(f"body leaks the reference answer ({question.answer!r}) verbatim")
 
     # ── Type-specific ──
     if question.question_type == QuestionType.mcq:
@@ -250,18 +245,14 @@ def _mcq_checks(question: GeneratedQuestion) -> list[str]:
         for pat in _MCQ_LEAKAGE_PATTERNS:
             if pat.search(opt.text):
                 failures.append(
-                    f"MCQ option {opt.key!r} text leaks correctness "
-                    f"({pat.pattern!r} matched)"
+                    f"MCQ option {opt.key!r} text leaks correctness ({pat.pattern!r} matched)"
                 )
                 break  # one match per option is enough
 
     for pat in _MCQ_BANNED_STEM_OPTIONS:
         for opt in question.options:
             if pat.search(opt.text):
-                failures.append(
-                    f"MCQ option {opt.key!r} uses a banned phrase "
-                    f"({pat.pattern!r})"
-                )
+                failures.append(f"MCQ option {opt.key!r} uses a banned phrase ({pat.pattern!r})")
                 break
 
     return failures

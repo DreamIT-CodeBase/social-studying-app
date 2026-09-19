@@ -5,7 +5,9 @@ param environment string
 param tags object
 param keyVaultName string
 
-var searchName = 'srch-ssa-${environment}-ddjopeut37ed2'
+var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id)
+
+var searchName = 'srch-ssa-${environment}-${uniqueSuffix}'
 
 resource aiSearch 'Microsoft.Search/searchServices@2024-03-01-preview' = {
   name: searchName

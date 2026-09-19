@@ -76,7 +76,12 @@ class DemoFlashcardsRepository implements FlashcardsRepository {
   final Set<String> _served = {};
 
   @override
-  Future<Flashcard> next({required String workspaceId}) async {
+  Future<Flashcard> next({
+    required String workspaceId,
+    List<String>? selectedTopicIds,
+    double? mastery,
+    String? subject,
+  }) async {
     await Future<void>.delayed(const Duration(milliseconds: 250));
     final fixture = _fixtures[_index % _fixtures.length];
     _index++;
@@ -110,8 +115,7 @@ class DemoFlashcardsRepository implements FlashcardsRepository {
       topic: 'Photosynthesis',
       front: 'What pigment captures light energy during photosynthesis?',
       back: 'Chlorophyll.',
-      explanation:
-          'Chlorophyll, housed in chloroplasts, absorbs red and blue '
+      explanation: 'Chlorophyll, housed in chloroplasts, absorbs red and blue '
           'light and reflects green — which is why leaves look green.',
     ),
     Flashcard(
@@ -119,8 +123,7 @@ class DemoFlashcardsRepository implements FlashcardsRepository {
       topic: 'Cell Biology',
       front: 'Which organelle is the "powerhouse of the cell"?',
       back: 'The mitochondrion.',
-      explanation:
-          'Mitochondria produce ATP through cellular respiration, '
+      explanation: 'Mitochondria produce ATP through cellular respiration, '
           'supplying most of the cell\'s usable energy.',
     ),
     Flashcard(

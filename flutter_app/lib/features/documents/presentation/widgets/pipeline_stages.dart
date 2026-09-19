@@ -9,9 +9,13 @@ import 'package:social_study_app/shared/models/document.dart';
 enum PipelineStage {
   uploaded(label: 'Uploaded', detail: 'File saved to storage'),
   extracting(label: 'Reading text', detail: 'Pulling text from your file'),
-  topics(label: 'Identifying topics', detail: 'Spotting concepts in the content'),
-  chunking(label: 'Splitting content', detail: 'Breaking text into searchable pieces'),
-  vectorizing(label: 'Building search index', detail: 'Embedding chunks for retrieval'),
+  topics(
+      label: 'Identifying topics', detail: 'Spotting concepts in the content'),
+  chunking(
+      label: 'Splitting content',
+      detail: 'Breaking text into searchable pieces'),
+  vectorizing(
+      label: 'Building search index', detail: 'Embedding chunks for retrieval'),
   ready(label: 'Ready', detail: 'Questions can now be generated');
 
   const PipelineStage({required this.label, required this.detail});
@@ -149,8 +153,10 @@ List<StageRow> _flaggedRows() {
     const StageRow(stage: PipelineStage.uploaded, state: StageRowState.done),
     const StageRow(stage: PipelineStage.extracting, state: StageRowState.error),
     const StageRow(stage: PipelineStage.topics, state: StageRowState.upcoming),
-    const StageRow(stage: PipelineStage.chunking, state: StageRowState.upcoming),
-    const StageRow(stage: PipelineStage.vectorizing, state: StageRowState.upcoming),
+    const StageRow(
+        stage: PipelineStage.chunking, state: StageRowState.upcoming),
+    const StageRow(
+        stage: PipelineStage.vectorizing, state: StageRowState.upcoming),
     const StageRow(stage: PipelineStage.ready, state: StageRowState.upcoming),
   ];
 }

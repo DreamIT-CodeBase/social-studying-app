@@ -64,6 +64,28 @@ def test_create_tenant_happy_path(client):
     col.insert_one.assert_awaited_once()
 
 
+def test_create_tenant_does_not_provision_dedicated_throughput(client):
+    admin = make_user(role=UserRole.tenant_admin)
+    app.dependency_overrides[get_current_user] = lambda: admin
+    col = _col_with_doc(None)
+
+    with (
+        patch("app.api.tenants.get_collection", return_value=col),
+        patch("app.core.database._get_client") as get_client,
+    ):
+        response = client.post(
+            "/api/v1/tenants/",
+            json={
+                "name": "Cost Safe School",
+                "type": "school",
+                "admin_email": "admin@costsafe.example",
+            },
+        )
+
+    assert response.status_code == 201
+    get_client.assert_not_called()
+
+
 def test_create_tenant_duplicate_email_returns_409(client):
     admin = make_user(role=UserRole.tenant_admin)
     app.dependency_overrides[get_current_user] = lambda: admin

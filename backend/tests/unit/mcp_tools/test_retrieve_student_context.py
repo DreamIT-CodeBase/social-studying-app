@@ -247,7 +247,7 @@ async def test_recent_interaction_limit_caps_the_tail():
         _interaction(
             question_id=f"qst_{i}",
             topic="Topic",
-            answered_at=f"2026-05-0{i+1}T00:00:00+00:00",
+            answered_at=f"2026-05-0{i + 1}T00:00:00+00:00",
         )
         for i in range(5)
     ]

@@ -91,7 +91,7 @@ def _student_context(
             question_id=f"qst_{i}",
             topic=t,
             is_correct=True,
-            answered_at=f"2026-05-0{i+1}T00:00:00+00:00",
+            answered_at=f"2026-05-0{i + 1}T00:00:00+00:00",
         )
         for i, t in enumerate(recent_topics or [])
     ]

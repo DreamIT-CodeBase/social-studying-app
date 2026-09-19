@@ -35,6 +35,7 @@ async def main():
         
         result = await sender.send_to_installation(
             installation_id=token.installation_id,
+            device_token=token.token,
             platform=token.platform,
             payload=payload,
         )

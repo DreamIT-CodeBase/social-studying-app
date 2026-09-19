@@ -54,33 +54,6 @@ abstract class WorkspacesRepository {
   ///
   /// Throws [WorkspaceNotFoundException] (404).
   Future<GeneratedInviteCode> generateInviteCode(String workspaceId);
-
-  /// Create a collaborative workspace in the caller's tenant.
-  Future<Workspace> createCollaborative({required String name, String? description});
-
-  /// Join a collaborative workspace using a join code or invitation token.
-  Future<Workspace> joinCollaborative({String? joinCode, String? inviteToken});
-
-  /// Leave a collaborative workspace.
-  Future<void> leaveCollaborative(String workspaceId);
-
-  /// List members of a collaborative workspace.
-  Future<List<Map<String, dynamic>>> listMembers(String workspaceId);
-
-  /// List recent activity logs for a collaborative workspace.
-  Future<List<Map<String, dynamic>>> listActivity(String workspaceId);
-
-  /// Retrieve chat messages for the collaborative workspace.
-  Future<List<Map<String, dynamic>>> getMessages(String workspaceId);
-
-  /// Post a new discussion board message in the workspace.
-  Future<void> postMessage(String workspaceId, {required String content, List<String> attachments});
-
-  /// Change the role of a member (Owner only).
-  Future<void> changeMemberRole(String workspaceId, {required String userId, required String role});
-
-  /// Invite another student to join this collaborative workspace.
-  Future<Map<String, dynamic>> inviteToCollaborative(String workspaceId, {String? email, String? username, required String role});
 }
 
 /// Selects demo vs. real implementation by authenticated user — the

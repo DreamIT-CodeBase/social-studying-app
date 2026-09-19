@@ -61,8 +61,7 @@ void main() {
     expect(rows.every((r) => r.depth == 0), isTrue);
   });
 
-  test('topic with parent_id pointing outside the list is treated as root',
-      () {
+  test('topic with parent_id pointing outside the list is treated as root', () {
     // The backend can return this after a doc deletion that left a
     // dangling parent ref. The viewer must still render the topic.
     final rows = buildTopicTree([
@@ -87,8 +86,7 @@ void main() {
     expect(ids, {'a', 'b'});
   });
 
-  test('child of a "dangling parent" still appears under its real root',
-      () {
+  test('child of a "dangling parent" still appears under its real root', () {
     // root → mid (mid has dangling parent_id) → leaf
     // The dangling ref converts `mid` into a root; `leaf` should sit
     // under `mid`, not under the unresolvable parent.

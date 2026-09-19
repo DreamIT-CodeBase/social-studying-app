@@ -56,14 +56,14 @@ logger = logging.getLogger(__name__)
 # order; the first that yields a clean boundary within the chunk budget
 # wins. "Hard cut" at the bottom is the fallback for binary-ish runs.
 _BOUNDARY_PATTERNS: tuple[str, ...] = (
-    "\n\n",   # paragraph break — strongest semantic boundary
-    "\n",     # newline
-    ". ",     # sentence end (period followed by space — avoids "U.S.")
+    "\n\n",  # paragraph break — strongest semantic boundary
+    "\n",  # newline
+    ". ",  # sentence end (period followed by space — avoids "U.S.")
     "? ",
     "! ",
-    "; ",     # clause boundary
-    ", ",     # weak — only if everything else missed
-    " ",      # word boundary — last resort before hard cut
+    "; ",  # clause boundary
+    ", ",  # weak — only if everything else missed
+    " ",  # word boundary — last resort before hard cut
 )
 
 
@@ -133,7 +133,7 @@ def chunk_text(
             tail = stripped[cursor:text_len]
             if chunks and len(tail.strip()) < min_size:
                 last = chunks[-1]
-                merged_text = stripped[last.char_start:text_len]
+                merged_text = stripped[last.char_start : text_len]
                 chunks[-1] = TextChunk(
                     text=merged_text,
                     chunk_index=last.chunk_index,

@@ -10,7 +10,9 @@ param deployerObjectId string
 @description('Principal ID of the managed identity — granted Key Vault Secrets User')
 param managedIdentityPrincipalId string
 
-var vaultName = 'kv-ssa-${environment}-ddjopeut37ed2'
+var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id)
+
+var vaultName = 'kv-ssa-${environment}-${uniqueSuffix}'
 
 // Built-in role definition IDs
 var kvSecretsOfficerRoleId = 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'

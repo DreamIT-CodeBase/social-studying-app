@@ -127,8 +127,9 @@ class GamificationProfile with _$GamificationProfile {
     @JsonKey(name: 'xp_this_week') @Default(0) int xpThisWeek,
 
     /// Per-topic XP — key is topic display name.
-    @JsonKey(name: 'xp_by_topic') @Default(<String, int>{}) Map<String, int>
-        xpByTopic,
+    @JsonKey(name: 'xp_by_topic')
+    @Default(<String, int>{})
+    Map<String, int> xpByTopic,
     @Default(1) int level,
     @JsonKey(name: 'xp_into_level') @Default(0) int xpIntoLevel,
     @JsonKey(name: 'xp_for_next_level') @Default(100) int xpForNextLevel,
@@ -138,11 +139,26 @@ class GamificationProfile with _$GamificationProfile {
     @JsonKey(name: 'questions_answered') @Default(0) int questionsAnswered,
     @JsonKey(name: 'questions_correct') @Default(0) int questionsCorrect,
     @JsonKey(name: 'flashcards_reviewed') @Default(0) int flashcardsReviewed,
+    @JsonKey(name: 'study_sessions_completed')
+    @Default(0)
+    int studySessionsCompleted,
+    @JsonKey(name: 'revision_sessions_completed')
+    @Default(0)
+    int revisionSessionsCompleted,
+    @JsonKey(name: 'flashcard_sessions_completed')
+    @Default(0)
+    int flashcardSessionsCompleted,
     @Default(<EarnedBadge>[]) List<EarnedBadge> badges,
 
     /// Last 30 days of activity counts — `{"2026-05-23": 12, ...}`.
-    @JsonKey(name: 'daily_activity') @Default(<String, int>{}) Map<String, int>
-        dailyActivity,
+    @JsonKey(name: 'daily_activity')
+    @Default(<String, int>{})
+    Map<String, int> dailyActivity,
+
+    /// Last 30 days of net XP by UTC calendar date.
+    @JsonKey(name: 'daily_xp')
+    @Default(<String, int>{})
+    Map<String, int> dailyXp,
   }) = _GamificationProfile;
 
   factory GamificationProfile.fromJson(Map<String, dynamic> json) =>
@@ -168,6 +184,12 @@ class GamificationProfile with _$GamificationProfile {
   /// failure).
   double get accuracy =>
       questionsAnswered == 0 ? 0 : questionsCorrect / questionsAnswered;
+
+  /// Completed adaptive sessions across all three learning modes.
+  int get totalSessionsCompleted =>
+      studySessionsCompleted +
+      revisionSessionsCompleted +
+      flashcardSessionsCompleted;
 }
 
 /// One row on the workspace leaderboard.
@@ -213,4 +235,21 @@ class LeaderboardResponse with _$LeaderboardResponse {
     workspaceId: '',
     visible: false,
   );
+}
+
+@freezed
+class SessionCompletionFeedback with _$SessionCompletionFeedback {
+  const factory SessionCompletionFeedback({
+    @JsonKey(name: 'xp_earned') required int xpEarned,
+    @JsonKey(name: 'new_level') required int newLevel,
+    @JsonKey(name: 'leveled_up') required bool leveledUp,
+    @JsonKey(name: 'streak_days') required int streakDays,
+    @JsonKey(name: 'streak_extended') required bool streakExtended,
+    @JsonKey(name: 'badges_unlocked')
+    @Default(<EarnedBadge>[])
+    List<EarnedBadge> badgesUnlocked,
+  }) = _SessionCompletionFeedback;
+
+  factory SessionCompletionFeedback.fromJson(Map<String, dynamic> json) =>
+      _$SessionCompletionFeedbackFromJson(json);
 }

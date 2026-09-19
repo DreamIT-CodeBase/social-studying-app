@@ -9,8 +9,7 @@ import 'package:social_study_app/shared/models/document.dart';
 
 class _MockRepo extends Mock implements DocumentsRepository {}
 
-Document _doc({String id = 'doc_a', String filename = 'study.pdf'}) =>
-    Document(
+Document _doc({String id = 'doc_a', String filename = 'study.pdf'}) => Document(
       id: id,
       workspaceId: 'wsp_test',
       filename: filename,
@@ -45,8 +44,7 @@ void main() {
       (_) async => [_doc(id: 'doc_a'), _doc(id: 'doc_b')],
     );
 
-    final docs = await container
-        .read(documentsListProvider('wsp_test').future);
+    final docs = await container.read(documentsListProvider('wsp_test').future);
 
     expect(docs.map((d) => d.id), ['doc_a', 'doc_b']);
     verify(() => repo.list(workspaceId: 'wsp_test')).called(1);
@@ -56,8 +54,7 @@ void main() {
     when(() => repo.list(workspaceId: 'wsp_test'))
         .thenAnswer((_) async => const []);
 
-    final docs = await container
-        .read(documentsListProvider('wsp_test').future);
+    final docs = await container.read(documentsListProvider('wsp_test').future);
 
     expect(docs, isEmpty);
   });
@@ -70,17 +67,45 @@ void main() {
     });
 
     // Initial fetch.
-    final first = await container
-        .read(documentsListProvider('wsp_test').future);
+    final first =
+        await container.read(documentsListProvider('wsp_test').future);
     expect(first.single.id, 'doc_1');
 
     // refresh() invalidates → build re-runs.
     container.read(documentsListProvider('wsp_test').notifier).refresh();
-    final second = await container
-        .read(documentsListProvider('wsp_test').future);
+    final second =
+        await container.read(documentsListProvider('wsp_test').future);
     expect(second.single.id, 'doc_2');
 
     verify(() => repo.list(workspaceId: 'wsp_test')).called(2);
+  });
+
+  test('deleteDocument deletes through repository and updates the list',
+      () async {
+    when(() => repo.list(workspaceId: 'wsp_test')).thenAnswer(
+      (_) async => [_doc(id: 'doc_a'), _doc(id: 'doc_b')],
+    );
+    when(
+      () => repo.delete(
+        workspaceId: 'wsp_test',
+        documentId: 'doc_a',
+      ),
+    ).thenAnswer((_) async {});
+
+    await container.read(documentsListProvider('wsp_test').future);
+    await container
+        .read(documentsListProvider('wsp_test').notifier)
+        .deleteDocument('doc_a');
+
+    final remaining =
+        container.read(documentsListProvider('wsp_test')).requireValue;
+    expect(remaining.map((document) => document.id), ['doc_b']);
+    verify(
+      () => repo.delete(
+        workspaceId: 'wsp_test',
+        documentId: 'doc_a',
+      ),
+    ).called(1);
   });
 
   test('repository error propagates as AsyncError', () async {

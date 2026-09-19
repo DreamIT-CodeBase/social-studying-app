@@ -31,6 +31,14 @@ param contentSafetyEndpoint string
 param storageEndpoint string
 param documentIntelligenceEndpoint string
 
+// Transactional email through Microsoft Graph. The secret stays in Key Vault;
+// these resources are added only when Graph is explicitly selected.
+param emailProvider string = 'auto'
+param microsoftGraphTenantId string = ''
+param microsoftGraphClientId string = ''
+param microsoftGraphClientSecretUri string = ''
+param microsoftGraphSenderEmail string = ''
+
 // Azure AD B2C — set after B2C tenant is provisioned (Task 1.5)
 param b2cTenantId string = ''
 param b2cClientId string = ''
@@ -94,7 +102,7 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = {
         }
       ]
       // Secrets are pulled from Key Vault at container startup using managed identity
-      secrets: [
+      secrets: concat([
         {
           name: 'cosmos-connection-string'
           keyVaultUrl: cosmosConnectionSecretUri
@@ -140,7 +148,13 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = {
           keyVaultUrl: notificationHubConnectionSecretUri
           identity: managedIdentityId
         }
-      ]
+      ], emailProvider == 'microsoft_graph' ? [
+        {
+          name: 'microsoft-graph-client-secret'
+          keyVaultUrl: microsoftGraphClientSecretUri
+          identity: managedIdentityId
+        }
+      ] : [])
       ingress: {
         external: true
         targetPort: 8080
@@ -162,7 +176,7 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = {
             cpu: json(environment == 'prod' ? '1.0' : '0.5')
             memory: environment == 'prod' ? '2Gi' : '1Gi'
           }
-          env: [
+          env: concat([
             {
               name: 'ENVIRONMENT'
               value: environment
@@ -247,7 +261,28 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'MANAGED_IDENTITY_CLIENT_ID'
               value: managedIdentityClientId
             }
-          ]
+          ], emailProvider == 'microsoft_graph' ? [
+            {
+              name: 'EMAIL_PROVIDER'
+              value: emailProvider
+            }
+            {
+              name: 'MICROSOFT_GRAPH_TENANT_ID'
+              value: microsoftGraphTenantId
+            }
+            {
+              name: 'MICROSOFT_GRAPH_CLIENT_ID'
+              value: microsoftGraphClientId
+            }
+            {
+              name: 'MICROSOFT_GRAPH_CLIENT_SECRET'
+              secretRef: 'microsoft-graph-client-secret'
+            }
+            {
+              name: 'MICROSOFT_GRAPH_SENDER_EMAIL'
+              value: microsoftGraphSenderEmail
+            }
+          ] : [])
           probes: [
             {
               type: 'Liveness'
@@ -410,9 +445,7 @@ resource workerApp 'Microsoft.App/containerApps@2024-03-01' = {
         }
       ]
       scale: {
-        // Scale-to-zero in dev keeps costs near zero between uploads.
-        // Prod keeps min=1 so the first message after idle isn't slow.
-        minReplicas: environment == 'prod' ? 1 : 0
+        minReplicas: 1
         maxReplicas: environment == 'prod' ? 10 : 3
         rules: [
           {
@@ -421,7 +454,10 @@ resource workerApp 'Microsoft.App/containerApps@2024-03-01' = {
               type: 'azure-servicebus'
               metadata: {
                 queueName: 'document-ingestion'
-                messageCount: '5'
+                // A single document is a complete unit of work. Waiting for
+                // five uploads leaves individual users indefinitely stuck
+                // at the first processing stage while the app is scaled to 0.
+                messageCount: '1'
               }
               auth: [
                 {
@@ -541,7 +577,7 @@ resource topicWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
       scale: {
         // Topic mining is slower per message — keep maxReplicas low to avoid
         // hammering the GPT-4o deployment's TPM budget in parallel.
-        minReplicas: environment == 'prod' ? 1 : 0
+        minReplicas: 1
         maxReplicas: environment == 'prod' ? 5 : 2
         rules: [
           {
@@ -550,7 +586,9 @@ resource topicWorkerApp 'Microsoft.App/containerApps@2024-03-01' = {
               type: 'azure-servicebus'
               metadata: {
                 queueName: 'topic-extraction'
-                messageCount: '3'
+                // Start for every document; topic extraction is queued one
+                // document at a time by the ingestion worker.
+                messageCount: '1'
               }
               auth: [
                 {
@@ -651,10 +689,10 @@ resource chunkerApp 'Microsoft.App/containerApps@2024-03-01' = {
         }
       ]
       scale: {
-        // Chunking is fast (sub-second per chunk write) — keep replicas low
-        // to avoid Cosmos write contention on the same partition.
-        minReplicas: environment == 'prod' ? 1 : 0
-        maxReplicas: environment == 'prod' ? 3 : 2
+        // Chunking writes one document's full chunk set to the shared Cosmos
+        // collection. Serialize dev jobs to stay within its RU budget.
+        minReplicas: 1
+        maxReplicas: environment == 'prod' ? 3 : 1
         rules: [
           {
             name: 'chunk-queue-depth'
@@ -662,7 +700,10 @@ resource chunkerApp 'Microsoft.App/containerApps@2024-03-01' = {
               type: 'azure-servicebus'
               metadata: {
                 queueName: 'chunking'
-                messageCount: '5'
+                // A one-document scrape must wake the chunker immediately.
+                // A threshold of five strands the document at
+                // `topics_extracted` until unrelated uploads arrive.
+                messageCount: '1'
               }
               auth: [
                 {
@@ -789,7 +830,7 @@ resource vectorizerApp 'Microsoft.App/containerApps@2024-03-01' = {
         // OpenAI TPM under the embedding quota when multiple docs land in
         // sequence. Bumps cap is the right knob if throughput becomes an
         // issue rather than scaling replicas first.
-        minReplicas: environment == 'prod' ? 1 : 0
+        minReplicas: 1
         maxReplicas: environment == 'prod' ? 5 : 2
         rules: [
           {
@@ -798,7 +839,9 @@ resource vectorizerApp 'Microsoft.App/containerApps@2024-03-01' = {
               type: 'azure-servicebus'
               metadata: {
                 queueName: 'vectorization'
-                messageCount: '3'
+                // The vectorizer receives one message per completed
+                // document, so it must also wake for a lone message.
+                messageCount: '1'
               }
               auth: [
                 {

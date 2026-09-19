@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from app.models.base import CosmosDocument
 
@@ -21,17 +21,17 @@ class DocumentStatus(StrEnum):
     tests; semantically identical.
     """
 
-    pending = "pending"                          # 2.2: uploaded, queued for the extractor
-    extracting = "extracting"                    # 2.3: worker has the message, DI call in flight
-    text_extracted = "text_extracted"            # 2.3+2.4: text persisted AND screened clean
-    extracting_topics = "extracting_topics"      # 2.5: topic worker has the doc, GPT-4o in flight
-    topics_extracted = "topics_extracted"        # 2.5: topics persisted, awaiting chunking
-    chunking = "chunking"                        # 2.8: chunker has the doc, splitting in progress
-    chunked = "chunked"                          # 2.8: chunks persisted, awaiting vectorization
-    vectorizing = "vectorizing"                  # 2.9: vectorizer has the doc, embeddings in flight
-    ready = "ready"                              # final: questions can be generated
-    flagged = "flagged"                          # 2.4: content safety flagged — admin review
-    failed = "failed"                            # terminal failure
+    pending = "pending"  # 2.2: uploaded, queued for the extractor
+    extracting = "extracting"  # 2.3: worker has the message, DI call in flight
+    text_extracted = "text_extracted"  # 2.3+2.4: text persisted AND screened clean
+    extracting_topics = "extracting_topics"  # 2.5: topic worker has the doc, GPT-4o in flight
+    topics_extracted = "topics_extracted"  # 2.5: topics persisted, awaiting chunking
+    chunking = "chunking"  # 2.8: chunker has the doc, splitting in progress
+    chunked = "chunked"  # 2.8: chunks persisted, awaiting vectorization
+    vectorizing = "vectorizing"  # 2.9: vectorizer has the doc, embeddings in flight
+    ready = "ready"  # final: questions can be generated
+    flagged = "flagged"  # 2.4: content safety flagged — admin review
+    failed = "failed"  # terminal failure
 
 
 class DocumentType(StrEnum):
@@ -68,9 +68,9 @@ class Document(CosmosDocument):
 
     tenant_id: str
     workspace_id: str
-    uploaded_by: str         # user_id
+    uploaded_by: str  # user_id
     filename: str
-    blob_url: str            # raw uploaded file
+    blob_url: str  # raw uploaded file
     file_size_bytes: int
     doc_type: DocumentType
     status: DocumentStatus = DocumentStatus.pending
@@ -84,17 +84,27 @@ class Document(CosmosDocument):
     text_char_count: int | None = None
     page_count: int | None = None
     languages: list[str] = Field(default_factory=list)
-    processing_started_at: str | None = None     # ISO 8601 UTC
-    processing_completed_at: str | None = None   # ISO 8601 UTC
+    processing_started_at: str | None = None  # ISO 8601 UTC
+    processing_completed_at: str | None = None  # ISO 8601 UTC
 
     # ── Sprint 2.9: vectorization outputs ─────────────────────────────────────
     # vector_count is the number of chunks pushed to Azure AI Search. Differs
     # from chunk_count only on partial failure during a re-vectorize. Always
     # equals chunk_count on a clean ready transition.
     vector_count: int = 0
-    embedding_model: str | None = None           # e.g. "text-embedding-3-small"
+    embedding_model: str | None = None  # e.g. "text-embedding-3-small"
     vectorization_started_at: str | None = None  # ISO 8601 UTC
     vectorization_completed_at: str | None = None  # ISO 8601 UTC
+
+    # ── Subject & Topic Categorization (Test Studying) ─────────────────────────
+    category: str | None = None  # Subject, e.g. Chemistry, Mathematics, Physics
+    subcategory: str | None = None  # Unit/Topic/Test, e.g. Atomic Structure, Midterm 1
+
+
+class DocumentUpdateRequest(BaseModel):
+    category: str | None = None
+    subcategory: str | None = None
+    moderation_flagged: bool | None = None
 
 
 class DocumentResponse(CosmosDocument.__base__):
@@ -112,6 +122,8 @@ class DocumentResponse(CosmosDocument.__base__):
     text_char_count: int | None = None
     languages: list[str] = Field(default_factory=list)
     processing_error: str | None = None
+    category: str | None = None
+    subcategory: str | None = None
 
     @classmethod
     def from_doc(cls, doc: Document) -> "DocumentResponse":
@@ -129,4 +141,6 @@ class DocumentResponse(CosmosDocument.__base__):
             text_char_count=doc.text_char_count,
             languages=doc.languages,
             processing_error=doc.processing_error,
+            category=doc.category,
+            subcategory=doc.subcategory,
         )

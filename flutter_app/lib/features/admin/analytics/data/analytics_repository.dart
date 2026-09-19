@@ -3,6 +3,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/core/config/environment.dart';
 import 'package:social_study_app/shared/models/analytics.dart';
+import 'package:social_study_app/shared/models/learning_progress.dart';
 import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/services/dio_client.dart';
 
@@ -18,6 +19,15 @@ abstract class AnalyticsRepository {
   Future<WorkspaceAnalytics> fetchWorkspace({required String workspaceId});
 
   Future<TenantAnalytics> fetchTenant({required String tenantId});
+
+  Future<LearningProgressTrend> fetchLearningProgress({
+    required String workspaceId,
+    required DateTime startDate,
+    required DateTime endDate,
+    String? studentId,
+    String? topic,
+    bool compareWorkspace = false,
+  });
 }
 
 /// Dio-backed implementation.
@@ -45,6 +55,30 @@ class RealAnalyticsRepository implements AnalyticsRepository {
     );
     return TenantAnalytics.fromJson(response.data!);
   }
+
+  @override
+  Future<LearningProgressTrend> fetchLearningProgress({
+    required String workspaceId,
+    required DateTime startDate,
+    required DateTime endDate,
+    String? studentId,
+    String? topic,
+    bool compareWorkspace = false,
+  }) async {
+    final response = await dio.get<Map<String, dynamic>>(
+      '$_apiPrefix/workspaces/$workspaceId/analytics/learning-progress',
+      queryParameters: {
+        'start_date': _dateOnly(startDate),
+        'end_date': _dateOnly(endDate),
+        if (studentId != null) 'student_id': studentId,
+        if (topic != null) 'topic': topic,
+        if (compareWorkspace) 'compare_workspace': true,
+      },
+    );
+    return LearningProgressTrend.fromJson(response.data!);
+  }
+
+  String _dateOnly(DateTime value) => value.toIso8601String().substring(0, 10);
 }
 
 /// Demo implementation serving a plausible mid-journey workspace + a
@@ -91,6 +125,36 @@ class DemoAnalyticsRepository implements AnalyticsRepository {
           totalFlashcardsReviewed: 38,
         ),
       ],
+    );
+  }
+
+  @override
+  Future<LearningProgressTrend> fetchLearningProgress({
+    required String workspaceId,
+    required DateTime startDate,
+    required DateTime endDate,
+    String? studentId,
+    String? topic,
+    bool compareWorkspace = false,
+  }) async {
+    await Future<void>.delayed(_latency);
+    return LearningProgressTrend(
+      workspaceId: workspaceId,
+      scope: studentId == null ? 'workspace' : 'student',
+      studentId: studentId,
+      startDate: startDate,
+      endDate: endDate,
+      topic: topic,
+      availableTopics: const [],
+      kpis: const LearningTrendKpis(
+        overallMastery: 0,
+        masteryChange: 0,
+        quizAccuracy: 0,
+        studentsNeedingAttention: 0,
+      ),
+      points: const [],
+      workspaceComparison: const [],
+      students: const [],
     );
   }
 

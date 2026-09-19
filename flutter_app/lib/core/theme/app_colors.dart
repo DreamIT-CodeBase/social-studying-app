@@ -26,7 +26,7 @@ abstract final class AppColors {
   static const Color onErrorContainer = Color(0xFF7F1D1D);
 
   // Surface
-  static const Color surface = Color(0xFFFAFAFF);
+  static const Color surface = Color(0xFFFFFFFF);
   static const Color surfaceVariant = Color(0xFFEEF2FF);
   static const Color onSurface = Color(0xFF1E1B4B);
   static const Color onSurfaceVariant = Color(0xFF4B5563);

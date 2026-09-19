@@ -10,7 +10,7 @@ from app.models.base import CosmosDocument
 class ModerationAction(StrEnum):
     approved = "approved"
     rejected = "rejected"
-    flagged = "flagged"       # sent to human review
+    flagged = "flagged"  # sent to human review
     auto_approved = "auto_approved"
 
 
@@ -45,9 +45,9 @@ class ModerationLog(CosmosDocument):
     target_type: ModerationTarget
     target_id: str
     action: ModerationAction
-    performed_by: str              # user_id or "system"
+    performed_by: str  # user_id or "system"
     reason: str = ""
-    azure_safety_score: float | None = None   # 0.0–1.0 — max severity normalized
+    azure_safety_score: float | None = None  # 0.0–1.0 — max severity normalized
     # Per-category severities returned by Azure Content Safety (0/2/4/6 on the
     # four-step scale). Empty dict for non-content-safety actions (e.g., admin
     # approval of a previously flagged item).

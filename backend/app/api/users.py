@@ -4,16 +4,24 @@ Direct creation (tenant admin only): used to bulk-import teachers / students.
 Invite code redemption: the self-service path where a student joins via a code.
 """
 
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
 
-from app.core.auth import get_current_user, require_role, invalidate_user_cache
-from app.core.database import USERS, WORKSPACES, get_collection
+from app.core.auth import get_current_user, invalidate_user_cache, require_role
+from app.core.database import USERS, WORKSPACES, cosmos_retry, get_collection
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.models.base import utc_now
-from app.models.user import User, UserCreate, UserResponse, UserRole, WorkspaceMembership
+from app.models.user import (
+    User,
+    UserCreate,
+    UserResponse,
+    UserRole,
+    UserUpdate,
+    WorkspaceMembership,
+)
 from app.models.workspace import InviteCode, Workspace
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -26,7 +34,7 @@ async def create_user(
 ) -> UserResponse:
     """Directly create a user in the caller's tenant.
 
-    Students created this way still need to redeem an invite code to join a workspace.
+    Typically called during school / tenant onboarding to provision accounts.
     """
     col = get_collection(current_user.tenant_id, USERS)
     existing = await col.find_one({"email": body.email, "deleted_at": None})
@@ -34,7 +42,7 @@ async def create_user(
         raise ConflictError(f"User with email '{body.email}' already exists")
 
     user = User(
-        **{"_id": f"usr_{uuid4().hex}"},
+        _id=f"usr_{uuid4().hex}",
         tenant_id=current_user.tenant_id,
         email=body.email,
         display_name=body.display_name,
@@ -47,7 +55,35 @@ async def create_user(
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)) -> UserResponse:
     """Return the authenticated caller's own profile."""
-    return UserResponse.from_doc(current_user)
+    response = UserResponse.from_doc(current_user)
+    if current_user.role != UserRole.student:
+        response.workspace_memberships = [
+            membership
+            for membership in response.workspace_memberships
+            if not membership.workspace_id.startswith("wsp_self_")
+        ]
+    return response
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me(
+    body: UserUpdate,
+    current_user: User = Depends(get_current_user),
+) -> UserResponse:
+    """Update the authenticated caller's own profile (display name, grade level)."""
+    col = get_collection(current_user.tenant_id, USERS)
+    update_data: dict[str, Any] = {"updated_at": utc_now()}
+    if body.display_name is not None and body.display_name.strip():
+        update_data["display_name"] = body.display_name.strip()
+    if body.grade_level is not None:
+        update_data["grade_level"] = body.grade_level
+
+    await cosmos_retry(lambda: col.update_one({"_id": current_user.id}, {"$set": update_data}))
+    await invalidate_user_cache(current_user.id)
+    doc = await cosmos_retry(lambda: col.find_one({"_id": current_user.id}))
+    if not doc:
+        raise NotFoundError("User", current_user.id)
+    return UserResponse.from_doc(User.model_validate(doc))
 
 
 @router.get("/{user_id}", response_model=UserResponse)
@@ -73,15 +109,22 @@ async def list_users(
     query: dict = {"tenant_id": current_user.tenant_id, "deleted_at": None}
 
     if current_user.role == UserRole.workspace_admin:
-        admin_wsp_ids = [m.workspace_id for m in current_user.workspace_memberships if m.role == UserRole.workspace_admin]
-        
+        admin_wsp_ids = [
+            m.workspace_id
+            for m in current_user.workspace_memberships
+            if m.role == UserRole.workspace_admin
+        ]
+
         if workspace_id is not None:
             if workspace_id not in admin_wsp_ids:
                 from app.core.exceptions import ForbiddenError
+
                 raise ForbiddenError("You do not have access to view users in this workspace")
             query["workspace_memberships"] = {"$elemMatch": {"workspace_id": workspace_id}}
         else:
-            query["workspace_memberships"] = {"$elemMatch": {"workspace_id": {"$in": admin_wsp_ids}}}
+            query["workspace_memberships"] = {
+                "$elemMatch": {"workspace_id": {"$in": admin_wsp_ids}}
+            }
     else:
         if workspace_id is not None:
             query["workspace_memberships"] = {"$elemMatch": {"workspace_id": workspace_id}}
@@ -100,22 +143,22 @@ async def deactivate_user(
     user_doc = await col.find_one({"_id": user_id, "deleted_at": None})
     if user_doc is None:
         raise NotFoundError("User", user_id)
-        
+
     user = User.model_validate(user_doc)
-    
+
     result = await col.update_one(
         {"_id": user_id, "deleted_at": None},
         {"$set": {"deleted_at": utc_now(), "updated_at": utc_now(), "is_active": False}},
     )
     if result.matched_count == 0:
         raise NotFoundError("User", user_id)
-        
+
     # Remove user from all their workspaces
     wsp_col = get_collection(current_user.tenant_id, "workspaces")
     for membership in user.workspace_memberships:
         await wsp_col.update_one(
             {"_id": membership.workspace_id},
-            {"$pull": {"student_ids": user_id, "admin_ids": user_id}}
+            {"$pull": {"student_ids": user_id, "admin_ids": user_id}},
         )
     await invalidate_user_cache(user)
 
@@ -159,9 +202,7 @@ async def redeem_invite_code(
     if matching.max_uses > 0 and matching.use_count >= matching.max_uses:
         raise ValidationError("Invite code has reached its maximum uses")
 
-    already_member = any(
-        m.workspace_id == workspace.id for m in current_user.workspace_memberships
-    )
+    already_member = any(m.workspace_id == workspace.id for m in current_user.workspace_memberships)
     if already_member:
         raise ConflictError("You are already a member of this workspace")
 

@@ -16,11 +16,11 @@ class QuestionType(StrEnum):
     :mod:`app.services.question_generation`.
     """
 
-    mcq = "mcq"                       # multiple choice (4 options, 1 correct)
-    short_answer = "short_answer"     # 1-10 word factual recall
-    long_answer = "long_answer"       # essay-style, show your reasoning
-    true_false = "true_false"         # boolean with explanation
-    mathematical = "mathematical"     # LaTeX-aware computational, with solution steps
+    mcq = "mcq"  # multiple choice (4 options, 1 correct)
+    short_answer = "short_answer"  # 1-10 word factual recall
+    long_answer = "long_answer"  # essay-style, show your reasoning
+    true_false = "true_false"  # boolean with explanation
+    mathematical = "mathematical"  # LaTeX-aware computational, with solution steps
 
 
 class DifficultyLevel(StrEnum):
@@ -55,7 +55,7 @@ class Question(CosmosDocument):
     difficulty: DifficultyLevel
     body: str
     options: list[McqOption] = Field(default_factory=list)  # populated for MCQ only
-    answer: str                    # correct answer text (or key for MCQ; "true"/"false" for T/F)
+    answer: str  # correct answer text (or key for MCQ; "true"/"false" for T/F)
     explanation: str = ""
     # ── Per-type grading hints (Sprint 3.7) ──────────────────────────────────
     # Generic list whose semantics depend on ``question_type``:
@@ -68,7 +68,7 @@ class Question(CosmosDocument):
     grading_hints: list[str] = Field(default_factory=list)
     source_chunk_ids: list[str] = Field(default_factory=list)
     status: QuestionStatus = QuestionStatus.pending_review
-    prompt_version: str = "v1.0"   # tracks which prompt generated this question
+    prompt_version: str = "v1.0"  # tracks which prompt generated this question
     moderation_flagged: bool = False
     times_served: int = 0
     # ── Sprint 3.13: prefetch ─────────────────────────────────────────────────
@@ -137,9 +137,7 @@ class QuestionForStudent(CosmosDocument.__base__):
             question_type=doc.question_type,
             difficulty=doc.difficulty,
             body=doc.body,
-            options=[
-                StudentMcqOption(key=o.key, text=o.text) for o in doc.options
-            ],
+            options=[StudentMcqOption(key=o.key, text=o.text) for o in doc.options],
         )
 
 
@@ -173,6 +171,7 @@ class BadgeUnlock(CosmosDocument.__base__):
     name: str
     description: str
     icon: str
+    xp_reward: int = 0
 
 
 class AnswerFeedback(CosmosDocument.__base__):

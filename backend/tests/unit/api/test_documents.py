@@ -2,13 +2,14 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from app.core.auth import get_current_user
 from app.main import app
 from app.models.document import Document, DocumentStatus, DocumentType
-from app.models.user import UserRole
+from app.models.user import UserRole, WorkspaceMembership
 from tests.unit.conftest import make_user
 
 
@@ -61,6 +62,72 @@ def _document_doc(
         doc_type=DocumentType.pdf,
         status=status_,
     ).model_dump(by_alias=True)
+
+
+# POST /api/v1/workspaces/{ws}/documents/scrape
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://[::1]/",
+        "http://localhost/",
+    ],
+)
+def test_scrape_document_rejects_private_destinations(client, url):
+    admin = make_user(role=UserRole.tenant_admin)
+    app.dependency_overrides[get_current_user] = lambda: admin
+
+    response = client.post(
+        "/api/v1/workspaces/wsp_test001/documents/scrape",
+        json={"url": url},
+    )
+
+    assert response.status_code == 422
+    assert "private or local" in response.json()["detail"].lower()
+
+
+def test_scrape_document_happy_path_saves_plain_text(client):
+    admin = make_user(role=UserRole.tenant_admin)
+    app.dependency_overrides[get_current_user] = lambda: admin
+    col = _col_with_docs([])
+    page = b"<html><body><h1>Photosynthesis</h1><p>Light &amp; energy</p></body></html>"
+
+    with (
+        patch("app.api.documents.get_collection", return_value=col),
+        patch(
+            "app.api.documents._fetch_public_document",
+            AsyncMock(
+                return_value=(
+                    page,
+                    "text/html",
+                    httpx.URL("https://example.com/biology/lesson"),
+                )
+            ),
+        ),
+        patch(
+            "app.api.documents.blob_storage.upload_document",
+            AsyncMock(return_value="https://x.blob/scraped.txt"),
+        ) as mock_upload,
+        patch(
+            "app.api.documents.document_queue.publish_extraction_message",
+            AsyncMock(return_value=None),
+        ) as mock_publish,
+    ):
+        response = client.post(
+            "/api/v1/workspaces/wsp_test001/documents/scrape",
+            json={"url": "https://example.com/biology/lesson"},
+        )
+
+    assert response.status_code == 201
+    assert response.json()["filename"] == "scraped_example.com_biology_lesson.txt"
+    saved_text = mock_upload.await_args.kwargs["content"].decode("utf-8")
+    assert "<html>" not in saved_text
+    assert "Photosynthesis" in saved_text
+    assert "Light & energy" in saved_text
+    mock_publish.assert_awaited_once()
 
 
 # ── POST /api/v1/workspaces/{ws}/documents ────────────────────────────────────
@@ -308,14 +375,10 @@ def test_get_document_happy_path(client):
     admin = make_user(role=UserRole.tenant_admin)
     app.dependency_overrides[get_current_user] = lambda: admin
     col = MagicMock()
-    col.find_one = AsyncMock(
-        return_value=_document_doc(status_=DocumentStatus.vectorizing)
-    )
+    col.find_one = AsyncMock(return_value=_document_doc(status_=DocumentStatus.vectorizing))
 
     with patch("app.api.documents.get_collection", return_value=col):
-        response = client.get(
-            "/api/v1/workspaces/wsp_test001/documents/doc_test001"
-        )
+        response = client.get("/api/v1/workspaces/wsp_test001/documents/doc_test001")
 
     assert response.status_code == 200
     data = response.json()
@@ -336,9 +399,7 @@ def test_get_document_not_found_returns_404(client):
     col.find_one = AsyncMock(return_value=None)
 
     with patch("app.api.documents.get_collection", return_value=col):
-        response = client.get(
-            "/api/v1/workspaces/wsp_test001/documents/doc_missing"
-        )
+        response = client.get("/api/v1/workspaces/wsp_test001/documents/doc_missing")
 
     assert response.status_code == 404
 
@@ -353,9 +414,7 @@ def test_get_document_soft_deleted_returns_404(client):
     col.find_one = AsyncMock(return_value=None)
 
     with patch("app.api.documents.get_collection", return_value=col):
-        response = client.get(
-            "/api/v1/workspaces/wsp_test001/documents/doc_test001"
-        )
+        response = client.get("/api/v1/workspaces/wsp_test001/documents/doc_test001")
 
     assert response.status_code == 404
 
@@ -368,9 +427,7 @@ def test_get_document_as_member_student_succeeds(client):
     col.find_one = AsyncMock(return_value=_document_doc())
 
     with patch("app.api.documents.get_collection", return_value=col):
-        response = client.get(
-            "/api/v1/workspaces/wsp_test001/documents/doc_test001"
-        )
+        response = client.get("/api/v1/workspaces/wsp_test001/documents/doc_test001")
 
     assert response.status_code == 200
 
@@ -379,9 +436,7 @@ def test_get_document_as_non_member_student_is_forbidden(client):
     student = make_user(role=UserRole.student, workspace_ids=[])
     app.dependency_overrides[get_current_user] = lambda: student
 
-    response = client.get(
-        "/api/v1/workspaces/wsp_test001/documents/doc_test001"
-    )
+    response = client.get("/api/v1/workspaces/wsp_test001/documents/doc_test001")
 
     assert response.status_code == 403
 
@@ -393,33 +448,79 @@ def test_delete_document_happy_path(client):
     admin = make_user(role=UserRole.tenant_admin)
     app.dependency_overrides[get_current_user] = lambda: admin
     doc_col = MagicMock()
+    doc_col.find_one = AsyncMock(return_value=_document_doc())
     doc_col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
-    wsp_col = MagicMock()
-    wsp_col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
-
-    def get_collection_mock(tenant_id, collection_name):
-        if collection_name == "workspaces":
-            return wsp_col
-        return doc_col
-
-    with patch("app.api.documents.get_collection", side_effect=get_collection_mock):
+    with (
+        patch("app.api.documents.get_collection", return_value=doc_col),
+        patch(
+            "app.api.documents.document_purge.purge_document",
+            AsyncMock(return_value=None),
+        ) as purge,
+    ):
         response = client.delete("/api/v1/workspaces/wsp_test001/documents/doc_test001")
 
     assert response.status_code == 204
     doc_col.update_one.assert_awaited_once()
-    wsp_col.update_one.assert_awaited_once()
+    purge.assert_awaited_once()
+    assert purge.await_args.kwargs["document"].id == "doc_test001"
 
 
 def test_delete_document_not_found_returns_404(client):
     admin = make_user(role=UserRole.tenant_admin)
     app.dependency_overrides[get_current_user] = lambda: admin
     col = MagicMock()
-    col.update_one = AsyncMock(return_value=MagicMock(matched_count=0))
+    col.find_one = AsyncMock(return_value=None)
 
     with patch("app.api.documents.get_collection", return_value=col):
         response = client.delete("/api/v1/workspaces/wsp_test001/documents/doc_missing")
 
     assert response.status_code == 404
+
+
+def test_delete_document_purge_failure_restores_visibility(client):
+    admin = make_user(role=UserRole.tenant_admin)
+    app.dependency_overrides[get_current_user] = lambda: admin
+    col = MagicMock()
+    col.find_one = AsyncMock(return_value=_document_doc())
+    col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
+
+    with (
+        patch("app.api.documents.get_collection", return_value=col),
+        patch(
+            "app.api.documents.document_purge.purge_document",
+            AsyncMock(side_effect=RuntimeError("storage unavailable")),
+        ),
+    ):
+        response = client.delete("/api/v1/workspaces/wsp_test001/documents/doc_test001")
+
+    assert response.status_code == 503
+    assert "completely deleted" in response.json()["detail"]
+    assert col.update_one.await_count == 2
+    rollback = col.update_one.await_args_list[1]
+    assert rollback.args[1]["$set"]["deleted_at"] is None
+
+
+def test_delete_document_resumes_a_previously_interrupted_purge(client):
+    admin = make_user(role=UserRole.tenant_admin)
+    app.dependency_overrides[get_current_user] = lambda: admin
+    raw = _document_doc()
+    raw["deleted_at"] = "2026-07-20T05:20:00+00:00"
+    col = MagicMock()
+    col.find_one = AsyncMock(return_value=raw)
+    col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
+
+    with (
+        patch("app.api.documents.get_collection", return_value=col),
+        patch(
+            "app.api.documents.document_purge.purge_document",
+            AsyncMock(return_value=None),
+        ) as purge,
+    ):
+        response = client.delete("/api/v1/workspaces/wsp_test001/documents/doc_test001")
+
+    assert response.status_code == 204
+    purge.assert_awaited_once()
+    col.update_one.assert_not_awaited()
 
 
 def test_delete_document_as_student_is_forbidden(client):
@@ -431,6 +532,39 @@ def test_delete_document_as_student_is_forbidden(client):
         response = client.delete("/api/v1/workspaces/wsp_test001/documents/doc_test001")
 
     assert response.status_code == 403
+
+
+def test_delete_document_from_student_self_study_workspace_succeeds(client):
+    workspace_id = "wsp_self_usr_student01"
+    student = make_user(user_id="usr_student01", role=UserRole.student)
+    student.workspace_memberships = [
+        WorkspaceMembership(
+            workspace_id=workspace_id,
+            role=UserRole.workspace_admin,
+            joined_at="2026-01-01T00:00:00+00:00",
+        )
+    ]
+    app.dependency_overrides[get_current_user] = lambda: student
+    col = MagicMock()
+    col.find_one = AsyncMock(
+        return_value=_document_doc(
+            workspace_id=workspace_id,
+            tenant_id=student.tenant_id,
+        )
+    )
+    col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
+
+    with (
+        patch("app.api.documents.get_collection", return_value=col),
+        patch(
+            "app.api.documents.document_purge.purge_document",
+            AsyncMock(return_value=None),
+        ) as purge,
+    ):
+        response = client.delete(f"/api/v1/workspaces/{workspace_id}/documents/doc_test001")
+
+    assert response.status_code == 204
+    purge.assert_awaited_once()
 
 
 def test_delete_document_as_workspace_admin_non_member_is_forbidden(client):

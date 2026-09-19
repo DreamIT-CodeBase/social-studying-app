@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/core/constants/spacing.dart';
 import 'package:social_study_app/core/extensions/context_extensions.dart';
 import 'package:social_study_app/core/services/sound_service.dart';
@@ -35,6 +37,68 @@ import 'package:social_study_app/features/mascot/widgets/study_buddy.dart';
 /// Configuration for the level-up burst. Tuned so a snappy student
 /// taps through quickly; the whole thing wraps in ~1.6s.
 const Duration _levelBurstDuration = Duration(milliseconds: 1600);
+
+/// Full-screen confetti used for every correct learning action.
+///
+/// [trigger] is a monotonically increasing event id rather than a boolean so
+/// two consecutive correct answers always restart the animation.
+class CorrectAnswerCelebration extends StatefulWidget {
+  const CorrectAnswerCelebration({
+    super.key,
+    required this.trigger,
+  });
+
+  final int trigger;
+
+  @override
+  State<CorrectAnswerCelebration> createState() =>
+      _CorrectAnswerCelebrationState();
+}
+
+class _CorrectAnswerCelebrationState extends State<CorrectAnswerCelebration>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    if (widget.trigger > 0) _controller.forward();
+  }
+
+  @override
+  void didUpdateWidget(covariant CorrectAnswerCelebration oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.trigger != oldWidget.trigger && widget.trigger > 0) {
+      _controller
+        ..reset()
+        ..forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            if (!_controller.isAnimating) return const SizedBox.shrink();
+            return CustomPaint(
+              size: Size.infinite,
+              painter: _ConfettiPainter(progress: _controller.value),
+            );
+          },
+        ),
+      );
+}
 
 /// Show a full-screen level-up celebration. Resolves once the animation
 /// completes (or the user taps to skip — currently no skip surface).
@@ -144,7 +208,7 @@ class _LevelUpOverlayState extends State<_LevelUpOverlay>
   }
 }
 
-class _LevelUpCard extends StatelessWidget {
+class _LevelUpCard extends ConsumerWidget {
   const _LevelUpCard({
     required this.newLevel,
     required this.controller,
@@ -154,7 +218,8 @@ class _LevelUpCard extends StatelessWidget {
   final AnimationController controller;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(appThemeModeProvider);
     // Bounce in for the first 40% of the timeline, hold, fade out for
     // the last 15%.
     final scale = CurvedAnimation(
@@ -203,10 +268,16 @@ class _LevelUpCard extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const StudyBuddy(
-                  state: MascotState.celebrate,
-                  size: 96,
-                ),
+                themeMode == AppThemeMode.mature
+                    ? const Icon(
+                        Icons.emoji_events_rounded,
+                        color: Colors.amber,
+                        size: 96,
+                      )
+                    : const StudyBuddy(
+                        state: MascotState.celebrate,
+                        size: 96,
+                      ),
                 const SizedBox(height: Spacing.lg),
                 Text(
                   'Level Up!',
@@ -284,8 +355,9 @@ class _ConfettiPainter extends CustomPainter {
       final y = -50 + (size.height + 100) * (t * t * 0.5 + t * 0.5);
 
       // Fade in/out at the edges of the timeline.
-      final opacity =
-          (t < 0.15) ? (t / 0.15) : (t > 0.85 ? (1.0 - (t - 0.85) / 0.15) : 1.0);
+      final opacity = (t < 0.15)
+          ? (t / 0.15)
+          : (t > 0.85 ? (1.0 - (t - 0.85) / 0.15) : 1.0);
       paint.color = _palette[p.colorIndex].withAlpha((opacity * 230).round());
 
       canvas.save();

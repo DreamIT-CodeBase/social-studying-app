@@ -102,8 +102,7 @@ void main() {
       }
     });
 
-    test(
-        '503 → QuestionGenerationUnavailableException with Retry-After parsed',
+    test('503 → QuestionGenerationUnavailableException with Retry-After parsed',
         () async {
       final adapter = _FakeAdapter(
         (opts) => ResponseBody.fromString(
@@ -125,9 +124,7 @@ void main() {
       }
     });
 
-    test(
-        '503 with missing Retry-After defaults to 30 seconds',
-        () async {
+    test('503 with missing Retry-After defaults to 30 seconds', () async {
       final adapter = _FakeAdapter(
         (opts) => _json(
           jsonEncode({'detail': 'unavailable'}),
@@ -145,8 +142,7 @@ void main() {
   });
 
   group('RealQuestionsRepository.submitAnswer', () {
-    test(
-        'hits POST /api/v1/workspaces/{ws}/questions/{q}/answer with body',
+    test('hits POST /api/v1/workspaces/{ws}/questions/{q}/answer with body',
         () async {
       final adapter = _FakeAdapter((opts) {
         return _json(jsonEncode({

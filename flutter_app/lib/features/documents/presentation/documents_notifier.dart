@@ -11,13 +11,31 @@ part 'documents_notifier.g.dart';
 class DocumentsList extends _$DocumentsList {
   @override
   Future<List<Document>> build(String workspaceId) async {
-    return ref
-        .read(documentsRepositoryProvider)
-        .list(workspaceId: workspaceId);
+    return ref.read(documentsRepositoryProvider).list(workspaceId: workspaceId);
   }
 
   /// Re-fetch the list. Used by pull-to-refresh and after upload success.
   /// `invalidateSelf` re-runs `build` with the same arguments — cheaper
   /// than dropping into AsyncLoading + manual refetch.
   void refresh() => ref.invalidateSelf();
+
+  /// Permanently delete one study material, then remove it from the visible
+  /// list without forcing the rest of the screen through a loading state.
+  Future<void> deleteDocument(String documentId) async {
+    await ref.read(documentsRepositoryProvider).delete(
+          workspaceId: workspaceId,
+          documentId: documentId,
+        );
+
+    final current = state.valueOrNull;
+    if (current == null) {
+      ref.invalidateSelf();
+      return;
+    }
+    state = AsyncData(
+      current.where((document) => document.id != documentId).toList(
+            growable: false,
+          ),
+    );
+  }
 }

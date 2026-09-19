@@ -115,7 +115,8 @@ void main() {
 
       final state = read();
       expect(state, isA<FlashcardSessionError>());
-      expect((state as FlashcardSessionError).message, contains('network down'));
+      expect(
+          (state as FlashcardSessionError).message, contains('network down'));
     });
 
     test('start is a no-op when already past idle', () async {
@@ -209,8 +210,7 @@ void main() {
       await future;
     });
 
-    test('is a no-op when not in revealed state (card not flipped)',
-        () async {
+    test('is a no-op when not in revealed state (card not flipped)', () async {
       when(() => repo.next(workspaceId: 'wsp_a'))
           .thenAnswer((_) async => _card());
       final n = notifier();

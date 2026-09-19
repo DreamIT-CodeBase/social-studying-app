@@ -37,8 +37,8 @@ void main() {
   group('ModerationQueue', () {
     test('build loads the pending queue', () async {
       final container = await _container(DemoModerationRepository());
-      final queue = await container
-          .read(moderationQueueProvider('wsp_demo_001').future);
+      final queue =
+          await container.read(moderationQueueProvider('wsp_demo_001').future);
       expect(queue, hasLength(2));
     });
 
@@ -54,8 +54,8 @@ void main() {
             approved: true,
           );
 
-      final queue = await container
-          .read(moderationQueueProvider('wsp_demo_001').future);
+      final queue =
+          await container.read(moderationQueueProvider('wsp_demo_001').future);
       expect(queue, hasLength(1));
     });
   });
@@ -63,8 +63,8 @@ void main() {
   group('ModerationLog', () {
     test('build loads the resolved-items audit log', () async {
       final container = await _container(DemoModerationRepository());
-      final log = await container
-          .read(moderationLogProvider('wsp_demo_001').future);
+      final log =
+          await container.read(moderationLogProvider('wsp_demo_001').future);
       // Seeded with one already-resolved item.
       expect(log, hasLength(1));
     });

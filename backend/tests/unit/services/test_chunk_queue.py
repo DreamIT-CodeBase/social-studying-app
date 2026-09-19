@@ -109,9 +109,7 @@ async def test_received_message_complete_calls_receiver():
     receiver = MagicMock()
     receiver.complete_message = AsyncMock()
     raw = MagicMock()
-    rec = ReceivedChunkingMessage(
-        payload=_msg(), delivery_count=1, _receiver=receiver, _raw=raw
-    )
+    rec = ReceivedChunkingMessage(payload=_msg(), delivery_count=1, _receiver=receiver, _raw=raw)
     await rec.complete()
     receiver.complete_message.assert_awaited_once_with(raw)
 
@@ -121,9 +119,7 @@ async def test_received_message_abandon_calls_receiver():
     receiver = MagicMock()
     receiver.abandon_message = AsyncMock()
     raw = MagicMock()
-    rec = ReceivedChunkingMessage(
-        payload=_msg(), delivery_count=2, _receiver=receiver, _raw=raw
-    )
+    rec = ReceivedChunkingMessage(payload=_msg(), delivery_count=2, _receiver=receiver, _raw=raw)
     await rec.abandon()
     receiver.abandon_message.assert_awaited_once_with(raw)
 
@@ -133,9 +129,7 @@ async def test_received_message_dead_letter_passes_reason():
     receiver = MagicMock()
     receiver.dead_letter_message = AsyncMock()
     raw = MagicMock()
-    rec = ReceivedChunkingMessage(
-        payload=_msg(), delivery_count=3, _receiver=receiver, _raw=raw
-    )
+    rec = ReceivedChunkingMessage(payload=_msg(), delivery_count=3, _receiver=receiver, _raw=raw)
     await rec.dead_letter("ChunkerInputInvalid", "negative target_chars")
     receiver.dead_letter_message.assert_awaited_once_with(
         raw, reason="ChunkerInputInvalid", error_description="negative target_chars"

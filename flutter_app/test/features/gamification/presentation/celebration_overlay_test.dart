@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:social_study_app/core/theme/app_theme.dart';
 import 'package:social_study_app/features/gamification/presentation/widgets/celebration_overlay.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Pumps a minimal app with a button that fires [onPressed]. Lets each
 /// test trigger the overlay from a real BuildContext so the navigator
@@ -11,14 +12,16 @@ Future<void> _pumpTrigger(
   required Future<void> Function(BuildContext context) onPressed,
 }) async {
   await tester.pumpWidget(
-    MaterialApp(
-      theme: AppTheme.light,
-      home: Scaffold(
-        body: Builder(
-          builder: (context) => Center(
-            child: TextButton(
-              onPressed: () => onPressed(context),
-              child: const Text('FIRE'),
+    ProviderScope(
+      child: MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => Center(
+              child: TextButton(
+                onPressed: () => onPressed(context),
+                child: const Text('FIRE'),
+              ),
             ),
           ),
         ),
@@ -48,8 +51,7 @@ void main() {
       expect(find.text('Level Up!'), findsNothing);
     });
 
-    testWidgets('auto-dismisses when the animation completes',
-        (tester) async {
+    testWidgets('auto-dismisses when the animation completes', (tester) async {
       var resolved = false;
       await _pumpTrigger(
         tester,

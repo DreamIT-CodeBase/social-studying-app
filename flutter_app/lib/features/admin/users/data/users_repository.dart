@@ -39,6 +39,14 @@ abstract class UsersRepository {
   /// Throws [UserNotFoundException] (404).
   Future<void> deactivateUser(String userId);
 
+  /// Remove a student/member from a specific workspace.
+  ///
+  /// Throws [UserNotFoundException] (404).
+  Future<void> removeMember({
+    required String workspaceId,
+    required String userId,
+  });
+
   /// Change a user's role.
   ///
   /// Throws [UserNotFoundException] (404).

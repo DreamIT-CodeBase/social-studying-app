@@ -48,19 +48,21 @@ class DocumentsListScreen extends ConsumerWidget {
           child: docsAsync.when(
             data: (docs) => docs.isEmpty
                 ? _EmptyState(
-                    onUpload: isUploading
-                        ? null
-                        : () => _handleUpload(context, ref),
+                    onUpload:
+                        isUploading ? null : () => _handleUpload(context, ref),
                   )
                 : _DocsList(
                     docs: docs,
                     workspaceId: workspaceId,
+                    canDelete: currentFlavor == AppFlavor.admin ||
+                        workspaceId.startsWith('wsp_self_'),
                   ),
             loading: () => const LoadingIndicator(),
             error: (error, _) => ErrorView(
               message: error.toString(),
-              onRetry: () =>
-                  ref.read(documentsListProvider(workspaceId).notifier).refresh(),
+              onRetry: () => ref
+                  .read(documentsListProvider(workspaceId).notifier)
+                  .refresh(),
             ),
           ),
         ),
@@ -110,17 +112,28 @@ class DocumentsListScreen extends ConsumerWidget {
     );
     if (source == null) return;
 
-    final doc = switch (source) {
-      _UploadSource.camera => await ref
+    final Document? doc;
+    if (source == _UploadSource.website) {
+      if (!context.mounted) return;
+      final url = await _showUrlInputDialog(context);
+      if (url == null || url.isEmpty) return;
+      doc = await ref
           .read(uploadControllerProvider.notifier)
-          .pickFromCamera(workspaceId: workspaceId),
-      _UploadSource.gallery => await ref
-          .read(uploadControllerProvider.notifier)
-          .pickImageFromGallery(workspaceId: workspaceId),
-      _UploadSource.file => await ref
-          .read(uploadControllerProvider.notifier)
-          .pickAndUpload(workspaceId: workspaceId),
-    };
+          .scrapeAndUpload(workspaceId: workspaceId, url: url);
+    } else {
+      doc = await switch (source) {
+        _UploadSource.camera => ref
+            .read(uploadControllerProvider.notifier)
+            .pickFromCamera(workspaceId: workspaceId),
+        _UploadSource.gallery => ref
+            .read(uploadControllerProvider.notifier)
+            .pickImageFromGallery(workspaceId: workspaceId),
+        _UploadSource.file => ref
+            .read(uploadControllerProvider.notifier)
+            .pickAndUpload(workspaceId: workspaceId),
+        _UploadSource.website => throw StateError('Unreachable'),
+      };
+    }
 
     if (doc != null) {
       // List view should reflect the new doc; provider invalidate
@@ -132,12 +145,46 @@ class DocumentsListScreen extends ConsumerWidget {
     }
   }
 
+  Future<String?> _showUrlInputDialog(BuildContext context) async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Website Link'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'https://example.com/article',
+            labelText: 'Website URL',
+          ),
+          keyboardType: TextInputType.url,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final val = controller.text.trim();
+              if (val.isNotEmpty) {
+                Navigator.of(context).pop(val);
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showUploadError(BuildContext context, Object error) {
     final message = switch (error) {
       EmptyUploadException() => 'That file is empty.',
-      UnsupportedFileTypeException() =>
-        'That file type isn\'t supported. '
-            'Try a PDF, DOCX, image, or plain text file.',
+      UploadTooLargeException() => error.message,
+      UnsupportedFileTypeException() => 'That file type isn\'t supported. '
+          'Try a PDF, DOCX, image, or plain text file.',
       _ => 'Upload failed: $error',
     };
     ScaffoldMessenger.of(context)
@@ -168,8 +215,7 @@ class _EmptyState extends StatelessWidget {
           child: EmptyStateView(
             icon: Icons.description_rounded,
             title: 'No documents yet',
-            subtitle:
-                'Upload PDFs, Word documents, or images to generate '
+            subtitle: 'Upload PDFs, Word documents, or images to generate '
                 'AI-powered study questions.',
             action: FilledButton.icon(
               onPressed: onUpload,
@@ -184,42 +230,140 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _DocsList extends StatelessWidget {
-  const _DocsList({required this.docs, required this.workspaceId});
+  const _DocsList({
+    required this.docs,
+    required this.workspaceId,
+    required this.canDelete,
+  });
 
   final List<Document> docs;
   final String workspaceId;
+  final bool canDelete;
 
   @override
   Widget build(BuildContext context) {
-    return ListView.separated(
+    final flaggedDocs = docs
+        .where((d) => d.status == DocumentStatus.flagged || d.moderationFlagged)
+        .toList();
+
+    return ListView(
       padding: const EdgeInsets.fromLTRB(
         Spacing.lg,
         Spacing.lg,
         Spacing.lg,
-        // Bottom padding leaves room for the floating Upload button so
-        // the last row isn't covered.
         96,
       ),
-      itemCount: docs.length,
-      separatorBuilder: (_, __) => const SizedBox(height: Spacing.sm),
-      itemBuilder: (_, i) => _DocRow(doc: docs[i], workspaceId: workspaceId),
+      children: [
+        if (flaggedDocs.isNotEmpty) ...[
+          _FlaggedReviewBanner(
+            count: flaggedDocs.length,
+            onReview: () => context.push(
+              _pollingRouteFor(workspaceId, flaggedDocs.first.id),
+            ),
+          ),
+          const SizedBox(height: Spacing.md),
+        ],
+        for (final doc in docs) ...[
+          _DocRow(
+            doc: doc,
+            workspaceId: workspaceId,
+            canDelete: canDelete,
+          ),
+          const SizedBox(height: Spacing.sm),
+        ],
+      ],
     );
   }
 }
 
-class _DocRow extends StatelessWidget {
-  const _DocRow({required this.doc, required this.workspaceId});
+class _FlaggedReviewBanner extends StatelessWidget {
+  const _FlaggedReviewBanner({
+    required this.count,
+    required this.onReview,
+  });
 
-  final Document doc;
-  final String workspaceId;
+  final int count;
+  final VoidCallback onReview;
 
   @override
   Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(Spacing.md),
+      decoration: BoxDecoration(
+        color: Colors.amber.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.amber.shade300),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.shield_outlined, color: Colors.amber.shade800),
+          const SizedBox(width: Spacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$count Document${count > 1 ? 's' : ''} Require Safety Review',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.amber.shade900,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Tap to review and approve flagged study materials.',
+                  style: TextStyle(
+                    color: Colors.amber.shade800,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          FilledButton.tonal(
+            onPressed: onReview,
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.amber.shade100,
+              foregroundColor: Colors.amber.shade900,
+            ),
+            child: const Text('Review'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DocRow extends ConsumerStatefulWidget {
+  const _DocRow({
+    required this.doc,
+    required this.workspaceId,
+    required this.canDelete,
+  });
+
+  final Document doc;
+  final String workspaceId;
+  final bool canDelete;
+
+  @override
+  ConsumerState<_DocRow> createState() => _DocRowState();
+}
+
+class _DocRowState extends ConsumerState<_DocRow> {
+  bool _isDeleting = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final doc = widget.doc;
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () =>
-            context.push(_pollingRouteFor(workspaceId, doc.id)),
+        onTap: _isDeleting
+            ? null
+            : () => context.push(
+                  _pollingRouteFor(widget.workspaceId, doc.id),
+                ),
         child: Padding(
           padding: const EdgeInsets.all(Spacing.lg),
           child: Row(
@@ -251,6 +395,19 @@ class _DocRow extends StatelessWidget {
                   ],
                 ),
               ),
+              if (widget.canDelete)
+                IconButton(
+                  key: ValueKey('delete-document-${doc.id}'),
+                  tooltip: 'Delete study material',
+                  onPressed: _isDeleting ? null : _confirmAndDelete,
+                  color: context.colorScheme.error,
+                  icon: _isDeleting
+                      ? const SizedBox.square(
+                          dimension: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.delete_outline_rounded),
+                ),
               Icon(
                 Icons.chevron_right_rounded,
                 color: context.colorScheme.onSurfaceVariant,
@@ -260,6 +417,64 @@ class _DocRow extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmAndDelete() async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Permanently delete material?'),
+            content: Text(
+              '"${widget.doc.filename}" and all of its processed study '
+              'content will be completely erased. This cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(dialogContext).colorScheme.error,
+                  foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+                ),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                icon: const Icon(Icons.delete_forever_rounded),
+                label: const Text('Delete permanently'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      await ref
+          .read(documentsListProvider(widget.workspaceId).notifier)
+          .deleteDocument(widget.doc.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              '${widget.doc.filename} was permanently deleted.',
+            ),
+          ),
+        );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('Could not delete study material: $error'),
+          ),
+        );
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
+    }
   }
 
   String _detailLine(Document doc) {
@@ -297,8 +512,7 @@ class _DocTypeIcon extends StatelessWidget {
   }
 }
 
-
-enum _UploadSource { camera, gallery, file }
+enum _UploadSource { camera, gallery, file, website }
 
 class _UploadSourceSheet extends StatelessWidget {
   const _UploadSourceSheet();
@@ -332,6 +546,11 @@ class _UploadSourceSheet extends StatelessWidget {
             leading: const Icon(Icons.folder_rounded),
             title: const Text('Choose File'),
             onTap: () => Navigator.of(context).pop(_UploadSource.file),
+          ),
+          ListTile(
+            leading: const Icon(Icons.language_rounded),
+            title: const Text('Add Website Link'),
+            onTap: () => Navigator.of(context).pop(_UploadSource.website),
           ),
         ],
       ),

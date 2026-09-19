@@ -43,6 +43,7 @@ import logging
 import os
 import signal
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 
@@ -79,6 +80,7 @@ from app.models.document import DocumentStatus  # noqa: E402
 from app.models.moderation import ModerationAction, ModerationLog, ModerationTarget  # noqa: E402
 from app.services import blob_storage, content_safety, document_intelligence  # noqa: E402
 from app.services.content_safety import SafetyVerdict  # noqa: E402
+from app.services.document_intelligence import ExtractedDocument  # noqa: E402
 from app.services.document_queue import (  # noqa: E402
     ExtractionMessage,
     ReceivedExtractionMessage,
@@ -153,27 +155,44 @@ async def _handle(msg: ReceivedExtractionMessage) -> None:
         extra={"processing_started_at": utc_now()},
     )
 
-    # 1. Pull bytes from blob.
-    try:
-        content = await blob_storage.download_document(payload.blob_path)
-    except ResourceNotFoundError as exc:
-        # Blob is gone for good — no point retrying. DLQ + mark failed.
-        await _mark_failed(payload, f"Source blob not found: {payload.blob_path}")
-        await msg.dead_letter("BlobNotFound", str(exc))
-        return False
-
-    # 2. Send to Document Intelligence (prebuilt-read).
-    try:
-        extracted = await document_intelligence.extract_text(
-            content, content_type=payload.content_type
-        )
-    except HttpResponseError as exc:
-        if _is_permanent(exc):
-            await _mark_failed(payload, f"Document Intelligence rejected file: {exc.message}")
-            await msg.dead_letter("UnsupportedContent", str(exc))
+    # 1. Extract text. Scrape jobs already contain normalized UTF-8 text;
+    #    sending that text through Document Intelligence is unsupported and
+    #    can leave the UI stuck at "Reading text" while the queue retries.
+    #    Keep DI for binary uploads, but handle plain text locally.
+    if payload.content_type.lower().split(";", 1)[0].strip() == "text/plain":
+        try:
+            content = await blob_storage.download_document(payload.blob_path)
+        except ResourceNotFoundError as exc:
+            # Blob is gone for good — no point retrying. DLQ + mark failed.
+            await _mark_failed(payload, f"Source blob not found: {payload.blob_path}")
+            await msg.dead_letter("BlobNotFound", str(exc))
             return False
-        # Transient — let Service Bus redeliver.
-        raise
+        extracted = ExtractedDocument(
+            text=content.decode("utf-8", errors="replace").strip(),
+            page_count=1,
+            languages=[],
+        )
+        if not extracted.text:
+            await _mark_failed(payload, "Scraped page contained no readable text")
+            await msg.dead_letter("EmptyContent", "Scraped page contained no readable text")
+            return False
+    else:
+        try:
+            source_url = blob_storage.create_blob_read_url(payload.blob_path)
+            # Renew the Service Bus message lock every 3 minutes while Document
+            # Intelligence is running. Without renewal the default 5-minute lock
+            # expires mid-analysis, causing Service Bus to redeliver the message
+            # to another worker instance — which starts a duplicate DI job and
+            # burns through retries until the doc is marked failed. The renewal
+            # task is cancelled as soon as DI returns (success or error).
+            extracted = await _extract_with_lock_renewal(msg, source_url)
+        except HttpResponseError as exc:
+            if _is_permanent(exc):
+                await _mark_failed(payload, f"Document Intelligence rejected file: {exc.message}")
+                await msg.dead_letter("UnsupportedContent", str(exc))
+                return False
+            # Transient — let Service Bus redeliver.
+            raise
 
     # 3. Persist extracted text — always written to blob, even if flagged, so
     #    admins reviewing a flagged document can read what tripped the scanner.
@@ -225,27 +244,17 @@ async def _handle(msg: ReceivedExtractionMessage) -> None:
     )
     await _write_moderation_log(payload, verdict, action=ModerationAction.auto_approved)
 
-    # 6. Hand off to the topic extraction worker (Sprint 2.5). Best-effort:
-    #    if enqueue fails we log loudly but don't re-raise, because the
-    #    document is already at status=text_extracted and re-running the DI
-    #    call + content safety scan from a Service Bus retry would waste
-    #    money. A separate sweep job can re-enqueue stuck text_extracted docs
-    #    if this becomes a real problem in production.
-    try:
-        await publish_topic_message(
-            TopicExtractionMessage(
-                document_id=payload.document_id,
-                tenant_id=payload.tenant_id,
-                workspace_id=payload.workspace_id,
-                extracted_text_blob_path=blob_path,
-            )
+    # 6. Hand off to the topic extraction worker (Sprint 2.5). A publish failure
+    # must propagate so Service Bus retries the message instead of leaving the
+    # document stuck at text_extracted indefinitely.
+    await publish_topic_message(
+        TopicExtractionMessage(
+            document_id=payload.document_id,
+            tenant_id=payload.tenant_id,
+            workspace_id=payload.workspace_id,
+            extracted_text_blob_path=blob_path,
         )
-    except Exception:
-        logger.exception(
-            "Failed to enqueue topic-extraction handoff for doc=%s — "
-            "document is stuck at text_extracted",
-            payload.document_id,
-        )
+    )
 
     logger.info(
         "Extracted doc=%s pages=%d chars=%d langs=%s severities=%s",
@@ -270,6 +279,56 @@ async def _mark_failed(payload: ExtractionMessage, reason: str) -> None:
     )
 
 
+_LOCK_RENEWAL_INTERVAL_SECONDS = 180  # renew every 3 minutes
+
+
+async def _extract_with_lock_renewal(
+    msg: ReceivedExtractionMessage,
+    source_url: str,
+) -> ExtractedDocument:
+    """Run Document Intelligence while keeping the Service Bus message lock alive.
+
+    Document Intelligence on the S0 tier can take 10–30 minutes for large
+    PDFs. The default Service Bus lock duration is 5 minutes. Without periodic
+    renewal, the lock expires and Service Bus redelivers the message to another
+    worker, starting a second DI job while the first is still running. After 5
+    such redeliveries the document is permanently marked ``failed``.
+
+    This function spawns a background asyncio task that calls
+    ``renew_message_lock`` every 3 minutes, then cancels it the moment DI
+    finishes (success, timeout, or any error).
+    """
+    renewal_task: asyncio.Task[None] | None = None
+
+    async def _keep_alive() -> None:
+        """Loop: renew lock, sleep 3 min, repeat until cancelled."""
+        while True:
+            await asyncio.sleep(_LOCK_RENEWAL_INTERVAL_SECONDS)
+            try:
+                await msg.renew_lock()
+                logger.debug(
+                    "Renewed SB lock for doc=%s", msg.payload.document_id
+                )
+            except Exception:
+                # Renewal failure is non-fatal — log and keep trying.
+                # If the lock truly expires, Service Bus will redeliver and the
+                # next delivery will see the doc is still `extracting` and
+                # retry DI cleanly.
+                logger.exception(
+                    "SB lock renewal failed for doc=%s — lock may expire",
+                    msg.payload.document_id,
+                )
+
+    try:
+        renewal_task = asyncio.create_task(_keep_alive())
+        return await document_intelligence.extract_text_from_url(source_url)
+    finally:
+        if renewal_task is not None:
+            renewal_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await renewal_task
+
+
 async def _write_moderation_log(
     payload: ExtractionMessage,
     verdict: SafetyVerdict,
@@ -287,11 +346,7 @@ async def _write_moderation_log(
     must not regress a finished document back into the retry queue — the
     scan already happened and Service Bus would re-charge us for it.
     """
-    reason = (
-        ", ".join(verdict.flagged_categories)
-        if verdict.flagged_categories
-        else "clean"
-    )
+    reason = ", ".join(verdict.flagged_categories) if verdict.flagged_categories else "clean"
     entry = ModerationLog(
         id=f"mod_{uuid4().hex}",
         tenant_id=payload.tenant_id,
@@ -337,13 +392,19 @@ def _is_permanent(exc: HttpResponseError) -> bool:
 
 
 async def run_forever(*, max_wait_seconds: int = 30) -> None:
+    """Keep the worker alive across idle Service Bus receive windows."""
+    logger.info("Document ingestion worker starting")
+    while True:
+        await _consume_until_idle(max_wait_seconds=max_wait_seconds)
+
+
+async def _consume_until_idle(*, max_wait_seconds: int) -> None:
     """Consume the document-ingestion queue until cancelled.
 
     Cancellation comes from SIGTERM (Container Apps shutdown) or SIGINT
     (local dev Ctrl-C). On cancel, the current message in flight is
     abandoned (not completed) so a sibling replica will retry it.
     """
-    logger.info("Document ingestion worker starting")
     async with consume_extraction_messages(max_wait_seconds=max_wait_seconds) as messages:
         async for msg in messages:
             try:
@@ -351,7 +412,9 @@ async def run_forever(*, max_wait_seconds: int = 30) -> None:
                 if res is not False:
                     await msg.complete()
             except asyncio.CancelledError:
-                logger.warning("Cancelled while handling doc=%s — abandoning", msg.payload.document_id)
+                logger.warning(
+                    "Cancelled while handling doc=%s — abandoning", msg.payload.document_id
+                )
                 await msg.abandon()
                 raise
             except Exception as exc:
@@ -378,11 +441,8 @@ def _install_shutdown_handlers(task: asyncio.Task[None]) -> None:
     """
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
-        try:
+        with suppress(NotImplementedError):
             loop.add_signal_handler(sig, task.cancel)
-        except NotImplementedError:
-            # Windows doesn't support add_signal_handler; rely on KeyboardInterrupt.
-            pass
 
 
 async def _amain() -> int:

@@ -33,7 +33,6 @@ from app.models.notification import (
 from app.services import notifications as notification_service
 from app.services.notifications import (
     AzureNotificationHubSender,
-    DispatchResult,
     LoggingSender,
     NotificationPayload,
     _anh_format_for,
@@ -49,16 +48,14 @@ from app.services.notifications import (
     set_sender_for_tests,
 )
 
-
 # ── Sender factory ────────────────────────────────────────────────────────
 
 
 def test_get_sender_returns_logging_sender_when_creds_missing():
     set_sender_for_tests(None)
-    with patch.object(
-        notification_service.settings, "notification_hub_connection_string", ""
-    ), patch.object(
-        notification_service.settings, "notification_hub_name", ""
+    with (
+        patch.object(notification_service.settings, "notification_hub_connection_string", ""),
+        patch.object(notification_service.settings, "notification_hub_name", ""),
     ):
         sender = get_sender()
     assert isinstance(sender, LoggingSender)
@@ -67,13 +64,14 @@ def test_get_sender_returns_logging_sender_when_creds_missing():
 
 def test_get_sender_returns_anh_sender_when_creds_present():
     set_sender_for_tests(None)
-    with patch.object(
-        notification_service.settings,
-        "notification_hub_connection_string",
-        "Endpoint=sb://ns.servicebus.windows.net/;"
-        "SharedAccessKeyName=key;SharedAccessKey=value",
-    ), patch.object(
-        notification_service.settings, "notification_hub_name", "study-app-dev"
+    with (
+        patch.object(
+            notification_service.settings,
+            "notification_hub_connection_string",
+            "Endpoint=sb://ns.servicebus.windows.net/;"
+            "SharedAccessKeyName=key;SharedAccessKey=value",
+        ),
+        patch.object(notification_service.settings, "notification_hub_name", "study-app-dev"),
     ):
         sender = get_sender()
     assert isinstance(sender, AzureNotificationHubSender)
@@ -122,17 +120,16 @@ def test_parse_connection_string_normalises_endpoint_to_https():
 
 def test_parse_connection_string_tolerates_missing_trailing_slash():
     parsed = _parse_connection_string(
-        "Endpoint=sb://ns.servicebus.windows.net;"
-        "SharedAccessKeyName=k;SharedAccessKey=v"
+        "Endpoint=sb://ns.servicebus.windows.net;SharedAccessKeyName=k;SharedAccessKey=v"
     )
     assert parsed["endpoint"].endswith("/")
 
 
-def test_anh_format_for_maps_android_to_fcmv1_ios_to_apple():
+def test_anh_format_for_uses_fcmv1_for_both_mobile_clients():
     # FCM v1 format header — exact casing matters (ANH rejects ``fcmv1``
     # / ``gcm``). Legacy ``gcm`` was retired 2024-06-20.
     assert _anh_format_for(DevicePlatform.android) == "fcmV1"
-    assert _anh_format_for(DevicePlatform.ios) == "apple"
+    assert _anh_format_for(DevicePlatform.ios) == "fcmV1"
 
 
 def test_platform_payload_android_uses_fcmv1_message_envelope():
@@ -156,7 +153,7 @@ def test_platform_payload_android_uses_fcmv1_message_envelope():
     assert "topic" not in parsed["message"]
 
 
-def test_platform_payload_ios_uses_aps_envelope():
+def test_platform_payload_ios_uses_fcmv1_apns_envelope():
     payload = NotificationPayload(
         notification_type=NotificationType.milestone,
         title="hi",
@@ -167,8 +164,10 @@ def test_platform_payload_ios_uses_aps_envelope():
     import json
 
     parsed = json.loads(body)
-    assert parsed["aps"]["alert"]["title"] == "hi"
-    assert parsed["badge_id"] == "first_steps"
+    assert parsed["message"]["notification"]["title"] == "hi"
+    assert parsed["message"]["data"]["badge_id"] == "first_steps"
+    assert parsed["message"]["apns"]["headers"]["apns-priority"] == "10"
+    assert parsed["message"]["apns"]["payload"]["aps"]["sound"] == "default"
 
 
 # ── ANH sender (mocked transport) ────────────────────────────────────────
@@ -205,9 +204,7 @@ async def test_anh_sender_returns_sent_on_2xx():
     _, kwargs = client.post.call_args
     assert kwargs["headers"]["Authorization"].startswith("SharedAccessSignature")
     # Device handle = device token.
-    assert (
-        kwargs["headers"]["ServiceBusNotification-DeviceHandle"] == "tok_a"
-    )
+    assert kwargs["headers"]["ServiceBusNotification-DeviceHandle"] == "tok_a"
 
 
 @pytest.mark.asyncio
@@ -396,9 +393,7 @@ async def test_dispatch_to_user_fans_out_to_every_active_token():
     dispatches_col = MagicMock()
     captured: list[dict] = []
     dispatches_col.insert_one = AsyncMock(
-        side_effect=lambda d: (
-            captured.append(d) or MagicMock(inserted_id=d["_id"])
-        )
+        side_effect=lambda d: captured.append(d) or MagicMock(inserted_id=d["_id"])
     )
 
     def _factory(_tid, collection):

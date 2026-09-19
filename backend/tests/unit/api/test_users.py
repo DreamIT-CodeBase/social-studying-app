@@ -57,6 +57,35 @@ def test_get_me_returns_current_user(client):
     assert response.json()["email"] == user.email
 
 
+def test_get_me_hides_legacy_self_learning_membership_from_admin(client):
+    admin = make_user(
+        role=UserRole.workspace_admin,
+        workspace_ids=["wsp_self_usr_test001", "wsp_classroom"],
+    )
+    app.dependency_overrides[get_current_user] = lambda: admin
+
+    response = client.get("/api/v1/users/me")
+
+    assert response.status_code == 200
+    memberships = response.json()["workspace_memberships"]
+    assert [membership["workspace_id"] for membership in memberships] == ["wsp_classroom"]
+
+
+def test_get_me_keeps_self_learning_membership_for_student(client):
+    student = make_user(
+        user_id="usr_student",
+        role=UserRole.student,
+        workspace_ids=["wsp_self_usr_student"],
+    )
+    app.dependency_overrides[get_current_user] = lambda: student
+
+    response = client.get("/api/v1/users/me")
+
+    assert response.status_code == 200
+    memberships = response.json()["workspace_memberships"]
+    assert memberships[0]["workspace_id"] == "wsp_self_usr_student"
+
+
 # ── POST /api/v1/users/ ───────────────────────────────────────────────────────
 
 
@@ -190,5 +219,34 @@ def test_redeem_invite_code_already_member_returns_409(client):
             "/api/v1/users/join",
             json={"code": "ABCD1234"},
         )
-
     assert response.status_code == 409
+
+
+# ── PATCH /api/v1/users/me ────────────────────────────────────────────────────
+
+
+def test_update_me_happy_path(client):
+    user = make_user(role=UserRole.student)
+    user.display_name = "Original Name"
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    updated_doc = user.model_dump(by_alias=True)
+    updated_doc["display_name"] = "Updated Name"
+    updated_doc["grade_level"] = 10
+
+    col = MagicMock()
+    col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
+    col.find_one = AsyncMock(return_value=updated_doc)
+
+    with patch("app.api.users.get_collection", return_value=col), patch(
+        "app.api.users.invalidate_user_cache", new_callable=AsyncMock
+    ):
+        response = client.patch(
+            "/api/v1/users/me",
+            json={"display_name": "Updated Name", "grade_level": 10},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["display_name"] == "Updated Name"
+    assert data["grade_level"] == 10

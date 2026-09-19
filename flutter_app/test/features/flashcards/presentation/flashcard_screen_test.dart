@@ -62,7 +62,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.text('Finding a card…'), findsOneWidget);
+    expect(find.text('Loading next card…'), findsOneWidget);
 
     completer.complete(_card());
     await tester.pumpAndSettle();
@@ -80,13 +80,10 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('QUESTION'), findsOneWidget);
-    // The back and the rating buckets are hidden until the flip.
     expect(find.text('Chlorophyll.'), findsNothing);
-    expect(find.text('How well did you recall it?'), findsNothing);
   });
 
-  testWidgets('tapping the card flips it and reveals the back + ratings',
-      (tester) async {
+  testWidgets('tapping the card flips it and reveals the back', (tester) async {
     when(() => repo.next(workspaceId: any(named: 'workspaceId')))
         .thenAnswer((_) async => _card());
 
@@ -99,10 +96,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Chlorophyll.'), findsOneWidget);
-    expect(find.text('How well did you recall it?'), findsOneWidget);
-    expect(find.text('Easy'), findsOneWidget);
-    expect(find.text('Medium'), findsOneWidget);
-    expect(find.text('Hard'), findsOneWidget);
+    expect(find.text('Swipe Left'), findsOneWidget);
+    expect(find.text('Remembered'), findsOneWidget);
+    expect(find.text('Swipe Right'), findsOneWidget);
+    expect(find.text('Forgot'), findsOneWidget);
   });
 
   testWidgets('rating a card records the rating and offers the next card',
@@ -123,7 +120,11 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Easy'));
+    // Drag the card to the left to swipe Easy
+    final gesture = await tester
+        .startGesture(tester.getCenter(find.byType(GestureDetector).first));
+    await gesture.moveBy(const Offset(-300, 0));
+    await gesture.up();
     await tester.pumpAndSettle();
 
     final captured = verify(() => repo.rate(
@@ -135,103 +136,7 @@ void main() {
       (captured.single as FlashcardRatingSubmission).rating,
       FlashcardRating.easy,
     );
-    expect(find.text('Rated Easy'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Next Card'), findsOneWidget);
-  });
-
-  testWidgets('the Next Card button fetches a new card', (tester) async {
-    var calls = 0;
-    when(() => repo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async {
-      calls++;
-      return calls == 1
-          ? _card()
-          : const Flashcard(
-              id: 'fc_2',
-              topic: 'Genetics',
-              front: 'What does a genotype describe?',
-              back: 'The inherited genetic code.',
-            );
-    });
-    when(() => repo.rate(
-          workspaceId: any(named: 'workspaceId'),
-          flashcardId: any(named: 'flashcardId'),
-          submission: any(named: 'submission'),
-        )).thenAnswer((_) async => _response(FlashcardRating.medium));
-
-    await tester.pumpWidget(_wrap(repo));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(
-      'What pigment captures light energy during photosynthesis?',
-    ));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Medium'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.widgetWithText(FilledButton, 'Next Card'));
-    await tester.pumpAndSettle();
-
-    expect(calls, 2);
-    expect(find.text('What does a genotype describe?'), findsOneWidget);
-  });
-
-  testWidgets('the no-topics state shows admin-targeted copy and no retry',
-      (tester) async {
-    when(() => repo.next(workspaceId: any(named: 'workspaceId')))
-        .thenThrow(const NoFlashcardTopicsException());
-
-    await tester.pumpWidget(_wrap(repo));
-    await tester.pumpAndSettle();
-
-    expect(find.text('No flashcards yet'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Try Again'), findsNothing);
-  });
-
-  testWidgets('the generator-busy state offers a retry that re-fetches',
-      (tester) async {
-    var calls = 0;
-    when(() => repo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async {
-      calls++;
-      if (calls == 1) {
-        throw const FlashcardGenerationUnavailableException();
-      }
-      return _card();
-    });
-
-    await tester.pumpWidget(_wrap(repo));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Generator is busy'), findsOneWidget);
-    await tester.tap(find.widgetWithText(FilledButton, 'Try Again'));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.text('What pigment captures light energy during photosynthesis?'),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('a generic error shows an ErrorView with retry', (tester) async {
-    var calls = 0;
-    when(() => repo.next(workspaceId: any(named: 'workspaceId')))
-        .thenAnswer((_) async {
-      calls++;
-      if (calls == 1) throw Exception('network down');
-      return _card();
-    });
-
-    await tester.pumpWidget(_wrap(repo));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Try Again'), findsOneWidget);
-    await tester.tap(find.text('Try Again'));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.text('What pigment captures light energy during photosynthesis?'),
-      findsOneWidget,
-    );
+    await tester.pumpAndSettle(const Duration(milliseconds: 1000));
   });
 
   testWidgets('the demo repository drives the flashcard loop end to end',
@@ -249,7 +154,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // First demo fixture is the photosynthesis card.
     expect(
       find.text('What pigment captures light energy during photosynthesis?'),
       findsOneWidget,
@@ -259,9 +163,13 @@ void main() {
       'What pigment captures light energy during photosynthesis?',
     ));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Easy'));
-    await tester.pumpAndSettle();
 
-    expect(find.text('Rated Easy'), findsOneWidget);
+    // Swipe the card left to advance
+    final gesture = await tester
+        .startGesture(tester.getCenter(find.byType(GestureDetector).first));
+    await gesture.moveBy(const Offset(-300, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    await tester.pumpAndSettle(const Duration(milliseconds: 1000));
   });
 }

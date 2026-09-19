@@ -92,6 +92,44 @@ def test_list_workspaces_tenant_admin_sees_all(client):
 
     assert response.status_code == 200
     assert response.json() == []
+    query = col.find.call_args.args[0]
+    assert query["_id"] == {"$not": {"$regex": "^wsp_self_"}}
+
+
+def test_list_workspaces_workspace_admin_excludes_self_learning(client):
+    admin = make_user(
+        role=UserRole.workspace_admin,
+        workspace_ids=["wsp_self_usr_test001", "wsp_classroom"],
+    )
+    app.dependency_overrides[get_current_user] = lambda: admin
+    col = _col_with_doc(None)
+
+    with patch("app.api.workspaces.get_collection", return_value=col):
+        response = client.get("/api/v1/workspaces/")
+
+    assert response.status_code == 200
+    query = col.find.call_args.args[0]
+    assert query["_id"]["$in"] == ["wsp_classroom"]
+
+
+def test_list_workspaces_student_keeps_self_learning(client):
+    student = make_user(
+        user_id="usr_student",
+        role=UserRole.student,
+        workspace_ids=["wsp_self_usr_student", "wsp_classroom"],
+    )
+    app.dependency_overrides[get_current_user] = lambda: student
+    col = _col_with_doc(None)
+
+    with patch("app.api.workspaces.get_collection", return_value=col):
+        response = client.get("/api/v1/workspaces/")
+
+    assert response.status_code == 200
+    query = col.find.call_args.args[0]
+    assert query["_id"]["$in"] == [
+        "wsp_self_usr_student",
+        "wsp_classroom",
+    ]
 
 
 # ── GET /api/v1/workspaces/{id} ───────────────────────────────────────────────
@@ -232,3 +270,49 @@ def test_add_member_keeps_workspace_admin_with_other_admin_membership(client):
     assert response.status_code == 201
     saved_user = user_col.replace_one.call_args.args[1]
     assert saved_user["role"] == UserRole.workspace_admin.value
+
+
+# ── DELETE /api/v1/workspaces/{id}/members/{user_id} ──────────────────────────
+
+
+def test_remove_workspace_member_success(client):
+    admin = make_user(role=UserRole.tenant_admin)
+    app.dependency_overrides[get_current_user] = lambda: admin
+
+    student = make_user(user_id="usr_student", role=UserRole.student)
+    student.workspace_memberships = [
+        WorkspaceMembership(
+            workspace_id="wsp_test",
+            role=UserRole.student,
+            joined_at="2026-01-01T00:00:00+00:00",
+        )
+    ]
+
+    workspace = make_workspace(workspace_id="wsp_test")
+    workspace.student_ids = ["usr_student"]
+
+    workspace_col = MagicMock()
+    workspace_col.find_one = AsyncMock(return_value=workspace.model_dump(by_alias=True))
+    workspace_col.update_one = AsyncMock()
+
+    user_col = MagicMock()
+    user_col.find_one = AsyncMock(return_value=student.model_dump(by_alias=True))
+    user_col.update_one = AsyncMock()
+
+    with patch(
+        "app.api.workspaces.get_collection",
+        side_effect=[workspace_col, user_col],
+    ):
+        response = client.delete("/api/v1/workspaces/wsp_test/members/usr_student")
+
+    assert response.status_code == 204
+    workspace_col.update_one.assert_called_once()
+    user_col.update_one.assert_called_once()
+
+
+def test_remove_workspace_member_forbidden_for_non_admin(client):
+    student_caller = make_user(user_id="usr_caller", role=UserRole.student)
+    app.dependency_overrides[get_current_user] = lambda: student_caller
+
+    response = client.delete("/api/v1/workspaces/wsp_test/members/usr_student")
+    assert response.status_code == 403

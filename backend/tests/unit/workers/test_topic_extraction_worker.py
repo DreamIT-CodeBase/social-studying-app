@@ -76,6 +76,16 @@ def _mock_collection():
     return col
 
 
+@pytest.fixture(autouse=True)
+def _stub_chunking_handoff():
+    """Keep tests focused on the branch they exercise by default."""
+    with patch(
+        "app.workers.topic_extraction.publish_chunking_message",
+        AsyncMock(),
+    ):
+        yield
+
+
 # ── Happy path ───────────────────────────────────────────────────────────────
 
 
@@ -148,10 +158,7 @@ async def test_handle_happy_path_writes_topics_and_advances_status():
 
     # Two updates: extracting_topics, then topics_extracted.
     assert col.update_one.await_count == 2
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses == [
         DocumentStatus.extracting_topics.value,
         DocumentStatus.topics_extracted.value,
@@ -192,16 +199,16 @@ async def test_handle_empty_topics_list_still_advances_to_topics_extracted():
         ),
         patch(
             "app.workers.topic_extraction.taxonomy.infer_dependencies",
-            AsyncMock(return_value=_deps_outcome(version=0, total=0, edges_set=0,
-                                                  edges_changed=0, skipped=True)),
+            AsyncMock(
+                return_value=_deps_outcome(
+                    version=0, total=0, edges_set=0, edges_changed=0, skipped=True
+                )
+            ),
         ),
     ):
         await worker._handle(msg)
 
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses[-1] == DocumentStatus.topics_extracted.value
     final_update = col.update_one.await_args_list[-1].args[1]["$set"]
     assert final_update["topic_tags"] == []
@@ -226,10 +233,7 @@ async def test_handle_blob_not_found_marks_failed_and_dead_letters():
         await worker._handle(msg)
 
     msg._receiver.dead_letter_message.assert_awaited_once()
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses == [
         DocumentStatus.extracting_topics.value,
         DocumentStatus.failed.value,
@@ -263,10 +267,7 @@ async def test_handle_prompt_failure_marks_failed_and_dead_letters():
         await worker._handle(msg)
 
     msg._receiver.dead_letter_message.assert_awaited_once()
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses[-1] == DocumentStatus.failed.value
     final_update = col.update_one.await_args_list[-1].args[1]["$set"]
     assert "Topic extraction prompt failure" in final_update["processing_error"]
@@ -290,17 +291,54 @@ async def test_handle_transient_openai_error_propagates():
             "app.workers.topic_extraction.topic_extraction.extract_topics",
             AsyncMock(side_effect=ServiceUnavailableError("OpenAI 503")),
         ),
+        pytest.raises(ServiceUnavailableError),
     ):
-        with pytest.raises(ServiceUnavailableError):
-            await worker._handle(msg)
+        await worker._handle(msg)
 
     # Status got set to extracting_topics, but no final write — the worker
     # is left "in flight" so Service Bus redelivers and we try again.
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses == [DocumentStatus.extracting_topics.value]
+
+
+@pytest.mark.asyncio
+async def test_handle_chunking_handoff_failure_propagates_for_retry():
+    """A publish outage cannot leave the document stuck awaiting chunking."""
+    msg = _msg()
+    col = _mock_collection()
+
+    with (
+        patch("app.workers.topic_extraction.get_collection", return_value=col),
+        patch(
+            "app.workers.topic_extraction.blob_storage.download_document",
+            AsyncMock(return_value=b"hello"),
+        ),
+        patch(
+            "app.workers.topic_extraction.topic_extraction.extract_topics",
+            AsyncMock(return_value=[]),
+        ),
+        patch(
+            "app.workers.topic_extraction.taxonomy.merge_into_workspace",
+            AsyncMock(return_value=_merge_outcome(version=0, total=0, added=0, seeded=False)),
+        ),
+        patch(
+            "app.workers.topic_extraction.taxonomy.infer_dependencies",
+            AsyncMock(
+                return_value=_deps_outcome(
+                    version=0, total=0, edges_set=0, edges_changed=0, skipped=True
+                )
+            ),
+        ),
+        patch(
+            "app.workers.topic_extraction.publish_chunking_message",
+            AsyncMock(side_effect=RuntimeError("Service Bus unavailable")),
+        ),
+        pytest.raises(RuntimeError, match="Service Bus unavailable"),
+    ):
+        await worker._handle(msg)
+
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
+    assert statuses[-1] == DocumentStatus.topics_extracted.value
 
 
 # ── Sprint 2.6 — merge failure must not crash the worker ────────────────────
@@ -344,10 +382,7 @@ async def test_handle_taxonomy_merge_failure_still_advances_doc():
     # taxonomy didn't change, so re-inferring deps is wasted money).
     mock_deps.assert_not_awaited()
 
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses[-1] == DocumentStatus.topics_extracted.value
     final_update = col.update_one.await_args_list[-1].args[1]["$set"]
     assert final_update["topic_tags"][0]["name"] == "Photosynthesis"
@@ -390,10 +425,7 @@ async def test_handle_dep_inference_failure_still_advances_doc():
 
     mock_merge.assert_awaited_once()
     mock_deps.assert_awaited_once()
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses[-1] == DocumentStatus.topics_extracted.value
     final_update = col.update_one.await_args_list[-1].args[1]["$set"]
     assert final_update["topic_tags"][0]["name"] == "Photosynthesis"
@@ -425,8 +457,11 @@ async def test_handle_non_utf8_blob_does_not_crash():
         ),
         patch(
             "app.workers.topic_extraction.taxonomy.infer_dependencies",
-            AsyncMock(return_value=_deps_outcome(version=0, total=0, edges_set=0,
-                                                  edges_changed=0, skipped=True)),
+            AsyncMock(
+                return_value=_deps_outcome(
+                    version=0, total=0, edges_set=0, edges_changed=0, skipped=True
+                )
+            ),
         ),
     ):
         await worker._handle(msg)

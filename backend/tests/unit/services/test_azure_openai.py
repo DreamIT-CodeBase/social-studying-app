@@ -135,22 +135,20 @@ async def test_chat_json_uses_settings_deployment_when_not_overridden(monkeypatc
 async def test_chat_json_invalid_json_raises_value_error():
     completion = _fake_completion("not json at all{")
     patched, _ = _patched_openai(completion)
-    with patched:
-        with pytest.raises(ValueError, match="invalid JSON"):
-            await azure_openai.chat_json(
-                system_prompt="be json", user_prompt="hi", max_output_tokens=100
-            )
+    with patched, pytest.raises(ValueError, match="invalid JSON"):
+        await azure_openai.chat_json(
+            system_prompt="be json", user_prompt="hi", max_output_tokens=100
+        )
 
 
 @pytest.mark.asyncio
 async def test_chat_json_empty_response_raises_value_error():
     completion = _fake_completion("")
     patched, _ = _patched_openai(completion)
-    with patched:
-        with pytest.raises(ValueError):
-            await azure_openai.chat_json(
-                system_prompt="be json", user_prompt="hi", max_output_tokens=100
-            )
+    with patched, pytest.raises(ValueError):
+        await azure_openai.chat_json(
+            system_prompt="be json", user_prompt="hi", max_output_tokens=100
+        )
 
 
 @pytest.mark.asyncio
@@ -230,9 +228,7 @@ async def test_embed_texts_single_batch_returns_vectors_in_order():
     vectors = [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]
     patched, fake_client = _patched_embeddings([_fake_embeddings(vectors)])
     with patched:
-        out = await azure_openai.embed_texts(
-            texts=["a", "b", "c"], batch_size=16
-        )
+        out = await azure_openai.embed_texts(texts=["a", "b", "c"], batch_size=16)
     assert out == vectors
     fake_client.embeddings.create.assert_awaited_once()
     call = fake_client.embeddings.create.await_args
@@ -241,9 +237,7 @@ async def test_embed_texts_single_batch_returns_vectors_in_order():
 
 @pytest.mark.asyncio
 async def test_embed_texts_uses_settings_deployment_by_default(monkeypatch):
-    monkeypatch.setattr(
-        azure_openai.settings, "azure_openai_embedding_deployment", "embed-default"
-    )
+    monkeypatch.setattr(azure_openai.settings, "azure_openai_embedding_deployment", "embed-default")
     patched, fake_client = _patched_embeddings([_fake_embeddings([[0.0]])])
     with patched:
         await azure_openai.embed_texts(texts=["x"])
@@ -268,15 +262,10 @@ async def test_embed_texts_batches_and_preserves_input_order():
     ]
     patched, fake_client = _patched_embeddings(responses)
     with patched:
-        out = await azure_openai.embed_texts(
-            texts=["a", "b", "c", "d", "e"], batch_size=2
-        )
+        out = await azure_openai.embed_texts(texts=["a", "b", "c", "d", "e"], batch_size=2)
     assert out == [[1.0], [2.0], [3.0], [4.0], [5.0]]
     assert fake_client.embeddings.create.await_count == 3
-    sent_inputs = [
-        c.kwargs["input"]
-        for c in fake_client.embeddings.create.await_args_list
-    ]
+    sent_inputs = [c.kwargs["input"] for c in fake_client.embeddings.create.await_args_list]
     assert sent_inputs == [["a", "b"], ["c", "d"], ["e"]]
 
 
@@ -311,9 +300,8 @@ async def test_embed_texts_count_mismatch_raises_service_unavailable():
     """If the SDK returns fewer vectors than inputs, refuse to misalign."""
     # Asked for 2, response has 1 — would silently drop a chunk's embedding.
     patched, _ = _patched_embeddings([_fake_embeddings([[1.0]])])
-    with patched:
-        with pytest.raises(ServiceUnavailableError, match="shape mismatch"):
-            await azure_openai.embed_texts(texts=["a", "b"], batch_size=16)
+    with patched, pytest.raises(ServiceUnavailableError, match="shape mismatch"):
+        await azure_openai.embed_texts(texts=["a", "b"], batch_size=16)
 
 
 @pytest.mark.asyncio

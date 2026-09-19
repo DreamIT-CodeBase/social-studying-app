@@ -24,10 +24,19 @@ class RealQuestionsRepository implements QuestionsRepository {
   static const _apiPrefix = '/api/v1';
 
   @override
-  Future<Question> next({required String workspaceId}) async {
+  Future<Question> next({
+    required String workspaceId,
+    bool revision = false,
+    String? subject,
+  }) async {
     try {
+      final queryParams = <String, dynamic>{'revision': revision};
+      if (subject != null) {
+        queryParams['subject'] = subject;
+      }
       final response = await dio.post<Map<String, dynamic>>(
         '$_apiPrefix/workspaces/$workspaceId/questions/next',
+        queryParameters: queryParams,
       );
       return Question.fromJson(response.data!);
     } on DioException catch (e) {
@@ -40,11 +49,13 @@ class RealQuestionsRepository implements QuestionsRepository {
     required String workspaceId,
     required String questionId,
     required AnswerSubmission submission,
+    bool revision = false,
   }) async {
     try {
       final response = await dio.post<Map<String, dynamic>>(
         '$_apiPrefix/workspaces/$workspaceId/questions/$questionId/answer',
         data: submission.toJson(),
+        queryParameters: {'revision': revision},
       );
       return AnswerFeedback.fromJson(response.data!);
     } on DioException catch (e) {

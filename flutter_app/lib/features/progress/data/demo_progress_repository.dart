@@ -110,5 +110,6 @@ class EmptyDemoProgressRepository implements ProgressRepository {
   Future<StudentProgress> fetch({
     required String workspaceId,
     required String userId,
-  }) async => StudentProgress.empty;
+  }) async =>
+      StudentProgress.empty;
 }

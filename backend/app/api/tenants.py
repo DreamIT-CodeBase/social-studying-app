@@ -44,6 +44,7 @@ async def create_tenant(
         admin_email=body.admin_email,
     )
     await col.insert_one(tenant.model_dump(by_alias=True))
+
     return TenantResponse.from_doc(tenant)
 
 

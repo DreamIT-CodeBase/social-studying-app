@@ -60,8 +60,8 @@ class NotificationToken(CosmosDocument):
     installation_id: str
     token: str
     platform: DevicePlatform
-    registered_at: str       # ISO 8601 UTC
-    last_seen_at: str        # ISO 8601 UTC, bumped on each register call
+    registered_at: str  # ISO 8601 UTC
+    last_seen_at: str  # ISO 8601 UTC, bumped on each register call
 
 
 class DispatchOutcome(StrEnum):

@@ -1,0 +1,5 @@
+#include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.profile-student.xcconfig"
+#include? "Generated.xcconfig"
+
+FLUTTER_TARGET=lib/main_student.dart
+APP_DISPLAY_NAME=Social Studying AI

@@ -45,7 +45,9 @@ def _payload(**overrides) -> ExtractionMessage:
     return ExtractionMessage(**base)
 
 
-def _msg(payload: ExtractionMessage | None = None, delivery_count: int = 1) -> ReceivedExtractionMessage:
+def _msg(
+    payload: ExtractionMessage | None = None, delivery_count: int = 1
+) -> ReceivedExtractionMessage:
     return ReceivedExtractionMessage(
         payload=payload or _payload(),
         delivery_count=delivery_count,
@@ -98,11 +100,11 @@ async def test_handle_happy_path_transitions_pending_to_text_extracted():
     with (
         patch("app.workers.document_ingestion.get_collection", side_effect=route),
         patch(
-            "app.workers.document_ingestion.blob_storage.download_document",
-            AsyncMock(return_value=b"%PDF-1.4 fake"),
-        ) as mock_download,
+            "app.workers.document_ingestion.blob_storage.create_blob_read_url",
+            return_value="https://example.com/blob.pdf",
+        ) as mock_url,
         patch(
-            "app.workers.document_ingestion.document_intelligence.extract_text",
+            "app.workers.document_ingestion.document_intelligence.extract_text_from_url",
             AsyncMock(return_value=extracted),
         ) as mock_extract,
         patch(
@@ -120,17 +122,14 @@ async def test_handle_happy_path_transitions_pending_to_text_extracted():
     ):
         await document_ingestion._handle(msg)
 
-    mock_download.assert_awaited_once_with(msg.payload.blob_path)
-    mock_extract.assert_awaited_once_with(b"%PDF-1.4 fake", content_type="application/pdf")
+    mock_url.assert_called_once_with(msg.payload.blob_path)
+    mock_extract.assert_awaited_once_with("https://example.com/blob.pdf")
     mock_upload_text.assert_awaited_once()
     mock_scan.assert_awaited_once_with("hello world")
 
     # Two doc updates: status=extracting at start, status=text_extracted at end.
     assert docs.update_one.await_count == 2
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in docs.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in docs.update_one.await_args_list]
     assert statuses == [DocumentStatus.extracting.value, DocumentStatus.text_extracted.value]
 
     # Final update carries the extracted-text metadata.
@@ -159,6 +158,46 @@ async def test_handle_happy_path_transitions_pending_to_text_extracted():
     assert handoff.extracted_text_blob_path == "ten_abc/wsp_abc/extracted-text/doc_abc.txt"
 
 
+@pytest.mark.asyncio
+async def test_handle_scraped_plain_text_bypasses_document_intelligence():
+    msg = _msg(_payload(content_type="text/plain", blob_path="ten/wsp/doc/page.txt"))
+    docs, logs, route = _collection_router()
+
+    with (
+        patch("app.workers.document_ingestion.get_collection", side_effect=route),
+        patch(
+            "app.workers.document_ingestion.blob_storage.download_document",
+            AsyncMock(return_value=b"  Article heading\\nUseful study text  "),
+        ),
+        patch(
+            "app.workers.document_ingestion.document_intelligence.extract_text",
+            AsyncMock(),
+        ) as mock_extract,
+        patch(
+            "app.workers.document_ingestion.blob_storage.upload_extracted_text",
+            AsyncMock(return_value="extracted/doc.txt"),
+        ) as mock_upload,
+        patch(
+            "app.workers.document_ingestion.content_safety.analyze_extracted_text",
+            AsyncMock(return_value=_clean_verdict()),
+        ),
+        patch("app.workers.document_ingestion.publish_topic_message", AsyncMock()),
+    ):
+        await document_ingestion._handle(msg)
+
+    mock_extract.assert_not_awaited()
+    mock_upload.assert_awaited_once_with(
+        tenant_id=msg.payload.tenant_id,
+        workspace_id=msg.payload.workspace_id,
+        document_id=msg.payload.document_id,
+        text="Article heading\\nUseful study text",
+    )
+    assert (
+        docs.update_one.await_args_list[-1].args[1]["$set"]["status"]
+        == DocumentStatus.text_extracted.value
+    )
+
+
 # ── Permanent failure: unsupported content → dead-letter + status=failed ─────
 
 
@@ -176,11 +215,11 @@ async def test_handle_unsupported_content_marks_failed_and_dead_letters():
     with (
         patch("app.workers.document_ingestion.get_collection", return_value=col),
         patch(
-            "app.workers.document_ingestion.blob_storage.download_document",
-            AsyncMock(return_value=b"corrupt"),
+            "app.workers.document_ingestion.blob_storage.create_blob_read_url",
+            return_value="https://example.com/blob.pdf",
         ),
         patch(
-            "app.workers.document_ingestion.document_intelligence.extract_text",
+            "app.workers.document_ingestion.document_intelligence.extract_text_from_url",
             AsyncMock(side_effect=error),
         ),
     ):
@@ -188,10 +227,7 @@ async def test_handle_unsupported_content_marks_failed_and_dead_letters():
 
     msg._receiver.dead_letter_message.assert_awaited_once()
     # Two status writes: extracting, then failed.
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses == [DocumentStatus.extracting.value, DocumentStatus.failed.value]
     final_update = col.update_one.await_args_list[-1].args[1]["$set"]
     assert "Document Intelligence rejected" in final_update["processing_error"]
@@ -202,7 +238,7 @@ async def test_handle_unsupported_content_marks_failed_and_dead_letters():
 
 @pytest.mark.asyncio
 async def test_handle_blob_not_found_marks_failed_and_dead_letters():
-    msg = _msg()
+    msg = _msg(_payload(content_type="text/plain"))
     msg._receiver.dead_letter_message = AsyncMock()
     col = _mock_collection_with_match()
 
@@ -216,10 +252,7 @@ async def test_handle_blob_not_found_marks_failed_and_dead_letters():
         await document_ingestion._handle(msg)
 
     msg._receiver.dead_letter_message.assert_awaited_once()
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in col.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in col.update_one.await_args_list]
     assert statuses == [DocumentStatus.extracting.value, DocumentStatus.failed.value]
 
 
@@ -239,13 +272,14 @@ async def test_handle_transient_di_error_propagates():
     with (
         patch("app.workers.document_ingestion.get_collection", return_value=col),
         patch(
-            "app.workers.document_ingestion.blob_storage.download_document",
-            AsyncMock(return_value=b"ok"),
+            "app.workers.document_ingestion.blob_storage.create_blob_read_url",
+            return_value="https://example.com/blob.pdf",
         ),
         patch(
-            "app.workers.document_ingestion.document_intelligence.extract_text",
+            "app.workers.document_ingestion.document_intelligence.extract_text_from_url",
             AsyncMock(side_effect=error),
-        ),pytest.raises(HttpResponseError)
+        ),
+        pytest.raises(HttpResponseError),
     ):
         await document_ingestion._handle(msg)
 
@@ -289,19 +323,17 @@ async def test_handle_content_safety_flagged_sets_status_flagged_and_logs():
     msg = _msg()
     docs, logs, route = _collection_router()
 
-    extracted = ExtractedDocument(
-        text="some objectionable passage", page_count=3, languages=["en"]
-    )
+    extracted = ExtractedDocument(text="some objectionable passage", page_count=3, languages=["en"])
     flagged = _flagged_verdict(category="Hate", severity=4)
 
     with (
         patch("app.workers.document_ingestion.get_collection", side_effect=route),
         patch(
-            "app.workers.document_ingestion.blob_storage.download_document",
-            AsyncMock(return_value=b"%PDF-1.4 fake"),
+            "app.workers.document_ingestion.blob_storage.create_blob_read_url",
+            return_value="https://example.com/blob.pdf",
         ),
         patch(
-            "app.workers.document_ingestion.document_intelligence.extract_text",
+            "app.workers.document_ingestion.document_intelligence.extract_text_from_url",
             AsyncMock(return_value=extracted),
         ),
         patch(
@@ -322,10 +354,7 @@ async def test_handle_content_safety_flagged_sets_status_flagged_and_logs():
     # Flagged docs do NOT advance to topic extraction.
     mock_publish.assert_not_awaited()
 
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in docs.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in docs.update_one.await_args_list]
     assert statuses == [DocumentStatus.extracting.value, DocumentStatus.flagged.value]
 
     final_update = docs.update_one.await_args_list[-1].args[1]["$set"]
@@ -358,11 +387,11 @@ async def test_handle_content_safety_transient_error_propagates():
     with (
         patch("app.workers.document_ingestion.get_collection", side_effect=route),
         patch(
-            "app.workers.document_ingestion.blob_storage.download_document",
-            AsyncMock(return_value=b"%PDF-1.4 fake"),
+            "app.workers.document_ingestion.blob_storage.create_blob_read_url",
+            return_value="https://example.com/blob.pdf",
         ),
         patch(
-            "app.workers.document_ingestion.document_intelligence.extract_text",
+            "app.workers.document_ingestion.document_intelligence.extract_text_from_url",
             AsyncMock(return_value=extracted),
         ),
         patch(
@@ -372,15 +401,13 @@ async def test_handle_content_safety_transient_error_propagates():
         patch(
             "app.workers.document_ingestion.content_safety.analyze_extracted_text",
             AsyncMock(side_effect=HttpResponseError(message="503")),
-        ),pytest.raises(HttpResponseError)
+        ),
+        pytest.raises(HttpResponseError),
     ):
         await document_ingestion._handle(msg)
 
     # Only the extracting transition fired; no text_extracted or flagged write.
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in docs.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in docs.update_one.await_args_list]
     assert statuses == [DocumentStatus.extracting.value]
 
 
@@ -398,11 +425,11 @@ async def test_handle_moderation_log_write_failure_does_not_crash():
     with (
         patch("app.workers.document_ingestion.get_collection", side_effect=route),
         patch(
-            "app.workers.document_ingestion.blob_storage.download_document",
-            AsyncMock(return_value=b"%PDF-1.4 fake"),
+            "app.workers.document_ingestion.blob_storage.create_blob_read_url",
+            return_value="https://example.com/blob.pdf",
         ),
         patch(
-            "app.workers.document_ingestion.document_intelligence.extract_text",
+            "app.workers.document_ingestion.document_intelligence.extract_text_from_url",
             AsyncMock(return_value=extracted),
         ),
         patch(
@@ -413,12 +440,13 @@ async def test_handle_moderation_log_write_failure_does_not_crash():
             "app.workers.document_ingestion.content_safety.analyze_extracted_text",
             AsyncMock(return_value=_clean_verdict()),
         ),
+        patch(
+            "app.workers.document_ingestion.publish_topic_message",
+            AsyncMock(),
+        ),
     ):
         await document_ingestion._handle(msg)  # must not raise
 
     # Document still made it to text_extracted.
-    statuses = [
-        call.args[1]["$set"]["status"]
-        for call in docs.update_one.await_args_list
-    ]
+    statuses = [call.args[1]["$set"]["status"] for call in docs.update_one.await_args_list]
     assert statuses[-1] == DocumentStatus.text_extracted.value

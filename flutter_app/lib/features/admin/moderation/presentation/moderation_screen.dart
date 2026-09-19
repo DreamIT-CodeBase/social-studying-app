@@ -72,23 +72,20 @@ class _QueueTab extends ConsumerWidget {
                 child: EmptyStateView(
                   icon: Icons.verified_rounded,
                   title: 'Nothing to review',
-                  subtitle:
-                      'Flagged questions, flashcards, and documents will '
+                  subtitle: 'Flagged questions, flashcards, and documents will '
                       'appear here for approval.',
                 ),
               )
             : ListView.separated(
                 padding: const EdgeInsets.all(Spacing.lg),
                 itemCount: items.length,
-                separatorBuilder: (_, __) =>
-                    const SizedBox(height: Spacing.sm),
+                separatorBuilder: (_, __) => const SizedBox(height: Spacing.sm),
                 itemBuilder: (_, i) => _QueueCard(
                   workspaceId: workspaceId,
                   item: items[i],
                 ),
               ),
-        loading: () =>
-            const LoadingIndicator(message: 'Loading review queue…'),
+        loading: () => const LoadingIndicator(message: 'Loading review queue…'),
         error: (error, _) => _FullHeight(
           child: ErrorView(
             message: error.toString(),
@@ -122,16 +119,14 @@ class _LogTab extends ConsumerWidget {
                 child: EmptyStateView(
                   icon: Icons.history_rounded,
                   title: 'No resolved items',
-                  subtitle:
-                      'Once you approve or reject flagged content it is '
+                  subtitle: 'Once you approve or reject flagged content it is '
                       'recorded here.',
                 ),
               )
             : ListView.separated(
                 padding: const EdgeInsets.all(Spacing.lg),
                 itemCount: items.length,
-                separatorBuilder: (_, __) =>
-                    const SizedBox(height: Spacing.sm),
+                separatorBuilder: (_, __) => const SizedBox(height: Spacing.sm),
                 itemBuilder: (_, i) => _FlaggedCard(item: items[i]),
               ),
         loading: () => const LoadingIndicator(message: 'Loading audit log…'),
@@ -465,8 +460,18 @@ String _relativeTime(String iso) {
   if (diff.inHours < 24) return '${diff.inHours}h ago';
   if (diff.inDays < 7) return '${diff.inDays}d ago';
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   return '${months[parsed.month - 1]} ${parsed.day}';
 }

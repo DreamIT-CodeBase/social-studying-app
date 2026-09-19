@@ -318,6 +318,8 @@ mixin _$Document {
   List<String> get languages => throw _privateConstructorUsedError;
   @JsonKey(name: 'processing_error')
   String? get processingError => throw _privateConstructorUsedError;
+  String? get category => throw _privateConstructorUsedError;
+  String? get subcategory => throw _privateConstructorUsedError;
 
   /// Serializes this Document to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -347,7 +349,9 @@ abstract class $DocumentCopyWith<$Res> {
       @JsonKey(name: 'page_count') int? pageCount,
       @JsonKey(name: 'text_char_count') int? textCharCount,
       List<String> languages,
-      @JsonKey(name: 'processing_error') String? processingError});
+      @JsonKey(name: 'processing_error') String? processingError,
+      String? category,
+      String? subcategory});
 }
 
 /// @nodoc
@@ -378,6 +382,8 @@ class _$DocumentCopyWithImpl<$Res, $Val extends Document>
     Object? textCharCount = freezed,
     Object? languages = null,
     Object? processingError = freezed,
+    Object? category = freezed,
+    Object? subcategory = freezed,
   }) {
     return _then(_value.copyWith(
       id: null == id
@@ -432,6 +438,14 @@ class _$DocumentCopyWithImpl<$Res, $Val extends Document>
           ? _value.processingError
           : processingError // ignore: cast_nullable_to_non_nullable
               as String?,
+      category: freezed == category
+          ? _value.category
+          : category // ignore: cast_nullable_to_non_nullable
+              as String?,
+      subcategory: freezed == subcategory
+          ? _value.subcategory
+          : subcategory // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -457,7 +471,9 @@ abstract class _$$DocumentImplCopyWith<$Res>
       @JsonKey(name: 'page_count') int? pageCount,
       @JsonKey(name: 'text_char_count') int? textCharCount,
       List<String> languages,
-      @JsonKey(name: 'processing_error') String? processingError});
+      @JsonKey(name: 'processing_error') String? processingError,
+      String? category,
+      String? subcategory});
 }
 
 /// @nodoc
@@ -486,6 +502,8 @@ class __$$DocumentImplCopyWithImpl<$Res>
     Object? textCharCount = freezed,
     Object? languages = null,
     Object? processingError = freezed,
+    Object? category = freezed,
+    Object? subcategory = freezed,
   }) {
     return _then(_$DocumentImpl(
       id: null == id
@@ -540,6 +558,14 @@ class __$$DocumentImplCopyWithImpl<$Res>
           ? _value.processingError
           : processingError // ignore: cast_nullable_to_non_nullable
               as String?,
+      category: freezed == category
+          ? _value.category
+          : category // ignore: cast_nullable_to_non_nullable
+              as String?,
+      subcategory: freezed == subcategory
+          ? _value.subcategory
+          : subcategory // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -561,7 +587,9 @@ class _$DocumentImpl implements _Document {
       @JsonKey(name: 'page_count') this.pageCount,
       @JsonKey(name: 'text_char_count') this.textCharCount,
       final List<String> languages = const <String>[],
-      @JsonKey(name: 'processing_error') this.processingError})
+      @JsonKey(name: 'processing_error') this.processingError,
+      this.category,
+      this.subcategory})
       : _topicTags = topicTags,
         _languages = languages;
 
@@ -616,10 +644,14 @@ class _$DocumentImpl implements _Document {
   @override
   @JsonKey(name: 'processing_error')
   final String? processingError;
+  @override
+  final String? category;
+  @override
+  final String? subcategory;
 
   @override
   String toString() {
-    return 'Document(id: $id, workspaceId: $workspaceId, filename: $filename, docType: $docType, status: $status, chunkCount: $chunkCount, topicTags: $topicTags, moderationFlagged: $moderationFlagged, createdAt: $createdAt, pageCount: $pageCount, textCharCount: $textCharCount, languages: $languages, processingError: $processingError)';
+    return 'Document(id: $id, workspaceId: $workspaceId, filename: $filename, docType: $docType, status: $status, chunkCount: $chunkCount, topicTags: $topicTags, moderationFlagged: $moderationFlagged, createdAt: $createdAt, pageCount: $pageCount, textCharCount: $textCharCount, languages: $languages, processingError: $processingError, category: $category, subcategory: $subcategory)';
   }
 
   @override
@@ -649,7 +681,11 @@ class _$DocumentImpl implements _Document {
             const DeepCollectionEquality()
                 .equals(other._languages, _languages) &&
             (identical(other.processingError, processingError) ||
-                other.processingError == processingError));
+                other.processingError == processingError) &&
+            (identical(other.category, category) ||
+                other.category == category) &&
+            (identical(other.subcategory, subcategory) ||
+                other.subcategory == subcategory));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -668,7 +704,9 @@ class _$DocumentImpl implements _Document {
       pageCount,
       textCharCount,
       const DeepCollectionEquality().hash(_languages),
-      processingError);
+      processingError,
+      category,
+      subcategory);
 
   /// Create a copy of Document
   /// with the given fields replaced by the non-null parameter values.
@@ -688,20 +726,21 @@ class _$DocumentImpl implements _Document {
 
 abstract class _Document implements Document {
   const factory _Document(
-          {required final String id,
-          @JsonKey(name: 'workspace_id') required final String workspaceId,
-          required final String filename,
-          @JsonKey(name: 'doc_type') required final DocumentType docType,
-          required final DocumentStatus status,
-          @JsonKey(name: 'chunk_count') final int chunkCount,
-          @JsonKey(name: 'topic_tags') final List<TopicTag> topicTags,
-          @JsonKey(name: 'moderation_flagged') final bool moderationFlagged,
-          @JsonKey(name: 'created_at') required final String createdAt,
-          @JsonKey(name: 'page_count') final int? pageCount,
-          @JsonKey(name: 'text_char_count') final int? textCharCount,
-          final List<String> languages,
-          @JsonKey(name: 'processing_error') final String? processingError}) =
-      _$DocumentImpl;
+      {required final String id,
+      @JsonKey(name: 'workspace_id') required final String workspaceId,
+      required final String filename,
+      @JsonKey(name: 'doc_type') required final DocumentType docType,
+      required final DocumentStatus status,
+      @JsonKey(name: 'chunk_count') final int chunkCount,
+      @JsonKey(name: 'topic_tags') final List<TopicTag> topicTags,
+      @JsonKey(name: 'moderation_flagged') final bool moderationFlagged,
+      @JsonKey(name: 'created_at') required final String createdAt,
+      @JsonKey(name: 'page_count') final int? pageCount,
+      @JsonKey(name: 'text_char_count') final int? textCharCount,
+      final List<String> languages,
+      @JsonKey(name: 'processing_error') final String? processingError,
+      final String? category,
+      final String? subcategory}) = _$DocumentImpl;
 
   factory _Document.fromJson(Map<String, dynamic> json) =
       _$DocumentImpl.fromJson;
@@ -741,6 +780,10 @@ abstract class _Document implements Document {
   @override
   @JsonKey(name: 'processing_error')
   String? get processingError;
+  @override
+  String? get category;
+  @override
+  String? get subcategory;
 
   /// Create a copy of Document
   /// with the given fields replaced by the non-null parameter values.
