@@ -311,10 +311,10 @@ async def _history(
     *, tenant_id: str, workspace_id: str, student_id: str
 ) -> tuple[list[dict], dict[str, float]]:
     cursor = get_collection(tenant_id, INTERACTIONS).find(
-        {"workspace_id": workspace_id, "student_id": student_id, "deleted_at": None}
+        {"$or": [{"student_id": student_id}, {"user_id": student_id}], "deleted_at": None}
     )
-    interactions = await cosmos_retry(lambda: cursor.to_list(length=1000))
-    interactions.sort(key=lambda row: row.get("answered_at", ""), reverse=True)
+    interactions = await cosmos_retry(lambda: cursor.to_list(length=3000))
+    interactions.sort(key=lambda row: str(row.get("answered_at") or ""), reverse=True)
     knowledge = await cosmos_retry(lambda: get_collection(tenant_id, KNOWLEDGE_STATES).find_one(
         {"workspace_id": workspace_id, "student_id": student_id, "deleted_at": None}
     ))
@@ -392,7 +392,6 @@ async def _reserved_questions(
     """
     cursor = get_collection(tenant_id, ADAPTIVE_SESSIONS).find(
         {
-            "workspace_id": workspace_id,
             "student_id": student_id,
             "status": "prepared",
         }
@@ -407,6 +406,8 @@ async def _reserved_questions(
         for question in questions
         if question.get("body")
     }
+    fingerprints.update(canonical_question_signature(str(question["body"])) for question in questions if question.get("body"))
+    fingerprints.update(normalize_question_stem(str(question["body"])) for question in questions if question.get("body"))
     return ids, fingerprints
 
 
@@ -434,7 +435,6 @@ async def _flashcard_history(
 ) -> tuple[set[str], set[str], list[str]]:
     rating_cursor = get_collection(tenant_id, FLASHCARD_RATINGS).find(
         {
-            "workspace_id": workspace_id,
             "student_id": student_id,
             "deleted_at": None,
         }
@@ -442,18 +442,14 @@ async def _flashcard_history(
     rating_rows = await cosmos_retry(lambda: rating_cursor.to_list(length=5000))
     ids = {str(row["flashcard_id"]) for row in rating_rows if row.get("flashcard_id")}
 
-    # A card counts as seen when it was delivered in a prior session plan, not
-    # only when it was rated. This covers sessions the learner exited or let
-    # time out after seeing some/all of their prepared cards.
     session_cursor = get_collection(tenant_id, ADAPTIVE_SESSIONS).find(
-        {
-            "workspace_id": workspace_id,
-            "student_id": student_id,
-            "mode": AdaptiveSessionMode.flashcard.value,
-            "status": {"$ne": "prepared"},
-        }
+        {"student_id": student_id}
     )
-    session_rows = await cosmos_retry(lambda: session_cursor.to_list(length=500))
+    raw_rows = await cosmos_retry(lambda: session_cursor.to_list(length=5000))
+    session_rows = [
+        r for r in raw_rows
+        if r.get("mode") == AdaptiveSessionMode.flashcard.value and r.get("status") != "prepared"
+    ]
     cards = [card for row in session_rows for card in (row.get("plan") or {}).get("flashcards", [])]
     ids.update(str(card["id"]) for card in cards if card.get("id"))
     fingerprints = {
@@ -471,13 +467,12 @@ async def _reserved_flashcards(
     """Cards allocated to another unfinished flashcard session."""
     cursor = get_collection(tenant_id, ADAPTIVE_SESSIONS).find(
         {
-            "workspace_id": workspace_id,
             "student_id": student_id,
-            "mode": AdaptiveSessionMode.flashcard.value,
             "status": "prepared",
         }
     )
-    rows = await cosmos_retry(lambda: cursor.to_list(length=50))
+    raw_rows = await cosmos_retry(lambda: cursor.to_list(length=50))
+    rows = [r for r in raw_rows if r.get("mode") == AdaptiveSessionMode.flashcard.value]
     cards = [card for row in rows for card in (row.get("plan") or {}).get("flashcards", [])]
     ids = {str(card["id"]) for card in cards if card.get("id")}
     fingerprints = {
@@ -499,17 +494,18 @@ async def _question_session_history(
     once a question appears in ANY session for a user, it must not repeat.
     """
     cursor = get_collection(tenant_id, ADAPTIVE_SESSIONS).find(
-        {
-            "workspace_id": workspace_id,
-            "student_id": student_id,
-            "mode": {"$in": [AdaptiveSessionMode.study.value, AdaptiveSessionMode.revision.value]},
-            "status": {"$in": ["in_progress", "completed", "timed_out", "exited", "superseded", "prepared", "processing"]},
-        }
+        {"student_id": student_id}
     )
-    rows = await cosmos_retry(lambda: cursor.to_list(length=2000))
+    raw_rows = await cosmos_retry(lambda: cursor.to_list(length=5000))
+    valid_modes = {AdaptiveSessionMode.study.value, AdaptiveSessionMode.revision.value}
+    rows = [
+        row for row in raw_rows
+        if not row.get("mode") or row.get("mode") in valid_modes
+    ]
     questions = [q for row in rows for q in (row.get("plan") or {}).get("questions", [])]
     ids = {str(q["id"]) for q in questions if q.get("id")}
     fingerprints = {_question_fingerprint(str(q["body"])) for q in questions if q.get("body")}
+    fingerprints.update(canonical_question_signature(str(q["body"])) for q in questions if q.get("body"))
     fingerprints.update(normalize_question_stem(str(q["body"])) for q in questions if q.get("body"))
     bodies = [str(q["body"]) for q in questions if q.get("body")]
     return ids, fingerprints, bodies
@@ -899,6 +895,16 @@ async def _prepare_questions(
     if not selected:
         if revision and available:
             selected = available[:target]
+        elif current_sources.document_ids:
+            # STRICT CONTENT-SOURCE INTEGRITY: When the workspace has user-uploaded documents,
+            # NEVER leak generic hardcoded fallback questions (such as quadratic discriminant, calculus derivatives, etc.)!
+            # All available unique questions for this material/topic have been completed.
+            # Returning empty triggers an honest exhausted plan or prompts the student to switch to revision.
+            logger.info(
+                "Document-backed workspace=%s has exhausted all unattempted questions; returning empty to prompt exhausted screen",
+                workspace_id,
+            )
+            return []
         else:
             fb_plan = _build_guaranteed_fallback_plan(
                 workspace_id=workspace_id,
@@ -2548,14 +2554,15 @@ async def _existing_open_session(
 async def _supersede_open_sessions(tenant_id: str, workspace_id: str, student_id: str) -> None:
     """Mark any stale open prepared or processing sessions as superseded so their items count as seen."""
     try:
-        await cosmos_retry(lambda: get_collection(tenant_id, ADAPTIVE_SESSIONS).update_many(
-            {
-                "workspace_id": workspace_id,
-                "student_id": student_id,
-                "status": {"$in": ["prepared", "processing"]},
-            },
-            {"$set": {"status": "superseded", "updated_at": utc_now()}},
-        ))
+        col = get_collection(tenant_id, ADAPTIVE_SESSIONS)
+        for st in ("prepared", "processing"):
+            await cosmos_retry(lambda: col.update_many(
+                {
+                    "student_id": student_id,
+                    "status": st,
+                },
+                {"$set": {"status": "superseded", "updated_at": utc_now()}},
+            ))
     except Exception:
         logger.debug("Failed to supersede open sessions for student=%s", student_id)
 
@@ -2955,9 +2962,9 @@ async def prepare_adaptive_session(
         if isinstance(exc, (ForbiddenError, NotFoundError, ConflictError)):
             raise
         logger.exception("Adaptive session prepare error: %s", exc)
-        has_docs = bool(sources and sources.document_ids)
-        if request.subcategory or (capped and used > 0 and has_docs):
-            # Topic-specific or exhausted document-backed workspace: return exhausted plan
+        has_docs = bool(sources and sources.document_ids) or not _is_self_study(workspace_id)
+        if has_docs or request.subcategory or (capped and used > 0):
+            # Topic-specific or document-backed workspace: return exhausted plan
             return _build_exhausted_plan(
                 mode=request.mode,
                 level=level,
@@ -2993,8 +3000,8 @@ async def prepare_adaptive_session(
     item_count = len(flashcards if request.mode == AdaptiveSessionMode.flashcard else questions)
 
     if item_count == 0:
-        has_docs = bool(sources and sources.document_ids)
-        if (capped and used > 0) or request.subcategory or (used > 0 and has_docs):
+        has_docs = bool(sources and sources.document_ids) or not _is_self_study(workspace_id)
+        if has_docs or request.subcategory or (capped and used > 0):
             # Document-backed or capped workspace with 0 fresh items: show exhausted.
             return _build_exhausted_plan(
                 mode=request.mode,
