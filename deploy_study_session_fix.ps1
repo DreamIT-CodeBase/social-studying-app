@@ -1,7 +1,7 @@
 # Deploy Study Session & UX Fixes to Azure Container Apps
 $ErrorActionPreference = "Stop"
 
-$img = "acrssadevxumnzboir5vz2.azurecr.io/social-study-api:20260918-study-session-fix-v1"
+$img = "acrssadevxumnzboir5vz2.azurecr.io/social-study-api:20260919-algebra-dedup-v3"
 $rg = "rg-ssa2-dev"
 $apps = @("ca-api-dev", "ca-worker-dev", "ca-topic-extractor-dev", "ca-chunker-dev", "ca-vectorizer-dev")
 

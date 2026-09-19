@@ -11,6 +11,8 @@ import re
 import unicodedata
 from collections.abc import Iterable
 
+from functools import lru_cache
+
 from app.services import question_validation, symbolic_math
 
 # Common English stop words
@@ -262,6 +264,7 @@ _QUESTION_TEMPLATE_PREFIXES: tuple[str, ...] = tuple(
 )
 
 
+@lru_cache(maxsize=8192)
 def normalize_question_stem(text: str) -> str:
     """Normalize text by stripping unicode variations, punctuation, and extra whitespace."""
     if not text:
@@ -272,6 +275,7 @@ def normalize_question_stem(text: str) -> str:
     return " ".join(normalized.split())
 
 
+@lru_cache(maxsize=8192)
 def strip_question_templates(normalized: str) -> str:
     """Aggressively strip leading question framing templates and trailing interrogatives."""
     stripped = normalized.strip()
@@ -312,6 +316,7 @@ def strip_question_templates(normalized: str) -> str:
     return stripped.strip()
 
 
+@lru_cache(maxsize=8192)
 def canonical_equation_signature(body: str) -> str | None:
     """Extract canonical equation or advanced calculus problem signature.
 
@@ -338,7 +343,8 @@ def canonical_equation_signature(body: str) -> str | None:
     return None
 
 
-def extract_content_keywords(body: str) -> set[str]:
+@lru_cache(maxsize=8192)
+def extract_content_keywords(body: str) -> frozenset[str]:
     """Extract domain-specific content keywords by filtering stop words and question frame tokens."""
     normalized = normalize_question_stem(body)
     tokens = re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", normalized)
@@ -349,9 +355,10 @@ def extract_content_keywords(body: str) -> set[str]:
         if token in _STOP_WORDS or token in _QUESTION_FRAME_WORDS:
             continue
         keywords.add(token)
-    return keywords
+    return frozenset(keywords)
 
 
+@lru_cache(maxsize=8192)
 def canonical_question_signature(body: str) -> str:
     """Return the primary stable fingerprint for a question body.
 

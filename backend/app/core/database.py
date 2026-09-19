@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 # ── Cosmos 429 retry helper ──────────────────────────────────────────────────
 
 _COSMOS_429_CODE = 16500
-_MAX_RETRY_ATTEMPTS = 3
-_MAX_RETRY_WAIT_MS = 2000  # never wait more than 2 s regardless of server hint
+_MAX_RETRY_ATTEMPTS = 5
+_MAX_RETRY_WAIT_MS = 2500  # never wait more than 2.5 s regardless of server hint
 
 
 async def cosmos_retry(coro_factory, *, max_attempts: int = _MAX_RETRY_ATTEMPTS):
@@ -30,7 +30,7 @@ async def cosmos_retry(coro_factory, *, max_attempts: int = _MAX_RETRY_ATTEMPTS)
     Args:
         coro_factory: zero-arg callable that returns a coroutine. Re-called on
             each retry so a fresh coroutine is produced every time.
-        max_attempts: maximum total tries (default 3).
+        max_attempts: maximum total tries (default 5).
 
     Returns:
         The first successful coroutine result.
@@ -43,14 +43,21 @@ async def cosmos_retry(coro_factory, *, max_attempts: int = _MAX_RETRY_ATTEMPTS)
         try:
             return await coro_factory()
         except Exception as exc:
-            # Check for Cosmos TooManyRequests (pymongo OperationFailure code 16500)
+            # Check for Cosmos TooManyRequests in code, details, or error string
             code = getattr(exc, "code", None)
-            if code != _COSMOS_429_CODE or attempt >= max_attempts:
+            err_str = str(exc)
+            is_429 = (
+                code == _COSMOS_429_CODE
+                or "16500" in err_str
+                or "429" in err_str
+                or "RequestRateTooLarge" in err_str
+            )
+            if not is_429 or attempt >= max_attempts:
                 raise
             # Extract RetryAfterMs from the error message when available
-            match = re.search(r"RetryAfterMs=(\d+)", str(exc))
-            wait_ms = int(match.group(1)) if match else 500
-            wait_ms = min(wait_ms, _MAX_RETRY_WAIT_MS)
+            match = re.search(r"RetryAfterMs=(\d+)", err_str)
+            hint_wait = int(match.group(1)) if match else 200 * (2 ** (attempt - 1))
+            wait_ms = min(max(hint_wait, 100), _MAX_RETRY_WAIT_MS)
             logger.warning(
                 "Cosmos 429 on attempt %d/%d - waiting %d ms before retry",
                 attempt, max_attempts, wait_ms,

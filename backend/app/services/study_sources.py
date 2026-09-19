@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.core.database import DOCUMENTS, get_collection
+from app.core.database import DOCUMENTS, cosmos_retry, get_collection
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,7 +32,7 @@ async def current_study_sources(*, tenant_id: str, workspace_id: str) -> Current
             "deleted_at": None,
         }
     )
-    rows = await cursor.to_list(length=1000)
+    rows = await cosmos_retry(lambda: cursor.to_list(length=1000))
     if not rows:
         cursor = col.find(
             {
@@ -41,7 +41,7 @@ async def current_study_sources(*, tenant_id: str, workspace_id: str) -> Current
                 "deleted_at": None,
             }
         )
-        rows = await cursor.to_list(length=1000)
+        rows = await cosmos_retry(lambda: cursor.to_list(length=1000))
     if not rows:
         cursor = col.find(
             {
@@ -49,7 +49,7 @@ async def current_study_sources(*, tenant_id: str, workspace_id: str) -> Current
                 "deleted_at": None,
             }
         )
-        rows = await cursor.to_list(length=1000)
+        rows = await cosmos_retry(lambda: cursor.to_list(length=1000))
     rows.sort(key=lambda row: str(row.get("created_at", "")), reverse=True)
 
     selected: list[dict] = []

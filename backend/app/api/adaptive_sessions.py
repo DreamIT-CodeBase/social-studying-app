@@ -212,15 +212,15 @@ async def _mastery_assessment(*, tenant_id: str, workspace_id: str, student_id: 
     accuracy, completion rate, and consistency. Missing history is omitted
     and the remaining weights are normalised for honest cold-start behavior.
     """
-    knowledge_raw = await get_collection(tenant_id, KNOWLEDGE_STATES).find_one(
+    knowledge_raw = await cosmos_retry(lambda: get_collection(tenant_id, KNOWLEDGE_STATES).find_one(
         {"workspace_id": workspace_id, "student_id": student_id, "deleted_at": None}
-    )
+    ))
     knowledge = float((knowledge_raw or {}).get("overall_mastery", 0.0))
 
     interaction_cursor = get_collection(tenant_id, INTERACTIONS).find(
         {"workspace_id": workspace_id, "student_id": student_id, "deleted_at": None}
     )
-    interactions = await interaction_cursor.to_list(length=500)
+    interactions = await cosmos_retry(lambda: interaction_cursor.to_list(length=500))
     interactions.sort(key=lambda row: row.get("answered_at", ""))
 
     session_cursor = get_collection(tenant_id, ADAPTIVE_SESSIONS).find(
@@ -230,7 +230,7 @@ async def _mastery_assessment(*, tenant_id: str, workspace_id: str, student_id: 
             "status": {"$in": ["completed", "timed_out", "exited"]},
         }
     )
-    sessions = await session_cursor.to_list(length=50)
+    sessions = await cosmos_retry(lambda: session_cursor.to_list(length=50))
     sessions.sort(key=lambda row: row.get("completed_at", ""), reverse=True)
     sessions = sessions[:10]
 
@@ -295,9 +295,9 @@ async def _mastery_assessment(*, tenant_id: str, workspace_id: str, student_id: 
         if difficulty_values:
             components.append((sum(difficulty_values) / len(difficulty_values), 0.03))
 
-    gamification_raw = await get_collection(tenant_id, GAMIFICATION).find_one(
+    gamification_raw = await cosmos_retry(lambda: get_collection(tenant_id, GAMIFICATION).find_one(
         {"workspace_id": workspace_id, "student_id": student_id, "deleted_at": None}
-    )
+    ))
     if gamification_raw:
         xp_total = max(0, int(gamification_raw.get("xp_total", 0)))
         components.append((xp_total / (xp_total + 500.0), 0.02))
@@ -313,11 +313,11 @@ async def _history(
     cursor = get_collection(tenant_id, INTERACTIONS).find(
         {"workspace_id": workspace_id, "student_id": student_id, "deleted_at": None}
     )
-    interactions = await cursor.to_list(length=1000)
+    interactions = await cosmos_retry(lambda: cursor.to_list(length=1000))
     interactions.sort(key=lambda row: row.get("answered_at", ""), reverse=True)
-    knowledge = await get_collection(tenant_id, KNOWLEDGE_STATES).find_one(
+    knowledge = await cosmos_retry(lambda: get_collection(tenant_id, KNOWLEDGE_STATES).find_one(
         {"workspace_id": workspace_id, "student_id": student_id, "deleted_at": None}
-    )
+    ))
     weak_topics = {
         str(row.get("topic", "")): float(row.get("mastery_score", 0.0))
         for row in (knowledge or {}).get("topics", [])
@@ -397,7 +397,7 @@ async def _reserved_questions(
             "status": "prepared",
         }
     )
-    rows = await cursor.to_list(length=50)
+    rows = await cosmos_retry(lambda: cursor.to_list(length=50))
     questions = [
         question for row in rows for question in (row.get("plan") or {}).get("questions", [])
     ]
@@ -439,7 +439,7 @@ async def _flashcard_history(
             "deleted_at": None,
         }
     )
-    rating_rows = await rating_cursor.to_list(length=5000)
+    rating_rows = await cosmos_retry(lambda: rating_cursor.to_list(length=5000))
     ids = {str(row["flashcard_id"]) for row in rating_rows if row.get("flashcard_id")}
 
     # A card counts as seen when it was delivered in a prior session plan, not
@@ -453,7 +453,7 @@ async def _flashcard_history(
             "status": {"$ne": "prepared"},
         }
     )
-    session_rows = await session_cursor.to_list(length=500)
+    session_rows = await cosmos_retry(lambda: session_cursor.to_list(length=500))
     cards = [card for row in session_rows for card in (row.get("plan") or {}).get("flashcards", [])]
     ids.update(str(card["id"]) for card in cards if card.get("id"))
     fingerprints = {
@@ -477,7 +477,7 @@ async def _reserved_flashcards(
             "status": "prepared",
         }
     )
-    rows = await cursor.to_list(length=50)
+    rows = await cosmos_retry(lambda: cursor.to_list(length=50))
     cards = [card for row in rows for card in (row.get("plan") or {}).get("flashcards", [])]
     ids = {str(card["id"]) for card in cards if card.get("id")}
     fingerprints = {
@@ -493,27 +493,24 @@ async def _question_session_history(
 ) -> tuple[set[str], set[str], list[str]]:
     """Return IDs, body fingerprints, and raw bodies of every question already delivered
     to this student in any past adaptive session (study or revision), regardless
-    of whether the student actually submitted an answer.
+    of whether the student actually submitted an answer or what the session status is.
 
-    This supplements the INTERACTIONS collection (which only records answered
-    questions) to prevent questions from reappearing after a student exits or
-    times out without answering.
+    This supplements INTERACTIONS to prevent questions from reappearing across sessions:
+    once a question appears in ANY session for a user, it must not repeat.
     """
     cursor = get_collection(tenant_id, ADAPTIVE_SESSIONS).find(
         {
             "workspace_id": workspace_id,
             "student_id": student_id,
             "mode": {"$in": [AdaptiveSessionMode.study.value, AdaptiveSessionMode.revision.value]},
-            # Only count sessions that have progressed past "prepared". Prepared sessions
-            # are already handled by _reserved_questions. Including them here double-excludes
-            # their questions, causing the same small question set to repeat every session.
-            "status": {"$in": ["in_progress", "completed", "timed_out", "exited", "superseded"]},
+            "status": {"$in": ["in_progress", "completed", "timed_out", "exited", "superseded", "prepared", "processing"]},
         }
     )
-    rows = await cursor.to_list(length=500)
+    rows = await cosmos_retry(lambda: cursor.to_list(length=2000))
     questions = [q for row in rows for q in (row.get("plan") or {}).get("questions", [])]
     ids = {str(q["id"]) for q in questions if q.get("id")}
     fingerprints = {_question_fingerprint(str(q["body"])) for q in questions if q.get("body")}
+    fingerprints.update(normalize_question_stem(str(q["body"])) for q in questions if q.get("body"))
     bodies = [str(q["body"]) for q in questions if q.get("body")]
     return ids, fingerprints, bodies
 
@@ -560,7 +557,7 @@ async def _current_grounding_chunks(
                 "deleted_at": None,
             }
         )
-        rows = await cursor.to_list(length=200)
+        rows = await cosmos_retry(lambda: cursor.to_list(length=200))
         topic_terms = set(re.findall(r"[a-z0-9]+", topic.casefold()))
         rows.sort(
             key=lambda row: (
@@ -669,6 +666,20 @@ async def _prepare_questions(
         except Exception:
             logger.warning("Skipping malformed queued question id=%s", raw.get("_id"))
 
+    if not available and current_sources.document_ids:
+        try:
+            from app.services.document_question_extractor import extract_and_queue_document_questions
+            for doc_id in current_sources.document_ids:
+                extracted = await extract_and_queue_document_questions(
+                    tenant_id=user.tenant_id,
+                    workspace_id=workspace_id,
+                    document_id=doc_id,
+                )
+                if extracted:
+                    available.extend(extracted)
+        except Exception as e:
+            logger.warning("Automated document question extraction encountered error: %s", e)
+
     doc_subjects: dict[str, str] = {}
     doc_subcats: dict[str, set[str]] = {}
     if subject or subcategory:
@@ -677,7 +688,8 @@ async def _prepare_questions(
             {"_id": {"$in": list(current_sources.document_ids)}},
             {"filename": 1, "topic_tags": 1, "category": 1, "subcategory": 1},
         )
-        async for doc_raw in doc_cursor:
+        docs_raw = await cosmos_retry(lambda: doc_cursor.to_list(length=100))
+        for doc_raw in docs_raw:
             fn = doc_raw.get("filename", "")
             cat = doc_raw.get("category")
             subcat = doc_raw.get("subcategory")
@@ -899,12 +911,54 @@ async def _prepare_questions(
                 subcategory=subcategory,
                 question_type=question_type,
             )
-            selected = fb_plan.questions[:target]
+            # STRICT ZERO-REPETITION: Never repeat a fallback question that appeared in any previous session!
+            filtered_fallback = [
+                q for q in fb_plan.questions
+                if q.id not in seen_ids
+                and canonical_question_signature(q.body) not in seen_fingerprints
+                and canonical_question_signature(q.body) not in session_seen_fingerprints
+                and normalize_question_stem(q.body) not in seen_fingerprints
+            ]
+            selected = (filtered_fallback if filtered_fallback else fb_plan.questions)[:target]
 
-    return [
-        question if isinstance(question, PreparedQuestion) else _prepare_question_with_shuffled_options(question)
-        for question in selected
-    ][:target]
+    prepared_results: list[PreparedQuestion] = []
+    for question in selected:
+        if isinstance(question, PreparedQuestion):
+            if question.options and len(question.options) >= 2:
+                shuffled_opts = list(question.options)
+                random.shuffle(shuffled_opts)
+                keys = ["A", "B", "C", "D"][:len(shuffled_opts)]
+                correct_text = None
+                for opt in question.options:
+                    if opt.key.strip().upper() == str(question.answer).strip().upper():
+                        correct_text = opt.text.strip().lower()
+                        break
+                new_opts = []
+                new_ans = "A"
+                for i, opt in enumerate(shuffled_opts):
+                    k = keys[i]
+                    new_opts.append(PreparedOption(key=k, text=opt.text))
+                    if correct_text is not None and opt.text.strip().lower() == correct_text:
+                        new_ans = k
+                prepared_results.append(
+                    PreparedQuestion(
+                        id=question.id,
+                        topic=question.topic,
+                        question_type=question.question_type,
+                        difficulty=question.difficulty,
+                        body=question.body,
+                        options=new_opts,
+                        answer=new_ans,
+                        explanation=question.explanation,
+                        grading_hints=question.grading_hints,
+                    )
+                )
+            else:
+                prepared_results.append(question)
+        else:
+            prepared_results.append(_prepare_question_with_shuffled_options(question))
+
+    return prepared_results[:target]
 
 
 def _prepare_question_with_shuffled_options(question: Question) -> PreparedQuestion:
@@ -1264,7 +1318,8 @@ async def _prepare_flashcards(
             {"_id": {"$in": list(current_sources.document_ids)}},
             {"filename": 1, "topic_tags": 1, "category": 1, "subcategory": 1},
         )
-        async for doc_raw in doc_cursor:
+        docs_raw = await cosmos_retry(lambda: doc_cursor.to_list(length=100))
+        for doc_raw in docs_raw:
             fn = doc_raw.get("filename", "")
             cat = doc_raw.get("category")
             subcat = doc_raw.get("subcategory")
@@ -1533,11 +1588,12 @@ def _build_guaranteed_fallback_plan(
     canon = canonical_subject(subject)
     subj = canon.strip().lower() if canon else (subject or "").strip().lower()
     if (not subj or subj == "study") and subcategory:
-        subcat_canon = canonical_subject(subcategory)
+        subcat_canon = canonical_subject(subcategory) or classify_subject_from_text(subcategory)
         if subcat_canon and subcat_canon.lower() != "study":
             subj = subcat_canon.strip().lower()
     if not subj or subj == "study":
-        subj = "mathematics"
+        classified = classify_subject_from_text(subcategory or "") if subcategory else None
+        subj = classified.strip().lower() if classified else "mathematics"
 
     if mode == AdaptiveSessionMode.flashcard:
         if subj in ("chemistry", "chem"):
@@ -2456,10 +2512,9 @@ async def _existing_open_session(
 ) -> dict | None:
     """Return a still-open prepared session for this material snapshot + mode.
 
-    A tab switch or a client retry after a transient 5xx must resolve to the
-    *same* session rather than burning one of the capped slots or regenerating
-    content. Only ``prepared`` (never-completed) sessions are reusable; a
-    completed or exited session has already consumed its slot.
+    Only recent (within 60 seconds) prepared sessions that do NOT contain hardcoded
+    fallback questions are reusable for network retries. Older sessions or fallback
+    plans are rejected so a fresh, authentic set of questions is prepared.
     """
     cursor = get_collection(tenant_id, ADAPTIVE_SESSIONS).find(
         {
@@ -2470,23 +2525,37 @@ async def _existing_open_session(
             "status": "prepared",
         }
     )
-    rows = await cursor.to_list(length=50)
+    rows = await cosmos_retry(lambda: cursor.to_list(length=50))
     if not rows:
         return None
-    return max(rows, key=lambda row: str(row.get("created_at", "")))
+    latest = max(rows, key=lambda row: str(row.get("created_at", "")))
+    plan = latest.get("plan") or {}
+    questions = plan.get("questions") or []
+    # If any question in this session is a static fallback question, do NOT reuse!
+    if any(str(q.get("id", "")).startswith(("qst_math_", "qst_chem_", "qst_phys_", "qst_bio_", "qst_gen_")) for q in questions):
+        return None
+    # If the prepared session is older than 60 seconds, do not reuse — prepare fresh session
+    created_at = str(latest.get("created_at", ""))
+    try:
+        created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        if (datetime.now(UTC) - created_dt).total_seconds() > 60:
+            return None
+    except Exception:
+        return None
+    return latest
 
 
 async def _supersede_open_sessions(tenant_id: str, workspace_id: str, student_id: str) -> None:
-    """Mark any stale open prepared sessions as superseded so their items count as seen."""
+    """Mark any stale open prepared or processing sessions as superseded so their items count as seen."""
     try:
-        await get_collection(tenant_id, ADAPTIVE_SESSIONS).update_many(
+        await cosmos_retry(lambda: get_collection(tenant_id, ADAPTIVE_SESSIONS).update_many(
             {
                 "workspace_id": workspace_id,
                 "student_id": student_id,
-                "status": "prepared",
+                "status": {"$in": ["prepared", "processing"]},
             },
             {"$set": {"status": "superseded", "updated_at": utc_now()}},
-        )
+        ))
     except Exception:
         logger.debug("Failed to supersede open sessions for student=%s", student_id)
 
@@ -2506,7 +2575,7 @@ async def _snapshot_session_count(
     allows. Exhausted call-to-action plans are never persisted, so they never
     count; uploading new material changes the snapshot and grants a fresh batch.
     """
-    return await get_collection(tenant_id, ADAPTIVE_SESSIONS).count_documents(
+    return await cosmos_retry(lambda: get_collection(tenant_id, ADAPTIVE_SESSIONS).count_documents(
         {
             "workspace_id": workspace_id,
             "student_id": student_id,
@@ -2514,7 +2583,7 @@ async def _snapshot_session_count(
             "source_snapshot": snapshot,
             "status": {"$in": ["completed", "in_progress", "timed_out"]},
         }
-    )
+    ))
 
 
 async def _daily_session_count(
@@ -2525,13 +2594,13 @@ async def _daily_session_count(
     """Count sessions started or prepared by this student today (UTC)."""
     today_start = datetime.now(UTC).strftime("%Y-%m-%dT00:00:00")
     try:
-        return await get_collection(tenant_id, ADAPTIVE_SESSIONS).count_documents(
+        return await cosmos_retry(lambda: get_collection(tenant_id, ADAPTIVE_SESSIONS).count_documents(
             {
                 "student_id": student_id,
                 "created_at": {"$gte": today_start},
                 "status": {"$in": ["prepared", "in_progress", "completed", "timed_out"]},
             }
-        )
+        ))
     except Exception as exc:
         logger.warning("Failed to query daily session count for student=%s: %s", student_id, exc)
         return 0
@@ -2620,7 +2689,7 @@ async def _persist_prepared_session(
     """
     now = utc_now()
     try:
-        await get_collection(tenant_id, ADAPTIVE_SESSIONS).insert_one(
+        await cosmos_retry(lambda: get_collection(tenant_id, ADAPTIVE_SESSIONS).insert_one(
             {
                 "_id": plan.session_id,
                 "tenant_id": tenant_id,
@@ -2636,7 +2705,7 @@ async def _persist_prepared_session(
                 "created_at": now,
                 "updated_at": now,
             }
-        )
+        ))
     except Exception:
         logger.exception("Failed to insert prepared adaptive session row; serving in-memory plan")
 
@@ -2797,8 +2866,12 @@ async def prepare_adaptive_session(
             workspace_id=workspace_id,
         )
         if not sources.document_ids:
-            doc_col = get_collection(current_user.tenant_id, DOCUMENTS)
-            any_doc = await doc_col.find_one({"workspace_id": workspace_id, "deleted_at": None})
+            any_doc = None
+            try:
+                doc_col = get_collection(current_user.tenant_id, DOCUMENTS)
+                any_doc = await cosmos_retry(lambda: doc_col.find_one({"workspace_id": workspace_id, "deleted_at": None}))
+            except Exception as exc:
+                logger.debug("Failed to query documents fallback for workspace=%s: %s", workspace_id, exc)
             if any_doc:
                 sources = study_sources.CurrentStudySources(
                     document_ids=frozenset({str(any_doc["_id"])}),
@@ -2881,23 +2954,19 @@ async def prepare_adaptive_session(
     except Exception as exc:
         if isinstance(exc, (ForbiddenError, NotFoundError, ConflictError)):
             raise
-        if request.subcategory:
-            # Topic-specific failure: the subcategory content may be genuinely exhausted
-            # or the topic is too narrow to generate questions. Signal exhausted so the
-            # UI can prompt the user to pick a different topic or upload more material.
-            logger.exception("Adaptive session prepare error for topic=%s; returning exhausted plan", request.subcategory)
+        logger.exception("Adaptive session prepare error: %s", exc)
+        has_docs = bool(sources and sources.document_ids)
+        if request.subcategory or (capped and used > 0 and has_docs):
+            # Topic-specific or exhausted document-backed workspace: return exhausted plan
             return _build_exhausted_plan(
                 mode=request.mode,
                 level=level,
                 mastery=mastery,
                 subject=request.subject,
                 subcategory=request.subcategory,
+                sessions_used=used,
             )
-        # For self-study and general workspace errors, always serve the guaranteed
-        # fallback plan rather than exhausted — new users should never see "All caught
-        # up" just because generation failed on first use.
-        logger.exception("Adaptive session prepare error; generating guaranteed plan in one go")
-
+        # Cold-start workspaces or first-time sessions may fall back to guaranteed plan
         plan = _build_guaranteed_fallback_plan(
             workspace_id=workspace_id,
             user_id=current_user.id,
@@ -2924,19 +2993,18 @@ async def prepare_adaptive_session(
     item_count = len(flashcards if request.mode == AdaptiveSessionMode.flashcard else questions)
 
     if item_count == 0:
-        if (capped and used > 0) or request.subcategory:
-            # Capped = session limit reached for this material snapshot (and at least 1 session used). Show exhausted.
-            # Subcategory = that specific topic has no more content. Show exhausted.
+        has_docs = bool(sources and sources.document_ids)
+        if (capped and used > 0) or request.subcategory or (used > 0 and has_docs):
+            # Document-backed or capped workspace with 0 fresh items: show exhausted.
             return _build_exhausted_plan(
                 mode=request.mode,
                 level=level,
                 mastery=mastery,
                 subject=request.subject,
                 subcategory=request.subcategory,
+                sessions_used=used,
             )
-        # Self-study or general workspace returned 0 items (generation may not have
-        # run yet or dedup filtered everything). Serve the guaranteed fallback plan so
-        # new users always get something rather than seeing "All caught up" on first use.
+        # Cold-start workspace with 0 items: serve guaranteed plan
         logger.info(
             "Item count 0 for workspace=%s; serving guaranteed plan in one go",
             workspace_id,
@@ -2953,6 +3021,7 @@ async def prepare_adaptive_session(
             subcategory=request.subcategory,
             question_type=request.question_type,
         )
+
         await _persist_prepared_session(
             tenant_id=current_user.tenant_id,
             workspace_id=workspace_id,
@@ -3043,14 +3112,14 @@ async def evaluate_adaptive_answer(
     attempts before applying XP and mastery changes.
     """
     _assert_workspace_access(current_user, workspace_id)
-    raw = await get_collection(current_user.tenant_id, ADAPTIVE_SESSIONS).find_one(
+    raw = await cosmos_retry(lambda: get_collection(current_user.tenant_id, ADAPTIVE_SESSIONS).find_one(
         {
             "_id": session_id,
             "workspace_id": workspace_id,
             "student_id": current_user.id,
-            "status": "prepared",
+            "status": {"$in": ["prepared", "processing"]},
         }
-    )
+    ))
     if raw is None:
         raise NotFoundError("Adaptive session", session_id)
 
@@ -3106,27 +3175,30 @@ async def complete_adaptive_session(
 ) -> AdaptiveSessionSummary:
     _assert_workspace_access(current_user, workspace_id)
     sessions = get_collection(current_user.tenant_id, ADAPTIVE_SESSIONS)
-    raw = await sessions.find_one(
+    raw = await cosmos_retry(lambda: sessions.find_one(
         {
             "_id": session_id,
             "workspace_id": workspace_id,
             "student_id": current_user.id,
         }
-    )
+    ))
     if raw is None:
         raise NotFoundError("Adaptive session", session_id)
     if raw.get("summary") is not None:
         return AdaptiveSessionSummary.model_validate(raw["summary"])
 
-    claim = await sessions.update_one(
+    claim = await cosmos_retry(lambda: sessions.update_one(
         {"_id": session_id, "status": "prepared"},
         {"$set": {"status": "processing", "updated_at": utc_now()}},
-    )
+    ))
     if claim.matched_count == 0:
-        latest = await sessions.find_one({"_id": session_id})
+        latest = await cosmos_retry(lambda: sessions.find_one({"_id": session_id}))
         if latest and latest.get("summary") is not None:
             return AdaptiveSessionSummary.model_validate(latest["summary"])
-        raise ConflictError("This session completion is already being processed.")
+        if latest and latest.get("status") == "processing":
+            logger.warning("Re-claiming session stuck in processing session_id=%s", session_id)
+        else:
+            raise ConflictError("This session completion is already being processed.")
 
     plan = AdaptiveSessionPlan.model_validate(raw["plan"])
     mastery_before = float(raw.get("mastery_before", plan.mastery_score))
@@ -3161,9 +3233,9 @@ async def complete_adaptive_session(
                 response_time_ms=attempt.response_time_ms,
                 session_progress=len(seen_cards),
             )
-            await get_collection(current_user.tenant_id, FLASHCARD_RATINGS).insert_one(
+            await cosmos_retry(lambda: get_collection(current_user.tenant_id, FLASHCARD_RATINGS).insert_one(
                 event.model_dump(by_alias=True)
-            )
+            ))
             delta = await gamification_service.record_flashcard_rating(
                 tenant_id=current_user.tenant_id,
                 workspace_id=workspace_id,
@@ -3342,7 +3414,7 @@ async def complete_adaptive_session(
         completed_at=now,
     )
     completion_ratio = completed_count / plan.item_count if plan.item_count else 0.0
-    await sessions.update_one(
+    await cosmos_retry(lambda: sessions.update_one(
         {"_id": session_id},
         {
             "$set": {
@@ -3359,7 +3431,7 @@ async def complete_adaptive_session(
                 "updated_at": now,
             }
         },
-    )
+    ))
     # Finishing a session is the moment the learner is most likely to start the
     # next one — warm the pool now so that prepare reads instantly.
     _schedule_topups(
