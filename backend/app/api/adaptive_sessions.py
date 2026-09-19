@@ -79,6 +79,7 @@ from app.services.question_deduplication import (
     is_candidate_duplicate,
     normalize_question_stem,
 )
+from app.services.question_variation_generator import generate_runtime_material_variations
 from app.services.subject_classifier import (
     canonical_subject,
     classify_subject_from_text,
@@ -892,20 +893,66 @@ async def _prepare_questions(
         needed = target - len(selected)
         selected.extend(recycled[:needed])
 
+    # RUNTIME MATERIAL VARIATION SYNTHESIS:
+    # When not enough fresh questions remain (e.g. all original static items in the document
+    # have been completed across prior sessions), NEVER stop session generation and NEVER leak
+    # generic out-of-document fallback questions (calculus, quadratic discriminant, etc.)!
+    # Instead, synthesize mathematically valid, modified variations of past study material
+    # in real time.
+    if len(selected) < target and not revision and (current_sources.document_ids or available or historical_seen_records):
+        needed = target - len(selected)
+        doc_id = list(current_sources.document_ids)[0] if current_sources.document_ids else "doc_runtime_material"
+        current_seen_sigs = (
+            seen_fingerprints
+            | session_seen_fingerprints
+            | {canonical_question_signature(q.body) for q in selected}
+            | {normalize_question_stem(q.body) for q in selected}
+        )
+        eff_subj = subject or doc_subjects.get(doc_id, "") or (classify_subject_from_text(subcategory) if subcategory else "") or "study"
+        try:
+            variations = await generate_runtime_material_variations(
+                tenant_id=user.tenant_id,
+                workspace_id=workspace_id,
+                document_id=doc_id,
+                subject=eff_subj,
+                subcategory=subcategory,
+                seed_questions=available,
+                historical_seen_bodies=[b for b, _ in historical_seen_records],
+                seen_signatures=current_seen_sigs,
+                count=needed,
+            )
+            if subcategory:
+                variations = [q for q in variations if matches_subcat(q)]
+            selected.extend(variations)
+        except Exception as var_exc:
+            logger.exception("Runtime material variation generation failed: %s", var_exc)
+
     if not selected:
         if revision and available:
             selected = available[:target]
-        elif current_sources.document_ids:
-            # STRICT CONTENT-SOURCE INTEGRITY: When the workspace has user-uploaded documents,
-            # NEVER leak generic hardcoded fallback questions (such as quadratic discriminant, calculus derivatives, etc.)!
-            # All available unique questions for this material/topic have been completed.
-            # Returning empty triggers an honest exhausted plan or prompts the student to switch to revision.
-            logger.info(
-                "Document-backed workspace=%s has exhausted all unattempted questions; returning empty to prompt exhausted screen",
-                workspace_id,
-            )
-            return []
-        else:
+        elif current_sources.document_ids or available or historical_seen_records:
+            doc_id = list(current_sources.document_ids)[0] if current_sources.document_ids else "doc_runtime_material"
+            eff_subj = subject or doc_subjects.get(doc_id, "") or (classify_subject_from_text(subcategory) if subcategory else "") or "study"
+            try:
+                variations = await generate_runtime_material_variations(
+                    tenant_id=user.tenant_id,
+                    workspace_id=workspace_id,
+                    document_id=doc_id,
+                    subject=eff_subj,
+                    subcategory=subcategory,
+                    seed_questions=available,
+                    historical_seen_bodies=[b for b, _ in historical_seen_records],
+                    seen_signatures=seen_fingerprints | session_seen_fingerprints,
+                    count=target,
+                )
+                if subcategory:
+                    variations = [q for q in variations if matches_subcat(q)]
+                selected = variations[:target]
+            except Exception as var_exc:
+                logger.exception("Direct runtime variation generation failed: %s", var_exc)
+
+        if not selected:
+            # Guaranteed fallback is ONLY permitted for cold-start workspaces with zero documents and zero history
             fb_plan = _build_guaranteed_fallback_plan(
                 workspace_id=workspace_id,
                 user_id=user.id,
@@ -917,7 +964,6 @@ async def _prepare_questions(
                 subcategory=subcategory,
                 question_type=question_type,
             )
-            # STRICT ZERO-REPETITION: Never repeat a fallback question that appeared in any previous session!
             filtered_fallback = [
                 q for q in fb_plan.questions
                 if q.id not in seen_ids
@@ -2962,9 +3008,7 @@ async def prepare_adaptive_session(
         if isinstance(exc, (ForbiddenError, NotFoundError, ConflictError)):
             raise
         logger.exception("Adaptive session prepare error: %s", exc)
-        has_docs = bool(sources and sources.document_ids) or not _is_self_study(workspace_id)
-        if has_docs or request.subcategory or (capped and used > 0):
-            # Topic-specific or document-backed workspace: return exhausted plan
+        if capped and used > 0:
             return _build_exhausted_plan(
                 mode=request.mode,
                 level=level,
@@ -3000,9 +3044,7 @@ async def prepare_adaptive_session(
     item_count = len(flashcards if request.mode == AdaptiveSessionMode.flashcard else questions)
 
     if item_count == 0:
-        has_docs = bool(sources and sources.document_ids) or not _is_self_study(workspace_id)
-        if has_docs or request.subcategory or (capped and used > 0):
-            # Document-backed or capped workspace with 0 fresh items: show exhausted.
+        if capped and used > 0:
             return _build_exhausted_plan(
                 mode=request.mode,
                 level=level,
@@ -3011,35 +3053,66 @@ async def prepare_adaptive_session(
                 subcategory=request.subcategory,
                 sessions_used=used,
             )
-        # Cold-start workspace with 0 items: serve guaranteed plan
-        logger.info(
-            "Item count 0 for workspace=%s; serving guaranteed plan in one go",
-            workspace_id,
-        )
+        has_docs = bool(sources and sources.document_ids)
+        if has_docs and request.mode != AdaptiveSessionMode.flashcard:
+            doc_id = list(sources.document_ids)[0] if (sources and sources.document_ids) else "doc_runtime_material"
+            try:
+                var_questions = await generate_runtime_material_variations(
+                    tenant_id=current_user.tenant_id,
+                    workspace_id=workspace_id,
+                    document_id=doc_id,
+                    subject=request.subject or "Mathematics",
+                    subcategory=request.subcategory,
+                    seed_questions=[],
+                    historical_seen_bodies=[],
+                    seen_signatures=set(),
+                    count=target,
+                )
+                if var_questions:
+                    questions = [_prepare_question_with_shuffled_options(q) for q in var_questions]
+                    item_count = len(questions)
+            except Exception as var_err:
+                logger.warning("Emergency material variation synthesis failed: %s", var_err)
 
-        plan = _build_guaranteed_fallback_plan(
-            workspace_id=workspace_id,
-            user_id=current_user.id,
-            tenant_id=current_user.tenant_id,
-            mode=request.mode,
-            level=level,
-            mastery=mastery,
-            subject=request.subject,
-            subcategory=request.subcategory,
-            question_type=request.question_type,
-        )
+        if item_count == 0:
+            if used > 0:
+                return _build_exhausted_plan(
+                    mode=request.mode,
+                    level=level,
+                    mastery=mastery,
+                    subject=request.subject,
+                    subcategory=request.subcategory,
+                    sessions_used=used,
+                )
+            # Cold-start workspace with 0 items: serve guaranteed plan
+            logger.info(
+                "Item count 0 for workspace=%s; serving guaranteed plan in one go",
+                workspace_id,
+            )
 
-        await _persist_prepared_session(
-            tenant_id=current_user.tenant_id,
-            workspace_id=workspace_id,
-            student_id=current_user.id,
-            mode=request.mode,
-            level=level,
-            mastery=mastery,
-            plan=plan,
-            snapshot=snapshot,
-        )
-        return plan
+            plan = _build_guaranteed_fallback_plan(
+                workspace_id=workspace_id,
+                user_id=current_user.id,
+                tenant_id=current_user.tenant_id,
+                mode=request.mode,
+                level=level,
+                mastery=mastery,
+                subject=request.subject,
+                subcategory=request.subcategory,
+                question_type=request.question_type,
+            )
+
+            await _persist_prepared_session(
+                tenant_id=current_user.tenant_id,
+                workspace_id=workspace_id,
+                student_id=current_user.id,
+                mode=request.mode,
+                level=level,
+                mastery=mastery,
+                plan=plan,
+                snapshot=snapshot,
+            )
+            return plan
 
     xp_min = -item_count + _COMPLETION_BONUSES[request.mode]
     xp_max = item_count + _COMPLETION_BONUSES[request.mode]
