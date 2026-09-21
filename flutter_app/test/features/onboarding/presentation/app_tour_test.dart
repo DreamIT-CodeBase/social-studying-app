@@ -26,7 +26,7 @@ void main() {
   });
 
   group('AppTourSheet Widget', () {
-    testWidgets('renders step 1 with upload materials title and skip button', (tester) async {
+    testWidgets('renders step 1 with Study Format & Materials title and skip button', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light,
@@ -36,10 +36,10 @@ void main() {
         ),
       );
 
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.text('Upload Study Materials'), findsOneWidget);
-      expect(find.text('1 of 4'), findsOneWidget);
+      expect(find.text('Study Format & Materials'), findsOneWidget);
+      expect(find.text('1 of 3'), findsOneWidget);
       expect(find.text('Skip'), findsOneWidget);
       expect(find.text('Next'), findsOneWidget);
     });
@@ -58,52 +58,55 @@ void main() {
         ),
       );
 
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
 
       expect(SessionPersistenceService.instance.hasSeenAppTourSync('test_user_skip'), isFalse);
 
       await tester.tap(find.text('Skip'));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
 
       expect(SessionPersistenceService.instance.hasSeenAppTourSync('test_user_skip'), isTrue);
       expect(completed, isTrue);
     });
 
-    testWidgets('tapping Next advances through slides to Get Started', (tester) async {
+    testWidgets('tapping Next advances through steps to Got It', (tester) async {
+      bool completed = false;
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light,
-          home: const Scaffold(
-            body: AppTourSheet(userId: 'test_user_flow'),
+          home: Scaffold(
+            body: AppTourSheet(
+              userId: 'test_user_flow',
+              onComplete: () => completed = true,
+            ),
           ),
         ),
       );
 
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
 
-      // Step 1
-      expect(find.text('Upload Study Materials'), findsOneWidget);
+      // Step 1: Study Format & Materials
+      expect(find.text('Study Format & Materials'), findsOneWidget);
+      expect(find.text('1 of 3'), findsOneWidget);
 
-      // Tap Next -> Step 2
+      // Tap Next -> Step 2: Study Sessions (lower nav Study tab)
       await tester.tap(find.text('Next'));
-      await tester.pumpAndSettle();
-      expect(find.text('Choose Question Formats'), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Study Sessions'), findsOneWidget);
+      expect(find.text('2 of 3'), findsOneWidget);
 
-      // Tap Next -> Step 3
+      // Tap Next -> Step 3: Active Recall Flashcards (lower nav Flashcards tab)
       await tester.tap(find.text('Next'));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Active Recall Flashcards'), findsOneWidget);
+      expect(find.text('3 of 3'), findsOneWidget);
+      expect(find.text('Got It'), findsOneWidget);
 
-      // Tap Next -> Step 4
-      await tester.tap(find.text('Next'));
-      await tester.pumpAndSettle();
-      expect(find.text('Mastery & Screen Time'), findsOneWidget);
-      expect(find.text('Get Started'), findsOneWidget);
-
-      // Tap Get Started -> completes and marks seen
-      await tester.tap(find.text('Get Started'));
-      await tester.pumpAndSettle();
+      // Tap Got It -> completes and marks seen
+      await tester.tap(find.text('Got It'));
+      await tester.pump(const Duration(milliseconds: 300));
       expect(SessionPersistenceService.instance.hasSeenAppTourSync('test_user_flow'), isTrue);
+      expect(completed, isTrue);
     });
   });
 }

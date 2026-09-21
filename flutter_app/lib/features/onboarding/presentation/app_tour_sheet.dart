@@ -1,34 +1,49 @@
-import 'dart:ui';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:social_study_app/core/theme/app_colors.dart';
 import 'package:social_study_app/shared/services/session_persistence_service.dart';
 
-/// A modal onboarding walkthrough that explains how the learning platform works:
-/// material uploads, strict question formats, active recall flashcards, and progress/screen time tracking.
-/// Shown only once to new users, with an instant "Skip" option.
+/// An interactive, spotlight coachmark tour with pointing arrows and compact,
+/// professional floating tooltip cards that highlight:
+/// 1. Session Format & Manage Study
+/// 2. Study Tab (in lower navigation bar)
+/// 3. Flashcards Tab (in lower navigation bar)
+///
+/// Designed with minimal, high-signal information that does not obscure the screen.
 class AppTourSheet extends StatefulWidget {
   const AppTourSheet({
     super.key,
     required this.userId,
     this.onComplete,
+    this.formatKey,
+    this.studyTabKey,
+    this.flashcardsTabKey,
   });
 
   final String userId;
   final VoidCallback? onComplete;
+  final GlobalKey? formatKey;
+  final GlobalKey? studyTabKey;
+  final GlobalKey? flashcardsTabKey;
 
   static Future<void> show(
     BuildContext context, {
     required String userId,
     VoidCallback? onComplete,
+    GlobalKey? formatKey,
+    GlobalKey? studyTabKey,
+    GlobalKey? flashcardsTabKey,
   }) async {
-    await showModalBottomSheet<void>(
+    await showGeneralDialog<void>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      enableDrag: true,
-      builder: (sheetContext) => AppTourSheet(
+      barrierDismissible: false,
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 250),
+      pageBuilder: (dialogContext, anim, _) => AppTourSheet(
         userId: userId,
         onComplete: onComplete,
+        formatKey: formatKey,
+        studyTabKey: studyTabKey,
+        flashcardsTabKey: flashcardsTabKey,
       ),
     );
   }
@@ -37,60 +52,65 @@ class AppTourSheet extends StatefulWidget {
   State<AppTourSheet> createState() => _AppTourSheetState();
 }
 
-class _AppTourSheetState extends State<AppTourSheet> {
-  final PageController _pageController = PageController();
-  int _currentPage = 0;
+class _TourStepData {
+  const _TourStepData({
+    required this.stepNumber,
+    required this.title,
+    required this.description,
+    required this.arrowPointsUp,
+  });
 
-  final List<_TourSlideData> _slides = const [
-    _TourSlideData(
-      icon: Icons.cloud_upload_rounded,
-      badgeText: 'STEP 1',
-      badgeColor: Color(0xFF6366F1),
-      title: 'Upload Study Materials',
-      subtitle:
-          'Add your lecture slides, notes, PDFs, or handwritten pictures. The AI engine automatically parses formulas, key definitions, and core concepts.',
-      gradientColors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
-      previewType: _PreviewType.upload,
+  final int stepNumber;
+  final String title;
+  final String description;
+  final bool arrowPointsUp;
+}
+
+class _AppTourSheetState extends State<AppTourSheet>
+    with SingleTickerProviderStateMixin {
+  int _currentStep = 0;
+  AnimationController? _pulseController;
+
+  static const List<_TourStepData> _steps = [
+    _TourStepData(
+      stepNumber: 1,
+      title: 'Study Format & Materials',
+      description:
+          'Choose your question format (MCQ, True/False, Short, or Long) or manage uploaded materials here.',
+      arrowPointsUp: true,
     ),
-    _TourSlideData(
-      icon: Icons.tune_rounded,
-      badgeText: 'STEP 2',
-      badgeColor: Color(0xFF3B82F6),
-      title: 'Choose Question Formats',
-      subtitle:
-          'Filter precisely by Multiple Choice (MCQ), True/False, Short Answer, or Long Answer. The generator strictly serves only your selected format with no repetition.',
-      gradientColors: [Color(0xFF2563EB), Color(0xFF06B6D4)],
-      previewType: _PreviewType.formats,
+    _TourStepData(
+      stepNumber: 2,
+      title: 'Study Sessions',
+      description:
+          'Tap the Study tab to practice adaptive questions calibrated directly to your mastery level.',
+      arrowPointsUp: false,
     ),
-    _TourSlideData(
-      icon: Icons.style_rounded,
-      badgeText: 'STEP 3',
-      badgeColor: Color(0xFFF59E0B),
+    _TourStepData(
+      stepNumber: 3,
       title: 'Active Recall Flashcards',
-      subtitle:
-          'Reinforce long-term memory with front-and-back flashcard flips. Challenge yourself before revealing answers to master difficult topics.',
-      gradientColors: [Color(0xFFD97706), Color(0xFFEA580C)],
-      previewType: _PreviewType.flashcards,
-    ),
-    _TourSlideData(
-      icon: Icons.rocket_launch_rounded,
-      badgeText: 'STEP 4',
-      badgeColor: Color(0xFF10B981),
-      title: 'Mastery & Screen Time',
-      subtitle:
-          'Level up, build streaks, and earn XP. As you complete study sessions, earn unlocked minutes to unshield your favorite apps.',
-      gradientColors: [Color(0xFF059669), Color(0xFF0D9488)],
-      previewType: _PreviewType.progress,
+      description:
+          'Tap the Flashcards tab to review spaced-repetition cards that strengthen long-term memory.',
+      arrowPointsUp: false,
     ),
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+  }
+
+  @override
   void dispose() {
-    _pageController.dispose();
+    _pulseController?.dispose();
     super.dispose();
   }
 
-  void _markSeenAndDismiss() {
+  void _dismissTour() {
     SessionPersistenceService.instance.setAppTourSeen(widget.userId, seen: true);
     if (mounted) {
       if (Navigator.of(context).canPop()) {
@@ -100,595 +120,456 @@ class _AppTourSheetState extends State<AppTourSheet> {
     }
   }
 
-  void _nextPage() {
-    if (_currentPage < _slides.length - 1) {
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeInOutCubic,
-      );
+  void _nextStep() {
+    if (_currentStep < _steps.length - 1) {
+      setState(() => _currentStep++);
     } else {
-      _markSeenAndDismiss();
+      _dismissTour();
+    }
+  }
+
+  Rect _calculateTargetRect(int stepIndex, Size screenSize) {
+    GlobalKey? targetKey;
+    if (stepIndex == 0) targetKey = widget.formatKey;
+    if (stepIndex == 1) targetKey = widget.studyTabKey;
+    if (stepIndex == 2) targetKey = widget.flashcardsTabKey;
+
+    if (targetKey != null) {
+      final context = targetKey.currentContext;
+      if (context != null) {
+        final renderBox = context.findRenderObject() as RenderBox?;
+        if (renderBox != null && renderBox.hasSize && renderBox.attached) {
+          final offset = renderBox.localToGlobal(Offset.zero);
+          return offset & renderBox.size;
+        }
+      }
+    }
+
+    // High-fidelity responsive fallbacks
+    if (stepIndex == 0) {
+      // Session format selector row (middle-upper part of screen)
+      return Rect.fromLTWH(
+        16,
+        screenSize.height * 0.38,
+        screenSize.width - 32,
+        48,
+      );
+    } else if (stepIndex == 1) {
+      // Bottom navigation bar: Study tab (index 1 of 4)
+      final tabWidth = screenSize.width / 4;
+      return Rect.fromLTWH(tabWidth, screenSize.height - 68, tabWidth, 68);
+    } else {
+      // Bottom navigation bar: Flashcards tab (index 2 of 4)
+      final tabWidth = screenSize.width / 4;
+      return Rect.fromLTWH(tabWidth * 2, screenSize.height - 68, tabWidth, 68);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final mediaQuery = MediaQuery.of(context);
-    final sheetHeight = (mediaQuery.size.height * 0.82).clamp(520.0, 700.0);
+    final screenSize = mediaQuery.size;
+    final step = _steps[_currentStep];
+    final targetRect = _calculateTargetRect(_currentStep, screenSize);
 
-    final bg = isDark ? const Color(0xFF0F172A) : Colors.white;
-    final surfaceBorder = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+    // Box dimensions
+    final boxWidth = math.min(screenSize.width - 32.0, 310.0);
+    const boxHeight = 142.0;
 
-    return BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-      child: Container(
-        height: sheetHeight,
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          border: Border.all(color: surfaceBorder, width: 1.2),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.6 : 0.2),
-              blurRadius: 30,
-              offset: const Offset(0, -6),
-            ),
-          ],
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            children: [
-              // Drag handle
-              const SizedBox(height: 10),
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: isDark ? Colors.white24 : Colors.black12,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
+    // Determine arrow direction & box vertical position
+    final pointsUp = step.arrowPointsUp || targetRect.top <= screenSize.height * 0.50;
+    final double boxTop;
+    final double arrowTipY;
 
-              // Header row with step indicator and Skip button
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _slides[_currentPage].badgeColor.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: _slides[_currentPage].badgeColor.withValues(alpha: 0.4),
-                          width: 1,
-                        ),
-                      ),
-                      child: Text(
-                        '${_currentPage + 1} of ${_slides.length}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: _slides[_currentPage].badgeColor,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _markSeenAndDismiss,
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        foregroundColor: isDark ? Colors.white70 : const Color(0xFF64748B),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Skip',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          SizedBox(width: 4),
-                          Icon(Icons.close_rounded, size: 16),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+    if (pointsUp) {
+      // Target is above: box sits below target, arrow points UP
+      boxTop = math.min(
+        screenSize.height - boxHeight - mediaQuery.padding.bottom - 16.0,
+        targetRect.bottom + 18.0,
+      );
+      arrowTipY = targetRect.bottom + 4.0;
+    } else {
+      // Target is below: box sits above target, arrow points DOWN
+      boxTop = math.max(
+        mediaQuery.padding.top + 16.0,
+        targetRect.top - boxHeight - 18.0,
+      );
+      arrowTipY = targetRect.top - 4.0;
+    }
 
-              // PageView contents
-              Expanded(
-                child: PageView.builder(
-                  controller: _pageController,
-                  itemCount: _slides.length,
-                  onPageChanged: (index) => setState(() => _currentPage = index),
-                  itemBuilder: (context, index) {
-                    final slide = _slides[index];
-                    return _TourSlideWidget(
-                      slide: slide,
-                      isDark: isDark,
+    // Horizontal placement of box
+    final targetCenterX = targetRect.center.dx;
+    final boxLeft = (targetCenterX - boxWidth / 2.0).clamp(
+      16.0,
+      screenSize.width - boxWidth - 16.0,
+    );
+    final arrowX = targetCenterX.clamp(boxLeft + 24.0, boxLeft + boxWidth - 24.0);
+
+    return Material(
+      color: Colors.transparent,
+      child: SizedBox.expand(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 1. Semi-transparent backdrop with spotlight cutout
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: _nextStep,
+                behavior: HitTestBehavior.opaque,
+                child: AnimatedBuilder(
+                  animation: _pulseController ?? const AlwaysStoppedAnimation(0.0),
+                  builder: (context, _) {
+                    return CustomPaint(
+                      painter: _SpotlightBackdropPainter(
+                        targetRect: targetRect,
+                        pulse: _pulseController?.value ?? 0.0,
+                      ),
                     );
                   },
                 ),
               ),
+            ),
 
-              // Bottom control bar: dots and Next / Get Started button
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
-                child: Row(
-                  children: [
-                    // Smooth indicator dots
-                    Row(
-                      children: List.generate(
-                        _slides.length,
-                        (i) => AnimatedContainer(
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeInOut,
-                          margin: const EdgeInsets.only(right: 6),
-                          width: _currentPage == i ? 22 : 7,
-                          height: 7,
-                          decoration: BoxDecoration(
-                            color: _currentPage == i
-                                ? _slides[_currentPage].badgeColor
-                                : (isDark ? Colors.white24 : const Color(0xFFCBD5E1)),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
+            // 2. Pointing Arrow linked directly from Box to Target
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: _pulseController ?? const AlwaysStoppedAnimation(0.0),
+                  builder: (context, _) {
+                    final pulseBounce = (_pulseController?.value ?? 0.0) * 4.0;
+                    final effectiveTipY = pointsUp
+                        ? arrowTipY - pulseBounce
+                        : arrowTipY + pulseBounce;
 
-                    // Action button
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 250),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: _slides[_currentPage].gradientColors,
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _slides[_currentPage].gradientColors.first.withValues(alpha: 0.35),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
+                    return CustomPaint(
+                      painter: _LinkedArrowPainter(
+                        boxRect: Rect.fromLTWH(boxLeft, boxTop, boxWidth, boxHeight),
+                        arrowX: arrowX,
+                        arrowTipY: effectiveTipY,
+                        pointsUp: pointsUp,
                       ),
-                      child: ElevatedButton(
-                        onPressed: _nextPage,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 13),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _currentPage == _slides.length - 1
-                                  ? 'Get Started'
-                                  : 'Next',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Icon(
-                              _currentPage == _slides.length - 1
-                                  ? Icons.check_circle_rounded
-                                  : Icons.arrow_forward_rounded,
-                              size: 17,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+                    );
+                  },
                 ),
               ),
-            ],
+            ),
+
+          // 3. Compact, Professional Tooltip Card
+          Positioned(
+            left: boxLeft,
+            top: boxTop,
+            width: boxWidth,
+            height: boxHeight,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: const Color(0xFF6366F1).withValues(alpha: 0.7),
+                  width: 1.4,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.22),
+                    blurRadius: 20,
+                    offset: const Offset(0, 4),
+                  ),
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Header Row: Step Pill + Skip
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF312E81),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '${step.stepNumber} of ${_steps.length}',
+                          style: const TextStyle(
+                            color: Color(0xFFA5B4FC),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _dismissTour,
+                        behavior: HitTestBehavior.opaque,
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          child: Text(
+                            'Skip',
+                            style: TextStyle(
+                              color: Colors.white60,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Title
+                  Text(
+                    step.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+
+                  // Description
+                  Text(
+                    step.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 11.5,
+                      height: 1.3,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+
+                  // Footer: Dots + Next Action Button
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Dots Indicator
+                      Row(
+                        children: List.generate(_steps.length, (idx) {
+                          final isActive = idx == _currentStep;
+                          return AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            margin: const EdgeInsets.only(right: 5),
+                            width: isActive ? 16 : 5,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: isActive
+                                  ? const Color(0xFF818CF8)
+                                  : Colors.white24,
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          );
+                        }),
+                      ),
+
+                      // Action Button (Next / Got It)
+                      GestureDetector(
+                        onTap: _nextStep,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF4F46E5).withValues(alpha: 0.4),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _currentStep == _steps.length - 1
+                                    ? 'Got It'
+                                    : 'Next',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                _currentStep == _steps.length - 1
+                                    ? Icons.check_rounded
+                                    : Icons.arrow_forward_rounded,
+                                color: Colors.white,
+                                size: 13,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
-enum _PreviewType { upload, formats, flashcards, progress }
-
-class _TourSlideData {
-  const _TourSlideData({
-    required this.icon,
-    required this.badgeText,
-    required this.badgeColor,
-    required this.title,
-    required this.subtitle,
-    required this.gradientColors,
-    required this.previewType,
+/// Paints the dimmed background with a spotlight cutout and glowing outline
+/// around the targeted widget.
+class _SpotlightBackdropPainter extends CustomPainter {
+  const _SpotlightBackdropPainter({
+    required this.targetRect,
+    required this.pulse,
   });
 
-  final IconData icon;
-  final String badgeText;
-  final Color badgeColor;
-  final String title;
-  final String subtitle;
-  final List<Color> gradientColors;
-  final _PreviewType previewType;
-}
-
-class _TourSlideWidget extends StatelessWidget {
-  const _TourSlideWidget({
-    required this.slide,
-    required this.isDark,
-  });
-
-  final _TourSlideData slide;
-  final bool isDark;
+  final Rect targetRect;
+  final double pulse;
 
   @override
-  Widget build(BuildContext context) {
-    final titleCol = isDark ? Colors.white : const Color(0xFF0F172A);
-    final subCol = isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569);
+  void paint(Canvas canvas, Size size) {
+    final paddedRect = targetRect.inflate(6.0);
+    final rrect = RRect.fromRectAndRadius(paddedRect, const Radius.circular(14));
 
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const SizedBox(height: 8),
+    // EvenOdd fill clears the spotlight cutout from the darkened backdrop
+    final path = Path()
+      ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
+      ..addRRect(rrect);
+    path.fillType = PathFillType.evenOdd;
 
-          // Interactive Visual Preview Card
-          _buildPreviewCard(context),
+    final backdropPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.68)
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(path, backdropPaint);
 
-          const SizedBox(height: 22),
+    // Glowing border around the highlighted element
+    final glowAlpha = (0.70 + 0.30 * pulse).clamp(0.0, 1.0);
+    final borderPaint = Paint()
+      ..color = const Color(0xFF6366F1).withValues(alpha: glowAlpha)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    canvas.drawRRect(rrect, borderPaint);
 
-          // Title
-          Text(
-            slide.title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: titleCol,
-              letterSpacing: -0.4,
-            ),
-          ),
+    // Corner accent pings
+    final pingPaint = Paint()
+      ..color = const Color(0xFF818CF8).withValues(alpha: glowAlpha * 0.8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.5;
+    const cornerLength = 12.0;
 
-          const SizedBox(height: 10),
+    // Top-left ping
+    canvas.drawLine(
+      Offset(paddedRect.left, paddedRect.top + cornerLength),
+      Offset(paddedRect.left, paddedRect.top),
+      pingPaint,
+    );
+    canvas.drawLine(
+      Offset(paddedRect.left, paddedRect.top),
+      Offset(paddedRect.left + cornerLength, paddedRect.top),
+      pingPaint,
+    );
 
-          // Subtitle / Description
-          Text(
-            slide.subtitle,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13.5,
-              height: 1.45,
-              fontWeight: FontWeight.w500,
-              color: subCol,
-            ),
-          ),
-          const SizedBox(height: 16),
-        ],
-      ),
+    // Bottom-right ping
+    canvas.drawLine(
+      Offset(paddedRect.right - cornerLength, paddedRect.bottom),
+      Offset(paddedRect.right, paddedRect.bottom),
+      pingPaint,
+    );
+    canvas.drawLine(
+      Offset(paddedRect.right, paddedRect.bottom - cornerLength),
+      Offset(paddedRect.right, paddedRect.bottom),
+      pingPaint,
     );
   }
 
-  Widget _buildPreviewCard(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: 195,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            slide.gradientColors.first.withValues(alpha: isDark ? 0.25 : 0.12),
-            slide.gradientColors.last.withValues(alpha: isDark ? 0.15 : 0.06),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: slide.gradientColors.first.withValues(alpha: isDark ? 0.45 : 0.25),
-          width: 1.5,
-        ),
-      ),
-      child: switch (slide.previewType) {
-        _PreviewType.upload => _buildUploadVisual(isDark),
-        _PreviewType.formats => _buildFormatsVisual(isDark),
-        _PreviewType.flashcards => _buildFlashcardsVisual(isDark),
-        _PreviewType.progress => _buildProgressVisual(isDark),
-      },
-    );
+  @override
+  bool shouldRepaint(_SpotlightBackdropPainter oldDelegate) {
+    return oldDelegate.targetRect != targetRect || oldDelegate.pulse != pulse;
+  }
+}
+
+/// Paints the physical arrow connected from the tooltip card pointing at the target
+class _LinkedArrowPainter extends CustomPainter {
+  const _LinkedArrowPainter({
+    required this.boxRect,
+    required this.arrowX,
+    required this.arrowTipY,
+    required this.pointsUp,
+  });
+
+  final Rect boxRect;
+  final double arrowX;
+  final double arrowTipY;
+  final bool pointsUp;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const arrowBaseHalfWidth = 10.0;
+    final path = Path();
+
+    if (pointsUp) {
+      // Arrow protrudes from top of box and points UP
+      final baseY = boxRect.top;
+      path.moveTo(arrowX - arrowBaseHalfWidth, baseY);
+      path.lineTo(arrowX, arrowTipY);
+      path.lineTo(arrowX + arrowBaseHalfWidth, baseY);
+      path.close();
+    } else {
+      // Arrow protrudes from bottom of box and points DOWN
+      final baseY = boxRect.bottom;
+      path.moveTo(arrowX - arrowBaseHalfWidth, baseY);
+      path.lineTo(arrowX, arrowTipY);
+      path.lineTo(arrowX + arrowBaseHalfWidth, baseY);
+      path.close();
+    }
+
+    final fillPaint = Paint()
+      ..color = const Color(0xFF1E293B)
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(path, fillPaint);
+
+    final strokePaint = Paint()
+      ..color = const Color(0xFF6366F1).withValues(alpha: 0.8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4;
+    canvas.drawPath(path, strokePaint);
+
+    // Glowing tip dot
+    final dotPaint = Paint()
+      ..color = const Color(0xFF818CF8)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(arrowX, arrowTipY), 2.8, dotPaint);
   }
 
-  Widget _buildUploadVisual(bool isDark) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(
-          width: 58,
-          height: 58,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-            ),
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF6366F1).withValues(alpha: 0.35),
-                blurRadius: 14,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: const Icon(
-            Icons.upload_file_rounded,
-            color: Colors.white,
-            size: 28,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            _chipBadge(Icons.picture_as_pdf_rounded, 'PDF Notes', const Color(0xFFEF4444)),
-            _chipBadge(Icons.camera_alt_rounded, 'Photo / Scan', const Color(0xFF10B981)),
-            _chipBadge(Icons.functions_rounded, 'Math & Formulas', const Color(0xFF6366F1)),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFormatsVisual(bool isDark) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Row(
-          children: [
-            Expanded(child: _formatOptionCard('MCQ', 'Multiple Choice', Icons.radio_button_checked_rounded, true)),
-            const SizedBox(width: 8),
-            Expanded(child: _formatOptionCard('T / F', 'True / False', Icons.check_circle_outline_rounded, false)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(child: _formatOptionCard('Short', 'One Word / Phrase', Icons.edit_note_rounded, false)),
-            const SizedBox(width: 8),
-            Expanded(child: _formatOptionCard('Long', 'Explanations & Proofs', Icons.article_rounded, false)),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _formatOptionCard(String tag, String label, IconData icon, bool highlighted) {
-    final cardBg = highlighted
-        ? const Color(0xFF2563EB)
-        : (isDark ? const Color(0xFF1E293B) : Colors.white);
-    final textCol = highlighted ? Colors.white : (isDark ? Colors.white70 : const Color(0xFF334155));
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-      decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: highlighted ? const Color(0xFF60A5FA) : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
-          width: 1.2,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 15, color: highlighted ? Colors.white : const Color(0xFF3B82F6)),
-          const SizedBox(width: 5),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  tag,
-                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: textCol),
-                ),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 9,
-                    color: highlighted ? Colors.white70 : (isDark ? Colors.white38 : const Color(0xFF64748B)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFlashcardsVisual(bool isDark) {
-    return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 280),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E293B) : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.5), width: 1.5),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text(
-                    'FLASHCARD • FRONT',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFFD97706),
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                const Icon(Icons.flip_camera_android_rounded, size: 15, color: Color(0xFFF59E0B)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'What is Newton’s 2nd Law?',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white : const Color(0xFF0F172A),
-              ),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Tap to flip and verify your answer...',
-              style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProgressVisual(bool isDark) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Row(
-          children: [
-            Expanded(child: _metricPill(Icons.local_fire_department_rounded, '3 Days', 'Streak', const Color(0xFFEF4444))),
-            const SizedBox(width: 6),
-            Expanded(child: _metricPill(Icons.star_rounded, '250 XP', 'Earned', const Color(0xFFF59E0B))),
-            const SizedBox(width: 6),
-            Expanded(child: _metricPill(Icons.hourglass_bottom_rounded, '+30 Mins', 'Screen Time', const Color(0xFF10B981))),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: const Color(0xFF10B981).withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3), width: 1),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.lock_open_rounded, size: 14, color: Color(0xFF10B981)),
-              SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  'Apps Unlocked Through Study!',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF059669),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _chipBadge(IconData icon, String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _metricPill(IconData icon, String value, String title, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.35), width: 1.2),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 20, color: color),
-          const SizedBox(height: 3),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: isDark ? Colors.white : const Color(0xFF0F172A),
-            ),
-          ),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 9.5,
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white54 : const Color(0xFF64748B),
-            ),
-          ),
-        ],
-      ),
-    );
+  @override
+  bool shouldRepaint(_LinkedArrowPainter oldDelegate) {
+    return oldDelegate.boxRect != boxRect ||
+        oldDelegate.arrowX != arrowX ||
+        oldDelegate.arrowTipY != arrowTipY ||
+        oldDelegate.pointsUp != pointsUp;
   }
 }

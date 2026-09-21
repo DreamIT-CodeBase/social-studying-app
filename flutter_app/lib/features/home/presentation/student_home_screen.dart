@@ -107,6 +107,20 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
     }
   }
 
+  final GlobalKey _formatSelectionKey = GlobalKey();
+  final GlobalKey _studyTabKey = GlobalKey();
+  final GlobalKey _flashcardsTabKey = GlobalKey();
+
+  void _showTour(String userId) {
+    AppTourSheet.show(
+      context,
+      userId: userId,
+      formatKey: _formatSelectionKey,
+      studyTabKey: _studyTabKey,
+      flashcardsTabKey: _flashcardsTabKey,
+    );
+  }
+
   void _checkAppTour() {
     final authState = ref.read(authNotifierProvider).valueOrNull;
     final user = authState?.maybeWhen(
@@ -116,7 +130,11 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
     if (user != null &&
         !SessionPersistenceService.instance.hasSeenAppTourSync(user.id) &&
         mounted) {
-      AppTourSheet.show(context, userId: user.id);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showTour(user.id);
+        }
+      });
     }
   }
 
@@ -352,6 +370,8 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
             displayName: displayName,
             workspaceId: workspaceId,
             userId: userId,
+            formatKey: _formatSelectionKey,
+            onShowTour: userId != null ? () => _showTour(userId) : null,
             onStartStudy: workspaceId == null
                 ? () => ref.read(studentHomeTabProvider.notifier).state = 0
                 : () {
@@ -394,11 +414,8 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
                     final typeQuery = activeType != null
                         ? '&question_type=${Uri.encodeComponent(activeType)}'
                         : '';
-                    final sessionMode = isSelfLearningWorkspaceId(workspaceId)
-                        ? 'study'
-                        : 'revision';
                     context.push(
-                      '/student/session/$workspaceId?mode=$sessionMode$subjectQuery$subcatQuery$typeQuery',
+                      '/student/revision/$workspaceId?mode=revision$subjectQuery$subcatQuery$typeQuery',
                     );
                   },
             onOpenBadges: (workspaceId == null || userId == null)
@@ -455,7 +472,11 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
               children: List.generate(_tabs.length, (index) {
                 final tab = _tabs[index];
                 final isSelected = selectedIndex == index;
+                final Key? tabKey = index == 1
+                    ? _studyTabKey
+                    : (index == 2 ? _flashcardsTabKey : null);
                 return GestureDetector(
+                  key: tabKey,
                   onTap: () {
                     ref.read(studentHomeTabProvider.notifier).state = index;
                   },
@@ -684,11 +705,15 @@ class _HomeTab extends ConsumerWidget {
     required this.onOpenBadges,
     required this.onOpenLeaderboard,
     required this.onManageStudy,
+    this.formatKey,
+    this.onShowTour,
   });
 
   final String displayName;
   final String? workspaceId;
   final String? userId;
+  final GlobalKey? formatKey;
+  final VoidCallback? onShowTour;
 
   final VoidCallback onStartStudy;
   final VoidCallback? onStartRevision;
@@ -869,9 +894,17 @@ class _HomeTab extends ConsumerWidget {
                       const SizedBox(width: 8),
                       GestureDetector(
                         onTap: () {
-                          final uid = userId;
-                          if (uid != null) {
-                            AppTourSheet.show(context, userId: uid);
+                          if (onShowTour != null) {
+                            onShowTour!();
+                          } else {
+                            final uid = userId;
+                            if (uid != null) {
+                              AppTourSheet.show(
+                                context,
+                                userId: uid,
+                                formatKey: formatKey,
+                              );
+                            }
                           }
                         },
                         child: CircleAvatar(
@@ -966,6 +999,7 @@ class _HomeTab extends ConsumerWidget {
               children: [
                 if (workspaceId != null) ...[
                   Row(
+                    key: formatKey,
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Row(
