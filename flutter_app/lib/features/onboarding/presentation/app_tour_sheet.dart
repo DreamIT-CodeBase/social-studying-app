@@ -4,9 +4,13 @@ import 'package:social_study_app/shared/services/session_persistence_service.dar
 
 /// An interactive, spotlight coachmark tour with pointing arrows and compact,
 /// professional floating tooltip cards that highlight:
-/// 1. Session Format & Manage Study
-/// 2. Study Tab (in lower navigation bar)
-/// 3. Flashcards Tab (in lower navigation bar)
+/// 1. Workspace Switcher (school, coaching, self-study)
+/// 2. Manage Study Materials (upload notes, PDFs, slides)
+/// 3. Session Question Formats (MCQ, True/False, Short, Long)
+/// 4. Weekly Progress & Mastery (streaks, daily XP, mastery level)
+/// 5. Recent Activity & Questions (completed sessions, score accuracy)
+/// 6. Study Tab (in lower navigation bar)
+/// 7. Flashcards Tab (in lower navigation bar)
 ///
 /// Designed with minimal, high-signal information that does not obscure the screen.
 class AppTourSheet extends StatefulWidget {
@@ -14,14 +18,22 @@ class AppTourSheet extends StatefulWidget {
     super.key,
     required this.userId,
     this.onComplete,
+    this.workspaceSwitcherKey,
+    this.manageStudyKey,
     this.formatKey,
+    this.progressKey,
+    this.recentActivityKey,
     this.studyTabKey,
     this.flashcardsTabKey,
   });
 
   final String userId;
   final VoidCallback? onComplete;
+  final GlobalKey? workspaceSwitcherKey;
+  final GlobalKey? manageStudyKey;
   final GlobalKey? formatKey;
+  final GlobalKey? progressKey;
+  final GlobalKey? recentActivityKey;
   final GlobalKey? studyTabKey;
   final GlobalKey? flashcardsTabKey;
 
@@ -29,7 +41,11 @@ class AppTourSheet extends StatefulWidget {
     BuildContext context, {
     required String userId,
     VoidCallback? onComplete,
+    GlobalKey? workspaceSwitcherKey,
+    GlobalKey? manageStudyKey,
     GlobalKey? formatKey,
+    GlobalKey? progressKey,
+    GlobalKey? recentActivityKey,
     GlobalKey? studyTabKey,
     GlobalKey? flashcardsTabKey,
   }) async {
@@ -41,7 +57,11 @@ class AppTourSheet extends StatefulWidget {
       pageBuilder: (dialogContext, anim, _) => AppTourSheet(
         userId: userId,
         onComplete: onComplete,
+        workspaceSwitcherKey: workspaceSwitcherKey,
+        manageStudyKey: manageStudyKey,
         formatKey: formatKey,
+        progressKey: progressKey,
+        recentActivityKey: recentActivityKey,
         studyTabKey: studyTabKey,
         flashcardsTabKey: flashcardsTabKey,
       ),
@@ -74,23 +94,51 @@ class _AppTourSheetState extends State<AppTourSheet>
   static const List<_TourStepData> _steps = [
     _TourStepData(
       stepNumber: 1,
-      title: 'Study Format & Materials',
+      title: 'Workspace Switcher',
       description:
-          'Choose your question format (MCQ, True/False, Short, or Long) or manage uploaded materials here.',
+          'Switch between your school classes, coaching batches, and personal Self-Study workspaces.',
       arrowPointsUp: true,
     ),
     _TourStepData(
       stepNumber: 2,
-      title: 'Study Sessions',
+      title: 'Manage Study Materials',
       description:
-          'Tap the Study tab to practice adaptive questions calibrated directly to your mastery level.',
-      arrowPointsUp: false,
+          'Upload lecture notes, PDFs, and slides to automatically extract formulas and key concepts.',
+      arrowPointsUp: true,
     ),
     _TourStepData(
       stepNumber: 3,
+      title: 'Question Formats',
+      description:
+          'Select your session format (MCQ, True/False, Short, or Long) for strict, focused practice.',
+      arrowPointsUp: true,
+    ),
+    _TourStepData(
+      stepNumber: 4,
+      title: 'Weekly Progress & Mastery',
+      description:
+          'Track your daily study streaks, XP earned, and mastery level calibrated to your learning pace.',
+      arrowPointsUp: false,
+    ),
+    _TourStepData(
+      stepNumber: 5,
+      title: 'Recent Activity & Questions',
+      description:
+          'Review recently completed questions, performance accuracy, and completed study sessions.',
+      arrowPointsUp: false,
+    ),
+    _TourStepData(
+      stepNumber: 6,
+      title: 'Study Sessions',
+      description:
+          'Tap the Study tab in the lower bar to start questions calibrated directly to your mastery.',
+      arrowPointsUp: false,
+    ),
+    _TourStepData(
+      stepNumber: 7,
       title: 'Active Recall Flashcards',
       description:
-          'Tap the Flashcards tab to review spaced-repetition cards that strengthen long-term memory.',
+          'Tap the Flashcards tab in the lower bar to review spaced-repetition cards for memory retention.',
       arrowPointsUp: false,
     ),
   ];
@@ -102,6 +150,12 @@ class _AppTourSheetState extends State<AppTourSheet>
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     )..repeat(reverse: true);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _scrollToTargetForStep(0);
+      }
+    });
   }
 
   @override
@@ -120,19 +174,55 @@ class _AppTourSheetState extends State<AppTourSheet>
     }
   }
 
+  GlobalKey? _getKeyForStep(int stepIndex) {
+    switch (stepIndex) {
+      case 0:
+        return widget.workspaceSwitcherKey;
+      case 1:
+        return widget.manageStudyKey ?? widget.formatKey;
+      case 2:
+        return widget.formatKey;
+      case 3:
+        return widget.progressKey;
+      case 4:
+        return widget.recentActivityKey;
+      case 5:
+        return widget.studyTabKey;
+      case 6:
+        return widget.flashcardsTabKey;
+      default:
+        return null;
+    }
+  }
+
+  void _scrollToTargetForStep(int stepIndex) {
+    final targetKey = _getKeyForStep(stepIndex);
+    if (targetKey?.currentContext != null) {
+      try {
+        final scrollable = Scrollable.maybeOf(targetKey!.currentContext!);
+        if (scrollable != null) {
+          Scrollable.ensureVisible(
+            targetKey.currentContext!,
+            alignment: 0.35,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
+        }
+      } catch (_) {}
+    }
+  }
+
   void _nextStep() {
     if (_currentStep < _steps.length - 1) {
       setState(() => _currentStep++);
+      _scrollToTargetForStep(_currentStep);
     } else {
       _dismissTour();
     }
   }
 
   Rect _calculateTargetRect(int stepIndex, Size screenSize) {
-    GlobalKey? targetKey;
-    if (stepIndex == 0) targetKey = widget.formatKey;
-    if (stepIndex == 1) targetKey = widget.studyTabKey;
-    if (stepIndex == 2) targetKey = widget.flashcardsTabKey;
+    final targetKey = _getKeyForStep(stepIndex);
 
     if (targetKey != null) {
       final context = targetKey.currentContext;
@@ -146,22 +236,56 @@ class _AppTourSheetState extends State<AppTourSheet>
     }
 
     // High-fidelity responsive fallbacks
-    if (stepIndex == 0) {
-      // Session format selector row (middle-upper part of screen)
-      return Rect.fromLTWH(
-        16,
-        screenSize.height * 0.38,
-        screenSize.width - 32,
-        48,
-      );
-    } else if (stepIndex == 1) {
-      // Bottom navigation bar: Study tab (index 1 of 4)
-      final tabWidth = screenSize.width / 4;
-      return Rect.fromLTWH(tabWidth, screenSize.height - 68, tabWidth, 68);
-    } else {
-      // Bottom navigation bar: Flashcards tab (index 2 of 4)
-      final tabWidth = screenSize.width / 4;
-      return Rect.fromLTWH(tabWidth * 2, screenSize.height - 68, tabWidth, 68);
+    switch (stepIndex) {
+      case 0:
+        // Workspace switcher (top right area of hero bar)
+        return Rect.fromLTWH(
+          screenSize.width - 170,
+          44,
+          118,
+          36,
+        );
+      case 1:
+        // Manage Study pill
+        return Rect.fromLTWH(
+          screenSize.width / 2 + 5,
+          screenSize.height * 0.41,
+          screenSize.width / 2 - 21,
+          42,
+        );
+      case 2:
+        // Session format selector row
+        return Rect.fromLTWH(
+          16,
+          screenSize.height * 0.35,
+          screenSize.width - 32,
+          46,
+        );
+      case 3:
+        // Progress Card
+        return Rect.fromLTWH(
+          16,
+          screenSize.height * 0.48,
+          screenSize.width - 32,
+          115,
+        );
+      case 4:
+        // Recent Activity
+        return Rect.fromLTWH(
+          16,
+          screenSize.height * 0.63,
+          screenSize.width - 32,
+          110,
+        );
+      case 5:
+        // Bottom navigation bar: Study tab (index 1 of 4)
+        final tabWidth = screenSize.width / 4;
+        return Rect.fromLTWH(tabWidth, screenSize.height - 68, tabWidth, 68);
+      case 6:
+      default:
+        // Bottom navigation bar: Flashcards tab (index 2 of 4)
+        final tabWidth = screenSize.width / 4;
+        return Rect.fromLTWH(tabWidth * 2, screenSize.height - 68, tabWidth, 68);
     }
   }
 

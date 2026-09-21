@@ -26,7 +26,7 @@ void main() {
   });
 
   group('AppTourSheet Widget', () {
-    testWidgets('renders step 1 with Study Format & Materials title and skip button', (tester) async {
+    testWidgets('renders step 1 with Workspace Switcher title and skip button', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light,
@@ -38,8 +38,8 @@ void main() {
 
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.text('Study Format & Materials'), findsOneWidget);
-      expect(find.text('1 of 3'), findsOneWidget);
+      expect(find.text('Workspace Switcher'), findsOneWidget);
+      expect(find.text('1 of 7'), findsOneWidget);
       expect(find.text('Skip'), findsOneWidget);
       expect(find.text('Next'), findsOneWidget);
     });
@@ -69,7 +69,7 @@ void main() {
       expect(completed, isTrue);
     });
 
-    testWidgets('tapping Next advances through steps to Got It', (tester) async {
+    testWidgets('tapping Next advances through all 7 steps to Got It', (tester) async {
       bool completed = false;
       await tester.pumpWidget(
         MaterialApp(
@@ -85,21 +85,45 @@ void main() {
 
       await tester.pump(const Duration(milliseconds: 300));
 
-      // Step 1: Study Format & Materials
-      expect(find.text('Study Format & Materials'), findsOneWidget);
-      expect(find.text('1 of 3'), findsOneWidget);
+      // Step 1: Workspace Switcher
+      expect(find.text('Workspace Switcher'), findsOneWidget);
+      expect(find.text('1 of 7'), findsOneWidget);
 
-      // Tap Next -> Step 2: Study Sessions (lower nav Study tab)
+      // Step 2: Manage Study Materials
+      await tester.tap(find.text('Next'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Manage Study Materials'), findsOneWidget);
+      expect(find.text('2 of 7'), findsOneWidget);
+
+      // Step 3: Question Formats
+      await tester.tap(find.text('Next'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Question Formats'), findsOneWidget);
+      expect(find.text('3 of 7'), findsOneWidget);
+
+      // Step 4: Weekly Progress & Mastery
+      await tester.tap(find.text('Next'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Weekly Progress & Mastery'), findsOneWidget);
+      expect(find.text('4 of 7'), findsOneWidget);
+
+      // Step 5: Recent Activity & Questions
+      await tester.tap(find.text('Next'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Recent Activity & Questions'), findsOneWidget);
+      expect(find.text('5 of 7'), findsOneWidget);
+
+      // Step 6: Study Sessions (lower nav Study tab)
       await tester.tap(find.text('Next'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Study Sessions'), findsOneWidget);
-      expect(find.text('2 of 3'), findsOneWidget);
+      expect(find.text('6 of 7'), findsOneWidget);
 
-      // Tap Next -> Step 3: Active Recall Flashcards (lower nav Flashcards tab)
+      // Step 7: Active Recall Flashcards (lower nav Flashcards tab)
       await tester.tap(find.text('Next'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Active Recall Flashcards'), findsOneWidget);
-      expect(find.text('3 of 3'), findsOneWidget);
+      expect(find.text('7 of 7'), findsOneWidget);
       expect(find.text('Got It'), findsOneWidget);
 
       // Tap Got It -> completes and marks seen

@@ -107,7 +107,11 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
     }
   }
 
+  final GlobalKey _workspaceSwitcherKey = GlobalKey();
+  final GlobalKey _manageStudyKey = GlobalKey();
   final GlobalKey _formatSelectionKey = GlobalKey();
+  final GlobalKey _progressKey = GlobalKey();
+  final GlobalKey _recentActivityKey = GlobalKey();
   final GlobalKey _studyTabKey = GlobalKey();
   final GlobalKey _flashcardsTabKey = GlobalKey();
 
@@ -115,7 +119,11 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
     AppTourSheet.show(
       context,
       userId: userId,
+      workspaceSwitcherKey: _workspaceSwitcherKey,
+      manageStudyKey: _manageStudyKey,
       formatKey: _formatSelectionKey,
+      progressKey: _progressKey,
+      recentActivityKey: _recentActivityKey,
       studyTabKey: _studyTabKey,
       flashcardsTabKey: _flashcardsTabKey,
     );
@@ -370,7 +378,11 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
             displayName: displayName,
             workspaceId: workspaceId,
             userId: userId,
+            workspaceSwitcherKey: _workspaceSwitcherKey,
+            manageStudyKey: _manageStudyKey,
             formatKey: _formatSelectionKey,
+            progressKey: _progressKey,
+            recentActivityKey: _recentActivityKey,
             onShowTour: userId != null ? () => _showTour(userId) : null,
             onStartStudy: workspaceId == null
                 ? () => ref.read(studentHomeTabProvider.notifier).state = 0
@@ -705,14 +717,22 @@ class _HomeTab extends ConsumerWidget {
     required this.onOpenBadges,
     required this.onOpenLeaderboard,
     required this.onManageStudy,
+    this.workspaceSwitcherKey,
+    this.manageStudyKey,
     this.formatKey,
+    this.progressKey,
+    this.recentActivityKey,
     this.onShowTour,
   });
 
   final String displayName;
   final String? workspaceId;
   final String? userId;
+  final GlobalKey? workspaceSwitcherKey;
+  final GlobalKey? manageStudyKey;
   final GlobalKey? formatKey;
+  final GlobalKey? progressKey;
+  final GlobalKey? recentActivityKey;
   final VoidCallback? onShowTour;
 
   final VoidCallback onStartStudy;
@@ -874,21 +894,24 @@ class _HomeTab extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (memberships.isNotEmpty)
-                        _HeroWorkspaceSwitcher(
-                          memberships: memberships,
-                          selectedId: workspaceId,
-                          onSelect: (id) => ref
-                              .read(activeWorkspaceIdProvider.notifier)
-                              .setWorkspaceId(id),
-                          onCreateWorkspace: () => showDialog<void>(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (_) => const _CreateWorkspaceDialog(),
-                          ),
-                          onJoinWorkspace: () => showDialog<void>(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (_) => const _StudentJoinWorkspaceDialog(),
+                        KeyedSubtree(
+                          key: workspaceSwitcherKey,
+                          child: _HeroWorkspaceSwitcher(
+                            memberships: memberships,
+                            selectedId: workspaceId,
+                            onSelect: (id) => ref
+                                .read(activeWorkspaceIdProvider.notifier)
+                                .setWorkspaceId(id),
+                            onCreateWorkspace: () => showDialog<void>(
+                              context: context,
+                              barrierDismissible: false,
+                              builder: (_) => const _CreateWorkspaceDialog(),
+                            ),
+                            onJoinWorkspace: () => showDialog<void>(
+                              context: context,
+                              barrierDismissible: false,
+                              builder: (_) => const _StudentJoinWorkspaceDialog(),
+                            ),
                           ),
                         ),
                       const SizedBox(width: 8),
@@ -902,7 +925,11 @@ class _HomeTab extends ConsumerWidget {
                               AppTourSheet.show(
                                 context,
                                 userId: uid,
+                                workspaceSwitcherKey: workspaceSwitcherKey,
+                                manageStudyKey: manageStudyKey,
                                 formatKey: formatKey,
+                                progressKey: progressKey,
+                                recentActivityKey: recentActivityKey,
                               );
                             }
                           }
@@ -1078,12 +1105,15 @@ class _HomeTab extends ConsumerWidget {
                         const SizedBox(width: 10),
                       if (canManageStudy && onManageStudy != null)
                         Expanded(
-                          child: _SmallPillButton(
-                            icon: Icons.my_library_books_rounded,
-                            label: 'Manage Study',
-                            onTap: onManageStudy!,
-                            isDark: isDark,
-                            themeMode: themeMode,
+                          child: KeyedSubtree(
+                            key: manageStudyKey,
+                            child: _SmallPillButton(
+                              icon: Icons.my_library_books_rounded,
+                              label: 'Manage Study',
+                              onTap: onManageStudy!,
+                              isDark: isDark,
+                              themeMode: themeMode,
+                            ),
                           ),
                         ),
                     ],
@@ -1092,8 +1122,11 @@ class _HomeTab extends ConsumerWidget {
                 ],
 
                 // Weekly Progress Graph Card
-                _WeeklyProgressCard(
-                  dailyXp: dailyXp,
+                KeyedSubtree(
+                  key: progressKey,
+                  child: _WeeklyProgressCard(
+                    dailyXp: dailyXp,
+                  ),
                 ),
 
                 const SizedBox(height: 20),
@@ -1107,110 +1140,118 @@ class _HomeTab extends ConsumerWidget {
 
                 const SizedBox(height: 28),
 
-                // Recent Activity Header
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Recent Activity',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : const Color(0xFF0F172A),
-                      ),
-                    ),
-                    if (workspaceId != null)
-                      GestureDetector(
-                        onTap: () {
-                          // Navigate to progress tab
-                          ref.read(studentHomeTabProvider.notifier).state = 3;
-                        },
-                        child: const Text(
-                          'View all',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF2563EB),
+                // Recent Activity Header & Sessions List
+                KeyedSubtree(
+                  key: recentActivityKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Recent Activity',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                            ),
                           ),
-                        ),
+                          if (workspaceId != null)
+                            GestureDetector(
+                              onTap: () {
+                                // Navigate to progress tab
+                                ref.read(studentHomeTabProvider.notifier).state = 3;
+                              },
+                              child: const Text(
+                                'View all',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF2563EB),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                  ],
-                ),
-                const SizedBox(height: 12),
+                      const SizedBox(height: 12),
 
-                // Activity list loading/data states
-                workspaceId == null
-                    ? const EmptyStateView(
-                        icon: Icons.history_rounded,
-                        title: 'No activity yet',
-                        subtitle: 'Join a workspace to see your progress here.',
-                      )
-                    : progressAsync.when(
-                        data: (progress) {
-                          if (progress.recentActivity.isEmpty) {
-                            return const EmptyStateView(
+                      // Activity list loading/data states
+                      workspaceId == null
+                          ? const EmptyStateView(
                               icon: Icons.history_rounded,
                               title: 'No activity yet',
-                              subtitle:
-                                  'Start a study session to see your progress here.',
-                            );
-                          }
-                          final entries =
-                              progress.recentActivity.take(10).toList();
-                          return Container(
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? const Color(0xFF1E293B)
-                                  : Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: isDark
-                                    ? const Color(0xFF2D3748)
-                                    : const Color(0xFFE8EDF2),
-                                width: 1,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black
-                                      .withValues(alpha: isDark ? 0.12 : 0.03),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: Column(
-                                children: [
-                                  for (int i = 0; i < entries.length; i++) ...[
-                                    _ActivityEntryItem(entry: entries[i]),
-                                    if (i < entries.length - 1)
-                                      Divider(
-                                        height: 1,
-                                        thickness: 1,
-                                        color: isDark
-                                            ? const Color(0xFF2D3748)
-                                            : const Color(0xFFE8EDF2),
+                              subtitle: 'Join a workspace to see your progress here.',
+                            )
+                          : progressAsync.when(
+                              data: (progress) {
+                                if (progress.recentActivity.isEmpty) {
+                                  return const EmptyStateView(
+                                    icon: Icons.history_rounded,
+                                    title: 'No activity yet',
+                                    subtitle:
+                                        'Start a study session to see your progress here.',
+                                  );
+                                }
+                                final entries =
+                                    progress.recentActivity.take(10).toList();
+                                return Container(
+                                  decoration: BoxDecoration(
+                                    color: isDark
+                                        ? const Color(0xFF1E293B)
+                                        : Colors.white,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: isDark
+                                          ? const Color(0xFF2D3748)
+                                          : const Color(0xFFE8EDF2),
+                                      width: 1,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black
+                                            .withValues(alpha: isDark ? 0.12 : 0.03),
+                                        blurRadius: 6,
+                                        offset: const Offset(0, 2),
                                       ),
-                                  ],
-                                ],
+                                    ],
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: Column(
+                                      children: [
+                                        for (int i = 0; i < entries.length; i++) ...[
+                                          _ActivityEntryItem(entry: entries[i]),
+                                          if (i < entries.length - 1)
+                                            Divider(
+                                              height: 1,
+                                              thickness: 1,
+                                              color: isDark
+                                                  ? const Color(0xFF2D3748)
+                                                  : const Color(0xFFE8EDF2),
+                                            ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                              loading: () => const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(Spacing.xl),
+                                  child: CircularProgressIndicator(),
+                                ),
+                              ),
+                              error: (err, stack) => const EmptyStateView(
+                                icon: Icons.history_rounded,
+                                title: 'No activity yet',
+                                subtitle:
+                                    'Complete your first study session and your recent activity will appear here.',
                               ),
                             ),
-                          );
-                        },
-                        loading: () => const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(Spacing.xl),
-                            child: CircularProgressIndicator(),
-                          ),
-                        ),
-                        error: (err, stack) => const EmptyStateView(
-                          icon: Icons.history_rounded,
-                          title: 'No activity yet',
-                          subtitle:
-                              'Complete your first study session and your recent activity will appear here.',
-                        ),
-                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
