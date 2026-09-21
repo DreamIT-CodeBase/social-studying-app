@@ -61,7 +61,18 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
   Future<void> start({double? mastery}) async {
     if (state is! QuestionSessionIdle) return;
 
-    _sessionTargetLength = 20;
+    final progressVal = ref
+        .read(studentProgressNotifierProvider(_workspaceId))
+        .valueOrNull;
+    final val = mastery ?? progressVal?.overallMastery ?? 0.0;
+    final random = math.Random();
+    if (val < 0.40) {
+      _sessionTargetLength = 5 + random.nextInt(3); // 5-7 questions (Beginner)
+    } else if (val < 0.75) {
+      _sessionTargetLength = 12 + random.nextInt(4); // 12-15 questions (Intermediate)
+    } else {
+      _sessionTargetLength = 20 + random.nextInt(6); // 20-25 questions (Expert)
+    }
 
     _questionsAnswered = 0;
     _questionsCorrect = 0;

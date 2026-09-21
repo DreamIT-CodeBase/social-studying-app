@@ -34,6 +34,17 @@ class SessionPersistenceService {
     await prefs.setBool('$_keyPermissionSetup$userId', complete);
   }
 
+  bool hasSeenAppTourSync(String userId) =>
+      _prefs?.getBool('$_keyAppTourSeen$userId') ?? false;
+
+  Future<void> setAppTourSeen(
+    String userId, {
+    required bool seen,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('$_keyAppTourSeen$userId', seen);
+  }
+
   Map<String, dynamic>? getFiltersSync() {
     final raw = _prefs?.getString(_keyFilters);
     if (raw == null) return null;
@@ -65,6 +76,7 @@ class SessionPersistenceService {
   static const String _keyFilters = 'persisted_filters';
   static const String _keyProgress = 'persisted_session_progress';
   static const String _keyPermissionSetup = 'permission_setup_complete_';
+  static const String _keyAppTourSeen = 'app_tour_seen_';
 
   Future<void> saveWorkspace(String workspaceId) async {
     final prefs = await SharedPreferences.getInstance();

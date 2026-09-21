@@ -58,6 +58,10 @@ class RealDocumentsRepository implements DocumentsRepository {
     try {
       final response = await dio.get<List<dynamic>>(
         '$_apiPrefix/workspaces/$workspaceId/documents',
+        options: Options(
+          sendTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 15),
+        ),
       );
       final raw = response.data ?? const <dynamic>[];
       return raw

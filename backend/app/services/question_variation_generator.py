@@ -224,6 +224,9 @@ def generate_single_equation_variation(
 
             return {
                 "body": body,
+                "eq_str": eq_str,
+                "root": x,
+                "steps": steps,
                 "options": options,
                 "answer": correct_key,
                 "explanation": f"Steps to solve:\n{steps}\nTherefore, x = {x}.",
@@ -244,14 +247,25 @@ async def generate_runtime_material_variations(
     historical_seen_bodies: Sequence[str],
     seen_signatures: set[str],
     count: int,
+    target_type: QuestionType | str | None = None,
 ) -> list[Question]:
     """Generate fresh runtime variations of study material questions when unique items are exhausted.
 
     Takes patterns from the seed questions / past session questions, mutates coefficients and values,
-    and returns fully formed Question objects that are guaranteed unique and mathematically correct.
+    and returns fully formed Question objects that are guaranteed unique, strictly typed, and mathematically correct.
     """
     if count <= 0:
         return []
+
+    eff_type: QuestionType = QuestionType.mcq
+    if target_type:
+        if isinstance(target_type, QuestionType):
+            eff_type = target_type
+        else:
+            try:
+                eff_type = QuestionType(str(target_type).strip().lower())
+            except Exception:
+                eff_type = QuestionType.mcq
 
     # Gather available templates from seed questions and historical bodies
     template_pool: list[str] = []
@@ -269,6 +283,27 @@ async def generate_runtime_material_variations(
             any(m in (subject or "").lower() for m in ("math", "algebra", "geometry", "calculus"))
             or any(m in (subcategory or "").lower() for m in ("equation", "algebra", "step", "distributive", "variable"))
         )
+        if not is_math and document_id:
+            try:
+                from app.core.database import CHUNKS, DOCUMENTS, cosmos_retry, get_collection
+                doc_col = get_collection(tenant_id, DOCUMENTS)
+                doc_meta = await cosmos_retry(lambda: doc_col.find_one({"_id": document_id}))
+                if doc_meta:
+                    meta_str = f"{doc_meta.get('filename', '')} {doc_meta.get('category', '')} {doc_meta.get('subcategory', '')}".lower()
+                    for tag in doc_meta.get("topic_tags") or []:
+                        t_name = tag.get("name") if isinstance(tag, dict) else str(tag)
+                        meta_str += f" {t_name.lower()}"
+                    if any(m in meta_str for m in ("math", "algebra", "geometry", "equation", "quiz", "calculus", "linear")):
+                        is_math = True
+                if not is_math:
+                    chunk_col = get_collection(tenant_id, CHUNKS)
+                    chunks_sample = await cosmos_retry(lambda: chunk_col.find({"document_id": document_id}).to_list(length=3))
+                    sample_text = " ".join(c.get("text", "") for c in chunks_sample)
+                    if re.search(r"solve for\s+[a-z]|(?:\d+|[a-z])\s*[\+\-\*\/=]\s*(?:\d+|[a-z])", sample_text, re.I):
+                        is_math = True
+            except Exception:
+                pass
+
         if not is_math:
             return []
         # Default distribution across standard Algebra 1 equations
@@ -319,8 +354,48 @@ async def generate_runtime_material_variations(
         if not var_dict:
             continue
 
-        current_signatures.add(var_dict["signature"])
-        current_signatures.add(normalize_question_stem(var_dict["body"]))
+        root = var_dict.get("root", 0)
+        eq_str = var_dict.get("eq_str", "")
+        steps = var_dict.get("steps", "")
+
+        if eff_type == QuestionType.short_answer:
+            q_body = f"Solve for x: {eq_str}. What is the value of x?"
+            q_options = []
+            q_answer = str(root)
+            q_expl = f"Steps to solve:\n{steps}\nTherefore, x = {root}."
+            q_hints = [str(root), f"x = {root}", f"x={root}"]
+        elif eff_type == QuestionType.true_false:
+            is_true = random.choice([True, False])
+            if is_true:
+                q_body = f"In the linear equation {eq_str}, the solution for x is {root}."
+                q_answer = "true"
+                q_expl = f"True. Substituting x = {root} into {eq_str} satisfies the equation."
+            else:
+                delta = random.choice([-3, -2, -1, 1, 2, 3])
+                false_val = root + delta
+                q_body = f"In the linear equation {eq_str}, the solution for x is {false_val}."
+                q_answer = "false"
+                q_expl = f"False. The correct solution is x = {root}, not x = {false_val}.\n{steps}"
+            q_options = [
+                McqOption(key="true", text="True", is_correct=is_true),
+                McqOption(key="false", text="False", is_correct=not is_true),
+            ]
+            q_hints = []
+        elif eff_type == QuestionType.long_answer:
+            q_body = f"Solve the algebraic equation step by step, demonstrating each operation used to isolate x: {eq_str}"
+            q_options = []
+            q_answer = f"Solution steps:\n{steps}\nFinal answer: x = {root}"
+            q_expl = f"Full algebraic derivation:\n{steps}\nx = {root}."
+            q_hints = ["Isolate variable term", "Apply inverse operations", f"Final root x = {root}"]
+        else:
+            q_body = var_dict["body"]
+            q_options = var_dict["options"]
+            q_answer = var_dict["answer"]
+            q_expl = var_dict["explanation"]
+            q_hints = []
+
+        current_signatures.add(canonical_question_signature(q_body))
+        current_signatures.add(normalize_question_stem(q_body))
 
         q_id = f"qst_var_{uuid4().hex[:12]}"
         new_q = Question(
@@ -329,13 +404,13 @@ async def generate_runtime_material_variations(
             workspace_id=workspace_id,
             document_id=document_id,
             topic=topic_name,
-            question_type=QuestionType.mcq,
+            question_type=eff_type,
             difficulty=DifficultyLevel.intermediate,
-            body=var_dict["body"],
-            options=var_dict["options"],
-            answer=var_dict["answer"],
-            explanation=var_dict["explanation"],
-            grading_hints=[],
+            body=q_body,
+            options=q_options,
+            answer=q_answer,
+            explanation=q_expl,
+            grading_hints=q_hints,
             status=QuestionStatus.approved,
             source_chunk_ids=[],
         )

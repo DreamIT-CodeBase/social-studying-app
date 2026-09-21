@@ -57,7 +57,9 @@ class DocumentsListScreen extends ConsumerWidget {
                     canDelete: currentFlavor == AppFlavor.admin ||
                         workspaceId.startsWith('wsp_self_'),
                   ),
-            loading: () => const LoadingIndicator(),
+            loading: () => const LoadingIndicator(
+              message: 'Loading study materials…',
+            ),
             error: (error, _) => ErrorView(
               message: error.toString(),
               onRetry: () => ref
@@ -90,13 +92,30 @@ class DocumentsListScreen extends ConsumerWidget {
       ],
     );
 
-    if (currentFlavor == AppFlavor.student) {
+    final isStandaloneScreen = currentFlavor == AppFlavor.student ||
+        workspaceId.startsWith('wsp_self_') ||
+        ModalRoute.of(context)?.canPop == true;
+
+    if (isStandaloneScreen) {
       return Scaffold(
         appBar: AppBar(
           title: const Text(
             'My Study Materials',
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
+          actions: [
+            IconButton(
+              icon: isUploading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.upload_file_rounded),
+              tooltip: 'Upload Material',
+              onPressed: isUploading ? null : () => _handleUpload(context, ref),
+            ),
+          ],
         ),
         body: content,
       );

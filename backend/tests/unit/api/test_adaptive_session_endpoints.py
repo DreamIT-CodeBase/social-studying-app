@@ -398,7 +398,7 @@ async def test_prepare_self_study_with_subject():
     env.questions.assert_awaited_once_with(
         user=STUDENT,
         workspace_id=SELF_WS,
-        target=10,
+        target=5,
         level=AdaptiveLevel.beginner,
         revision=False,
         subject="Physics",
@@ -437,7 +437,7 @@ async def test_prepare_self_study_with_subject_and_subcategory():
     env.questions.assert_awaited_once_with(
         user=STUDENT,
         workspace_id=SELF_WS,
-        target=10,
+        target=5,
         level=AdaptiveLevel.beginner,
         revision=False,
         subject="Chemistry",
@@ -476,7 +476,7 @@ async def test_prepare_self_study_with_question_type():
     env.questions.assert_awaited_once_with(
         user=STUDENT,
         workspace_id=SELF_WS,
-        target=10,
+        target=5,
         level=AdaptiveLevel.beginner,
         revision=False,
         subject="Physics",
@@ -626,4 +626,95 @@ def test_algebra_1_guaranteed_fallback_uses_mathematics():
     assert any("algebra" in q.topic.lower() or "geometry" in q.topic.lower() for q in plan.questions)
 
 
+@pytest.mark.parametrize("qtype", ["mcq", "true_false", "short_answer", "long_answer"])
+def test_guaranteed_fallback_strictly_respects_question_type(qtype: str):
+    """Verify that guaranteed fallback produces 100% strict question types without format mixing."""
+    from app.api.adaptive_sessions import _build_guaranteed_fallback_plan
+    from app.models.adaptive_session import AdaptiveSessionMode, AdaptiveLevel
+
+    plan = _build_guaranteed_fallback_plan(
+        workspace_id="wsp_normal_workspace",
+        user_id="usr_test",
+        tenant_id="ten_test",
+        mode=AdaptiveSessionMode.study,
+        level=AdaptiveLevel.beginner,
+        mastery=0.0,
+        subject="Mathematics",
+        question_type=qtype,
+    )
+    assert len(plan.questions) > 0
+    for q in plan.questions:
+        actual_type = q.question_type.value if hasattr(q.question_type, "value") else str(q.question_type)
+        assert actual_type.lower() == qtype, f"Expected {qtype} but found {actual_type}"
+
+
+@pytest.mark.parametrize(
+    "level,mastery,expected_min,expected_max",
+    [
+        (AdaptiveLevel.beginner, 0.0, 5, 7),
+        (AdaptiveLevel.beginner, 0.35, 5, 7),
+        (AdaptiveLevel.intermediate, 0.40, 12, 15),
+        (AdaptiveLevel.intermediate, 0.65, 12, 15),
+        (AdaptiveLevel.expert, 0.75, 20, 25),
+        (AdaptiveLevel.expert, 0.95, 20, 25),
+    ],
+)
+@pytest.mark.parametrize("mode", [AdaptiveSessionMode.study, AdaptiveSessionMode.revision])
+def test_session_question_count_strictly_governed_by_mastery_level(
+    level: AdaptiveLevel, mastery: float, expected_min: int, expected_max: int, mode: AdaptiveSessionMode
+):
+    """Verify study and revision sessions deliver exact question count range based on mastery level:
+    - Beginner: 5-7 questions
+    - Intermediate: 12-15 questions
+    - Expert: 20-25 questions
+    """
+    from app.api.adaptive_sessions import _build_guaranteed_fallback_plan
+
+    plan = _build_guaranteed_fallback_plan(
+        workspace_id="wsp_normal_workspace",
+        user_id="usr_test",
+        tenant_id="ten_test",
+        mode=mode,
+        level=level,
+        mastery=mastery,
+        subject="Mathematics",
+    )
+    assert expected_min <= plan.item_count <= expected_max
+    assert len(plan.questions) == plan.item_count
+    assert len(plan.flashcards) == 0
+
+
+@pytest.mark.parametrize(
+    "level,mastery,expected_min,expected_max",
+    [
+        (AdaptiveLevel.beginner, 0.0, 3, 4),
+        (AdaptiveLevel.beginner, 0.35, 3, 4),
+        (AdaptiveLevel.intermediate, 0.40, 10, 13),
+        (AdaptiveLevel.intermediate, 0.65, 10, 13),
+        (AdaptiveLevel.expert, 0.75, 18, 25),
+        (AdaptiveLevel.expert, 0.95, 18, 25),
+    ],
+)
+def test_session_flashcard_count_strictly_governed_by_mastery_level(
+    level: AdaptiveLevel, mastery: float, expected_min: int, expected_max: int
+):
+    """Verify flashcard sessions deliver exact card count range based on mastery level:
+    - Beginner: 3-4 cards
+    - Intermediate: 10-13 cards
+    - Expert: 18-25 cards
+    """
+    from app.api.adaptive_sessions import _build_guaranteed_fallback_plan
+
+    plan = _build_guaranteed_fallback_plan(
+        workspace_id="wsp_normal_workspace",
+        user_id="usr_test",
+        tenant_id="ten_test",
+        mode=AdaptiveSessionMode.flashcard,
+        level=level,
+        mastery=mastery,
+        subject="Mathematics",
+    )
+    assert expected_min <= plan.item_count <= expected_max
+    assert len(plan.flashcards) == plan.item_count
+    assert len(plan.questions) == 0
 

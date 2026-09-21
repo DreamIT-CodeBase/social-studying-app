@@ -54,7 +54,7 @@ class DioClient {
   }
 }
 
-class _AuthInterceptor extends QueuedInterceptor {
+class _AuthInterceptor extends Interceptor {
   _AuthInterceptor(this._dio);
 
   static const _retriedKey = 'auth_refresh_retried';

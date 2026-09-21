@@ -748,6 +748,14 @@ async def delete_document(
 def _assert_workspace_access(user: User, workspace_id: str) -> None:
     if user.role == UserRole.tenant_admin:
         return
+    if (
+        workspace_id.startswith("wsp_self_")
+        or workspace_id.startswith("wsp_personal_")
+        or user.id in workspace_id
+    ):
+        ids = {m.workspace_id for m in user.workspace_memberships}
+        if workspace_id in ids or user.id in workspace_id:
+            return
     ids = {m.workspace_id for m in user.workspace_memberships}
     if workspace_id not in ids:
         raise ForbiddenError("You are not a member of this workspace")

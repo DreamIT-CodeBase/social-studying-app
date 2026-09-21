@@ -66,8 +66,12 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
   /// doesn't accidentally double-fetch.
   Future<void> start({double? mastery}) async {
     if (state is! FlashcardSessionIdle) return;
-    _lastMastery = mastery;
-    _sessionTargetLength = _sessionLengthForMastery(mastery);
+    final progressVal = ref
+        .read(studentProgressNotifierProvider(_workspaceId))
+        .valueOrNull;
+    final effMastery = mastery ?? progressVal?.overallMastery;
+    _lastMastery = effMastery;
+    _sessionTargetLength = _sessionLengthForMastery(effMastery);
     _currentIndex = 1;
     _sessionRatings.clear();
     await _fetchNext();
@@ -75,18 +79,18 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
 
   /// Returns how many flashcards to show this session based on mastery level.
   ///
-  /// Tiers (from product spec, updated after TestFlight feedback):
-  /// - BEGINNER  mastery < 0.40  → 8–10 cards  (was 3–4, too small for real study)
-  /// - INTER     mastery < 0.75  → 12–15 cards
+  /// Tiers (strictly aligned with mastery level):
+  /// - BEGINNER  mastery < 0.40  → 3–4 cards
+  /// - INTER     mastery < 0.75  → 10–13 cards
   /// - EXPERT    mastery ≥ 0.75  → 18–25 cards
   static int _sessionLengthForMastery(double? mastery) {
     final rng = math.Random();
     if (mastery == null || mastery < 0.40) {
-      return 8 + rng.nextInt(3); // 8, 9, or 10
+      return 3 + rng.nextInt(2); // 3 or 4 cards (Beginner)
     } else if (mastery < 0.75) {
-      return 12 + rng.nextInt(4); // 12, 13, 14, or 15
+      return 10 + rng.nextInt(4); // 10, 11, 12, or 13 cards (Intermediate)
     } else {
-      return 18 + rng.nextInt(8); // 18–25
+      return 18 + rng.nextInt(8); // 18–25 cards (Expert)
     }
   }
 

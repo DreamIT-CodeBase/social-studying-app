@@ -36,6 +36,7 @@ import 'package:social_study_app/features/screen_time/models/screen_time_wallet.
 import 'package:social_study_app/features/notifications/presentation/notification_service.dart';
 import 'package:social_study_app/features/subscription/data/subscription_repository.dart';
 import 'package:social_study_app/features/subscription/presentation/student_paywall_dialog.dart';
+import 'package:social_study_app/features/onboarding/presentation/app_tour_sheet.dart';
 
 final studentHomeTabProvider = StateProvider<int>((ref) {
   final saved = SessionPersistenceService.instance.getTabSync() ?? 0;
@@ -81,6 +82,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
         ref.read(authNotifierProvider.notifier).refresh();
         _checkStudentSubscription();
         _checkPendingUnlockRequest();
+        _checkAppTour();
       }
     });
   }
@@ -101,6 +103,20 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
       ref.read(screenTimeNotifierProvider.notifier).refreshWallet();
       _checkStudentSubscription();
       _checkPendingUnlockRequest();
+      _checkAppTour();
+    }
+  }
+
+  void _checkAppTour() {
+    final authState = ref.read(authNotifierProvider).valueOrNull;
+    final user = authState?.maybeWhen(
+      authenticated: (u) => u,
+      orElse: () => null,
+    );
+    if (user != null &&
+        !SessionPersistenceService.instance.hasSeenAppTourSync(user.id) &&
+        mounted) {
+      AppTourSheet.show(context, userId: user.id);
     }
   }
 
@@ -345,9 +361,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
                     final activeSubcat = isSelfLearningWorkspaceId(workspaceId)
                         ? ref.read(selfStudySubcategoryProvider)
                         : null;
-                    final activeType = isSelfLearningWorkspaceId(workspaceId)
-                        ? ref.read(selfStudyQuestionTypeProvider)
-                        : null;
+                    final activeType = ref.read(selfStudyQuestionTypeProvider);
                     final subjectQuery = activeSubject != null
                         ? '&subject=${Uri.encodeComponent(activeSubject)}'
                         : '';
@@ -370,9 +384,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
                     final activeSubcat = isSelfLearningWorkspaceId(workspaceId)
                         ? ref.read(selfStudySubcategoryProvider)
                         : null;
-                    final activeType = isSelfLearningWorkspaceId(workspaceId)
-                        ? ref.read(selfStudyQuestionTypeProvider)
-                        : null;
+                    final activeType = ref.read(selfStudyQuestionTypeProvider);
                     final subjectQuery = activeSubject != null
                         ? '&subject=${Uri.encodeComponent(activeSubject)}'
                         : '';
@@ -856,6 +868,28 @@ class _HomeTab extends ConsumerWidget {
                         ),
                       const SizedBox(width: 8),
                       GestureDetector(
+                        onTap: () {
+                          final uid = userId;
+                          if (uid != null) {
+                            AppTourSheet.show(context, userId: uid);
+                          }
+                        },
+                        child: CircleAvatar(
+                          backgroundColor: isDark
+                              ? Colors.white10
+                              : Colors.white.withValues(alpha: 0.9),
+                          radius: 18,
+                          child: Icon(
+                            Icons.help_outline_rounded,
+                            size: 19,
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF475569),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
                         onTap: () => context.push(AppRoutes.profile),
                         child: CircleAvatar(
                           backgroundColor: isDark
@@ -910,29 +944,16 @@ class _HomeTab extends ConsumerWidget {
           isSelfStudy ? ref.watch(selfStudySubjectProvider) : null;
       final activeSubcategory =
           isSelfStudy ? ref.watch(selfStudySubcategoryProvider) : null;
-      final activeQuestionType =
-          isSelfStudy ? ref.watch(selfStudyQuestionTypeProvider) : null;
+      final activeQuestionType = ref.watch(selfStudyQuestionTypeProvider);
       final counts = isSelfStudy
           ? ref.watch(selfStudySubjectCountsProvider(workspaceId!))
           : const <String, int>{};
-      final totalDocs = counts.values.fold<int>(0, (sum, count) => sum + count);
-      final hasNoDocuments = isSelfStudy && totalDocs == 0;
 
       return ListView(
         padding: const EdgeInsets.only(bottom: 100),
         children: [
           hero,
           const SizedBox(height: 15),
-          if (hasNoDocuments && onManageStudy != null) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _GettingStartedOnboardingBanner(
-                onUpload: onManageStudy!,
-                isDark: isDark,
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
           if (isSelfStudy)
             SubjectSwitcherBar(
               workspaceId: workspaceId!,
@@ -943,7 +964,7 @@ class _HomeTab extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (isSelfStudy) ...[
+                if (workspaceId != null) ...[
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -989,6 +1010,7 @@ class _HomeTab extends ConsumerWidget {
                   subject: activeSubject,
                   subcategory: activeSubcategory,
                   questionType: activeQuestionType,
+                  workspaceId: workspaceId,
                 ),
                 const SizedBox(height: 12),
 
@@ -1881,205 +1903,20 @@ class _QuestionTypeDropdownSelector extends StatelessWidget {
   }
 }
 
-/// A welcoming onboarding banner displayed to new learners before they upload study materials.
-class _GettingStartedOnboardingBanner extends StatelessWidget {
-  const _GettingStartedOnboardingBanner({
-    required this.onUpload,
-    required this.isDark,
-  });
-
-  final VoidCallback onUpload;
-  final bool isDark;
-
-  @override
-  Widget build(BuildContext context) {
-    final bg = isDark ? const Color(0xFF1E1B4B) : const Color(0xFFEEF2FF);
-    final border = isDark ? const Color(0xFF4338CA) : const Color(0xFFC7D2FE);
-    final titleCol = isDark ? Colors.white : const Color(0xFF1E1B4B);
-    final bodyCol = isDark ? const Color(0xFFC7D2FE) : const Color(0xFF3730A3);
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: border, width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: (isDark ? Colors.black : const Color(0xFF4F46E5))
-                .withValues(alpha: 0.08),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6366F1).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text('🚀', style: TextStyle(fontSize: 20)),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Welcome to Your Study Hub!',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: titleCol,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '3 quick steps to start studying your material:',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: bodyCol,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildStepRow(
-            number: '1',
-            icon: Icons.upload_file_rounded,
-            title: 'Upload Study Material',
-            desc:
-                'Add notes, equations, or PDF documents to unlock questions and cards.',
-            titleCol: titleCol,
-            bodyCol: bodyCol,
-          ),
-          const SizedBox(height: 10),
-          _buildStepRow(
-            number: '2',
-            icon: Icons.psychology_rounded,
-            title: 'Practice Adaptive Questions',
-            desc:
-                'AI generates questions that adapt dynamically to your mastery.',
-            titleCol: titleCol,
-            bodyCol: bodyCol,
-          ),
-          const SizedBox(height: 10),
-          _buildStepRow(
-            number: '3',
-            icon: Icons.style_rounded,
-            title: 'Review Flashcards',
-            desc:
-                'Reinforce learned concepts through spaced-repetition flashcards.',
-            titleCol: titleCol,
-            bodyCol: bodyCol,
-          ),
-          const SizedBox(height: 18),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: onUpload,
-              icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
-              label: const Text(
-                'Upload Your First Document',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-              ),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF6366F1),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 13),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                elevation: 0,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStepRow({
-    required String number,
-    required IconData icon,
-    required String title,
-    required String desc,
-    required Color titleCol,
-    required Color bodyCol,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 24,
-          height: 24,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: const Color(0xFF6366F1).withValues(alpha: 0.15),
-            shape: BoxShape.circle,
-          ),
-          child: Text(
-            number,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF6366F1),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: titleCol,
-                ),
-              ),
-              const SizedBox(height: 1),
-              Text(
-                desc,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: bodyCol.withValues(alpha: 0.85),
-                  height: 1.3,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _StartStudySessionCard extends ConsumerStatefulWidget {
   const _StartStudySessionCard({
     required this.onStartStudy,
     this.subject,
     this.subcategory,
     this.questionType,
+    this.workspaceId,
   });
 
   final VoidCallback onStartStudy;
   final String? subject;
   final String? subcategory;
   final String? questionType;
+  final String? workspaceId;
 
   @override
   ConsumerState<_StartStudySessionCard> createState() =>
@@ -2116,6 +1953,25 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
     final themeMode = ref.watch(appThemeModeProvider);
     final isMature = themeMode == AppThemeMode.mature;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final progress = widget.workspaceId != null
+        ? ref
+            .watch(studentProgressNotifierProvider(widget.workspaceId!))
+            .valueOrNull
+        : null;
+    final mastery = progress?.overallMastery ?? 0.0;
+    final String tierLabel;
+    final String questionCountLabel;
+    if (mastery < 0.40) {
+      tierLabel = 'Beginner';
+      questionCountLabel = '5–7 Questions';
+    } else if (mastery < 0.75) {
+      tierLabel = 'Intermediate';
+      questionCountLabel = '12–15 Questions';
+    } else {
+      tierLabel = 'Expert';
+      questionCountLabel = '20–25 Questions';
+    }
 
     final customColor =
         widget.subject != null ? subjectColor(widget.subject) : null;
@@ -2203,20 +2059,20 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
                       color: const Color(0xFFF3E8FF),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.auto_awesome_rounded,
                           color: Color(0xFF8B5CF6),
                           size: 12,
                         ),
-                        SizedBox(width: 4),
+                        const SizedBox(width: 4),
                         Text(
-                          'Explore',
-                          style: TextStyle(
+                          '$tierLabel • $questionCountLabel',
+                          style: const TextStyle(
                             color: Color(0xFF8B5CF6),
-                            fontSize: 11,
+                            fontSize: 10,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -2290,50 +2146,44 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
                               height: 1.15,
                             ),
                           ),
-                          if (widget.subject != null ||
-                              widget.subcategory != null ||
-                              widget.questionType != null) ...[
-                            const SizedBox(height: 2),
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                () {
-                                  final formatSuffix = widget.questionType ==
-                                          'mcq'
-                                      ? ' • MCQ Only'
-                                      : (widget.questionType == 'short_answer'
-                                          ? ' • Short Answer'
-                                          : (widget.questionType == 'true_false'
-                                              ? ' • True / False'
-                                              : (widget.questionType ==
-                                                      'long_answer'
-                                                  ? ' • Long Answer'
-                                                  : '')));
-                                  if (widget.subcategory != null) {
-                                    return widget.subject != null
-                                        ? '${widget.subject} • ${widget.subcategory}$formatSuffix'
-                                        : 'Topic: ${widget.subcategory}$formatSuffix';
-                                  }
-                                  if (widget.subject != null) {
-                                    return 'Personalized ${widget.subject} questions$formatSuffix';
-                                  }
-                                  return formatSuffix.isNotEmpty
-                                      ? 'Personalized questions$formatSuffix'
-                                      : 'Personalized study questions';
-                                }(),
-                                maxLines: 1,
-                                softWrap: false,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.start,
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.85),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                          const SizedBox(height: 2),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              () {
+                                final formatSuffix = widget.questionType ==
+                                        'mcq'
+                                    ? ' • MCQ Only'
+                                    : (widget.questionType == 'short_answer'
+                                        ? ' • Short Answer'
+                                        : (widget.questionType == 'true_false'
+                                            ? ' • True / False'
+                                            : (widget.questionType ==
+                                                    'long_answer'
+                                                ? ' • Long Answer'
+                                                : '')));
+                                if (widget.subcategory != null) {
+                                  return widget.subject != null
+                                      ? '${widget.subject} • ${widget.subcategory} • $questionCountLabel$formatSuffix'
+                                      : 'Topic: ${widget.subcategory} • $questionCountLabel$formatSuffix';
+                                }
+                                if (widget.subject != null) {
+                                  return '${widget.subject} • $questionCountLabel$formatSuffix';
+                                }
+                                return '$questionCountLabel • $tierLabel Level$formatSuffix';
+                              }(),
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.start,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.85),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
-                          ],
+                          ),
                         ],
                       ),
                     ),

@@ -13,6 +13,7 @@ import 'package:social_study_app/features/home/providers/workspace_providers.dar
 import 'package:social_study_app/features/screen_time/data/screen_time_repository.dart';
 import 'package:social_study_app/features/screen_time/services/screen_time_service.dart';
 import 'package:social_study_app/shared/services/session_persistence_service.dart';
+import 'package:social_study_app/features/onboarding/presentation/app_tour_sheet.dart';
 
 class PermissionOnboardingScreen extends ConsumerStatefulWidget {
   const PermissionOnboardingScreen({super.key});
@@ -554,6 +555,27 @@ class _PermissionOnboardingScreenState
                         ? null
                         : () => setState(() => _currentStep = 1),
                     child: const Text('Skip permissions and choose apps'),
+                  ),
+                  TextButton.icon(
+                    onPressed: () async {
+                      var authState =
+                          ref.read(authNotifierProvider).valueOrNull;
+                      var user = authState?.maybeWhen(
+                        authenticated: (u) => u,
+                        orElse: () => null,
+                      );
+                      user ??= await ref
+                          .read(authRepositoryProvider)
+                          .getStoredUser();
+                      if (user != null && mounted) {
+                        await AppTourSheet.show(context, userId: user.id);
+                      }
+                    },
+                    icon: const Icon(Icons.auto_awesome_rounded, size: 16),
+                    label: const Text(
+                      'Learn About App: Flashcards & Progress Tour',
+                      style: TextStyle(fontSize: 12.5),
+                    ),
                   ),
                 ],
               ),

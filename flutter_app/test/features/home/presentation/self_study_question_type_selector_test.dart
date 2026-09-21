@@ -14,9 +14,14 @@ void main() {
     expect(container.read(selfStudyQuestionTypeProvider), equals('mcq'));
 
     container.read(selfStudyQuestionTypeProvider.notifier).state =
-        'short_answer';
+        'true_false';
     expect(
-        container.read(selfStudyQuestionTypeProvider), equals('short_answer'));
+        container.read(selfStudyQuestionTypeProvider), equals('true_false'));
+
+    container.read(selfStudyQuestionTypeProvider.notifier).state =
+        'long_answer';
+    expect(
+        container.read(selfStudyQuestionTypeProvider), equals('long_answer'));
 
     container.read(selfStudyQuestionTypeProvider.notifier).state = null;
     expect(container.read(selfStudyQuestionTypeProvider), isNull);
@@ -26,5 +31,16 @@ void main() {
     expect(isSelfLearningWorkspaceId('wsp_self_stu_123'), isTrue);
     expect(isSelfLearningWorkspaceId('wsp_classroom_456'), isFalse);
     expect(isSelfLearningWorkspaceId(''), isFalse);
+  });
+
+  test('question_type query string is generated for both self-study and admin workspaces', () {
+    for (final ws in ['wsp_self_stu_123', 'wsp_classroom_normal_789']) {
+      for (final type in ['mcq', 'true_false', 'short_answer', 'long_answer']) {
+        final typeQuery = '&question_type=${Uri.encodeComponent(type)}';
+        final url = '/student/session/$ws?mode=study$typeQuery';
+        expect(url, contains('question_type=$type'));
+        expect(url, contains('/student/session/$ws'));
+      }
+    }
   });
 }

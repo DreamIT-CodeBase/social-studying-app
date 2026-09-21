@@ -79,15 +79,18 @@ class RevisionSessionNotifier extends _$RevisionSessionNotifier {
     if (itemCount != null) {
       n = itemCount;
     } else {
-      // Calibrate dynamic session length based on overall mastery
-      final val = mastery ?? 0.0;
+      // Calibrate dynamic session length strictly based on overall mastery
+      final progressVal = ref
+          .read(studentProgressNotifierProvider(_workspaceId))
+          .valueOrNull;
+      final val = mastery ?? progressVal?.overallMastery ?? 0.0;
       final random = math.Random();
-      if (val < 0.3) {
-        n = 5 + random.nextInt(3); // 5-7 items
-      } else if (val < 0.7) {
-        n = 12 + random.nextInt(4); // 12-15 items
+      if (val < 0.40) {
+        n = 5 + random.nextInt(3); // 5-7 items (Beginner)
+      } else if (val < 0.75) {
+        n = 12 + random.nextInt(4); // 12-15 items (Intermediate)
       } else {
-        n = 20 + random.nextInt(6); // 20-25 items
+        n = 20 + random.nextInt(6); // 20-25 items (Expert)
       }
     }
     n = n.clamp(1, 50);

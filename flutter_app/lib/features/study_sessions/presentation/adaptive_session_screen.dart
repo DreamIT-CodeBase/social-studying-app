@@ -137,7 +137,7 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
           mode: effectiveMode,
           subject: isSelfStudy ? widget.subject : null,
           subcategory: isSelfStudy ? widget.subcategory : null,
-          questionType: isSelfStudy ? widget.questionType : null,
+          questionType: widget.questionType,
         );
         if (!mounted || generation != _prepareGeneration) return;
         // A plan with no runnable items is a call-to-action, not a session:

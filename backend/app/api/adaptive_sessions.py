@@ -94,12 +94,12 @@ router = APIRouter(
 )
 
 _QUESTION_RANGES = {
-    AdaptiveLevel.beginner: (10, 12),      # increased from (5,7) — new users need a real session
+    AdaptiveLevel.beginner: (5, 7),
     AdaptiveLevel.intermediate: (12, 15),
     AdaptiveLevel.expert: (20, 25),
 }
 _FLASHCARD_RANGES = {
-    AdaptiveLevel.beginner: (8, 10),       # increased from (3,4) — 3 cards was too small
+    AdaptiveLevel.beginner: (3, 4),
     AdaptiveLevel.intermediate: (10, 13),
     AdaptiveLevel.expert: (18, 25),
 }
@@ -216,12 +216,25 @@ async def _mastery_assessment(*, tenant_id: str, workspace_id: str, student_id: 
     knowledge_raw = await cosmos_retry(lambda: get_collection(tenant_id, KNOWLEDGE_STATES).find_one(
         {"workspace_id": workspace_id, "student_id": student_id, "deleted_at": None}
     ))
+    if not knowledge_raw:
+        alt_k = await cosmos_retry(lambda: get_collection(tenant_id, KNOWLEDGE_STATES).find_one(
+            {"student_id": student_id, "deleted_at": None}
+        ))
+        if alt_k:
+            knowledge_raw = alt_k
     knowledge = float((knowledge_raw or {}).get("overall_mastery", 0.0))
 
     interaction_cursor = get_collection(tenant_id, INTERACTIONS).find(
         {"workspace_id": workspace_id, "student_id": student_id, "deleted_at": None}
     )
     interactions = await cosmos_retry(lambda: interaction_cursor.to_list(length=500))
+    if not interactions:
+        alt_cursor = get_collection(tenant_id, INTERACTIONS).find(
+            {"student_id": student_id, "deleted_at": None}
+        )
+        alt_interactions = await cosmos_retry(lambda: alt_cursor.to_list(length=500))
+        if alt_interactions:
+            interactions = alt_interactions
     interactions.sort(key=lambda row: row.get("answered_at", ""))
 
     session_cursor = get_collection(tenant_id, ADAPTIVE_SESSIONS).find(
@@ -232,6 +245,16 @@ async def _mastery_assessment(*, tenant_id: str, workspace_id: str, student_id: 
         }
     )
     sessions = await cosmos_retry(lambda: session_cursor.to_list(length=50))
+    if not sessions:
+        alt_sc = get_collection(tenant_id, ADAPTIVE_SESSIONS).find(
+            {
+                "student_id": student_id,
+                "status": {"$in": ["completed", "timed_out", "exited"]},
+            }
+        )
+        alt_sessions = await cosmos_retry(lambda: alt_sc.to_list(length=50))
+        if alt_sessions:
+            sessions = alt_sessions
     sessions.sort(key=lambda row: row.get("completed_at", ""), reverse=True)
     sessions = sessions[:10]
 
@@ -679,7 +702,7 @@ async def _prepare_questions(
 
     doc_subjects: dict[str, str] = {}
     doc_subcats: dict[str, set[str]] = {}
-    if subject or subcategory:
+    if current_sources.document_ids:
         doc_col = get_collection(user.tenant_id, DOCUMENTS)
         doc_cursor = doc_col.find(
             {"_id": {"$in": list(current_sources.document_ids)}},
@@ -702,8 +725,8 @@ async def _prepare_questions(
             if not s or s.casefold() == "study":
                 for tag_name in tags:
                     ts = classify_subject_from_text(tag_name)
-                    if subject and subjects_match(ts, subject):
-                        s = subject
+                    if ts and ts.casefold() != "study":
+                        s = ts
                         break
             doc_subjects[str(doc_raw["_id"])] = s or ""
 
@@ -794,8 +817,8 @@ async def _prepare_questions(
     )
     if should_generate:
         # Provide sufficient generation headroom for LLM grounding and synthesis
-        gen_timeout = 60.0 if _is_self_study(workspace_id) else (35.0 if current_sources.document_ids else 5.0)
-        gen_batch = missing if _is_self_study(workspace_id) else (max(missing + 3, 5) if current_sources.document_ids else min(missing, 2))
+        gen_timeout = 60.0 if (_is_self_study(workspace_id) or question_type) else (35.0 if current_sources.document_ids else 5.0)
+        gen_batch = missing if (_is_self_study(workspace_id) or question_type) else (min(missing, 3) if subcategory else min(missing, 2))
         try:
             generated = await asyncio.wait_for(
                 question_pipeline._generate_and_persist_batch(
@@ -835,8 +858,7 @@ async def _prepare_questions(
                 if subcategory:
                     generated = [q for q in generated if matches_subcat(q)]
             selected = _unique_questions([*selected, *generated])[:target]
-            # If after generation we still have missing slots and the workspace is self-study,
-            # do an eager top-up generation pass so the session has as many distinct questions as needed
+            # If after generation we still have missing slots, do an eager top-up generation pass
             if len(selected) < target and not revision and current_sources.document_ids:
                 try:
                     topup_needed = target - len(selected)
@@ -889,6 +911,7 @@ async def _prepare_questions(
         recycled = [
             q for q in available
             if q.id not in selected_ids and canonical_question_signature(q.body) not in selected_fps
+            and (not question_type or q.question_type == question_type)
         ]
         needed = target - len(selected)
         selected.extend(recycled[:needed])
@@ -920,16 +943,19 @@ async def _prepare_questions(
                 historical_seen_bodies=[b for b, _ in historical_seen_records],
                 seen_signatures=current_seen_sigs,
                 count=needed,
+                target_type=question_type,
             )
             if subcategory:
                 variations = [q for q in variations if matches_subcat(q)]
+            if question_type:
+                variations = [q for q in variations if q.question_type == question_type]
             selected.extend(variations)
         except Exception as var_exc:
             logger.exception("Runtime material variation generation failed: %s", var_exc)
 
     if not selected:
         if revision and available:
-            selected = available[:target]
+            selected = [q for q in available if not question_type or q.question_type == question_type][:target]
         elif current_sources.document_ids or available or historical_seen_records:
             doc_id = list(current_sources.document_ids)[0] if current_sources.document_ids else "doc_runtime_material"
             eff_subj = subject or doc_subjects.get(doc_id, "") or (classify_subject_from_text(subcategory) if subcategory else "") or "study"
@@ -944,12 +970,56 @@ async def _prepare_questions(
                     historical_seen_bodies=[b for b, _ in historical_seen_records],
                     seen_signatures=seen_fingerprints | session_seen_fingerprints,
                     count=target,
+                    target_type=question_type,
                 )
                 if subcategory:
                     variations = [q for q in variations if matches_subcat(q)]
+                if question_type:
+                    variations = [q for q in variations if q.question_type == question_type]
                 selected = variations[:target]
             except Exception as var_exc:
                 logger.exception("Direct runtime variation generation failed: %s", var_exc)
+
+        # Emergency extraction retry if document questions were not available yet
+        if not selected and current_sources.document_ids:
+            try:
+                from app.services.document_question_extractor import extract_and_queue_document_questions
+                for doc_id in current_sources.document_ids:
+                    extracted = await extract_and_queue_document_questions(
+                        tenant_id=user.tenant_id,
+                        workspace_id=workspace_id,
+                        document_id=doc_id,
+                    )
+                    if extracted:
+                        if subcategory:
+                            extracted = [q for q in extracted if matches_subcat(q)]
+                        if question_type:
+                            extracted = [q for q in extracted if q.question_type == question_type]
+                        selected = extracted[:target]
+                        if selected:
+                            break
+            except Exception as ex:
+                logger.warning("Emergency document extraction retry failed: %s", ex)
+
+        # Emergency LLM generation pass on document chunks if still empty
+        if not selected and current_sources.document_ids:
+            try:
+                emergency_gen = await question_pipeline._generate_and_persist_batch(
+                    tenant_id=user.tenant_id,
+                    workspace_id=workspace_id,
+                    student_id=user.id,
+                    user_obj=user,
+                    revision=revision,
+                    subject=subject or (list(doc_subjects.values())[0] if doc_subjects else None),
+                    target_topic=subcategory,
+                    target_type=question_type,
+                    batch_size=target,
+                    allow_repeats=True,
+                )
+                if emergency_gen:
+                    selected = [q for q in emergency_gen if not question_type or q.question_type == question_type][:target]
+            except Exception as ex:
+                logger.warning("Emergency LLM batch generation failed: %s", ex)
 
         if not selected:
             # Guaranteed fallback is ONLY permitted for cold-start workspaces with zero documents and zero history
@@ -960,7 +1030,7 @@ async def _prepare_questions(
                 mode=AdaptiveSessionMode.study if not revision else AdaptiveSessionMode.revision,
                 level=level,
                 mastery=0.0,
-                subject=subject,
+                subject=subject or eff_subj,
                 subcategory=subcategory,
                 question_type=question_type,
             )
@@ -970,8 +1040,39 @@ async def _prepare_questions(
                 and canonical_question_signature(q.body) not in seen_fingerprints
                 and canonical_question_signature(q.body) not in session_seen_fingerprints
                 and normalize_question_stem(q.body) not in seen_fingerprints
+                and (not question_type or q.question_type == question_type)
             ]
             selected = (filtered_fallback if filtered_fallback else fb_plan.questions)[:target]
+
+    # Strict question type safeguard: guarantee 100% format purity
+    if question_type:
+        eff_qtype_str = (
+            question_type.value if hasattr(question_type, "value") else str(question_type)
+        ).lower()
+        selected = [
+            q for q in selected
+            if (q.question_type.value if hasattr(q.question_type, "value") else str(q.question_type)).lower() == eff_qtype_str
+        ]
+        # If strict filtering dropped the count to 0, top up from guaranteed fallback plan of the exact question type
+        if not selected:
+            fb_topup_plan = _build_guaranteed_fallback_plan(
+                workspace_id=workspace_id,
+                user_id=user.id,
+                tenant_id=user.tenant_id,
+                mode=AdaptiveSessionMode.study if not revision else AdaptiveSessionMode.revision,
+                level=level,
+                mastery=0.0,
+                subject=subject or (eff_subj if 'eff_subj' in locals() else None),
+                subcategory=subcategory,
+                question_type=question_type,
+                target=target,
+            )
+            for fb_q in fb_topup_plan.questions:
+                if (fb_q.question_type.value if hasattr(fb_q.question_type, "value") else str(fb_q.question_type)).lower() == eff_qtype_str:
+                    if fb_q.id not in {q.id for q in selected}:
+                        selected.append(fb_q)
+                        if len(selected) >= target:
+                            break
 
     prepared_results: list[PreparedQuestion] = []
     for question in selected:
@@ -1434,8 +1535,6 @@ async def _prepare_flashcards(
         and _flashcard_fingerprint(card.front, card.back) not in seen_fingerprints
         and _flashcard_fingerprint(card.front, card.back) not in reserved_fingerprints
     )
-    if not unseen_cards and available_cards and not subcategory:
-        unseen_cards = available_cards
 
     if len(unseen_cards) >= target:
         return unseen_cards[:target]
@@ -1550,20 +1649,18 @@ async def _prepare_flashcards(
     selected = _unique_flashcards(cards)[:target]
 
     if not selected:
-        if available_cards and not _is_self_study(workspace_id):
-            selected = available_cards[:target]
-        else:
-            fb_plan = _build_guaranteed_fallback_plan(
-                workspace_id=workspace_id,
-                user_id=user.id,
-                tenant_id=user.tenant_id,
-                mode=AdaptiveSessionMode.flashcard,
-                level=level,
-                mastery=0.0,
-                subject=subject,
-                subcategory=subcategory,
-            )
-            return fb_plan.flashcards[:target]
+        fb_plan = _build_guaranteed_fallback_plan(
+            workspace_id=workspace_id,
+            user_id=user.id,
+            tenant_id=user.tenant_id,
+            mode=AdaptiveSessionMode.flashcard,
+            level=level,
+            mastery=0.0,
+            subject=subject or (list(doc_subjects.values())[0] if doc_subjects else None),
+            subcategory=subcategory,
+            target=target,
+        )
+        return fb_plan.flashcards[:target]
 
     return selected[:target]
 
@@ -1624,6 +1721,111 @@ def _shuffle_prepared_mcq_options(q: PreparedQuestion) -> PreparedQuestion:
     )
 
 
+_EXTRA_MATH_FLASHCARDS = [
+    ("Slope-Intercept Form", "What is the slope-intercept form of a linear equation?", "y = mx + b, where m is the slope and b is the y-intercept.", "m represents rate of change and b represents where the line crosses the y-axis."),
+    ("Pythagorean Theorem", "What is the Pythagorean theorem formula for right triangles?", "a² + b² = c², where c is the hypotenuse.", "Applies to right-angled Euclidean triangles."),
+    ("Quadratic Formula", "State the quadratic formula used to solve ax² + bx + c = 0.", "x = (-b ± √(b² - 4ac)) / (2a)", "The discriminant b² - 4ac indicates the number of real roots."),
+    ("Distributive Property", "What is the distributive property of multiplication over addition?", "a(b + c) = ab + ac", "Distributing multiplies the outer term by each term inside parentheses."),
+    ("Product of Powers Rule", "What is the product rule for exponents with the same base (xᵃ · xᵇ)?", "xᵃ · xᵇ = xᵃ⁺ᵇ", "When multiplying powers with the same base, add their exponents."),
+    ("Quotient of Powers Rule", "What is the quotient rule for exponents (xᵃ / xᵇ)?", "xᵃ / xᵇ = xᵃ⁻ᵇ (for x ≠ 0)", "When dividing powers with the same base, subtract exponents."),
+    ("Zero Exponent Rule", "What is the value of any non-zero number raised to the power of 0 (x⁰)?", "1", "Any non-zero real number to the zero power equals 1."),
+    ("Negative Exponent Rule", "How is a negative exponent x⁻ⁿ written in positive exponent form?", "x⁻ⁿ = 1 / xⁿ (for x ≠ 0)", "A negative exponent indicates the reciprocal."),
+    ("Slope Formula", "What is the formula for the slope (m) between two points (x₁, y₁) and (x₂, y₂)?", "m = (y₂ - y₁) / (x₂ - x₁)", "Slope measures the steepness (rise over run) of a line."),
+    ("Perpendicular Lines Slope", "How are the slopes of two perpendicular non-vertical lines related?", "They are negative reciprocals: m₁ · m₂ = -1", "Perpendicular lines intersect at a 90-degree angle."),
+    ("Parallel Lines Slope", "How do the slopes of two distinct parallel lines compare?", "They are equal: m₁ = m₂", "Parallel lines never intersect and have identical steepness."),
+    ("Midpoint Formula", "What is the midpoint formula for the line segment joining (x₁, y₁) and (x₂, y₂)?", "M = ((x₁ + x₂)/2, (y₁ + y₂)/2)", "The midpoint coordinates are the averages of the endpoints."),
+    ("Distance Formula", "What is the distance formula between points (x₁, y₁) and (x₂, y₂)?", "d = √((x₂ - x₁)² + (y₂ - y₁)²)", "Derived directly from the Pythagorean theorem on a coordinate plane."),
+    ("Domain of a Function", "In mathematics, what is the domain of a function?", "The complete set of all possible independent input values (x).", "Domain specifies where the function is mathematically defined."),
+    ("Range of a Function", "In mathematics, what is the range of a function?", "The complete set of all possible dependent output values (y).", "Range represents the resulting outputs produced by the domain inputs."),
+    ("Absolute Value", "What does the absolute value |x| geometrically represent?", "The distance of x from zero on the number line.", "Distance is always non-negative: |x| ≥ 0."),
+    ("Linear Inequality Sign Flip", "When solving a linear inequality, when must you reverse the inequality sign?", "When multiplying or dividing both sides by a negative number.", "Multiplying by a negative inverts the order relation on the number line."),
+    ("Greatest Common Factor", "What is the Greatest Common Factor (GCF) of two integers?", "The largest integer that divides both numbers without a remainder.", "Useful for simplifying fractions and factoring algebraic expressions."),
+    ("Least Common Multiple", "What is the Least Common Multiple (LCM) of two integers?", "The smallest positive integer that is a multiple of both numbers.", "Used to find the common denominator when adding fractions."),
+    ("FOIL Method", "What does the acronym FOIL stand for when multiplying two binomials?", "First, Outside, Inside, Last", "Ensures all pairs of terms are multiplied systematically: (a+b)(c+d)."),
+    ("Commutative Property", "What does the commutative property of addition state?", "a + b = b + a", "Changing the order of addends does not change their sum."),
+    ("Associative Property", "What does the associative property of addition state?", "(a + b) + c = a + (b + c)", "Changing the grouping of terms does not change their sum."),
+    ("Direct Variation", "What is the equation for direct variation between y and x?", "y = kx, where k is the constant of variation.", "As x increases, y changes proportionally in the same direction."),
+    ("Inverse Variation", "What is the equation for inverse variation between y and x?", "y = k / x, where k is the constant of variation.", "As x increases, y decreases proportionally such that xy = k."),
+    ("Vertex Form of Quadratic", "What is the vertex form of a quadratic function?", "y = a(x - h)² + k, where (h, k) is the vertex.", "Reveals the vertex and axis of symmetry x = h directly.")
+]
+
+
+def _generate_fallback_equation_question(
+    idx: int,
+    target_qtype: str | None,
+    subject: str | None = None,
+) -> PreparedQuestion:
+    a_vals = [2, 3, 4, 5, 6, 7, 8, 9]
+    b_vals = [3, 4, 5, 6, 7, 8, 10, 12, 14, 15]
+    x_roots = [2, 3, 4, 5, 6, 7, 8, 9]
+    a = a_vals[idx % len(a_vals)]
+    b = b_vals[(idx // 2) % len(b_vals)]
+    root = x_roots[(idx * 3) % len(x_roots)]
+    c = a * root + b
+
+    eff_type = target_qtype or ("mcq" if idx % 3 == 0 else ("true_false" if idx % 3 == 1 else "short_answer"))
+
+    if eff_type == "true_false":
+        is_true = (idx % 2 == 0)
+        claimed_val = root if is_true else root + 2
+        return PreparedQuestion(
+            id=f"qst_gen_tf_{uuid4().hex[:8]}",
+            topic=subject or "Linear Equations in Algebra",
+            question_type="true_false",
+            difficulty="beginner",
+            body=f"In the linear equation {a}x + {b} = {c}, the value of x is {claimed_val}.",
+            options=[
+                PreparedOption(key="true", text="True"),
+                PreparedOption(key="false", text="False"),
+            ],
+            answer="true" if is_true else "false",
+            explanation=f"Subtract {b} from both sides to get {a}x = {c - b}, then divide by {a} to get x = {root}.",
+            grading_hints=[],
+        )
+    elif eff_type == "short_answer":
+        return PreparedQuestion(
+            id=f"qst_gen_sa_{uuid4().hex[:8]}",
+            topic=subject or "Linear Equations in Algebra",
+            question_type="short_answer",
+            difficulty="beginner",
+            body=f"Solve for x in the equation {a}x + {b} = {c}. What is the numerical value of x?",
+            options=[],
+            answer=str(root),
+            explanation=f"Subtract {b} from both sides: {a}x = {c - b}. Divide both sides by {a}: x = {root}.",
+            grading_hints=[str(root), f"x = {root}", f"x={root}"],
+        )
+    elif eff_type == "long_answer":
+        return PreparedQuestion(
+            id=f"qst_gen_la_{uuid4().hex[:8]}",
+            topic=subject or "Linear Equations in Algebra",
+            question_type="long_answer",
+            difficulty="intermediate",
+            body=f"Explain the step-by-step algebraic procedure used to solve {a}x + {b} = {c} for x, explicitly identifying the inverse operations applied.",
+            options=[],
+            answer=f"First, apply the subtraction property of equality to subtract {b} from both sides, yielding {a}x = {c - b}. Next, use the division property of equality to divide both sides by {a}, which yields x = {root}. Verification: {a}({root}) + {b} = {c}.",
+            explanation="Isolating variables requires systematically undoing operations using properties of equality.",
+            grading_hints=[f"subtract {b}", f"divide by {a}", f"x = {root}", "inverse operation"],
+        )
+    else:
+        options = [
+            PreparedOption(key="A", text=f"x = {root}"),
+            PreparedOption(key="B", text=f"x = {root + 1}"),
+            PreparedOption(key="C", text=f"x = {max(1, root - 1)}"),
+            PreparedOption(key="D", text=f"x = {root + 3}"),
+        ]
+        return PreparedQuestion(
+            id=f"qst_gen_mcq_{uuid4().hex[:8]}",
+            topic=subject or "Linear Equations in Algebra",
+            question_type="mcq",
+            difficulty="beginner",
+            body=f"What is the solution for x in {a}x + {b} = {c}?",
+            options=options,
+            answer="A",
+            explanation=f"Subtract {b} from both sides: {a}x = {c - b}. Divide by {a}: x = {root}.",
+            grading_hints=[],
+        )
+
+
 def _build_guaranteed_fallback_plan(
     *,
     workspace_id: str,
@@ -1635,6 +1837,7 @@ def _build_guaranteed_fallback_plan(
     subject: str | None = None,
     subcategory: str | None = None,
     question_type: QuestionType | str | None = None,
+    target: int | None = None,
 ) -> AdaptiveSessionPlan:
     session_id = f"ses_{uuid4().hex}"
     canon = canonical_subject(subject)
@@ -1646,6 +1849,12 @@ def _build_guaranteed_fallback_plan(
     if not subj or subj == "study":
         classified = classify_subject_from_text(subcategory or "") if subcategory else None
         subj = classified.strip().lower() if classified else "mathematics"
+
+    if target is None:
+        ranges = (
+            _FLASHCARD_RANGES if mode == AdaptiveSessionMode.flashcard else _QUESTION_RANGES
+        )
+        target = _adaptive_count(mastery, level, ranges[level])
 
     if mode == AdaptiveSessionMode.flashcard:
         if subj in ("chemistry", "chem"):
@@ -1683,31 +1892,31 @@ def _build_guaranteed_fallback_plan(
             flashcards = [
                 PreparedFlashcard(
                     id=f"fls_math_{uuid4().hex[:8]}",
-                    topic="Quadratic Equations in Algebra",
-                    front="What is the quadratic formula to find the roots of ax² + bx + c = 0?",
-                    back="x = (-b ± √(b² - 4ac)) / (2a)",
-                    explanation="The term (b² - 4ac) is the discriminant determining real or complex roots.",
-                ),
-                PreparedFlashcard(
-                    id=f"fls_math_{uuid4().hex[:8]}",
-                    topic="Pythagorean Identity in Trigonometry",
-                    front="State the fundamental Pythagorean trigonometric identity.",
-                    back="sin²(θ) + cos²(θ) = 1",
-                    explanation="Derived directly from the Pythagorean theorem in a unit circle.",
-                ),
-                PreparedFlashcard(
-                    id=f"fls_math_{uuid4().hex[:8]}",
                     topic="Linear Equations in Algebra",
-                    front="What is the general solution for x in ax + b = 0 (a ≠ 0)?",
-                    back="x = -b / a",
-                    explanation="Subtract b from both sides: ax = -b, then divide by a.",
+                    front="In the linear equation 3x + 7 = 22, what is the value of x?",
+                    back="x = 5 (subtract 7 from both sides to get 3x = 15, then divide by 3).",
+                    explanation="Isolate the variable by performing inverse operations.",
                 ),
                 PreparedFlashcard(
                     id=f"fls_math_{uuid4().hex[:8]}",
-                    topic="Derivative of Power Functions",
-                    front="What is the power rule for finding the derivative of f(x) = xⁿ?",
-                    back="f'(x) = n · xⁿ⁻¹",
-                    explanation="Multiply by the exponent and decrease the exponent by 1.",
+                    topic="Solving Linear Equations",
+                    front="What is the solution to 5x - 12 = 18?",
+                    back="x = 6 (add 12 to both sides to get 5x = 30, then divide by 5).",
+                    explanation="Add 12 to both sides and divide by 5.",
+                ),
+                PreparedFlashcard(
+                    id=f"fls_math_{uuid4().hex[:8]}",
+                    topic="Linear Equations with Parentheses",
+                    front="Solve for x: 2(x + 4) = 18.",
+                    back="x = 5 (divide by 2 to get x + 4 = 9, then subtract 4).",
+                    explanation="Apply the distributive property or divide first.",
+                ),
+                PreparedFlashcard(
+                    id=f"fls_math_{uuid4().hex[:8]}",
+                    topic="Variables on Both Sides",
+                    front="Solve for x: 7x - 4 = 3x + 16.",
+                    back="x = 5 (subtract 3x to get 4x - 4 = 16, add 4 to get 4x = 20, divide by 4).",
+                    explanation="Collect variable terms on one side and constant terms on the other.",
                 ),
             ]
         elif subj in ("physics", "phys"):
@@ -1753,6 +1962,13 @@ def _build_guaranteed_fallback_plan(
                 PreparedFlashcard(
                     id=f"fls_bio_{uuid4().hex[:8]}",
                     topic="Cell Biology",
+                    front="Which organelle is widely known as the powerhouse of eukaryotic cells?",
+                    back="Mitochondria (mitochondrion).",
+                    explanation="Mitochondria generate the majority of cellular adenosine triphosphate (ATP).",
+                ),
+                PreparedFlashcard(
+                    id=f"fls_bio_{uuid4().hex[:8]}",
+                    topic="Cell Biology",
                     front="What is the primary function of ribosomes in living cells?",
                     back="Protein synthesis.",
                     explanation="Ribosomes translate genetic instructions from mRNA into functional protein chains.",
@@ -1776,6 +1992,23 @@ def _build_guaranteed_fallback_plan(
                     explanation="Connecting related concepts reinforces conceptual schemas in memory.",
                 ),
             ]
+        if len(flashcards) < target:
+            existing_fronts = {f.front.casefold() for f in flashcards}
+            for topic_name, front_text, back_text, expl_text in _EXTRA_MATH_FLASHCARDS:
+                if front_text.casefold() not in existing_fronts:
+                    flashcards.append(
+                        PreparedFlashcard(
+                            id=f"fls_math_ext_{uuid4().hex[:8]}",
+                            topic=subcategory or topic_name,
+                            front=front_text,
+                            back=back_text,
+                            explanation=expl_text,
+                        )
+                    )
+                    existing_fronts.add(front_text.casefold())
+                    if len(flashcards) >= target:
+                        break
+        flashcards = flashcards[:target]
         if subcategory:
             for f in flashcards:
                 f.topic = subcategory.strip()
@@ -1912,178 +2145,189 @@ def _build_guaranteed_fallback_plan(
                     topic="Linear Equations in Algebra",
                     question_type="mcq",
                     difficulty="beginner",
-                    body="What is the solution for x in the general linear equation ax + b = 0 (where a ≠ 0)?",
+                    body="What is the solution for x in 3x + 7 = 22?",
                     options=[
-                        PreparedOption(key="A", text="x = b / a"),
-                        PreparedOption(key="B", text="x = -b / a"),
-                        PreparedOption(key="C", text="x = -a / b"),
-                        PreparedOption(key="D", text="x = a / b"),
+                        PreparedOption(key="A", text="x = 5"),
+                        PreparedOption(key="B", text="x = 4"),
+                        PreparedOption(key="C", text="x = 6"),
+                        PreparedOption(key="D", text="x = 3"),
                     ],
-                    answer="B",
-                    explanation="Subtracting b gives ax = -b, and dividing by a yields x = -b/a.",
+                    answer="A",
+                    explanation="Subtract 7 from both sides: 3x = 15. Divide by 3: x = 5.",
                     grading_hints=[],
                 ),
                 PreparedQuestion(
                     id=f"qst_math_{uuid4().hex[:8]}",
-                    topic="Coordinate Geometry",
+                    topic="Two-Step Equations",
                     question_type="mcq",
                     difficulty="beginner",
-                    body="In the slope-intercept form of a linear equation, y = mx + b, what does the letter 'm' represent?",
+                    body="Solve for x: 5x - 15 = 10",
                     options=[
-                        PreparedOption(key="A", text="The y-intercept"),
-                        PreparedOption(key="B", text="The x-intercept"),
-                        PreparedOption(key="C", text="The slope of the line"),
-                        PreparedOption(key="D", text="The distance from the origin"),
+                        PreparedOption(key="A", text="x = 5"),
+                        PreparedOption(key="B", text="x = 4"),
+                        PreparedOption(key="C", text="x = 3"),
+                        PreparedOption(key="D", text="x = 2"),
                     ],
-                    answer="C",
-                    explanation="In y = mx + b, m is the rate of change or slope, and b is the vertical intercept.",
+                    answer="A",
+                    explanation="Add 15 to both sides: 5x = 25. Divide by 5: x = 5.",
                     grading_hints=[],
                 ),
                 PreparedQuestion(
                     id=f"qst_math_{uuid4().hex[:8]}",
-                    topic="Quadratic Equations",
+                    topic="Distributive Property Equations",
                     question_type="mcq",
                     difficulty="intermediate",
-                    body="If the discriminant (b² - 4ac) of a quadratic equation ax² + bx + c = 0 is greater than zero, how many distinct real solutions exist?",
+                    body="Solve for x: 2(x + 4) = 18",
                     options=[
-                        PreparedOption(key="A", text="Zero real solutions"),
-                        PreparedOption(key="B", text="Exactly one real solution"),
-                        PreparedOption(key="C", text="Two distinct real solutions"),
-                        PreparedOption(key="D", text="Infinitely many solutions"),
-                    ],
-                    answer="C",
-                    explanation="A positive discriminant (D > 0) indicates two distinct real roots.",
-                    grading_hints=[],
-                ),
-                PreparedQuestion(
-                    id=f"qst_math_{uuid4().hex[:8]}",
-                    topic="Calculus & Derivatives",
-                    question_type="mcq",
-                    difficulty="intermediate",
-                    body="What is the derivative of f(x) = x³ with respect to x?",
-                    options=[
-                        PreparedOption(key="A", text="f'(x) = 3x"),
-                        PreparedOption(key="B", text="f'(x) = 3x²"),
-                        PreparedOption(key="C", text="f'(x) = x² / 3"),
-                        PreparedOption(key="D", text="f'(x) = 2x³"),
-                    ],
-                    answer="B",
-                    explanation="Using the power rule d/dx[xⁿ] = n·xⁿ⁻¹, the derivative of x³ is 3x².",
-                    grading_hints=[],
-                ),
-                PreparedQuestion(
-                    id=f"qst_math_{uuid4().hex[:8]}",
-                    topic="Systems of Linear Equations",
-                    question_type="mcq",
-                    difficulty="beginner",
-                    body="If 2x + y = 10 and y = 4, what is the value of x in this linear system?",
-                    options=[
-                        PreparedOption(key="A", text="x = 2"),
-                        PreparedOption(key="B", text="x = 3"),
-                        PreparedOption(key="C", text="x = 4"),
+                        PreparedOption(key="A", text="x = 5"),
+                        PreparedOption(key="B", text="x = 7"),
+                        PreparedOption(key="C", text="x = 9"),
                         PreparedOption(key="D", text="x = 6"),
                     ],
-                    answer="B",
-                    explanation="Substituting y = 4 yields 2x + 4 = 10 -> 2x = 6 -> x = 3.",
+                    answer="A",
+                    explanation="2x + 8 = 18 -> 2x = 10 -> x = 5.",
                     grading_hints=[],
                 ),
                 PreparedQuestion(
                     id=f"qst_math_{uuid4().hex[:8]}",
-                    topic="Exponent Rules in Algebra",
-                    question_type="mcq",
-                    difficulty="beginner",
-                    body="According to exponent rules, which expression represents the simplified form of (x³)²?",
-                    options=[
-                        PreparedOption(key="A", text="x⁵"),
-                        PreparedOption(key="B", text="x⁶"),
-                        PreparedOption(key="C", text="x⁸"),
-                        PreparedOption(key="D", text="x⁹"),
-                    ],
-                    answer="B",
-                    explanation="Using the power of a power rule (xᵃ)ᵇ = xᵃ·ᵇ, (x³)² = x⁶.",
-                    grading_hints=[],
-                ),
-                PreparedQuestion(
-                    id=f"qst_math_{uuid4().hex[:8]}",
-                    topic="Factoring Polynomials",
+                    topic="Variables on Both Sides",
                     question_type="mcq",
                     difficulty="intermediate",
-                    body="What is the complete factored form of the difference of squares x² - 16?",
+                    body="Solve for x: 7x - 4 = 3x + 16",
                     options=[
-                        PreparedOption(key="A", text="(x - 4)(x + 4)"),
-                        PreparedOption(key="B", text="(x - 4)²"),
-                        PreparedOption(key="C", text="(x + 4)²"),
-                        PreparedOption(key="D", text="(x - 8)(x + 2)"),
+                        PreparedOption(key="A", text="x = 5"),
+                        PreparedOption(key="B", text="x = 4"),
+                        PreparedOption(key="C", text="x = 6"),
+                        PreparedOption(key="D", text="x = 3"),
                     ],
                     answer="A",
-                    explanation="The difference of two squares a² - b² factors into (a - b)(a + b), so x² - 16 = (x - 4)(x + 4).",
+                    explanation="Subtract 3x: 4x - 4 = 16. Add 4: 4x = 20. Divide by 4: x = 5.",
                     grading_hints=[],
                 ),
                 PreparedQuestion(
                     id=f"qst_math_{uuid4().hex[:8]}",
-                    topic="Slope-Intercept Form",
+                    topic="Linear Systems",
                     question_type="mcq",
                     difficulty="beginner",
-                    body="What is the slope of the line described by the equation y = -3x + 7?",
+                    body="If 2x + y = 10 and y = 4, what is the value of x?",
                     options=[
-                        PreparedOption(key="A", text="-3"),
-                        PreparedOption(key="B", text="3"),
-                        PreparedOption(key="C", text="7"),
-                        PreparedOption(key="D", text="-7/3"),
+                        PreparedOption(key="A", text="x = 3"),
+                        PreparedOption(key="B", text="x = 2"),
+                        PreparedOption(key="C", text="x = 4"),
+                        PreparedOption(key="D", text="x = 5"),
                     ],
                     answer="A",
-                    explanation="In slope-intercept form y = mx + b, the slope m is the coefficient of x, which is -3.",
+                    explanation="Substitute y = 4: 2x + 4 = 10 -> 2x = 6 -> x = 3.",
                     grading_hints=[],
                 ),
                 PreparedQuestion(
                     id=f"qst_math_{uuid4().hex[:8]}",
-                    topic="Pythagorean Identity in Trigonometry",
+                    topic="Equations with Fractions",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="Solve for x: x / 3 + 4 = 10",
+                    options=[
+                        PreparedOption(key="A", text="x = 18"),
+                        PreparedOption(key="B", text="x = 14"),
+                        PreparedOption(key="C", text="x = 12"),
+                        PreparedOption(key="D", text="x = 21"),
+                    ],
+                    answer="A",
+                    explanation="Subtract 4: x / 3 = 6. Multiply by 3: x = 18.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Equations with Negative Coefficients",
+                    question_type="mcq",
+                    difficulty="intermediate",
+                    body="Solve for x: -2x + 8 = -6",
+                    options=[
+                        PreparedOption(key="A", text="x = 7"),
+                        PreparedOption(key="B", text="x = -7"),
+                        PreparedOption(key="C", text="x = 1"),
+                        PreparedOption(key="D", text="x = -1"),
+                    ],
+                    answer="A",
+                    explanation="-2x = -14 -> x = 7.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Linear Equations in One Variable",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="What is the value of x in 4x = 28?",
+                    options=[
+                        PreparedOption(key="A", text="x = 7"),
+                        PreparedOption(key="B", text="x = 6"),
+                        PreparedOption(key="C", text="x = 8"),
+                        PreparedOption(key="D", text="x = 9"),
+                    ],
+                    answer="A",
+                    explanation="Divide both sides by 4: x = 7.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Algebraic Properties",
                     question_type="true_false",
                     difficulty="beginner",
-                    body="The fundamental Pythagorean trigonometric identity states that sin²(θ) + cos²(θ) = 1 for any angle θ.",
+                    body="In the linear equation 2x + 5 = 15, subtracting 5 from both sides maintains equality and gives 2x = 10.",
                     options=[
                         PreparedOption(key="true", text="True"),
                         PreparedOption(key="false", text="False"),
                     ],
                     answer="true",
-                    explanation="In any right-angled triangle, (opposite/hypotenuse)² + (adjacent/hypotenuse)² = 1.",
+                    explanation="The subtraction property of equality allows subtracting the same quantity from both sides.",
                     grading_hints=[],
                 ),
                 PreparedQuestion(
                     id=f"qst_math_{uuid4().hex[:8]}",
-                    topic="Parallel Lines",
+                    topic="Inverse Operations",
                     question_type="true_false",
                     difficulty="beginner",
-                    body="In Cartesian coordinate geometry, two non-vertical lines are parallel if and only if they have equal slopes.",
+                    body="To isolate x in x / 4 = 3, multiplying both sides by 4 yields the solution x = 12.",
                     options=[
                         PreparedOption(key="true", text="True"),
                         PreparedOption(key="false", text="False"),
                     ],
                     answer="true",
-                    explanation="Parallel lines have identical rates of change and never intersect in Euclidean plane geometry.",
+                    explanation="Multiplication is the inverse operation of division: 4 * (x / 4) = 4 * 3 -> x = 12.",
                     grading_hints=[],
                 ),
                 PreparedQuestion(
                     id=f"qst_math_{uuid4().hex[:8]}",
-                    topic="Quadratic Equations in Algebra",
+                    topic="Linear Equations in Algebra",
                     question_type="short_answer",
-                    difficulty="intermediate",
-                    body="In the quadratic formula for ax² + bx + c = 0, the discriminant is given by the expression ________.",
+                    difficulty="beginner",
+                    body="Solve for x: 3x + 6 = 21. What is the value of x?",
                     options=[],
-                    answer="b^2 - 4ac",
-                    explanation="The discriminant D = b² - 4ac determines whether roots are real or complex.",
-                    grading_hints=["b^2 - 4ac", "b^2-4ac", "b squared minus 4ac"],
+                    answer="5",
+                    explanation="Subtract 6: 3x = 15. Divide by 3: x = 5.",
+                    grading_hints=["5", "x = 5", "x=5"],
                 ),
                 PreparedQuestion(
                     id=f"qst_math_{uuid4().hex[:8]}",
-                    topic="Exponents & Logarithms",
+                    topic="Two-Step Equations",
                     question_type="short_answer",
                     difficulty="beginner",
-                    body="For any non-zero real number a, what is the value of a raised to the power of 0 (a⁰)?",
+                    body="Solve for x: 4x - 8 = 12. What is the value of x?",
                     options=[],
-                    answer="1",
-                    explanation="By exponent definition laws, any non-zero value raised to 0 equals 1.",
-                    grading_hints=["1", "one"],
+                    answer="5",
+                    explanation="Add 8: 4x = 20. Divide by 4: x = 5.",
+                    grading_hints=["5", "x = 5", "x=5"],
+                ),
+                PreparedQuestion(
+                    id=f"qst_math_{uuid4().hex[:8]}",
+                    topic="Linear Equations in Algebra",
+                    question_type="long_answer",
+                    difficulty="intermediate",
+                    body="Explain the step-by-step method used to solve the equation 3x + 7 = 22, specifying the inverse operations applied at each step.",
+                    options=[],
+                    answer="First, apply the subtraction property of equality to subtract 7 from both sides, yielding 3x = 15. Next, use the division property of equality to divide both sides by 3, which yields x = 5. You can verify by substituting 5 back into 3(5) + 7 = 22.",
+                    explanation="Solving linear equations systematically applies inverse operations to isolate the unknown variable.",
+                    grading_hints=["subtract 7", "divide by 3", "x = 5", "inverse operations", "isolate"],
                 ),
             ]
         elif subj in ("physics", "phys"):
@@ -2445,80 +2689,82 @@ def _build_guaranteed_fallback_plan(
                         topic="Linear Equations in Algebra",
                         question_type="mcq",
                         difficulty="beginner",
-                        body="What is the solution for x in the general linear equation ax + b = 0 (where a ≠ 0)?",
+                        body="What is the solution for x in 3x + 7 = 22?",
                         options=[
-                            PreparedOption(key="A", text="x = b / a"),
-                            PreparedOption(key="B", text="x = -b / a"),
-                            PreparedOption(key="C", text="x = -a / b"),
-                            PreparedOption(key="D", text="x = a / b"),
-                        ],
-                        answer="B",
-                        explanation="Subtracting b gives ax = -b, and dividing by a yields x = -b/a.",
-                        grading_hints=[],
-                    ),
-                    PreparedQuestion(
-                        id=f"qst_math_{uuid4().hex[:8]}",
-                        topic="Coordinate Geometry",
-                        question_type="mcq",
-                        difficulty="beginner",
-                        body="In the slope-intercept form of a linear equation, y = mx + b, what does the letter 'm' represent?",
-                        options=[
-                            PreparedOption(key="A", text="The y-intercept"),
-                            PreparedOption(key="B", text="The x-intercept"),
-                            PreparedOption(key="C", text="The slope of the line"),
-                            PreparedOption(key="D", text="The distance from the origin"),
-                        ],
-                        answer="C",
-                        explanation="In y = mx + b, m is the rate of change or slope, and b is the vertical intercept.",
-                        grading_hints=[],
-                    ),
-                    PreparedQuestion(
-                        id=f"qst_math_{uuid4().hex[:8]}",
-                        topic="Systems of Linear Equations",
-                        question_type="mcq",
-                        difficulty="beginner",
-                        body="If 2x + y = 10 and y = 4, what is the value of x in this linear system?",
-                        options=[
-                            PreparedOption(key="A", text="x = 2"),
-                            PreparedOption(key="B", text="x = 3"),
-                            PreparedOption(key="C", text="x = 4"),
-                            PreparedOption(key="D", text="x = 6"),
-                        ],
-                        answer="B",
-                        explanation="Substituting y = 4 yields 2x + 4 = 10 -> 2x = 6 -> x = 3.",
-                        grading_hints=[],
-                    ),
-                    PreparedQuestion(
-                        id=f"qst_math_{uuid4().hex[:8]}",
-                        topic="Exponent Rules in Algebra",
-                        question_type="mcq",
-                        difficulty="beginner",
-                        body="According to exponent rules, which expression represents the simplified form of (x³)²?",
-                        options=[
-                            PreparedOption(key="A", text="x⁵"),
-                            PreparedOption(key="B", text="x⁶"),
-                            PreparedOption(key="C", text="x⁸"),
-                            PreparedOption(key="D", text="x⁹"),
-                        ],
-                        answer="B",
-                        explanation="Using the power of a power rule (xᵃ)ᵇ = xᵃ·ᵇ, (x³)² = x⁶.",
-                        grading_hints=[],
-                    ),
-                    PreparedQuestion(
-                        id=f"qst_math_{uuid4().hex[:8]}",
-                        topic="Factoring Polynomials",
-                        question_type="mcq",
-                        difficulty="intermediate",
-                        body="What is the complete factored form of the difference of squares x² - 16?",
-                        options=[
-                            PreparedOption(key="A", text="(x - 4)(x + 4)"),
-                            PreparedOption(key="B", text="(x - 4)²"),
-                            PreparedOption(key="C", text="(x + 4)²"),
-                            PreparedOption(key="D", text="(x - 8)(x + 2)"),
+                            PreparedOption(key="A", text="x = 5"),
+                            PreparedOption(key="B", text="x = 4"),
+                            PreparedOption(key="C", text="x = 6"),
+                            PreparedOption(key="D", text="x = 3"),
                         ],
                         answer="A",
-                        explanation="The difference of two squares a² - b² factors into (a - b)(a + b), so x² - 16 = (x - 4)(x + 4).",
+                        explanation="Subtract 7 from both sides: 3x = 15. Divide by 3: x = 5.",
                         grading_hints=[],
+                    ),
+                    PreparedQuestion(
+                        id=f"qst_math_{uuid4().hex[:8]}",
+                        topic="Two-Step Equations",
+                        question_type="mcq",
+                        difficulty="beginner",
+                        body="Solve for x: 5x - 15 = 10",
+                        options=[
+                            PreparedOption(key="A", text="x = 5"),
+                            PreparedOption(key="B", text="x = 4"),
+                            PreparedOption(key="C", text="x = 3"),
+                            PreparedOption(key="D", text="x = 2"),
+                        ],
+                        answer="A",
+                        explanation="Add 15 to both sides: 5x = 25. Divide by 5: x = 5.",
+                        grading_hints=[],
+                    ),
+                    PreparedQuestion(
+                        id=f"qst_math_{uuid4().hex[:8]}",
+                        topic="Algebraic Properties",
+                        question_type="true_false",
+                        difficulty="beginner",
+                        body="In the linear equation 2x + 5 = 15, subtracting 5 from both sides maintains equality and gives 2x = 10.",
+                        options=[
+                            PreparedOption(key="true", text="True"),
+                            PreparedOption(key="false", text="False"),
+                        ],
+                        answer="true",
+                        explanation="The subtraction property of equality allows subtracting the same quantity from both sides.",
+                        grading_hints=[],
+                    ),
+                    PreparedQuestion(
+                        id=f"qst_math_{uuid4().hex[:8]}",
+                        topic="Inverse Operations",
+                        question_type="true_false",
+                        difficulty="beginner",
+                        body="To isolate x in x / 4 = 3, multiplying both sides by 4 yields the solution x = 12.",
+                        options=[
+                            PreparedOption(key="true", text="True"),
+                            PreparedOption(key="false", text="False"),
+                        ],
+                        answer="true",
+                        explanation="Multiplication is the inverse operation of division.",
+                        grading_hints=[],
+                    ),
+                    PreparedQuestion(
+                        id=f"qst_math_{uuid4().hex[:8]}",
+                        topic="Linear Equations in Algebra",
+                        question_type="short_answer",
+                        difficulty="beginner",
+                        body="Solve for x: 3x + 6 = 21. What is the value of x?",
+                        options=[],
+                        answer="5",
+                        explanation="Subtract 6: 3x = 15. Divide by 3: x = 5.",
+                        grading_hints=["5", "x = 5", "x=5"],
+                    ),
+                    PreparedQuestion(
+                        id=f"qst_math_{uuid4().hex[:8]}",
+                        topic="Linear Equations in Algebra",
+                        question_type="long_answer",
+                        difficulty="intermediate",
+                        body="Explain the systematic method to solve the equation 3x + 7 = 22 and how to verify your solution.",
+                        options=[],
+                        answer="First subtract 7 from both sides to get 3x = 15. Next divide both sides by 3 to get x = 5. Verify by substituting 5 into 3(5) + 7 = 22.",
+                        explanation="Inverse operations isolate the variable in linear equations.",
+                        grading_hints=["subtract 7", "divide by 3", "x = 5", "verify"],
                     ),
                 ]
                 filtered_math = [
@@ -2527,12 +2773,38 @@ def _build_guaranteed_fallback_plan(
                 ]
                 if filtered_math:
                     questions = filtered_math
+                else:
+                    # Dynamic generic fallback ensuring strict target_qtype compliance
+                    questions = [
+                        PreparedQuestion(
+                            id=f"qst_gen_{uuid4().hex[:8]}",
+                            topic=subject or "Core Concepts",
+                            question_type=target_qtype,
+                            difficulty="intermediate",
+                            body=f"Explain the primary principles and structured methodology applied when studying {subject or 'this topic'}.",
+                            options=[],
+                            answer=f"Understanding {subject or 'this topic'} requires analyzing core definitions, identifying key patterns, and systematically applying foundational principles.",
+                            explanation=f"Mastery in {subject or 'this discipline'} develops from structured analysis.",
+                            grading_hints=["principles", "methodology", "analysis"],
+                        )
+                    ]
 
+        if len(questions) < target:
+            needed = target - len(questions)
+            for idx in range(needed):
+                questions.append(
+                    _generate_fallback_equation_question(
+                        idx=idx + len(questions),
+                        target_qtype=target_qtype,
+                        subject=subject,
+                    )
+                )
         # Always shuffle MCQ options so the correct answer key is randomized (never always 'A')
         questions = [_shuffle_prepared_mcq_options(q) for q in questions]
         if subcategory:
             for q in questions:
                 q.topic = subcategory.strip()
+        questions = questions[:target]
         flashcards = []
         item_count = len(questions)
 
@@ -2885,11 +3157,11 @@ async def prepare_adaptive_session(
     if _is_self_study(workspace_id) and request.mode == AdaptiveSessionMode.revision:
         request.mode = AdaptiveSessionMode.study
     if not _is_self_study(workspace_id):
-        # Admin-added workspaces strictly follow the original curriculum flow:
-        # subject, subcategory, and question_type filtering only apply in self-study.
+        # Admin-added workspaces strictly follow the curriculum flow:
+        # subject and subcategory filtering only apply in self-study.
+        # Format selection (question_type) is supported across all workspaces.
         request.subject = None
         request.subcategory = None
-        request.question_type = None
     capped = _is_self_study(workspace_id) and request.mode in _CAPPED_MODES
 
     try:
@@ -2926,12 +3198,27 @@ async def prepare_adaptive_session(
             except Exception as exc:
                 logger.debug("Failed to query documents fallback for workspace=%s: %s", workspace_id, exc)
             if any_doc:
-                sources = study_sources.CurrentStudySources(
-                    document_ids=frozenset({str(any_doc["_id"])}),
-                    topic_names=tuple(
-                        str(t.get("name", "")) for t in any_doc.get("topic_tags") or [] if isinstance(t, dict)
-                    ),
-                )
+                # If document was recently uploaded and is still extracting/chunking, wait up to 20s
+                doc_status = any_doc.get("status")
+                if doc_status in ("pending", "extracting", "text_extracted", "extracting_topics", "topics_extracted", "chunking"):
+                    logger.info("Document %s is in state '%s'; waiting for chunking/readiness...", any_doc.get("_id"), doc_status)
+                    for _ in range(10):  # wait up to 20s
+                        await asyncio.sleep(2.0)
+                        refreshed = await cosmos_retry(lambda: doc_col.find_one({"_id": any_doc["_id"]}))
+                        if refreshed and refreshed.get("status") in ("chunked", "vectorizing", "ready"):
+                            any_doc = refreshed
+                            sources = await study_sources.current_study_sources(
+                                tenant_id=current_user.tenant_id,
+                                workspace_id=workspace_id,
+                            )
+                            break
+                if not sources.document_ids:
+                    sources = study_sources.CurrentStudySources(
+                        document_ids=frozenset({str(any_doc["_id"])}),
+                        topic_names=tuple(
+                            str(t.get("name", "")) for t in any_doc.get("topic_tags") or [] if isinstance(t, dict)
+                        ),
+                    )
                 if not request.subject:
                     request.subject = any_doc.get("category") or classify_subject_from_text(any_doc.get("filename", ""))
                 if not request.subcategory and any_doc.get("subcategory"):
@@ -2942,8 +3229,8 @@ async def prepare_adaptive_session(
                 )
         snapshot = _source_snapshot(sources, subject=request.subject, subcategory=request.subcategory)
         has_custom_selection = bool(request.subject or request.subcategory or request.question_type)
-        if _is_self_study(workspace_id) and has_custom_selection:
-            # When the student explicitly chooses a subject, topic, or format type in self-study,
+        if has_custom_selection:
+            # When the student explicitly chooses a subject, topic, or format type,
             # never reuse an old open session from cache. Supersede any stale prepared session
             # and generate a freshly prepared session in real time.
             await _supersede_open_sessions(current_user.tenant_id, workspace_id, current_user.id)
@@ -3028,6 +3315,7 @@ async def prepare_adaptive_session(
             subject=request.subject,
             subcategory=request.subcategory,
             question_type=request.question_type,
+            target=target,
         )
         await _persist_prepared_session(
             tenant_id=current_user.tenant_id,
@@ -3061,7 +3349,7 @@ async def prepare_adaptive_session(
                     tenant_id=current_user.tenant_id,
                     workspace_id=workspace_id,
                     document_id=doc_id,
-                    subject=request.subject or "Mathematics",
+                    subject=request.subject or "Algebra 1",
                     subcategory=request.subcategory,
                     seed_questions=[],
                     historical_seen_bodies=[],
@@ -3100,6 +3388,7 @@ async def prepare_adaptive_session(
                 subject=request.subject,
                 subcategory=request.subcategory,
                 question_type=request.question_type,
+                target=target,
             )
 
             await _persist_prepared_session(
@@ -3113,6 +3402,13 @@ async def prepare_adaptive_session(
                 snapshot=snapshot,
             )
             return plan
+
+    if request.mode == AdaptiveSessionMode.flashcard:
+        flashcards = flashcards[:target]
+        item_count = len(flashcards)
+    else:
+        questions = questions[:target]
+        item_count = len(questions)
 
     xp_min = -item_count + _COMPLETION_BONUSES[request.mode]
     xp_max = item_count + _COMPLETION_BONUSES[request.mode]

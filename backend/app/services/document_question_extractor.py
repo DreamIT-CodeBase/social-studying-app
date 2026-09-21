@@ -183,25 +183,64 @@ async def extract_and_queue_document_questions(
     ]
 
     if filtered_inserts:
-        batch_size = 15
-        for i in range(0, len(filtered_inserts), batch_size):
-            chunk = filtered_inserts[i:i + batch_size]
-            for attempt in range(4):
-                try:
-                    await col_q.insert_many(chunk, ordered=False)
-                    await asyncio.sleep(0.2)
-                    break
-                except Exception as exc:
-                    logger.warning("Retry bulk insert chunk on error: %s", exc)
-                    await asyncio.sleep(0.5)
+        async def _persist_in_background(chunks_to_insert: list[dict[str, Any]]) -> None:
+            batch_size = 5
+            for i in range(0, len(chunks_to_insert), batch_size):
+                b_chunk = chunks_to_insert[i:i + batch_size]
+                for attempt in range(6):
+                    try:
+                        await col_q.insert_many(b_chunk, ordered=False)
+                        await asyncio.sleep(0.1)
+                        break
+                    except Exception as exc:
+                        retry_ms = 1000
+                        m = re.search(r"RetryAfterMs=(\d+)", str(exc))
+                        if m:
+                            try:
+                                retry_ms = int(m.group(1))
+                            except ValueError:
+                                pass
+                        logger.warning(
+                            "Retry bulk insert chunk on error (attempt %d/6, wait %dms): %s",
+                            attempt + 1,
+                            retry_ms,
+                            exc,
+                        )
+                        await asyncio.sleep((retry_ms / 1000.0) + 0.1)
 
-        logger.info(
-            "Extracted and queued %d questions from document %s",
-            len(filtered_inserts),
-            document_id,
-        )
+            logger.info(
+                "Extracted and queued %d questions from document %s",
+                len(chunks_to_insert),
+                document_id,
+            )
+
+        # Launch background persistence or await first batch
+        try:
+            # Synchronously insert the first batch of 15 questions so they are definitely in DB
+            first_batch = filtered_inserts[:15]
+            remaining_batch = filtered_inserts[15:]
+            if first_batch:
+                await col_q.insert_many(first_batch, ordered=False)
+            if remaining_batch:
+                asyncio.create_task(_persist_in_background(remaining_batch))
+        except Exception as insert_err:
+            logger.warning("First batch insert encountered error, running all in background: %s", insert_err)
+            asyncio.create_task(_persist_in_background(filtered_inserts))
 
     # Return full list of available questions for this doc
-    all_cursor = col_q.find({"document_id": document_id, "deleted_at": None})
-    all_raw = await cosmos_retry(lambda: all_cursor.to_list(length=500))
-    return [Question.model_validate(r) for r in all_raw]
+    try:
+        all_cursor = col_q.find({"document_id": document_id, "deleted_at": None})
+        all_raw = await cosmos_retry(lambda: all_cursor.to_list(length=500))
+        db_questions = [Question.model_validate(r) for r in all_raw]
+        if db_questions:
+            # Merge with parsed_questions for maximum immediate coverage
+            seen_ids = {q.id for q in db_questions}
+            for pq in parsed_questions:
+                if pq.id not in seen_ids:
+                    db_questions.append(pq)
+                    seen_ids.add(pq.id)
+            return db_questions
+    except Exception as query_err:
+        logger.warning("Failed to query inserted questions: %s", query_err)
+
+    return parsed_questions
