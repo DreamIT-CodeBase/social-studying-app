@@ -141,6 +141,7 @@ async def next_question(
     background_tasks: BackgroundTasks,
     revision: bool = False,
     subject: str | None = None,
+    subcategory: str | None = None,
     current_user: User = Depends(get_current_user),
 ) -> QuestionForStudent:
     """Generate and return the next adaptive question for the calling student."""
@@ -157,6 +158,7 @@ async def next_question(
             user_obj=current_user,
             revision=revision,
             subject=subject,
+            target_topic=subcategory,
             background_tasks=background_tasks,
         )
         return QuestionForStudent.from_doc(q_doc)
@@ -173,6 +175,12 @@ async def next_question(
             interactions = [
                 i for i in interactions
                 if subjects_match(classify_subject_from_text(str(i.get("topic", ""))), subject)
+            ]
+        if subcategory:
+            subcat_clean = subcategory.strip().casefold()
+            interactions = [
+                i for i in interactions
+                if subcat_clean in str(i.get("topic", "")).casefold()
             ]
 
         # 2. Extract wrong answers (recent wrong answers favoured/sorted first)

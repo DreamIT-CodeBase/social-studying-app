@@ -36,6 +36,7 @@ abstract class QuestionsRepository {
     required String workspaceId,
     bool revision = false,
     String? subject,
+    String? subcategory,
   });
 
   /// Submit a student's answer to a previously-served question.

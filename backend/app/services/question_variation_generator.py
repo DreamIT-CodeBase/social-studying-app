@@ -1044,6 +1044,10 @@ async def generate_runtime_material_variations(
         return []
 
     # 3. Check if topic/subject is mathematical
+    # If a non-math subject is explicitly requested, NEVER generate math equation variations!
+    if subject and not subjects_match(subject, "Mathematics"):
+        return []
+
     is_math = (
         any(m in subj_lower for m in ("math", "algebra", "geometry", "calculus", "arithmetic", "equation", "statistics", "probability", "precalculus", "linear", "quadratic"))
         or any(m in subcat_lower for m in ("math", "algebra", "geometry", "calculus", "equation", "step", "distributive", "variable", "linear", "quadratic"))

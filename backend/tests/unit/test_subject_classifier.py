@@ -8,6 +8,8 @@ from app.services.subject_classifier import (
     classify_document_subject,
     classify_subject_from_text,
     classify_subject_with_llm,
+    is_conflicting_subject,
+    is_math_question_body,
     subjects_match,
 )
 
@@ -145,5 +147,39 @@ def test_canonical_subject_and_subjects_match():
     assert subjects_match("Algebra 1", "Algebra") is True
     assert subjects_match("Algebra 1", "Biology") is False
     assert subjects_match("Algebra 1", "Plant Biology") is False
+
+    # Disallow empty/None matching concrete subjects
+    assert subjects_match(None, "Chemistry") is False
+    assert subjects_match("", "Chemistry") is False
+    assert subjects_match("Chemistry", None) is False
+    assert subjects_match("Chemistry", "") is False
+    assert subjects_match(None, None) is True
+    assert subjects_match("", "") is True
+
+    # Mutually exclusive academic domains must NEVER match
+    assert subjects_match("Mathematics", "Chemistry") is False
+    assert subjects_match("Chemistry", "Mathematics") is False
+    assert subjects_match("Physics", "Chemistry") is False
+    assert subjects_match("Chemistry", "Physics") is False
+    assert subjects_match("Mathematics", "Physics") is False
+
+
+def test_is_math_question_body():
+    assert is_math_question_body("Solve for x: -2 + x = -7") is True
+    assert is_math_question_body("Solve for x: 3x + 12 = 36") is True
+    assert is_math_question_body("Evaluate: \\int 2x dx") is True
+    assert is_math_question_body("Find the value of x when 2x = 10") is True
+    assert is_math_question_body("What is the powerhouse of the cell?") is False
+    assert is_math_question_body("Which element has atomic number 6?") is False
+    assert is_math_question_body("Describe the process of photosynthesis.") is False
+
+
+def test_is_conflicting_subject():
+    assert is_conflicting_subject("Mathematics", "Chemistry") is True
+    assert is_conflicting_subject("Physics", "Chemistry") is True
+    assert is_conflicting_subject("Chemistry", "Physics") is True
+    assert is_conflicting_subject("Chemistry", "Chemistry") is False
+    assert is_conflicting_subject(None, "Chemistry", body="Solve for x: 3x + 12 = 36") is True
+    assert is_conflicting_subject(None, "Chemistry", body="Which element has atomic number 6?") is False
 
 

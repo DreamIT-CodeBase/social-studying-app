@@ -240,12 +240,14 @@ class QuestionSessionNotifier extends _$QuestionSessionNotifier {
     state = const QuestionSession.loading();
     try {
       final repo = ref.read(questionsRepositoryProvider);
-      final subject = isSelfLearningWorkspaceId(_workspaceId)
-          ? ref.read(selfStudySubjectProvider)
-          : null;
+      final isSelfStudy = isSelfLearningWorkspaceId(_workspaceId);
+      final subject = isSelfStudy ? ref.read(selfStudySubjectProvider) : null;
+      final subcategory =
+          isSelfStudy ? ref.read(selfStudySubcategoryProvider) : null;
       final question = await repo.next(
         workspaceId: _workspaceId,
         subject: subject,
+        subcategory: subcategory,
       );
       state = QuestionSession.ready(question: question);
       _questionStartTime = DateTime.now();

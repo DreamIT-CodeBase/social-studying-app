@@ -351,24 +351,121 @@ _SCIENCE_DOMAINS = {
 }
 
 
+_DISJOINT_DOMAINS = {
+    "mathematics",
+    "chemistry",
+    "physics",
+    "biology",
+    "history",
+    "english & literature",
+    "economics",
+    "computer science",
+    "philosophy",
+    "business",
+    "psychology",
+    "sociology & anthropology",
+    "government & politics",
+}
+
+
 def subjects_match(s1: str | None, s2: str | None) -> bool:
-    """Return True if two subject strings refer to the same subject domain."""
-    if not s1 or not s2:
+    """Return True if two subject strings refer to the same subject domain.
+
+    If both are unspecified (None or empty), returns True.
+    If one is specified and the other is empty/unspecified, returns False.
+    Mutually exclusive domains (e.g. Mathematics vs Chemistry/Physics) NEVER match.
+    """
+    if not s1 and not s2:
         return True
+    if not s1 or not s2:
+        return False
+
+    r1 = s1.strip().casefold()
+    r2 = s2.strip().casefold()
+    if not r1 and not r2:
+        return True
+    if not r1 or not r2:
+        return False
+    if r1 == r2:
+        return True
+
     c1 = canonical_subject(s1).strip().casefold()
     c2 = canonical_subject(s2).strip().casefold()
     if c1 and c2 and c1 == c2:
         return True
-    r1 = s1.strip().casefold()
-    r2 = s2.strip().casefold()
-    if r1 == r2 or r1 in r2 or r2 in r1:
-        return True
+
+    # Mutually exclusive domains must never cross-match
+    if c1 in _DISJOINT_DOMAINS and c2 in _DISJOINT_DOMAINS and c1 != c2:
+        return False
+
     # Umbrella science domain matching: 'Science' encompasses Biology, Chemistry, Physics, etc.
     canon_set = {c1, c2}
     raw_set = {r1, r2}
     if (canon_set & {"science", "general science"}) and canon_set.issubset(_SCIENCE_DOMAINS):
         return True
-    return bool((raw_set & {"science", "general science"}) and (r1 in _SCIENCE_DOMAINS and r2 in _SCIENCE_DOMAINS))
+    if (raw_set & {"science", "general science"}) and (r1 in _SCIENCE_DOMAINS and r2 in _SCIENCE_DOMAINS):
+        return True
+
+    # Substring matching only if meaningful length and not crossing disjoint boundaries
+    if len(r1) >= 4 and len(r2) >= 4 and (r1 in r2 or r2 in r1):
+        if not (c1 in _DISJOINT_DOMAINS and c2 in _DISJOINT_DOMAINS and c1 != c2):
+            return True
+
+    return False
+
+
+_MATH_BODY_PATTERN = re.compile(
+    r"(?:"
+    r"^\s*(?:q(?:uestion)?\s*\d*[\.\:\-\)]\s*)?solve\s+for\s+[a-z]\b|"
+    r"\b(?:find|calculate|evaluate|determine)\s+the\s+value\s+of\s+[a-z]\b|"
+    r"\b(?:x|y|z)\s*=\s*-?\s*\d+\b|"
+    r"[-+]?\s*\d*\.?\d*\s*[a-z]\s*[-+*/]\s*\d+\s*=\s*[-+]?\d+|"
+    r"\b\d+x\s*[-+=]|\bx\^2\b|"
+    r"\b(?:sin|cos|tan|cot|sec|csc)\s*\(|"
+    r"(?:\bd/dx|\\int|\\frac|\blog_)"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def is_math_question_body(body: str | None) -> bool:
+    """Return True if the text contains clear mathematical formulas/equations (e.g. Solve for x)."""
+    if not body or not body.strip():
+        return False
+    return bool(_MATH_BODY_PATTERN.search(body.strip()))
+
+
+def is_conflicting_subject(
+    candidate_subject: str | None,
+    requested_subject: str | None,
+    body: str | None = None,
+) -> bool:
+    """Return True if candidate_subject or body conflicts with requested_subject."""
+    if not requested_subject:
+        return False
+    req = canonical_subject(requested_subject).strip().casefold()
+    if req in ("science", "chemistry", "physics", "biology"):
+        # Non-math science subject requested: any math equation body is an immediate conflict
+        if body and is_math_question_body(body):
+            body_subj = classify_subject_from_text(body).strip().casefold()
+            if body_subj in ("mathematics", "study") or body_subj != req:
+                return True
+        if candidate_subject:
+            cand = canonical_subject(candidate_subject).strip().casefold()
+            if cand == "mathematics":
+                return True
+            if req == "chemistry" and cand in ("physics", "mathematics"):
+                return True
+            if req == "physics" and cand in ("chemistry", "mathematics"):
+                return True
+            if req == "biology" and cand in ("physics", "chemistry", "mathematics"):
+                return True
+    elif req == "mathematics":
+        if candidate_subject:
+            cand = canonical_subject(candidate_subject).strip().casefold()
+            if cand in ("chemistry", "physics", "biology", "history", "english & literature"):
+                return True
+    return False
 
 
 def classify_document_subject(doc: Document) -> str:

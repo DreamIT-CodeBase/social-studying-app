@@ -51,7 +51,10 @@ from app.services.question_deduplication import (
     normalize_question_stem,
 )
 from app.services.subject_classifier import (
+    canonical_subject,
     classify_subject_from_text,
+    is_conflicting_subject,
+    is_math_question_body,
     subjects_match,
 )
 
@@ -82,6 +85,7 @@ async def get_next_question(
     user_obj: User,
     revision: bool = False,
     subject: str | None = None,
+    target_topic: str | None = None,
     background_tasks: BackgroundTasks,
 ) -> Question:
     """Retrieve the next question from the queue cache.
@@ -89,7 +93,11 @@ async def get_next_question(
     Falls back to synchronous batch generation if buffer is empty.
     """
     redis = await get_redis()
-    cache_suffix = f":{subject.strip().casefold()}" if subject else ""
+    cache_suffix = ""
+    if subject:
+        cache_suffix += f":{subject.strip().casefold()}"
+    if target_topic:
+        cache_suffix += f":{target_topic.strip().casefold()}"
     cache_key = f"{CACHE_KEY_PREFIX}:{workspace_id}:{student_id}{cache_suffix}"
 
     # 1. Read buffer from Redis
@@ -103,16 +111,41 @@ async def get_next_question(
     current_document_ids = current_sources.document_ids
     # Cached rows predate the current source snapshot and may outlive a
     # document deletion. Never serve a row unless its real source is active.
-    questions = [
-        question
-        for question in questions
-        if str(question.get("document_id", "")) in current_document_ids
-        and (
-            not subject
-            or subjects_match(classify_subject_from_text(str(question.get("topic", ""))), subject)
-            or subjects_match(classify_subject_from_text(str(question.get("body", ""))), subject)
-        )
-    ]
+    def _is_valid_cached_q(q_dict: dict[str, Any]) -> bool:
+        if str(q_dict.get("document_id", "")) not in current_document_ids:
+            return False
+        q_topic = str(q_dict.get("topic", ""))
+        q_body = str(q_dict.get("body", ""))
+        if subject:
+            q_topic_s = classify_subject_from_text(q_topic)
+            if is_conflicting_subject(q_topic_s, subject, body=q_body):
+                return False
+            if is_math_question_body(q_body) and canonical_subject(subject).casefold() != "mathematics":
+                return False
+            q_body_s = classify_subject_from_text(q_body)
+            has_subject_match = (
+                (q_topic_s and subjects_match(q_topic_s, subject))
+                or (q_body_s and subjects_match(q_body_s, subject))
+                or subjects_match(q_topic, subject)
+            )
+            if not has_subject_match:
+                return False
+        if target_topic:
+            subcat_clean = target_topic.strip().casefold()
+            top_clean = q_topic.strip().casefold()
+            if not (subcat_clean == top_clean or subcat_clean in top_clean or top_clean in subcat_clean):
+                sub_terms = {
+                    t for t in re.findall(r"[a-z0-9]+", subcat_clean)
+                    if len(t) >= 2 and not t.isdigit() and t not in {"the", "and", "in", "of", "to", "a", "an", "is", "for", "with", "on", "concepts", "fundamentals", "basics", "study"}
+                }
+                if sub_terms:
+                    q_terms = {t for t in re.findall(r"[a-z0-9]+", top_clean) if len(t) >= 2 and not t.isdigit()}
+                    body_terms = {t for t in re.findall(r"[a-z0-9]+", q_body.casefold()) if len(t) >= 2 and not t.isdigit()}
+                    if not (len(sub_terms & q_terms) >= max(1, len(sub_terms) // 2) or len(sub_terms & body_terms) >= max(1, len(sub_terms) // 2)):
+                        return False
+        return True
+
+    questions = [q for q in questions if _is_valid_cached_q(q)]
 
     if questions:
         # Pop first item
@@ -129,13 +162,14 @@ async def get_next_question(
                 user_obj=user_obj,
                 revision=revision,
                 subject=subject,
+                target_topic=target_topic,
             )
-            logger.info("Triggered background question prefetch for student=%s subject=%s", student_id, subject)
+            logger.info("Triggered background question prefetch for student=%s subject=%s topic=%s", student_id, subject, target_topic)
 
         return Question.model_validate(first_q)
 
     # 2. Buffer is empty: run synchronous batch generation
-    logger.info("Buffer empty for student=%s subject=%s, running synchronous batch generation", student_id, subject)
+    logger.info("Buffer empty for student=%s subject=%s topic=%s, running synchronous batch generation", student_id, subject, target_topic)
     generated_list = await _generate_and_persist_batch(
         tenant_id=tenant_id,
         workspace_id=workspace_id,
@@ -143,6 +177,7 @@ async def get_next_question(
         user_obj=user_obj,
         revision=revision,
         subject=subject,
+        target_topic=target_topic,
         batch_size=20,
     )
 
@@ -161,6 +196,7 @@ async def get_next_question(
             user_obj=user_obj,
             revision=revision,
             subject=subject,
+            target_topic=target_topic,
             batch_size=20,
             allow_repeats=True,
         )
@@ -187,10 +223,15 @@ async def prefetch_batch_background(
     user_obj: User,
     revision: bool = False,
     subject: str | None = None,
+    target_topic: str | None = None,
 ) -> None:
     """FastAPI background task to pre-populate cache queue."""
     redis = await get_redis()
-    cache_suffix = f":{subject.strip().casefold()}" if subject else ""
+    cache_suffix = ""
+    if subject:
+        cache_suffix += f":{subject.strip().casefold()}"
+    if target_topic:
+        cache_suffix += f":{target_topic.strip().casefold()}"
     cache_key = f"{CACHE_KEY_PREFIX}:{workspace_id}:{student_id}{cache_suffix}"
 
     # Verify current size before running to avoid duplicate triggers
@@ -199,7 +240,7 @@ async def prefetch_batch_background(
     if len(questions) > 5:
         return
 
-    logger.info("Starting background prefetch for student=%s subject=%s", student_id, subject)
+    logger.info("Starting background prefetch for student=%s subject=%s topic=%s", student_id, subject, target_topic)
     new_questions = await _generate_and_persist_batch(
         tenant_id=tenant_id,
         workspace_id=workspace_id,
@@ -207,6 +248,7 @@ async def prefetch_batch_background(
         user_obj=user_obj,
         revision=revision,
         subject=subject,
+        target_topic=target_topic,
         batch_size=20,
     )
 
@@ -335,21 +377,28 @@ async def _generate_and_persist_batch(
         docs_raw = await cosmos_retry(lambda: cursor_doc.to_list(length=200))
         for doc_raw in docs_raw:
             filename = doc_raw.get("filename", "")
-            doc_subj = (doc_raw.get("category") or "").strip() or classify_subject_from_text(filename)
+            cat = doc_raw.get("category") or ""
+            subcat = str(doc_raw.get("subcategory") or "")
+            doc_subj = cat.strip() or classify_subject_from_text(f"{filename} {subcat}")
             tags = doc_raw.get("topic_tags") or []
-            if subject:
-                if not doc_subj or doc_subj.casefold() == "study":
-                    for tag in tags:
-                        tag_name = tag.get("name") if isinstance(tag, dict) else str(tag)
-                        if subjects_match(classify_subject_from_text(tag_name), subject):
-                            doc_subj = subject
-                            break
-                if doc_subj and subjects_match(doc_subj, subject):
-                    matching_ids_set.add(str(doc_raw["_id"]))
-                    matching_docs.append(doc_raw)
+            if not doc_subj or doc_subj.casefold() == "study":
+                for tag in tags:
+                    tag_name = tag.get("name") if isinstance(tag, dict) else str(tag)
+                    ts = classify_subject_from_text(tag_name)
+                    if ts and ts.casefold() != "study":
+                        doc_subj = ts
+                        break
+
+            # If subject is requested, doc MUST match subject!
+            if subject and not subjects_match(doc_subj, subject):
+                continue
+
+            if subject and doc_subj and subjects_match(doc_subj, subject):
+                matching_ids_set.add(str(doc_raw["_id"]))
+                matching_docs.append(doc_raw)
 
             if target_topic:
-                doc_subcat = str(doc_raw.get("subcategory", "")).casefold()
+                doc_subcat = subcat.casefold()
                 if target_topic.casefold() in doc_subcat or doc_subcat in target_topic.casefold():
                     matching_ids_set.add(str(doc_raw["_id"]))
                 for tag in tags:
@@ -509,7 +558,18 @@ async def _generate_and_persist_batch(
             if subject:
                 q_topic_subj = classify_subject_from_text(candidate_obj.topic_name)
                 q_body_subj = classify_subject_from_text(gq.body)
-                if not (subjects_match(q_topic_subj, subject) or subjects_match(q_body_subj, subject)):
+                if is_conflicting_subject(q_topic_subj, subject, body=gq.body):
+                    continue
+                if is_conflicting_subject(q_body_subj, subject, body=gq.body):
+                    continue
+                if is_math_question_body(gq.body) and canonical_subject(subject).casefold() != "mathematics":
+                    continue
+                has_subject_match = (
+                    (q_topic_subj and subjects_match(q_topic_subj, subject))
+                    or (q_body_subj and subjects_match(q_body_subj, subject))
+                    or subjects_match(candidate_obj.topic_name, subject)
+                )
+                if not has_subject_match:
                     logger.warning(
                         "Dropping question '%s' during batch generation: topic_subj=%s body_subj=%s does not match subject=%s",
                         gq.body[:60],

@@ -18,6 +18,9 @@ import 'package:social_study_app/features/notifications/data/notification_token_
 import 'package:social_study_app/features/notifications/presentation/notification_service.dart';
 import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/core/utils/subject_classifier.dart';
+import 'package:social_study_app/features/home/providers/self_study_subject_providers.dart';
+import 'package:social_study_app/shared/models/workspace.dart'
+    show isSelfLearningWorkspaceId;
 
 /// Question-answering interface (Sprint 4.7) and answer feedback
 /// (Sprint 4.8) — unified into a single visual page style.
@@ -123,6 +126,19 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (isSelfLearningWorkspaceId(widget.workspaceId)) {
+      ref.listen<String?>(selfStudySubjectProvider, (prev, next) {
+        if (prev != next && mounted) {
+          _restart();
+        }
+      });
+      ref.listen<String?>(selfStudySubcategoryProvider, (prev, next) {
+        if (prev != next && mounted) {
+          _restart();
+        }
+      });
+    }
+
     ref.listen(
       questionSessionNotifierProvider(widget.workspaceId),
       (prev, next) {

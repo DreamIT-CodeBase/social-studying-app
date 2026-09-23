@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:social_study_app/core/utils/subject_classifier.dart';
 import 'package:social_study_app/features/home/providers/self_study_subject_providers.dart';
+import 'package:social_study_app/features/questions/presentation/question_session_notifier.dart';
 
 /// Interactive Subject Switcher Bar for the Self Study Workspace.
 ///
@@ -22,21 +23,80 @@ class SubjectSwitcherBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final activeSubject = ref.watch(selfStudySubjectProvider);
     final activeSubcategory = ref.watch(selfStudySubcategoryProvider);
-    final subjects = ref.watch(selfStudyAvailableSubjectsProvider(workspaceId));
-    final subcategories =
-        ref.watch(selfStudyAvailableSubcategoriesProvider(workspaceId));
-    final counts = ref.watch(selfStudySubjectCountsProvider(workspaceId));
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
-    final totalDocs = counts.values.fold<int>(0, (sum, count) => sum + count);
+    final counts = ref.watch(selfStudySubjectCountsProvider(workspaceId));
+    final subcategories =
+        ref.watch(selfStudySubcategoriesProvider(workspaceId));
+    final subjects = counts.keys.toList()..sort();
+    final totalDocs = counts.values.fold<int>(0, (a, b) => a + b);
+
+    // If no materials uploaded yet, show quick prompt
+    if (subjects.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: isDark
+                ? const Color(0xFF1E293B).withValues(alpha: 0.6)
+                : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isDark
+                  ? const Color(0xFF334155).withValues(alpha: 0.5)
+                  : const Color(0xFFE2E8F0),
+            ),
+          ),
+          child: Row(
+            children: [
+              const Text('📚', style: TextStyle(fontSize: 18)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Upload study material to organize by subject',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF64748B),
+                  ),
+                ),
+              ),
+              if (onAddMaterial != null)
+                TextButton(
+                  onPressed: onAddMaterial,
+                  style: TextButton.styleFrom(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text(
+                    'Upload',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF6366F1),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Horizontal scrolling subject pills
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -123,6 +183,8 @@ class SubjectSwitcherBar extends ConsumerWidget {
                     ref.read(selfStudySubjectProvider.notifier).state = null;
                     ref.read(selfStudySubcategoryProvider.notifier).state =
                         null;
+                    ref.invalidate(
+                        questionSessionNotifierProvider(workspaceId));
                   },
                 ),
                 const SizedBox(width: 8),
@@ -147,6 +209,8 @@ class SubjectSwitcherBar extends ConsumerWidget {
                             isSelected ? null : subject;
                         ref.read(selfStudySubcategoryProvider.notifier).state =
                             null;
+                        ref.invalidate(
+                            questionSessionNotifierProvider(workspaceId));
                       },
                     ),
                   );
@@ -186,6 +250,8 @@ class SubjectSwitcherBar extends ConsumerWidget {
                       onTap: () {
                         ref.read(selfStudySubcategoryProvider.notifier).state =
                             null;
+                        ref.invalidate(
+                            questionSessionNotifierProvider(workspaceId));
                       },
                       child: Text(
                         'Clear Focus',
@@ -221,6 +287,8 @@ class SubjectSwitcherBar extends ConsumerWidget {
                     onTap: () {
                       ref.read(selfStudySubcategoryProvider.notifier).state =
                           null;
+                      ref.invalidate(
+                          questionSessionNotifierProvider(workspaceId));
                     },
                   ),
                   const SizedBox(width: 6),
@@ -241,6 +309,8 @@ class SubjectSwitcherBar extends ConsumerWidget {
                           ref
                               .read(selfStudySubcategoryProvider.notifier)
                               .state = isSubSelected ? null : subcat;
+                          ref.invalidate(
+                              questionSessionNotifierProvider(workspaceId));
                         },
                       ),
                     );

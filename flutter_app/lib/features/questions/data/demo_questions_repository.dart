@@ -76,6 +76,7 @@ class DemoQuestionsRepository implements QuestionsRepository {
     required String workspaceId,
     bool revision = false,
     String? subject,
+    String? subcategory,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 250));
     final lowerSubject = (subject ?? '').toLowerCase();

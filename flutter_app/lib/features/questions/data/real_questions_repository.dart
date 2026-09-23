@@ -28,11 +28,15 @@ class RealQuestionsRepository implements QuestionsRepository {
     required String workspaceId,
     bool revision = false,
     String? subject,
+    String? subcategory,
   }) async {
     try {
       final queryParams = <String, dynamic>{'revision': revision};
       if (subject != null) {
         queryParams['subject'] = subject;
+      }
+      if (subcategory != null) {
+        queryParams['subcategory'] = subcategory;
       }
       final response = await dio.post<Map<String, dynamic>>(
         '$_apiPrefix/workspaces/$workspaceId/questions/next',

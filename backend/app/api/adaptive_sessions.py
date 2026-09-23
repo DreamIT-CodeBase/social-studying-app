@@ -83,6 +83,8 @@ from app.services.question_variation_generator import generate_runtime_material_
 from app.services.subject_classifier import (
     canonical_subject,
     classify_subject_from_text,
+    is_conflicting_subject,
+    is_math_question_body,
     subjects_match,
 )
 
@@ -685,34 +687,6 @@ async def _prepare_questions(
 
     weak_order = {topic.casefold(): i for i, topic in enumerate(weak_topics)}
 
-    col = get_collection(user.tenant_id, QUESTION_QUEUE)
-    q_query: dict[str, Any] = {
-        "workspace_id": workspace_id,
-        "status": QuestionStatus.approved.value,
-        "deleted_at": None,
-    }
-    if current_sources.document_ids:
-        q_query["document_id"] = {"$in": sorted(current_sources.document_ids)}
-    cursor = col.find(q_query)
-    all_raw = await cosmos_retry(lambda: cursor.to_list(length=600))
-
-    # Weakest topics first, with stable secondary sort by id
-    all_raw.sort(
-        key=lambda row: (
-            weak_order.get(str(row.get("topic", "")).casefold(), 10_000),
-            str(row.get("_id", "")),
-        )
-    )
-
-    available: list[Question] = []
-    for raw in all_raw:
-        try:
-            question = Question.model_validate(raw)
-            if question.document_id in current_sources.document_ids:
-                available.append(question)
-        except Exception:
-            logger.warning("Skipping malformed queued question id=%s", raw.get("_id"))
-
     doc_subjects: dict[str, str] = {}
     doc_subcats: dict[str, set[str]] = {}
     if current_sources.document_ids:
@@ -734,7 +708,7 @@ async def _prepare_questions(
                 tags.add(str(tag_name).casefold())
             doc_subcats[str(doc_raw["_id"])] = tags
 
-            s = cat or classify_subject_from_text(fn)
+            s = cat or classify_subject_from_text(f"{fn} {subcat or ''}")
             if not s or s.casefold() == "study":
                 for tag_name in tags:
                     ts = classify_subject_from_text(tag_name)
@@ -743,16 +717,63 @@ async def _prepare_questions(
                         break
             doc_subjects[str(doc_raw["_id"])] = s or ""
 
+    col = get_collection(user.tenant_id, QUESTION_QUEUE)
+    q_query: dict[str, Any] = {
+        "workspace_id": workspace_id,
+        "status": QuestionStatus.approved.value,
+        "deleted_at": None,
+    }
+    if current_sources.document_ids:
+        matching_doc_ids = (
+            [did for did in current_sources.document_ids if subjects_match(doc_subjects.get(did, ""), subject)]
+            if subject
+            else list(current_sources.document_ids)
+        )
+        # If matching documents exist for the requested subject, query ONLY from those documents
+        target_doc_ids = matching_doc_ids if matching_doc_ids else list(current_sources.document_ids)
+        q_query["document_id"] = {"$in": sorted(target_doc_ids)}
+
+    cursor = col.find(q_query)
+    all_raw = await cosmos_retry(lambda: cursor.to_list(length=600))
+
+    # Weakest topics first, with stable secondary sort by id
+    all_raw.sort(
+        key=lambda row: (
+            weak_order.get(str(row.get("topic", "")).casefold(), 10_000),
+            str(row.get("_id", "")),
+        )
+    )
+
+    available: list[Question] = []
+    for raw in all_raw:
+        try:
+            question = Question.model_validate(raw)
+            if question.document_id in current_sources.document_ids:
+                available.append(question)
+        except Exception:
+            logger.warning("Skipping malformed queued question id=%s", raw.get("_id"))
+
     def matches_subject(q: Question) -> bool:
         if not subject:
             return True
+        doc_s = doc_subjects.get(q.document_id, "")
+        if is_conflicting_subject(doc_s, subject, body=q.body):
+            return False
         q_top_subj = classify_subject_from_text(q.topic)
-        doc_subj = doc_subjects.get(q.document_id, "")
-        return (
-            subjects_match(q_top_subj, subject)
-            or subjects_match(doc_subj, subject)
-            or subjects_match(q.topic, subject)
-        )
+        if is_conflicting_subject(q_top_subj, subject, body=q.body):
+            return False
+        if is_math_question_body(q.body) and canonical_subject(subject).casefold() != "mathematics":
+            return False
+
+        if doc_s and subjects_match(doc_s, subject):
+            return True
+        if q_top_subj and subjects_match(q_top_subj, subject):
+            return True
+        if subjects_match(classify_subject_from_text(q.body), subject):
+            return True
+        if subjects_match(q.topic, subject):
+            return True
+        return False
 
     if subject:
         available = [q for q in available if matches_subject(q)]
@@ -785,15 +806,19 @@ async def _prepare_questions(
             return True
         subcat_clean = subcategory.strip().casefold()
         q_top = q.topic.strip().casefold()
-        if subcat_clean in q_top or q_top in subcat_clean:
+        if subcat_clean == q_top or subcat_clean in q_top or q_top in subcat_clean:
             return True
-        sub_terms = set(re.findall(r"[a-z0-9]+", subcat_clean)) - {"the", "and", "in", "of", "to", "a", "an", "is", "for"}
-        q_terms = set(re.findall(r"[a-z0-9]+", q_top)) - {"the", "and", "in", "of", "to", "a", "an", "is", "for"}
-        if bool(sub_terms and len(sub_terms & q_terms) >= max(1, len(sub_terms) // 2)):
+        sub_terms = {
+            t for t in re.findall(r"[a-z0-9]+", subcat_clean)
+            if len(t) >= 2 and not t.isdigit() and t not in {"the", "and", "in", "of", "to", "a", "an", "is", "for", "with", "on", "concepts", "fundamentals", "basics", "study"}
+        }
+        if not sub_terms:
             return True
-        body_terms = set(re.findall(r"[a-z0-9]+", q.body.casefold()))
-        return bool(sub_terms and len(sub_terms & body_terms) >= max(1, len(sub_terms) // 2))
-
+        q_terms = {t for t in re.findall(r"[a-z0-9]+", q_top) if len(t) >= 2 and not t.isdigit()}
+        body_terms = {t for t in re.findall(r"[a-z0-9]+", q.body.casefold()) if len(t) >= 2 and not t.isdigit()}
+        if len(sub_terms & q_terms) >= max(1, len(sub_terms) // 2):
+            return True
+        return len(sub_terms & body_terms) >= max(1, len(sub_terms) // 2)
 
     if subcategory:
         available = [q for q in available if matches_subcat(q)]
@@ -970,48 +995,14 @@ async def _prepare_questions(
             if not subject or subjects_match(doc_subjects.get(did, ""), subject)
         ]
         doc_id = matching_doc_ids[0] if matching_doc_ids else (
-            list(current_sources.document_ids)[0] if current_sources.document_ids else "doc_runtime_material"
+            None if subject else (list(current_sources.document_ids)[0] if current_sources.document_ids else "doc_runtime_material")
         )
-        current_seen_sigs = (
-            seen_fingerprints
-            | session_seen_fingerprints
-            | {canonical_question_signature(q.body) for q in selected}
-            | {normalize_question_stem(q.body) for q in selected}
-        )
-        eff_subj = subject or doc_subjects.get(doc_id, "") or (classify_subject_from_text(subcategory) if subcategory else "") or "study"
-        try:
-            variations = await generate_runtime_material_variations(
-                tenant_id=user.tenant_id,
-                workspace_id=workspace_id,
-                document_id=doc_id,
-                subject=eff_subj,
-                subcategory=subcategory,
-                seed_questions=available,
-                historical_seen_bodies=[b for b, _ in historical_seen_records],
-                seen_signatures=current_seen_sigs,
-                count=needed,
-                target_type=question_type,
-            )
-            if subject:
-                variations = [q for q in variations if matches_subject(q)]
-            if subcategory:
-                variations = [q for q in variations if matches_subcat(q)]
-            if question_type:
-                variations = [q for q in variations if q.question_type == question_type]
-            selected.extend(variations)
-        except Exception as var_exc:
-            logger.exception("Runtime material variation generation failed: %s", var_exc)
-
-    if not selected:
-        if revision and available:
-            selected = [q for q in available if not question_type or q.question_type == question_type][:target]
-        elif current_sources.document_ids or available or historical_seen_records:
-            matching_doc_ids = [
-                did for did in current_sources.document_ids
-                if not subject or subjects_match(doc_subjects.get(did, ""), subject)
-            ]
-            doc_id = matching_doc_ids[0] if matching_doc_ids else (
-                list(current_sources.document_ids)[0] if current_sources.document_ids else "doc_runtime_material"
+        if doc_id:
+            current_seen_sigs = (
+                seen_fingerprints
+                | session_seen_fingerprints
+                | {canonical_question_signature(q.body) for q in selected}
+                | {normalize_question_stem(q.body) for q in selected}
             )
             eff_subj = subject or doc_subjects.get(doc_id, "") or (classify_subject_from_text(subcategory) if subcategory else "") or "study"
             try:
@@ -1023,8 +1014,8 @@ async def _prepare_questions(
                     subcategory=subcategory,
                     seed_questions=available,
                     historical_seen_bodies=[b for b, _ in historical_seen_records],
-                    seen_signatures=seen_fingerprints | session_seen_fingerprints,
-                    count=target,
+                    seen_signatures=current_seen_sigs,
+                    count=needed,
                     target_type=question_type,
                 )
                 if subject:
@@ -1033,9 +1024,45 @@ async def _prepare_questions(
                     variations = [q for q in variations if matches_subcat(q)]
                 if question_type:
                     variations = [q for q in variations if q.question_type == question_type]
-                selected = variations[:target]
+                selected.extend(variations)
             except Exception as var_exc:
-                logger.exception("Direct runtime variation generation failed: %s", var_exc)
+                logger.exception("Runtime material variation generation failed: %s", var_exc)
+
+    if not selected:
+        if revision and available:
+            selected = [q for q in available if not question_type or q.question_type == question_type][:target]
+        elif current_sources.document_ids or available or historical_seen_records:
+            matching_doc_ids = [
+                did for did in current_sources.document_ids
+                if not subject or subjects_match(doc_subjects.get(did, ""), subject)
+            ]
+            doc_id = matching_doc_ids[0] if matching_doc_ids else (
+                None if subject else (list(current_sources.document_ids)[0] if current_sources.document_ids else "doc_runtime_material")
+            )
+            if doc_id:
+                eff_subj = subject or doc_subjects.get(doc_id, "") or (classify_subject_from_text(subcategory) if subcategory else "") or "study"
+                try:
+                    variations = await generate_runtime_material_variations(
+                        tenant_id=user.tenant_id,
+                        workspace_id=workspace_id,
+                        document_id=doc_id,
+                        subject=eff_subj,
+                        subcategory=subcategory,
+                        seed_questions=available,
+                        historical_seen_bodies=[b for b, _ in historical_seen_records],
+                        seen_signatures=seen_fingerprints | session_seen_fingerprints,
+                        count=target,
+                        target_type=question_type,
+                    )
+                    if subject:
+                        variations = [q for q in variations if matches_subject(q)]
+                    if subcategory:
+                        variations = [q for q in variations if matches_subcat(q)]
+                    if question_type:
+                        variations = [q for q in variations if q.question_type == question_type]
+                    selected = variations[:target]
+                except Exception as var_exc:
+                    logger.exception("Direct runtime variation generation failed: %s", var_exc)
 
         # Emergency extraction retry if document questions were not available yet
         if not selected and current_sources.document_ids:
@@ -1533,37 +1560,56 @@ async def _prepare_flashcards(
                 tags.add(str(tag_name).casefold())
             doc_subcats[str(doc_raw["_id"])] = tags
 
-            s = cat or classify_subject_from_text(fn)
+            s = cat or classify_subject_from_text(f"{fn} {subcat or ''}")
             if not s or s.casefold() == "study":
                 for tag_name in tags:
                     ts = classify_subject_from_text(tag_name)
-                    if subject and subjects_match(ts, subject):
-                        s = subject
+                    if ts and ts.casefold() != "study":
+                        s = ts
                         break
             doc_subjects[str(doc_raw["_id"])] = s or ""
 
         if subject:
             def matches_card_subject(c: PreparedFlashcard) -> bool:
-                return (
-                    subjects_match(classify_subject_from_text(c.topic), subject)
-                    or subjects_match(doc_subjects.get(card_doc_ids.get(c.id, ""), ""), subject)
-                )
+                card_text = f"{c.front} {c.back}"
+                doc_s = doc_subjects.get(card_doc_ids.get(c.id, ""), "")
+                if is_conflicting_subject(doc_s, subject, body=card_text):
+                    return False
+                c_top_s = classify_subject_from_text(c.topic)
+                if is_conflicting_subject(c_top_s, subject, body=card_text):
+                    return False
+                if is_math_question_body(card_text) and canonical_subject(subject).casefold() != "mathematics":
+                    return False
+                if doc_s and subjects_match(doc_s, subject):
+                    return True
+                if c_top_s and subjects_match(c_top_s, subject):
+                    return True
+                if subjects_match(classify_subject_from_text(card_text), subject):
+                    return True
+                if subjects_match(c.topic, subject):
+                    return True
+                return False
 
             available_cards = [c for c in available_cards if matches_card_subject(c)]
 
         if subcategory:
             subcat_clean = subcategory.strip().casefold()
-            sub_terms = set(re.findall(r"[a-z0-9]+", subcat_clean)) - {"the", "and", "in", "of", "to", "a", "an", "is", "for"}
+            sub_terms = {
+                t for t in re.findall(r"[a-z0-9]+", subcat_clean)
+                if len(t) >= 2 and not t.isdigit() and t not in {"the", "and", "in", "of", "to", "a", "an", "is", "for", "with", "on", "concepts", "fundamentals", "basics", "study"}
+            }
 
             def matches_card_subcat(c: PreparedFlashcard) -> bool:
                 c_top = c.topic.strip().casefold()
-                if subcat_clean in c_top or c_top in subcat_clean:
+                if subcat_clean == c_top or subcat_clean in c_top or c_top in subcat_clean:
                     return True
-                c_terms = set(re.findall(r"[a-z0-9]+", c_top)) - {"the", "and", "in", "of", "to", "a", "an", "is", "for"}
-                if bool(sub_terms and len(sub_terms & c_terms) >= max(1, len(sub_terms) // 2)):
+                if not sub_terms:
                     return True
-                body_terms = set(re.findall(r"[a-z0-9]+", (c.front + " " + c.back).casefold()))
-                return bool(sub_terms and len(sub_terms & body_terms) >= max(1, len(sub_terms) // 2))
+                c_terms = {t for t in re.findall(r"[a-z0-9]+", c_top) if len(t) >= 2 and not t.isdigit()}
+                body_terms = {t for t in re.findall(r"[a-z0-9]+", (c.front + " " + c.back).casefold()) if len(t) >= 2 and not t.isdigit()}
+                if len(sub_terms & c_terms) >= max(1, len(sub_terms) // 2):
+                    return True
+                return len(sub_terms & body_terms) >= max(1, len(sub_terms) // 2)
 
             available_cards = [c for c in available_cards if matches_card_subcat(c)]
 
