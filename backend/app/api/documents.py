@@ -30,6 +30,7 @@ from app.core.auth import get_current_user
 from app.core.config import settings
 from app.core.database import DOCUMENTS, WORKSPACES, get_collection
 from app.core.exceptions import (
+    ConflictError,
     ForbiddenError,
     NotFoundError,
     ServiceUnavailableError,
@@ -138,6 +139,17 @@ async def scrape_document(
     host = final_url.host or "website"
     path_slug = re.sub(r"[^a-zA-Z0-9_-]", "_", final_url.path.strip("/"))[:40]
     filename = f"scraped_{host}{'_' + path_slug if path_slug else ''}.txt"
+
+    col = get_collection(current_user.tenant_id, DOCUMENTS)
+    existing_doc = await col.find_one({
+        "workspace_id": workspace_id,
+        "filename": filename,
+        "deleted_at": None,
+        "status": {"$ne": DocumentStatus.failed.value},
+    })
+    if existing_doc is not None:
+        raise ConflictError("This document is already present.")
+
     document_id = f"doc_{uuid4().hex}"
     blob_path = (
         f"{current_user.tenant_id}/{workspace_id}/{current_user.id}/{document_id}/{filename}"
@@ -365,6 +377,17 @@ async def create_direct_upload(
         file_size_bytes=body.file_size_bytes,
         maximum_size_bytes=settings.max_document_upload_bytes,
     )
+
+    col = get_collection(current_user.tenant_id, DOCUMENTS)
+    existing_doc = await col.find_one({
+        "workspace_id": workspace_id,
+        "filename": filename,
+        "deleted_at": None,
+        "status": {"$ne": DocumentStatus.failed.value},
+    })
+    if existing_doc is not None:
+        raise ConflictError("This document is already present.")
+
     document_id = f"doc_{uuid4().hex}"
 
     try:
@@ -525,6 +548,16 @@ async def upload_document(
         file_size_bytes=len(content),
         maximum_size_bytes=_MAX_FILE_BYTES,
     )
+
+    col = get_collection(current_user.tenant_id, DOCUMENTS)
+    existing_doc = await col.find_one({
+        "workspace_id": workspace_id,
+        "filename": filename,
+        "deleted_at": None,
+        "status": {"$ne": DocumentStatus.failed.value},
+    })
+    if existing_doc is not None:
+        raise ConflictError("This document is already present.")
 
     # Blob path matches the layout in app/services/blob_storage._blob_path.
     # Recomputed here (not extracted from the URL) so the queue payload stays

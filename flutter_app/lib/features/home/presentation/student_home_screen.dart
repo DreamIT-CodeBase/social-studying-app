@@ -24,6 +24,8 @@ import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/core/routing/router.dart';
 import 'package:social_study_app/features/home/providers/workspace_providers.dart';
 import 'package:social_study_app/features/admin/workspaces/data/workspaces_repository.dart';
+import 'package:social_study_app/features/admin/workspaces/presentation/workspaces_notifier.dart';
+import 'package:social_study_app/features/documents/presentation/documents_notifier.dart';
 import 'package:social_study_app/shared/models/user.dart';
 import 'package:social_study_app/shared/models/workspace.dart';
 import 'package:social_study_app/shared/services/session_persistence_service.dart';
@@ -82,6 +84,13 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
         TelemetryService.instance.initialize(ref);
         _restoreSession();
         ref.read(authNotifierProvider.notifier).refresh();
+        ref.read(workspacesListProvider.notifier).refresh();
+        ref.read(gamificationNotifierProvider.notifier).refresh();
+        ref.read(progressNotifierProvider.notifier).refresh();
+        final currentWspId = ref.read(currentWorkspaceIdProvider);
+        if (currentWspId != null) {
+          ref.read(documentsListProvider(currentWspId).notifier).refresh();
+        }
         _checkStudentSubscription();
         _checkPendingUnlockRequest();
         _checkAppTour();
@@ -99,10 +108,17 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Admins can add this student while the app is backgrounded. Refresh the
-      // server profile so the switcher merges that membership with Self Study.
+      // Reopening or foregrounding app: immediately refresh profile, wallet,
+      // workspaces, documents, and progress in background.
       ref.read(authNotifierProvider.notifier).refresh();
       ref.read(screenTimeNotifierProvider.notifier).refreshWallet();
+      ref.read(workspacesListProvider.notifier).refresh();
+      final currentWspId = ref.read(currentWorkspaceIdProvider);
+      if (currentWspId != null) {
+        ref.read(documentsListProvider(currentWspId).notifier).refresh();
+      }
+      ref.read(gamificationNotifierProvider.notifier).refresh();
+      ref.read(progressNotifierProvider.notifier).refresh();
       _checkStudentSubscription();
       _checkPendingUnlockRequest();
       _checkAppTour();

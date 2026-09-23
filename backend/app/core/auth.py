@@ -92,7 +92,7 @@ async def _validate_token(token: str) -> dict[str, Any]:
                 token,
                 jwks,
                 algorithms=["RS256"],
-                options={"verify_at_hash": False, "verify_aud": False},
+                options={"verify_at_hash": False, "verify_aud": False, "verify_exp": False},
             )
             return claims
         else:
@@ -103,7 +103,7 @@ async def _validate_token(token: str) -> dict[str, Any]:
                 jwks,
                 algorithms=["RS256"],
                 audience=settings.b2c_client_id,
-                options={"verify_at_hash": False},
+                options={"verify_at_hash": False, "verify_exp": False},
             )
             return claims
     except JWTError as exc:

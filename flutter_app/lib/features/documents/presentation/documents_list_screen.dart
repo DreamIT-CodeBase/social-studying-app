@@ -200,15 +200,44 @@ class DocumentsListScreen extends ConsumerWidget {
 
   void _showUploadError(BuildContext context, Object error) {
     final message = switch (error) {
+      DuplicateDocumentException() => error.message,
       EmptyUploadException() => 'That file is empty.',
       UploadTooLargeException() => error.message,
       UnsupportedFileTypeException() => 'That file type isn\'t supported. '
           'Try a PDF, DOCX, image, or plain text file.',
-      _ => 'Upload failed: $error',
+      _ => error.toString().toLowerCase().contains('already present')
+          ? 'This document is already present.'
+          : 'Upload failed: $error',
     };
+    final isDuplicate = error is DuplicateDocumentException ||
+        message.toLowerCase().contains('already present');
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                isDuplicate
+                    ? Icons.warning_amber_rounded
+                    : Icons.error_outline_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: isDuplicate ? Colors.amber.shade900 : null,
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 }
 

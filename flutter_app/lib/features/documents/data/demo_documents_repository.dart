@@ -141,6 +141,13 @@ class DemoDocumentsRepository implements DocumentsRepository {
     if (docType == null) {
       throw UnsupportedFileTypeException(contentType);
     }
+    final existing = _byWorkspace[workspaceId]?.values;
+    if (existing != null &&
+        existing.any((d) =>
+            d.status != DocumentStatus.failed &&
+            d.filename.trim().toLowerCase() == filename.trim().toLowerCase())) {
+      throw const DuplicateDocumentException('This document is already present.');
+    }
 
     final id = 'doc_${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}';
     final initial = Document(
@@ -409,4 +416,15 @@ class UnsupportedFileTypeException implements Exception {
   final String contentType;
   @override
   String toString() => 'Unsupported file type: $contentType';
+}
+
+class DuplicateDocumentException implements Exception {
+  const DuplicateDocumentException([
+    this.message = 'This document is already present.',
+  ]);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }

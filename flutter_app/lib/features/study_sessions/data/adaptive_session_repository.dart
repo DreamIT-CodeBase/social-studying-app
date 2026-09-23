@@ -27,6 +27,10 @@ class AdaptiveSessionRepository {
       final response = await _dio.post<Map<String, dynamic>>(
         '/api/v1/workspaces/$workspaceId/adaptive-sessions/prepare',
         data: data,
+        options: Options(
+          receiveTimeout: const Duration(seconds: 90),
+          sendTimeout: const Duration(seconds: 30),
+        ),
       );
       return AdaptiveSessionPlan.fromJson(response.data!);
     } on DioException catch (error) {

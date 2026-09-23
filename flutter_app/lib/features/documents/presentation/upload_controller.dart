@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/features/admin/workspaces/presentation/workspaces_notifier.dart';
+import 'package:social_study_app/features/documents/data/demo_documents_repository.dart'
+    show DuplicateDocumentException;
 import 'package:social_study_app/features/documents/data/documents_repository.dart';
 import 'package:social_study_app/shared/models/document.dart';
 
@@ -38,6 +40,10 @@ class UploadController extends _$UploadController {
         state = const AsyncData<Document?>(null);
         return null;
       }
+      await _checkDuplicate(
+        workspaceId: workspaceId,
+        filename: selection.filename,
+      );
       final doc = await ref.read(documentsRepositoryProvider).upload(
             workspaceId: workspaceId,
             filename: selection.filename,
@@ -64,6 +70,10 @@ class UploadController extends _$UploadController {
         state = const AsyncData<Document?>(null);
         return null;
       }
+      await _checkDuplicate(
+        workspaceId: workspaceId,
+        filename: selection.filename,
+      );
       final doc = await ref.read(documentsRepositoryProvider).upload(
             workspaceId: workspaceId,
             filename: selection.filename,
@@ -90,6 +100,10 @@ class UploadController extends _$UploadController {
         state = const AsyncData<Document?>(null);
         return null;
       }
+      await _checkDuplicate(
+        workspaceId: workspaceId,
+        filename: selection.filename,
+      );
       final doc = await ref.read(documentsRepositoryProvider).upload(
             workspaceId: workspaceId,
             filename: selection.filename,
@@ -112,6 +126,13 @@ class UploadController extends _$UploadController {
   }) async {
     state = const AsyncLoading();
     try {
+      final uri = Uri.tryParse(url.trim());
+      final host = uri?.host ?? 'website';
+      final expectedFilename = 'scraped_$host.txt';
+      await _checkDuplicate(
+        workspaceId: workspaceId,
+        filename: expectedFilename,
+      );
       final doc = await ref.read(documentsRepositoryProvider).scrape(
             workspaceId: workspaceId,
             url: url,
@@ -122,6 +143,30 @@ class UploadController extends _$UploadController {
     } catch (e, st) {
       state = AsyncError<Document?>(e, st);
       return null;
+    }
+  }
+
+  Future<void> _checkDuplicate({
+    required String workspaceId,
+    required String filename,
+  }) async {
+    try {
+      final existingDocs = await ref
+          .read(documentsRepositoryProvider)
+          .list(workspaceId: workspaceId);
+      final target = filename.trim().toLowerCase();
+      final isDuplicate = existingDocs.any(
+        (d) =>
+            d.status != DocumentStatus.failed &&
+            d.filename.trim().toLowerCase() == target,
+      );
+      if (isDuplicate) {
+        throw const DuplicateDocumentException('This document is already present.');
+      }
+    } on DuplicateDocumentException {
+      rethrow;
+    } catch (e) {
+      if (e is DuplicateDocumentException) rethrow;
     }
   }
 

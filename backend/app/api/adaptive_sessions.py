@@ -891,8 +891,8 @@ async def _prepare_questions(
         bool(current_sources.document_ids) or subcategory or question_type or _is_self_study(workspace_id)
     )
     if should_generate:
-        # Optimized timeouts for fast responsiveness: LLM calls take 3-6s; 18s is ample while preventing HTTP/gateway timeouts
-        gen_timeout = 18.0 if (_is_self_study(workspace_id) or question_type) else (15.0 if current_sources.document_ids else 5.0)
+        # Optimized timeouts: LLM batch calls take 3-10s; 25s is ample and prevents timeout errors
+        gen_timeout = 25.0 if (_is_self_study(workspace_id) or question_type) else (20.0 if current_sources.document_ids else 8.0)
         gen_batch = missing
         try:
             generated = await asyncio.wait_for(
@@ -953,7 +953,7 @@ async def _prepare_questions(
                             batch_size=max(topup_needed + 2, 5),
                             extra_seen_bodies=[*[b for b, _ in historical_seen_records], *(q.body for q in selected)],
                         ),
-                        timeout=8.0,
+                        timeout=12.0,
                     )
                     topup_clean = [
                         q for q in topup_generated
@@ -4719,21 +4719,27 @@ async def prepare_adaptive_session(
             except Exception as exc:
                 logger.debug("Failed to query documents fallback for workspace=%s: %s", workspace_id, exc)
             if any_doc:
-                # If document was recently uploaded and is still extracting/chunking, wait up to 20s
+                # If document was recently uploaded and is still extracting/chunking/vectorizing, wait for readiness
                 doc_status = any_doc.get("status")
-                if doc_status in ("pending", "extracting", "text_extracted", "extracting_topics", "topics_extracted", "chunking"):
-                    logger.info("Document %s is in state '%s'; waiting for chunking/readiness...", any_doc.get("_id"), doc_status)
-                    for _ in range(3):  # wait up to 4.5s
+                if doc_status in ("pending", "extracting", "text_extracted", "extracting_topics", "topics_extracted", "chunking", "vectorizing"):
+                    logger.info("Document %s is in state '%s'; waiting for chunking/vector index readiness...", any_doc.get("_id"), doc_status)
+                    for _ in range(24):  # wait up to 36s for complete processing
                         await asyncio.sleep(1.5)
                         refreshed = await cosmos_retry(lambda d_id=any_doc["_id"]: doc_col.find_one({"_id": d_id}))
-                        if refreshed and refreshed.get("status") in ("chunked", "vectorizing", "ready"):
+                        if refreshed and refreshed.get("status") == "ready":
                             any_doc = refreshed
                             sources = await study_sources.current_study_sources(
                                 tenant_id=current_user.tenant_id,
                                 workspace_id=workspace_id,
                             )
                             break
-                if not sources.document_ids:
+                        elif refreshed and refreshed.get("status") == "failed":
+                            raise ConflictError(f"Document processing failed: {refreshed.get('processing_error', 'Upload failed.')}")
+                    else:
+                        raise ConflictError(
+                            "Your study material is still finalizing search index and embeddings. Please wait a moment and try again."
+                        )
+                if not sources.document_ids and any_doc.get("status") == "ready":
                     sources = study_sources.CurrentStudySources(
                         document_ids=frozenset({str(any_doc["_id"])}),
                         topic_names=tuple(

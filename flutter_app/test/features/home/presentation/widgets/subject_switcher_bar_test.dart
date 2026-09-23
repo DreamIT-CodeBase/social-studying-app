@@ -27,8 +27,6 @@ void main() {
       ),
     ];
 
-    var addMaterialClicked = false;
-
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -36,11 +34,10 @@ void main() {
             () => _FakeDocumentsList(docs),
           ),
         ],
-        child: MaterialApp(
+        child: const MaterialApp(
           home: Scaffold(
             body: SubjectSwitcherBar(
               workspaceId: 'wsp_self_1',
-              onAddMaterial: () => addMaterialClicked = true,
             ),
           ),
         ),

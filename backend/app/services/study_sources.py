@@ -20,7 +20,7 @@ class CurrentStudySources:
     topic_names: tuple[str, ...]
 
 
-USABLE_DOCUMENT_STATUSES = ["ready", "vectorizing", "chunked", "topics_extracted"]
+USABLE_DOCUMENT_STATUSES = ["ready"]
 
 
 async def current_study_sources(*, tenant_id: str, workspace_id: str) -> CurrentStudySources:
@@ -33,23 +33,6 @@ async def current_study_sources(*, tenant_id: str, workspace_id: str) -> Current
         }
     )
     rows = await cosmos_retry(lambda: cursor.to_list(length=1000))
-    if not rows:
-        cursor = col.find(
-            {
-                "workspace_id": workspace_id,
-                "status": {"$nin": ["failed", "flagged"]},
-                "deleted_at": None,
-            }
-        )
-        rows = await cosmos_retry(lambda: cursor.to_list(length=1000))
-    if not rows:
-        cursor = col.find(
-            {
-                "workspace_id": workspace_id,
-                "deleted_at": None,
-            }
-        )
-        rows = await cosmos_retry(lambda: cursor.to_list(length=1000))
     rows.sort(key=lambda row: str(row.get("created_at", "")), reverse=True)
 
     selected: list[dict] = []

@@ -55,13 +55,9 @@ enum DocumentStatus {
           false,
       };
 
-  /// Returns true if document is ready or has topics/chunks available for study sessions.
+  /// Returns true only when document is fully processed, chunked, and vectorized in search.
   bool get isUsableForStudy => switch (this) {
-        DocumentStatus.ready ||
-        DocumentStatus.vectorizing ||
-        DocumentStatus.chunked ||
-        DocumentStatus.topicsExtracted =>
-          true,
+        DocumentStatus.ready => true,
         _ => false,
       };
 }

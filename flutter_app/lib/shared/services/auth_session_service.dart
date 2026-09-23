@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -98,21 +99,24 @@ class AuthSessionService {
     );
   }
 
-  Future<void> persistGoogleSession(String idToken) async {
+  Future<void> persistGoogleSession(
+    String idToken, {
+    String? refreshToken,
+  }) async {
     await _beginSessionReplacement();
     await _writeSession(
       token: idToken,
-      refreshToken: null,
+      refreshToken: refreshToken,
       provider: _googleProvider,
     );
   }
 
-  /// Authenticates with Google and returns the ID token.
+  /// Authenticates with Google and returns the auth result.
   ///
-  /// - Android: Uses OAuth 2.0 Authorization Code + PKCE in a browser tab.
-  ///   This bypasses Play Services and Credential Manager certificate checks.
+  /// - Android: Uses OAuth 2.0 Authorization Code + PKCE in a browser tab
+  ///   with offline access to obtain a refresh token.
   /// - iOS: Uses native google_sign_in v7 (unchanged, working 100% on iPhone).
-  Future<String> authenticateWithGoogle() async {
+  Future<GoogleAuthResult> authenticateWithGoogle() async {
     if (Platform.isAndroid) {
       return _authenticateWithGoogleAndroid();
     } else {
@@ -120,8 +124,8 @@ class AuthSessionService {
     }
   }
 
-  /// Android: OAuth 2.0 PKCE via Chrome Custom Tabs.
-  Future<String> _authenticateWithGoogleAndroid() async {
+  /// Android: OAuth 2.0 PKCE via Chrome Custom Tabs with offline access for refresh.
+  Future<GoogleAuthResult> _authenticateWithGoogleAndroid() async {
     final result = await _appAuth
         .authorizeAndExchangeCode(
           AuthorizationTokenRequest(
@@ -133,6 +137,7 @@ class AuthSessionService {
             ),
             scopes: const ['openid', 'email', 'profile'],
             promptValues: const ['select_account'],
+            additionalParameters: const {'access_type': 'offline'},
           ),
         )
         .timeout(
@@ -146,12 +151,17 @@ class AuthSessionService {
     if (idToken == null || idToken.isEmpty) {
       throw StateError('Google sign in failed: no ID token returned.');
     }
-    return idToken;
+    return GoogleAuthResult(
+      idToken: idToken,
+      refreshToken: result.refreshToken,
+    );
   }
 
   /// iOS: google_sign_in v7 — unchanged, works perfectly on iPhone.
-  Future<String> _authenticateWithGoogleIOS() =>
-      _authenticateWithGooglePlugin();
+  Future<GoogleAuthResult> _authenticateWithGoogleIOS() async {
+    final idToken = await _authenticateWithGooglePlugin();
+    return GoogleAuthResult(idToken: idToken);
+  }
 
   Future<String> _authenticateWithGooglePlugin() async {
     await _googleInitialization;
@@ -312,9 +322,37 @@ class AuthSessionService {
   }
 
   Future<String?> _refreshGoogle(String oldToken, int generation) async {
-    // Android: we can't silently refresh via AppAuth without user interaction.
-    // Return the existing token and let the next explicit sign-in refresh it.
+    // Android: silently refresh via AppAuth with stored refresh token if available.
     if (Platform.isAndroid) {
+      final storedRefreshToken = _refreshToken;
+      if (storedRefreshToken != null && storedRefreshToken.isNotEmpty) {
+        try {
+          final result = await _appAuth.token(
+            TokenRequest(
+              _googlePkceClientId,
+              _googlePkceRedirectUri,
+              serviceConfiguration: const AuthorizationServiceConfiguration(
+                authorizationEndpoint: _googleAuthEndpoint,
+                tokenEndpoint: _googleTokenEndpoint,
+              ),
+              refreshToken: storedRefreshToken,
+              scopes: const ['openid', 'email', 'profile'],
+            ),
+          );
+          final refreshedIdToken = result.idToken;
+          if (refreshedIdToken != null && refreshedIdToken.isNotEmpty) {
+            if (generation != _sessionGeneration) return null;
+            await _writeSession(
+              token: refreshedIdToken,
+              refreshToken: result.refreshToken ?? storedRefreshToken,
+              provider: _googleProvider,
+            );
+            return refreshedIdToken;
+          }
+        } catch (e) {
+          debugPrint('Silent Google refresh via AppAuth failed on Android: $e');
+        }
+      }
       return generation == _sessionGeneration ? oldToken : null;
     }
 
@@ -325,7 +363,7 @@ class AuthSessionService {
     if (account == null) {
       return generation == _sessionGeneration ? oldToken : null;
     }
-    final auth = await account.authentication;
+    final auth = account.authentication;
     final refreshedIdToken = auth.idToken;
     if (refreshedIdToken == null || refreshedIdToken.isEmpty) {
       return generation == _sessionGeneration ? oldToken : null;
@@ -421,3 +459,14 @@ class AuthSessionService {
     }
   }
 }
+
+class GoogleAuthResult {
+  const GoogleAuthResult({
+    required this.idToken,
+    this.refreshToken,
+  });
+
+  final String idToken;
+  final String? refreshToken;
+}
+

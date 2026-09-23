@@ -12,10 +12,11 @@ import 'package:social_study_app/shared/models/document.dart';
 
 class _MockRepo extends Mock implements DocumentsRepository {}
 
-Document _doc({String id = 'doc_uploaded'}) => Document(
+Document _doc({String id = 'doc_uploaded', String filename = 'study.pdf'}) =>
+    Document(
       id: id,
       workspaceId: 'wsp_test',
-      filename: 'study.pdf',
+      filename: filename,
       docType: DocumentType.pdf,
       status: DocumentStatus.pending,
       createdAt: '2026-05-15T00:00:00+00:00',
@@ -190,6 +191,32 @@ void main() {
     expect(result, isNull);
     final state = container.read(uploadControllerProvider);
     expect(state, isA<AsyncError<Document?>>());
+  });
+
+  test('duplicate document returns null and emits DuplicateDocumentException',
+      () async {
+    UploadController.pickerOverride =
+        () async => _selection(filename: 'study.pdf');
+    when(() => repo.list(workspaceId: 'wsp_test')).thenAnswer(
+      (_) async => [_doc(filename: 'study.pdf')],
+    );
+
+    final result = await container
+        .read(uploadControllerProvider.notifier)
+        .pickAndUpload(workspaceId: 'wsp_test');
+
+    expect(result, isNull);
+    final state = container.read(uploadControllerProvider);
+    expect(state, isA<AsyncError<Document?>>());
+    expect((state as AsyncError).error, isA<DuplicateDocumentException>());
+    expect(state.error.toString(), contains('This document is already present'));
+
+    verifyNever(() => repo.upload(
+          workspaceId: any(named: 'workspaceId'),
+          filename: any(named: 'filename'),
+          upload: any(named: 'upload'),
+          contentType: any(named: 'contentType'),
+        ));
   });
 }
 

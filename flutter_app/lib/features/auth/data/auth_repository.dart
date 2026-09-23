@@ -174,11 +174,14 @@ class RealAuthRepository implements AuthRepository {
   Future<User> signInWithGoogle() async {
     try {
       debugPrint('Google Sign-in: starting authentication...');
-      final idToken =
+      final authResult =
           await AuthSessionService.instance.authenticateWithGoogle();
       debugPrint('Google Sign-in: received ID token, persisting session...');
 
-      await AuthSessionService.instance.persistGoogleSession(idToken);
+      await AuthSessionService.instance.persistGoogleSession(
+        authResult.idToken,
+        refreshToken: authResult.refreshToken,
+      );
       debugPrint('Google Sign-in: session persisted, fetching profile...');
 
       // Fetch the real user profile from the backend.

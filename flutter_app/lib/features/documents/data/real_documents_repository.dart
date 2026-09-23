@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:social_study_app/features/documents/data/demo_documents_repository.dart'
     show
         DocumentNotFoundException,
+        DuplicateDocumentException,
         EmptyUploadException,
         UnsupportedFileTypeException,
         UploadTooLargeException;
@@ -308,6 +309,10 @@ class RealDocumentsRepository implements DocumentsRepository {
   Exception _translate(DioException e) {
     final status = e.response?.statusCode;
     if (status == 404) return const DocumentNotFoundException();
+    if (status == 409) {
+      final detail = _detailMessage(e.response?.data);
+      return DuplicateDocumentException(detail ?? 'This document is already present.');
+    }
     if (status == 413) return const UploadTooLargeException();
     if (status == 422) {
       final detail = _detailMessage(e.response?.data);
