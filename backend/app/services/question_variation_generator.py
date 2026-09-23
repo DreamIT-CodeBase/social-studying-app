@@ -773,6 +773,27 @@ async def _generate_llm_topic_variations(
     except Exception as exc:
         logger.debug("Chunk lookup for LLM variation generator skipped: %s", exc)
 
+    if not chunk_text and document_id:
+        try:
+            doc_col = get_collection(tenant_id, DOCUMENTS)
+            doc_record = await cosmos_retry(lambda: doc_col.find_one({"_id": document_id}))
+            if doc_record:
+                blob_p = doc_record.get("extracted_text_blob_path")
+                if blob_p:
+                    try:
+                        from app.services import blob_storage
+                        raw = await blob_storage.download_document(blob_p)
+                        full_txt = raw.decode("utf-8", errors="replace")
+                        chunk_text = full_txt[:2500]
+                    except Exception as b_err:
+                        logger.debug("Failed reading blob for variation: %s", b_err)
+                if not chunk_text:
+                    fn = doc_record.get("filename", "")
+                    cat = doc_record.get("category", "")
+                    chunk_text = f"Document: {fn} ({cat})"
+        except Exception as d_err:
+            logger.debug("Doc lookup for LLM variation generator skipped: %s", d_err)
+
     ref_bodies = [b for b in historical_seen_bodies if b][-6:]
     ref_text = "\n- ".join(ref_bodies) if ref_bodies else "None provided yet"
 
@@ -1044,12 +1065,9 @@ async def generate_runtime_material_variations(
         return []
 
     # 3. Check if topic/subject is mathematical
-    # If a non-math subject is explicitly requested, NEVER generate math equation variations!
-    if subject and not subjects_match(subject, "Mathematics"):
-        return []
-
     is_math = (
-        any(m in subj_lower for m in ("math", "algebra", "geometry", "calculus", "arithmetic", "equation", "statistics", "probability", "precalculus", "linear", "quadratic"))
+        subjects_match(subject, "Mathematics")
+        or any(m in subj_lower for m in ("math", "algebra", "geometry", "calculus", "arithmetic", "equation", "statistics", "probability", "precalculus", "linear", "quadratic"))
         or any(m in subcat_lower for m in ("math", "algebra", "geometry", "calculus", "equation", "step", "distributive", "variable", "linear", "quadratic"))
     )
     if not is_math and document_id:
@@ -1061,7 +1079,7 @@ async def generate_runtime_material_variations(
                 for tag in doc_meta.get("topic_tags") or []:
                     t_name = tag.get("name") if isinstance(tag, dict) else str(tag)
                     meta_str += f" {t_name.lower()}"
-                if any(s in meta_str for s in ("science", "biology", "chemistry", "physics")):
+                if any(s in meta_str for s in ("science", "biology", "chemistry", "physics", "english", "literature", "reading", "grammar", "history", "social", "economics", "geography")):
                     is_math = False
                 elif any(m in meta_str for m in ("math", "algebra", "geometry", "equation", "calculus", "quadratic")):
                     is_math = True
@@ -1075,6 +1093,29 @@ async def generate_runtime_material_variations(
             pass
 
     if not is_math:
+        # Generate variations using LLM grounded in curriculum / document for English, History, etc.
+        eff_topic = subcategory or (subject if subject else "General Topics")
+        llm_variations = await _generate_llm_topic_variations(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            document_id=document_id,
+            subject=subject or "General Studies",
+            topic_name=eff_topic,
+            historical_seen_bodies=historical_seen_bodies,
+            current_signatures=current_signatures,
+            count=count,
+            target_type=eff_type,
+        )
+        if llm_variations:
+            try:
+                col = get_collection(tenant_id, QUESTION_QUEUE)
+                docs_to_insert = [q.model_dump(by_alias=True) for q in llm_variations]
+                asyncio.create_task(
+                    cosmos_retry(lambda: col.insert_many(docs_to_insert, ordered=False))
+                )
+            except Exception as exc:
+                logger.warning("Failed to asynchronously persist topic question variations: %s", exc)
+            return llm_variations[:count]
         return []
 
     # 3. Algebra equations / General linear variation pipeline (strictly for math subjects)

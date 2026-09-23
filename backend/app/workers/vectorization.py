@@ -201,6 +201,19 @@ async def _handle_inner(msg: ReceivedVectorizationMessage) -> None:
         outcome.workspace_missing,
     )
 
+    try:
+        from app.services.document_question_extractor import extract_and_queue_document_questions
+        asyncio.create_task(
+            extract_and_queue_document_questions(
+                tenant_id=payload.tenant_id,
+                workspace_id=payload.workspace_id,
+                document_id=payload.document_id,
+            )
+        )
+        logger.info("Triggered auto question extraction for ready doc=%s", payload.document_id)
+    except Exception as q_exc:
+        logger.warning("Auto question extraction trigger failed for doc=%s: %s", payload.document_id, q_exc)
+
 
 # ── Main loop ────────────────────────────────────────────────────────────────
 

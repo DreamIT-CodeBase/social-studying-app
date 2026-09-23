@@ -2395,7 +2395,9 @@ def _build_guaranteed_fallback_plan(
             subj = subcat_canon.strip().lower()
     if not subj or subj == "study":
         classified = classify_subject_from_text(subcategory or "") if subcategory else None
-        subj = classified.strip().lower() if classified else "mathematics"
+        # "general" is a safe neutral default; "mathematics" was wrongly injected
+        # for ANY unrecognised subject (e.g. English, Hindi, History).
+        subj = classified.strip().lower() if classified else "general"
 
     if target is None:
         ranges = (
@@ -3184,6 +3186,112 @@ def _build_guaranteed_fallback_plan(
                     grading_hints=["enzymes", "enzyme"],
                 ),
             ]
+        elif subj in (
+            "english & literature", "english", "english literature", "literature",
+            "english language", "hindi", "language arts", "language",
+            "core english", "elective english",
+        ):
+            topic_name = subcategory.strip() if subcategory else "English & Literature"
+            questions = [
+                PreparedQuestion(
+                    id=f"qst_eng_{uuid4().hex[:8]}",
+                    topic=topic_name,
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="Which literary device is used when a writer gives human qualities to a non-human object or idea?",
+                    options=[
+                        PreparedOption(key="A", text="Personification"),
+                        PreparedOption(key="B", text="Simile"),
+                        PreparedOption(key="C", text="Alliteration"),
+                        PreparedOption(key="D", text="Hyperbole"),
+                    ],
+                    answer="A",
+                    explanation="Personification attributes human traits to inanimate objects or abstract ideas (e.g., 'the wind whispered').",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_eng_{uuid4().hex[:8]}",
+                    topic=topic_name,
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="What is the term for the central message or insight about life that a literary work conveys?",
+                    options=[
+                        PreparedOption(key="A", text="Theme"),
+                        PreparedOption(key="B", text="Plot"),
+                        PreparedOption(key="C", text="Setting"),
+                        PreparedOption(key="D", text="Dialogue"),
+                    ],
+                    answer="A",
+                    explanation="The theme is the underlying message the author communicates through the story's events and characters.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_eng_{uuid4().hex[:8]}",
+                    topic=topic_name,
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="In a story, the character who opposes the protagonist and creates conflict is called the:",
+                    options=[
+                        PreparedOption(key="A", text="Antagonist"),
+                        PreparedOption(key="B", text="Narrator"),
+                        PreparedOption(key="C", text="Foil"),
+                        PreparedOption(key="D", text="Protagonist"),
+                    ],
+                    answer="A",
+                    explanation="The antagonist is the character (or force) in direct opposition to the protagonist.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_eng_{uuid4().hex[:8]}",
+                    topic=topic_name,
+                    question_type="true_false",
+                    difficulty="beginner",
+                    body="A simile makes a direct comparison between two unlike things using 'like' or 'as'.",
+                    options=[
+                        PreparedOption(key="true", text="True"),
+                        PreparedOption(key="false", text="False"),
+                    ],
+                    answer="true",
+                    explanation="Similes use 'like' or 'as' (e.g., 'brave as a lion'), unlike metaphors which state the comparison directly.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_eng_{uuid4().hex[:8]}",
+                    topic=topic_name,
+                    question_type="true_false",
+                    difficulty="beginner",
+                    body="First-person narration uses pronouns such as 'I', 'me', and 'we', and tells the story from the narrator's own perspective.",
+                    options=[
+                        PreparedOption(key="true", text="True"),
+                        PreparedOption(key="false", text="False"),
+                    ],
+                    answer="true",
+                    explanation="First-person narrators are characters within the story, offering a subjective, personal point of view.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_eng_{uuid4().hex[:8]}",
+                    topic=topic_name,
+                    question_type="short_answer",
+                    difficulty="beginner",
+                    body="The introductory paragraph of an essay that presents the main argument is called the ________.",
+                    options=[],
+                    answer="introduction",
+                    explanation="The introduction sets the context, presents background information, and states the thesis of the essay.",
+                    grading_hints=["introduction", "intro", "introductory paragraph"],
+                ),
+                PreparedQuestion(
+                    id=f"qst_eng_{uuid4().hex[:8]}",
+                    topic=topic_name,
+                    question_type="short_answer",
+                    difficulty="intermediate",
+                    body="The repetition of the same initial consonant sound in a sequence of words (e.g., 'Peter Piper picked') is called ________.",
+                    options=[],
+                    answer="alliteration",
+                    explanation="Alliteration is a sound device where the same consonant sound is repeated at the start of closely connected words.",
+                    grading_hints=["alliteration"],
+                ),
+            ]
         else:
             topic_name = f"{subject} Concepts" if subject else "Core Concepts"
             questions = [
@@ -3303,6 +3411,13 @@ def _build_guaranteed_fallback_plan(
             else:
                 # If the chosen subject didn't have enough questions of this type,
                 # fall back to subject-appropriate questions of this target type so the contract is never violated
+                _is_english_subj = subj in (
+                    "english & literature", "english", "english literature", "literature",
+                    "english language", "hindi", "language arts", "language",
+                    "core english", "elective english",
+                ) or (subject and canonical_subject(subject).casefold() in (
+                    "english & literature", "english",
+                ))
                 if _is_science_subject(subj) or _is_science_subject(subject) or _is_science_subject(subcategory):
                     questions = [
                         _generate_fallback_science_question(
@@ -3313,6 +3428,68 @@ def _build_guaranteed_fallback_plan(
                         )
                         for i in range(max(target, 6))
                     ]
+                elif _is_english_subj:
+                    # English / Language Arts subject: never emit maths algebra questions
+                    eng_topic = subcategory.strip() if subcategory else (subject or "English & Literature")
+                    eng_type_fb = [
+                        PreparedQuestion(
+                            id=f"qst_eng_{uuid4().hex[:8]}",
+                            topic=eng_topic,
+                            question_type="mcq",
+                            difficulty="beginner",
+                            body="Which literary device is used when a writer gives human qualities to a non-human object?",
+                            options=[
+                                PreparedOption(key="A", text="Personification"),
+                                PreparedOption(key="B", text="Alliteration"),
+                                PreparedOption(key="C", text="Hyperbole"),
+                                PreparedOption(key="D", text="Metaphor"),
+                            ],
+                            answer="A",
+                            explanation="Personification attributes human traits to inanimate objects (e.g., 'the wind whispered').",
+                            grading_hints=[],
+                        ),
+                        PreparedQuestion(
+                            id=f"qst_eng_{uuid4().hex[:8]}",
+                            topic=eng_topic,
+                            question_type="true_false",
+                            difficulty="beginner",
+                            body="A simile uses 'like' or 'as' to compare two unlike things.",
+                            options=[
+                                PreparedOption(key="true", text="True"),
+                                PreparedOption(key="false", text="False"),
+                            ],
+                            answer="true",
+                            explanation="Similes use 'like' or 'as' (e.g., 'brave as a lion').",
+                            grading_hints=[],
+                        ),
+                        PreparedQuestion(
+                            id=f"qst_eng_{uuid4().hex[:8]}",
+                            topic=eng_topic,
+                            question_type="short_answer",
+                            difficulty="beginner",
+                            body="The repetition of the same initial consonant sound in closely connected words is called ________.",
+                            options=[],
+                            answer="alliteration",
+                            explanation="Alliteration is a sound device used in poetry and prose.",
+                            grading_hints=["alliteration"],
+                        ),
+                        PreparedQuestion(
+                            id=f"qst_eng_{uuid4().hex[:8]}",
+                            topic=eng_topic,
+                            question_type="long_answer",
+                            difficulty="intermediate",
+                            body="Explain the role of characterization in developing the theme of a literary work, with an example.",
+                            options=[],
+                            answer="Characterization reveals a character's personality through actions, dialogue, and description, which in turn reinforces the theme the author intends to convey.",
+                            explanation="Theme and characterization work together to convey the author's message.",
+                            grading_hints=["characterization", "theme", "author", "example"],
+                        ),
+                    ]
+                    filtered_eng = [
+                        q for q in eng_type_fb
+                        if (q.question_type.value if hasattr(q.question_type, "value") else str(q.question_type)).lower() == target_qtype
+                    ]
+                    questions = filtered_eng if filtered_eng else eng_type_fb
                 else:
                     math_fb = [
                         PreparedQuestion(
@@ -3438,6 +3615,30 @@ def _build_guaranteed_fallback_plan(
                             target_qtype=target_qtype,
                             subject=subject or "Science",
                             subcategory=subcategory,
+                        )
+                    )
+                elif subj in (
+                    "english & literature", "english", "english literature", "literature",
+                    "english language", "hindi", "language arts", "language",
+                ) or (subject and canonical_subject(subject).casefold() in ("english & literature", "english")):
+                    # English subject top-up: never emit equation questions
+                    eng_top = subcategory.strip() if subcategory else (subject or "English & Literature")
+                    questions.append(
+                        PreparedQuestion(
+                            id=f"qst_eng_{uuid4().hex[:8]}",
+                            topic=eng_top,
+                            question_type=target_qtype or "mcq",
+                            difficulty="beginner",
+                            body="The central idea or message a literary work communicates to its reader is called the ________.",
+                            options=[
+                                PreparedOption(key="A", text="Theme"),
+                                PreparedOption(key="B", text="Plot"),
+                                PreparedOption(key="C", text="Setting"),
+                                PreparedOption(key="D", text="Conflict"),
+                            ] if (target_qtype or "mcq") == "mcq" else [],
+                            answer="A" if (target_qtype or "mcq") == "mcq" else "theme",
+                            explanation="The theme is the overarching insight the author communicates through narrative events and characters.",
+                            grading_hints=["theme"],
                         )
                     )
                 else:

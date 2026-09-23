@@ -110,8 +110,9 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
   }
 
   final GlobalKey _workspaceSwitcherKey = GlobalKey();
-  final GlobalKey _manageStudyKey = GlobalKey();
   final GlobalKey _formatSelectionKey = GlobalKey();
+  final GlobalKey _startStudyKey = GlobalKey();
+  final GlobalKey _manageStudyKey = GlobalKey();
   final GlobalKey _progressKey = GlobalKey();
   final GlobalKey _recentActivityKey = GlobalKey();
   final GlobalKey _studyTabKey = GlobalKey();
@@ -124,8 +125,9 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
       context,
       userId: userId,
       workspaceSwitcherKey: _workspaceSwitcherKey,
-      manageStudyKey: _manageStudyKey,
       formatKey: _formatSelectionKey,
+      startStudyKey: _startStudyKey,
+      manageStudyKey: _manageStudyKey,
       progressKey: _progressKey,
       recentActivityKey: _recentActivityKey,
       studyTabKey: _studyTabKey,
@@ -396,6 +398,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
             workspaceId: workspaceId,
             userId: userId,
             workspaceSwitcherKey: _workspaceSwitcherKey,
+            startStudyKey: _startStudyKey,
             manageStudyKey: _manageStudyKey,
             formatKey: _formatSelectionKey,
             progressKey: _progressKey,
@@ -428,33 +431,24 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
             onStartRevision: workspaceId == null
                 ? null
                 : () {
-                    if (isSelfLearningWorkspaceId(workspaceId)) {
-                      final activeSubject =
-                          ref.read(selfStudySubjectProvider);
-                      final activeSubcat =
-                          ref.read(selfStudySubcategoryProvider);
-                      final activeType =
-                          ref.read(selfStudyQuestionTypeProvider);
-                      final subjectQuery = activeSubject != null
-                          ? '&subject=${Uri.encodeComponent(activeSubject)}'
-                          : '';
-                      final subcatQuery = activeSubcat != null
-                          ? '&subcategory=${Uri.encodeComponent(activeSubcat)}'
-                          : '';
-                      final typeQuery = activeType != null
-                          ? '&question_type=${Uri.encodeComponent(activeType)}'
-                          : '';
-                      context.push(
-                        '/student/session/$workspaceId?mode=study$subjectQuery$subcatQuery$typeQuery',
-                      );
-                      return;
-                    }
+                    final activeSubject = isSelfLearningWorkspaceId(workspaceId)
+                        ? ref.read(selfStudySubjectProvider)
+                        : null;
+                    final activeSubcat = isSelfLearningWorkspaceId(workspaceId)
+                        ? ref.read(selfStudySubcategoryProvider)
+                        : null;
                     final activeType = ref.read(selfStudyQuestionTypeProvider);
+                    final subjectQuery = activeSubject != null
+                        ? '&subject=${Uri.encodeComponent(activeSubject)}'
+                        : '';
+                    final subcatQuery = activeSubcat != null
+                        ? '&subcategory=${Uri.encodeComponent(activeSubcat)}'
+                        : '';
                     final typeQuery = activeType != null
                         ? '&question_type=${Uri.encodeComponent(activeType)}'
                         : '';
                     context.push(
-                      '/student/revision/$workspaceId?mode=revision$typeQuery',
+                      '/student/session/$workspaceId?mode=study$subjectQuery$subcatQuery$typeQuery',
                     );
                   },
             onOpenBadges: (workspaceId == null || userId == null)
@@ -772,6 +766,7 @@ class _HomeTab extends ConsumerWidget {
     required this.onOpenLeaderboard,
     required this.onManageStudy,
     this.workspaceSwitcherKey,
+    this.startStudyKey,
     this.manageStudyKey,
     this.formatKey,
     this.progressKey,
@@ -784,6 +779,7 @@ class _HomeTab extends ConsumerWidget {
   final String? workspaceId;
   final String? userId;
   final GlobalKey? workspaceSwitcherKey;
+  final GlobalKey? startStudyKey;
   final GlobalKey? manageStudyKey;
   final GlobalKey? formatKey;
   final GlobalKey? progressKey;
@@ -976,40 +972,6 @@ class _HomeTab extends ConsumerWidget {
                         ),
                       const SizedBox(width: 8),
                       GestureDetector(
-                        onTap: () {
-                          if (onShowTour != null) {
-                            onShowTour!();
-                          } else {
-                            final uid = userId;
-                            if (uid != null) {
-                              AppTourSheet.show(
-                                context,
-                                userId: uid,
-                                workspaceSwitcherKey: workspaceSwitcherKey,
-                                manageStudyKey: manageStudyKey,
-                                formatKey: formatKey,
-                                progressKey: progressKey,
-                                recentActivityKey: recentActivityKey,
-                              );
-                            }
-                          }
-                        },
-                        child: CircleAvatar(
-                          backgroundColor: isDark
-                              ? Colors.white10
-                              : Colors.white.withValues(alpha: 0.9),
-                          radius: 18,
-                          child: Icon(
-                            Icons.help_outline_rounded,
-                            size: 19,
-                            color: isDark
-                                ? Colors.white70
-                                : const Color(0xFF475569),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      GestureDetector(
                         key: profileButtonKey,
                         onTap: () => context.push(AppRoutes.profile),
                         child: CircleAvatar(
@@ -1127,12 +1089,15 @@ class _HomeTab extends ConsumerWidget {
                   const SizedBox(height: 10),
                 ],
                 // Start Study Card
-                _StartStudySessionCard(
-                  onStartStudy: onStartStudy,
-                  subject: activeSubject,
-                  subcategory: activeSubcategory,
-                  questionType: activeQuestionType,
-                  workspaceId: workspaceId,
+                KeyedSubtree(
+                  key: startStudyKey,
+                  child: _StartStudySessionCard(
+                    onStartStudy: onStartStudy,
+                    subject: activeSubject,
+                    subcategory: activeSubcategory,
+                    questionType: activeQuestionType,
+                    workspaceId: workspaceId,
+                  ),
                 ),
                 const SizedBox(height: 12),
 
@@ -1411,13 +1376,14 @@ class _AnimatedHeadlineState extends State<_AnimatedHeadline>
     super.dispose();
   }
 
-  String _formatFirstName(String name) {
+  String _formatFullName(String name) {
     final cleanName = name.trim().replaceAll(RegExp(r'\.+$'), '').trim();
-    if (cleanName.isEmpty) return '';
+    if (cleanName.isEmpty) return 'Student';
     final parts = cleanName.split(RegExp(r'\s+'));
-    final firstName = parts.first;
-    if (firstName.isEmpty) return '';
-    return firstName[0].toUpperCase() + firstName.substring(1).toLowerCase();
+    return parts.map((part) {
+      if (part.isEmpty) return '';
+      return part[0].toUpperCase() + part.substring(1).toLowerCase();
+    }).join(' ');
   }
 
   @override
@@ -1468,24 +1434,27 @@ class _AnimatedHeadlineState extends State<_AnimatedHeadline>
                 const Text(
                   '👋',
                   style: TextStyle(
-                    fontSize: 28,
+                    fontSize: 24,
                     height: 1.1,
                   ),
                 ),
               ],
             );
           },
-          child: Text(
-            _formatFirstName(widget.displayName),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 30,
-              fontWeight: FontWeight.w600,
-              height: 1.1,
-              letterSpacing: -0.5,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _formatFullName(widget.displayName),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 26,
+                fontWeight: FontWeight.w700,
+                height: 1.15,
+                letterSpacing: -0.4,
+              ),
+              maxLines: 1,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
         ),
       ),

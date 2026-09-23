@@ -19,8 +19,9 @@ class AppTourSheet extends StatefulWidget {
     required this.userId,
     this.onComplete,
     this.workspaceSwitcherKey,
-    this.manageStudyKey,
     this.formatKey,
+    this.startStudyKey,
+    this.manageStudyKey,
     this.progressKey,
     this.recentActivityKey,
     this.studyTabKey,
@@ -32,8 +33,9 @@ class AppTourSheet extends StatefulWidget {
   final String userId;
   final VoidCallback? onComplete;
   final GlobalKey? workspaceSwitcherKey;
-  final GlobalKey? manageStudyKey;
   final GlobalKey? formatKey;
+  final GlobalKey? startStudyKey;
+  final GlobalKey? manageStudyKey;
   final GlobalKey? progressKey;
   final GlobalKey? recentActivityKey;
   final GlobalKey? studyTabKey;
@@ -46,8 +48,9 @@ class AppTourSheet extends StatefulWidget {
     required String userId,
     VoidCallback? onComplete,
     GlobalKey? workspaceSwitcherKey,
-    GlobalKey? manageStudyKey,
     GlobalKey? formatKey,
+    GlobalKey? startStudyKey,
+    GlobalKey? manageStudyKey,
     GlobalKey? progressKey,
     GlobalKey? recentActivityKey,
     GlobalKey? studyTabKey,
@@ -64,8 +67,9 @@ class AppTourSheet extends StatefulWidget {
         userId: userId,
         onComplete: onComplete,
         workspaceSwitcherKey: workspaceSwitcherKey,
-        manageStudyKey: manageStudyKey,
         formatKey: formatKey,
+        startStudyKey: startStudyKey,
+        manageStudyKey: manageStudyKey,
         progressKey: progressKey,
         recentActivityKey: recentActivityKey,
         studyTabKey: studyTabKey,
@@ -109,55 +113,62 @@ class _AppTourSheetState extends State<AppTourSheet>
     ),
     _TourStepData(
       stepNumber: 2,
-      title: 'Manage Study Materials',
-      description:
-          'Upload lecture notes, PDFs, and slides to automatically extract formulas and key concepts.',
-      arrowPointsUp: true,
-    ),
-    _TourStepData(
-      stepNumber: 3,
-      title: 'Question Formats',
+      title: 'Session Formats',
       description:
           'Select your session format (MCQ, True/False, Short, or Long) for strict, focused practice.',
       arrowPointsUp: true,
     ),
     _TourStepData(
+      stepNumber: 3,
+      title: 'Start Study Session',
+      description:
+          'Tap here to begin your personalized adaptive study session calibrated directly to your selected topic.',
+      arrowPointsUp: true,
+    ),
+    _TourStepData(
       stepNumber: 4,
-      title: 'Weekly Progress & Mastery',
+      title: 'Manage Study Materials',
+      description:
+          'Upload lecture notes, PDFs, and worksheets to extract concepts and generate practice questions.',
+      arrowPointsUp: true,
+    ),
+    _TourStepData(
+      stepNumber: 5,
+      title: 'Weekly Progress & Streaks',
       description:
           'Track your daily study streaks, XP earned, and mastery level calibrated to your learning pace.',
       arrowPointsUp: false,
     ),
     _TourStepData(
-      stepNumber: 5,
-      title: 'Recent Activity & Questions',
+      stepNumber: 6,
+      title: 'Recent Activity & History',
       description:
           'Review recently completed questions, performance accuracy, and completed study sessions.',
       arrowPointsUp: false,
     ),
     _TourStepData(
-      stepNumber: 6,
-      title: 'Study Sessions',
+      stepNumber: 7,
+      title: 'Study Sessions Tab',
       description:
-          'Tap the Study tab in the lower bar to start questions calibrated directly to your mastery.',
+          'Tap the Study tab in the lower bar anytime to launch questions calibrated directly to your mastery.',
       arrowPointsUp: false,
     ),
     _TourStepData(
-      stepNumber: 7,
+      stepNumber: 8,
       title: 'Active Recall Flashcards',
       description:
           'Tap the Flashcards tab in the lower bar to review spaced-repetition cards for memory retention.',
       arrowPointsUp: false,
     ),
     _TourStepData(
-      stepNumber: 8,
-      title: 'Progress & Mastery',
+      stepNumber: 9,
+      title: 'Progress & Mastery Analytics',
       description:
-          'Tap the Progress tab in the lower bar to view your detailed topic mastery, social balance, and accuracy.',
+          'Tap the Progress tab in the lower bar to view your detailed topic mastery, weak areas, and accuracy.',
       arrowPointsUp: false,
     ),
     _TourStepData(
-      stepNumber: 9,
+      stepNumber: 10,
       title: 'Profile & Settings',
       description:
           'Tap your avatar in the top corner to view your profile, manage account settings, and review subscription details.',
@@ -202,20 +213,22 @@ class _AppTourSheetState extends State<AppTourSheet>
       case 0:
         return widget.workspaceSwitcherKey;
       case 1:
-        return widget.manageStudyKey ?? widget.formatKey;
-      case 2:
         return widget.formatKey;
+      case 2:
+        return widget.startStudyKey;
       case 3:
-        return widget.progressKey;
+        return widget.manageStudyKey;
       case 4:
-        return widget.recentActivityKey;
+        return widget.progressKey;
       case 5:
-        return widget.studyTabKey;
+        return widget.recentActivityKey;
       case 6:
-        return widget.flashcardsTabKey;
+        return widget.studyTabKey;
       case 7:
-        return widget.progressTabKey;
+        return widget.flashcardsTabKey;
       case 8:
+        return widget.progressTabKey;
+      case 9:
         return widget.profileKey;
       default:
         return null;
@@ -230,7 +243,7 @@ class _AppTourSheetState extends State<AppTourSheet>
         if (scrollable != null) {
           Scrollable.ensureVisible(
             targetKey.currentContext!,
-            alignment: stepIndex == 8 ? 0.0 : 0.35,
+            alignment: stepIndex == 9 ? 0.0 : 0.35,
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
           ).then((_) {
@@ -275,52 +288,60 @@ class _AppTourSheetState extends State<AppTourSheet>
           36,
         );
       case 1:
-        // Manage Study pill
-        return Rect.fromLTWH(
-          screenSize.width / 2 + 5,
-          screenSize.height * 0.41,
-          screenSize.width / 2 - 21,
-          42,
-        );
-      case 2:
         // Session format selector row
         return Rect.fromLTWH(
           16,
-          screenSize.height * 0.35,
+          screenSize.height * 0.33,
           screenSize.width - 32,
           46,
         );
+      case 2:
+        // Main Green Start Study Card
+        return Rect.fromLTWH(
+          16,
+          screenSize.height * 0.39,
+          screenSize.width - 32,
+          76,
+        );
       case 3:
+        // Manage Study pill button
+        return Rect.fromLTWH(
+          screenSize.width / 2 + 5,
+          screenSize.height * 0.49,
+          screenSize.width / 2 - 21,
+          42,
+        );
+      case 4:
         // Progress Card
         return Rect.fromLTWH(
           16,
-          screenSize.height * 0.48,
+          screenSize.height * 0.56,
           screenSize.width - 32,
           115,
         );
-      case 4:
+      case 5:
         // Recent Activity
         return Rect.fromLTWH(
           16,
-          screenSize.height * 0.63,
+          screenSize.height * 0.72,
           screenSize.width - 32,
           110,
         );
-      case 5:
+      case 6:
         // Bottom navigation bar: Study tab (index 1 of 4)
         final tabWidth = screenSize.width / 4;
         return Rect.fromLTWH(tabWidth, screenSize.height - 68, tabWidth, 68);
-      case 6:
+      case 7:
         // Bottom navigation bar: Flashcards tab (index 2 of 4)
         final tabWidth = screenSize.width / 4;
         return Rect.fromLTWH(
             tabWidth * 2, screenSize.height - 68, tabWidth, 68);
-      case 7:
+      case 8:
         // Bottom navigation bar: Progress tab (index 3 of 4)
         final tabWidth = screenSize.width / 4;
         return Rect.fromLTWH(
             tabWidth * 3, screenSize.height - 68, tabWidth, 68);
-      case 8:
+      case 9:
       default:
         // Top right: Profile avatar
         return Rect.fromLTWH(

@@ -745,11 +745,31 @@ async def _generate_topic_batch(
             doc_col = get_collection(tenant_id, DOCUMENTS)
             doc_record = await doc_col.find_one({"_id": {"$in": list(effective_doc_ids)}})
             if doc_record:
+                # Only synthesise a grounding chunk when REAL extracted content is
+                # available. Using just the filename (e.g. "Class 11 English.pdf") as
+                # context produces nonsensical meta-questions about the file name
+                # itself rather than actual curriculum content.
                 synth_text = (
                     doc_record.get("extracted_text")
                     or doc_record.get("description")
-                    or f"Key study material on {candidate.topic_name} from {doc_record.get('filename', '')}."
                 )
+                if not synth_text and doc_record.get("extracted_text_blob_path"):
+                    try:
+                        from app.services import blob_storage
+                        raw_bytes = await blob_storage.download_document(doc_record["extracted_text_blob_path"])
+                        synth_text = raw_bytes.decode("utf-8", errors="replace").strip()
+                    except Exception as blob_err:
+                        logger.warning("Could not download extracted_text_blob_path for chunk synthesis: %s", blob_err)
+
+                if not synth_text or not synth_text.strip():
+                    # Document content not extracted yet (still processing) or
+                    # extraction failed — refuse to generate from filename alone.
+                    logger.info(
+                        "No extracted content for document_id=%s (still processing or empty); "
+                        "skipping chunk synthesis to avoid filename-based questions.",
+                        doc_record.get("_id"),
+                    )
+                    return []
                 synth_doc_id = str(doc_record["_id"])
                 synth_chunk = RetrievedChunk(
                     chunk_id=f"chk_synth_{synth_doc_id[:8]}",

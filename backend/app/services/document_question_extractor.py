@@ -42,6 +42,130 @@ def _generate_distractors(ans_val: int) -> list[int]:
     return chosen
 
 
+async def _extract_questions_via_llm(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    document_id: str,
+    full_text: str,
+    chunk_ids: list[str],
+) -> list[Question]:
+    """Extract authentic study questions directly from document text using Azure OpenAI."""
+    from app.services import azure_openai
+
+    col_docs = get_collection(tenant_id, DOCUMENTS)
+    doc_meta = await cosmos_retry(lambda: col_docs.find_one({"_id": document_id})) or {}
+    category = doc_meta.get("category") or ""
+    subcategory = doc_meta.get("subcategory") or ""
+    filename = doc_meta.get("filename") or ""
+
+    doc_subj = category or classify_subject_from_text(f"{filename} {subcategory} {full_text[:500]}") or "Study Material"
+    raw_tags = doc_meta.get("topic_tags") or []
+    first_tag = raw_tags[0].get("name") if raw_tags and isinstance(raw_tags[0], dict) else None
+    topic_name = subcategory or first_tag or "Key Concepts"
+
+    # Select representative excerpts from the document
+    excerpts = full_text[:4000]
+    if len(full_text) > 4000:
+        mid = len(full_text) // 2
+        excerpts += "\n\n" + full_text[mid : mid + 2000]
+
+    system_prompt = (
+        f"You are an expert {doc_subj} educator and question author. "
+        "Extract 6 to 8 rigorous, high-quality practice questions directly from the provided study material. "
+        "Every single question MUST be grounded strictly in the provided text. "
+        "Provide a mix of Multiple Choice (MCQ) and True/False questions with clear explanations. "
+        "Output strictly valid JSON with key 'questions'."
+    )
+
+    user_prompt = (
+        f"Document: {filename}\n"
+        f"Subject: {doc_subj}\n"
+        f"Topic: {topic_name}\n\n"
+        f"Study Material Text:\n{excerpts}\n\n"
+        "Generate 6-8 questions in JSON:\n"
+        "{\n"
+        '  "questions": [\n'
+        '    {\n'
+        '      "body": "Question text...",\n'
+        '      "question_type": "mcq",\n'
+        '      "options": [{"key": "A", "text": "Option 1"}, {"key": "B", "text": "Option 2"}, {"key": "C", "text": "Option 3"}, {"key": "D", "text": "Option 4"}],\n'
+        '      "answer": "A",\n'
+        '      "explanation": "Detailed step-by-step reasoning..."\n'
+        '    }\n'
+        "  ]\n"
+        "}"
+    )
+
+    try:
+        res = await asyncio.wait_for(
+            azure_openai.chat_json(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_output_tokens=3000,
+                temperature=0.2,
+            ),
+            timeout=35.0,
+        )
+        raw_items = res.get("questions") or []
+        parsed: list[Question] = []
+        for item in raw_items:
+            body = str(item.get("body", "")).strip()
+            if not body:
+                continue
+            q_type_str = str(item.get("question_type", "mcq")).lower()
+            q_type = QuestionType.true_false if "true" in q_type_str else QuestionType.mcq
+            raw_opts = item.get("options") or []
+            ans_key = str(item.get("answer", "A")).strip()
+            if q_type == QuestionType.true_false:
+                is_true = ans_key.lower() in ("true", "t", "yes", "1")
+                options = [
+                    McqOption(key="true", text="True", is_correct=is_true),
+                    McqOption(key="false", text="False", is_correct=not is_true),
+                ]
+                ans_key = "true" if is_true else "false"
+            else:
+                options = [
+                    McqOption(
+                        key=str(o.get("key", "")).strip().upper(),
+                        text=str(o.get("text", "")).strip(),
+                        is_correct=(str(o.get("key", "")).strip().upper() == ans_key.upper()),
+                    )
+                    for o in raw_opts
+                    if isinstance(o, dict) and o.get("text")
+                ]
+                if len(options) < 2:
+                    continue
+
+            q_obj = Question(
+                id=f"qst_doc_ext_{uuid4().hex[:12]}",
+                tenant_id=tenant_id,
+                workspace_id=workspace_id,
+                document_id=document_id,
+                topic=topic_name,
+                question_type=q_type,
+                difficulty=DifficultyLevel.intermediate,
+                body=body,
+                options=options,
+                answer=ans_key,
+                explanation=str(item.get("explanation", "")),
+                grading_hints=[],
+                status=QuestionStatus.approved,
+                source_chunk_ids=chunk_ids[:3],
+            )
+            parsed.append(q_obj)
+
+        if parsed:
+            col_q = get_collection(tenant_id, QUESTION_QUEUE)
+            docs_to_insert = [q.model_dump(by_alias=True) for q in parsed]
+            await cosmos_retry(lambda: col_q.insert_many(docs_to_insert, ordered=False))
+            logger.info("Extracted %d AI questions directly from doc=%s subject=%s", len(parsed), document_id, doc_subj)
+        return parsed
+    except Exception as exc:
+        logger.warning("LLM question extraction for doc=%s failed: %s", document_id, exc)
+        return []
+
+
 async def extract_and_queue_document_questions(
     *,
     tenant_id: str,
@@ -67,7 +191,13 @@ async def extract_and_queue_document_questions(
         re.search(r"(?:complete\s+)?answer\s+key|answer\s+rubric|scoring\s+rubric|solutions\s+key", full_text, re.IGNORECASE)
     )
     if not has_answer_key:
-        return []
+        return await _extract_questions_via_llm(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            document_id=document_id,
+            full_text=full_text,
+            chunk_ids=chunk_ids,
+        )
 
     # Find answer key boundary
     split_pos = -1
@@ -78,7 +208,13 @@ async def extract_and_queue_document_questions(
             break
 
     if split_pos == -1:
-        return []
+        return await _extract_questions_via_llm(
+            tenant_id=tenant_id,
+            workspace_id=workspace_id,
+            document_id=document_id,
+            full_text=full_text,
+            chunk_ids=chunk_ids,
+        )
 
     problems_text = full_text[:split_pos]
     answers_text = full_text[split_pos:]

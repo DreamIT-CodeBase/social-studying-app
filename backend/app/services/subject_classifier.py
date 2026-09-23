@@ -176,9 +176,19 @@ _ENGLISH_LITERATURE_TERMS = [
     "english literature", "american literature", "british literature", "world literature",
     "english language", "ap english", "ap literature", "ap lit", "ap lang", "creative writing",
     "rhetorical analysis", "literary analysis", "close reading", "short story",
+    # "english" must appear as a standalone term so filenames/subjects like
+    # "Class 11 English", "English (Core)", "English Subject" are classified
+    # correctly instead of falling through to "Study".
+    # NOTE: Do NOT add generic terms like "chapter", "textbook", "section" here —
+    # those appear in Physics, Maths, and other PDFs and would cause false positives.
+    "english",
     "literature", "poetry", "poem", "poet", "essay", "grammar", "rhetoric", "metaphor",
     "simile", "symbolism", "sonnet", "prose", "stanza", "syntax", "fiction", "novel",
     "narrative", "protagonist", "antagonist", "shakespeare", "literary", "comprehension",
+    "characterization", "theme analysis", "plot analysis", "alliteration",
+    "reading comprehension", "unseen passage", "letter writing", "notice writing",
+    "formal letter", "informal letter", "paragraph writing", "descriptive writing",
+    "core english", "elective english", "english subject", "english class",
 ]
 
 _EARTH_SPACE_TERMS = [
