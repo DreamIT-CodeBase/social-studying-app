@@ -771,9 +771,7 @@ async def _prepare_questions(
             return True
         if subjects_match(classify_subject_from_text(q.body), subject):
             return True
-        if subjects_match(q.topic, subject):
-            return True
-        return False
+        return bool(subjects_match(q.topic, subject))
 
     if subject:
         available = [q for q in available if matches_subject(q)]
@@ -1586,9 +1584,7 @@ async def _prepare_flashcards(
                     return True
                 if subjects_match(classify_subject_from_text(card_text), subject):
                     return True
-                if subjects_match(c.topic, subject):
-                    return True
-                return False
+                return bool(subjects_match(c.topic, subject))
 
             available_cards = [c for c in available_cards if matches_card_subject(c)]
 

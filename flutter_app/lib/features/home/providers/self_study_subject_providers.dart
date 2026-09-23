@@ -65,3 +65,6 @@ final selfStudyAvailableSubcategoriesProvider =
   final sortedTopics = extractedTopics.toList()..sort();
   return sortedTopics;
 });
+
+/// Alias for backward compatibility
+final selfStudySubcategoriesProvider = selfStudyAvailableSubcategoriesProvider;
