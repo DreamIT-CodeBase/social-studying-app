@@ -2106,7 +2106,7 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
               ));
 
     return Container(
-      height: 76,
+      height: 80,
       decoration: BoxDecoration(
         gradient: gradient,
         borderRadius: BorderRadius.circular(20),
@@ -2258,7 +2258,7 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
                               height: 1.15,
                             ),
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 3),
                           FittedBox(
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerLeft,
@@ -2290,9 +2290,10 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.start,
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.85),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
+                                color: Colors.white.withOpacity(0.92),
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.1,
                               ),
                             ),
                           ),
@@ -2300,9 +2301,9 @@ class _StartStudySessionCardState extends ConsumerState<_StartStudySessionCard>
                       ),
                     ),
                     if (isMature)
-                      const SizedBox(width: 64)
+                      const SizedBox(width: 56)
                     else
-                      const SizedBox(width: 76),
+                      const SizedBox(width: 62),
                   ],
                 ),
               ),
