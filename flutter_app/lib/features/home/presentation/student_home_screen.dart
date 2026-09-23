@@ -83,13 +83,11 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
       if (mounted) {
         TelemetryService.instance.initialize(ref);
         _restoreSession();
-        ref.read(authNotifierProvider.notifier).refresh();
-        ref.read(workspacesListProvider.notifier).refresh();
-        ref.read(gamificationNotifierProvider.notifier).refresh();
-        ref.read(progressNotifierProvider.notifier).refresh();
-        final currentWspId = ref.read(currentWorkspaceIdProvider);
+        ref.invalidate(workspacesListProvider);
+        final currentWspId = ref.read(activeWorkspaceIdProvider);
         if (currentWspId != null) {
-          ref.read(documentsListProvider(currentWspId).notifier).refresh();
+          ref.invalidate(documentsListProvider(currentWspId));
+          ref.invalidate(studentProgressNotifierProvider(currentWspId));
         }
         _checkStudentSubscription();
         _checkPendingUnlockRequest();
@@ -110,15 +108,12 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
     if (state == AppLifecycleState.resumed) {
       // Reopening or foregrounding app: immediately refresh profile, wallet,
       // workspaces, documents, and progress in background.
-      ref.read(authNotifierProvider.notifier).refresh();
-      ref.read(screenTimeNotifierProvider.notifier).refreshWallet();
-      ref.read(workspacesListProvider.notifier).refresh();
-      final currentWspId = ref.read(currentWorkspaceIdProvider);
+      ref.invalidate(workspacesListProvider);
+      final currentWspId = ref.read(activeWorkspaceIdProvider);
       if (currentWspId != null) {
-        ref.read(documentsListProvider(currentWspId).notifier).refresh();
+        ref.invalidate(documentsListProvider(currentWspId));
+        ref.invalidate(studentProgressNotifierProvider(currentWspId));
       }
-      ref.read(gamificationNotifierProvider.notifier).refresh();
-      ref.read(progressNotifierProvider.notifier).refresh();
       _checkStudentSubscription();
       _checkPendingUnlockRequest();
       _checkAppTour();
@@ -550,6 +545,19 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
                           : '';
                       context.push(
                         '/student/session/$workspaceId?mode=study$subjectQuery$subcatQuery$typeQuery',
+                      );
+                      return;
+                    }
+                    if (index == 2 && workspaceId != null) {
+                      final activeSubject =
+                          isSelfLearningWorkspaceId(workspaceId)
+                              ? ref.read(selfStudySubjectProvider)
+                              : null;
+                      final subjectQuery = activeSubject != null
+                          ? '&subject=${Uri.encodeComponent(activeSubject)}'
+                          : '';
+                      context.push(
+                        '/student/session/$workspaceId?mode=flashcard$subjectQuery',
                       );
                       return;
                     }
@@ -4131,10 +4139,12 @@ class _FlashcardsTab extends ConsumerWidget {
     final activeSubject = isSelfLearningWorkspaceId(workspaceId!)
         ? ref.watch(selfStudySubjectProvider)
         : null;
-    return FlashcardScreen(
-      key: ValueKey('$workspaceId-${activeSubject ?? "all"}'),
+    return AdaptiveSessionScreen(
+      key: ValueKey('$workspaceId-${activeSubject ?? "all"}-flashcard'),
       workspaceId: workspaceId!,
+      mode: AdaptiveSessionMode.flashcard,
       subject: activeSubject,
+      subcategory: null,
     );
   }
 }

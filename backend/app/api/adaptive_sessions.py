@@ -4821,7 +4821,7 @@ async def prepare_adaptive_session(
                 target=target,
                 level=level,
                 subject=request.subject,
-                subcategory=request.subcategory,
+                subcategory=None,  # Flashcards always cover whole subject
             )
         else:
             questions = await _prepare_questions(

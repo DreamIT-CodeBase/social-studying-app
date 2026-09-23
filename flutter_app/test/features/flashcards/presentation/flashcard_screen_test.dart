@@ -120,10 +120,10 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    // Drag the card to the left to swipe Easy
+    // Drag the card from left to right to swipe Easy / Remembered
     final gesture = await tester
         .startGesture(tester.getCenter(find.byType(GestureDetector).first));
-    await gesture.moveBy(const Offset(-300, 0));
+    await gesture.moveBy(const Offset(300, 0));
     await gesture.up();
     await tester.pumpAndSettle();
 

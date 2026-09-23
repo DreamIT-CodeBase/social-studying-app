@@ -1050,8 +1050,23 @@ class _FlashcardActions extends StatelessWidget {
         // After reveal: show swipe guide on card 1, nothing on later cards.
         // Before reveal: show nothing (tap-to-reveal hint removed).
         child: revealed
-            ? (isFirstCard
-                ? Container(
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      'How well did you recall it?',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isDark
+                            ? const Color(0xFF8888AA)
+                            : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ),
+                  Container(
                     decoration: BoxDecoration(
                       color: surface,
                       borderRadius: BorderRadius.circular(18),
@@ -1063,7 +1078,7 @@ class _FlashcardActions extends StatelessWidget {
                           child: _SwipeAction(
                             icon: Icons.arrow_back_rounded,
                             title: 'Swipe Left',
-                            subtitle: 'Needs Review  -1',
+                            subtitle: 'Forgot  -1',
                             color: _red,
                             onTap: enabled ? onNeedsReview : null,
                           ),
@@ -1073,7 +1088,7 @@ class _FlashcardActions extends StatelessWidget {
                           child: _SwipeAction(
                             icon: Icons.arrow_forward_rounded,
                             title: 'Swipe Right',
-                            subtitle: 'Remember  +1',
+                            subtitle: 'Remembered  +1',
                             color: _green,
                             trailingIcon: true,
                             onTap: enabled ? onRemember : null,
@@ -1081,9 +1096,42 @@ class _FlashcardActions extends StatelessWidget {
                         ),
                       ],
                     ),
-                  )
-                : const SizedBox.shrink())
-            : const SizedBox.shrink(),
+                  ),
+                ],
+              )
+            : InkWell(
+                onTap: enabled ? onReveal : null,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                      vertical: 14, horizontal: 20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF7C5CFC).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: const Color(0xFF7C5CFC).withValues(alpha: 0.4),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.flip_to_back_rounded,
+                          color: Color(0xFFA78BFA), size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Tap Card to Flip & Check Answer',
+                        style: TextStyle(
+                          color: Color(0xFFA78BFA),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
       ),
     );
   }

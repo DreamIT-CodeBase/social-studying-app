@@ -425,7 +425,7 @@ class _CardViewState extends ConsumerState<_CardView>
     _committingSwipe = true;
     HapticFeedback.mediumImpact();
     final width = MediaQuery.sizeOf(context).width;
-    await _animateTo((forgot ? 1 : -1) * (width + 180));
+    await _animateTo((forgot ? -1 : 1) * (width + 180));
     if (!mounted) return;
 
     final notifier = ref.read(
@@ -498,7 +498,7 @@ class _CardViewState extends ConsumerState<_CardView>
     Color swipeColor = _kBorder;
     if (_dragOffset.abs() > 10) {
       final progress = (_dragOffset.abs() / 150).clamp(0.0, 1.0);
-      final target = _dragOffset > 0 ? _kRed : _kGreen;
+      final target = _dragOffset > 0 ? _kGreen : _kRed;
       swipeColor = Color.lerp(_kBorder, target, progress)!;
     }
 
@@ -581,9 +581,10 @@ class _CardViewState extends ConsumerState<_CardView>
                       return;
                     final velocity = details.primaryVelocity ?? 0;
                     if (_dragOffset.abs() > 96 || velocity.abs() > 700) {
-                      final forgot =
+                      final isSwipeRight =
                           velocity.abs() > 700 ? velocity > 0 : _dragOffset > 0;
-                      await _finishSwipe(forgot: forgot);
+                      // Left to right swipe (isSwipeRight) is remembered; right to left swipe is forgot
+                      await _finishSwipe(forgot: !isSwipeRight);
                     } else {
                       await _animateTo(0);
                     }
@@ -621,16 +622,16 @@ class _CardViewState extends ConsumerState<_CardView>
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 14, vertical: 7),
                                 decoration: BoxDecoration(
-                                  color: (_dragOffset > 0 ? _kRed : _kGreen)
+                                  color: (_dragOffset > 0 ? _kGreen : _kRed)
                                       .withOpacity(0.9),
                                   borderRadius: BorderRadius.circular(10),
                                   border: Border.all(
-                                    color: _dragOffset > 0 ? _kRed : _kGreen,
+                                    color: _dragOffset > 0 ? _kGreen : _kRed,
                                     width: 2,
                                   ),
                                 ),
                                 child: Text(
-                                  _dragOffset > 0 ? 'FORGOT' : 'REMEMBERED',
+                                  _dragOffset > 0 ? 'REMEMBERED' : 'FORGOT',
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 16,
@@ -1508,10 +1509,10 @@ class _ActionArea extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    // ── Left: Remembered / Easy (Swipe Left) ──
+                    // ── Left: Forgot / Hard (Swipe Left) ──
                     Expanded(
                       child: GestureDetector(
-                        onTap: onRemembered,
+                        onTap: onForgot,
                         behavior: HitTestBehavior.opaque,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
@@ -1523,10 +1524,10 @@ class _ActionArea extends StatelessWidget {
                                 height: 32,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: _kGreen.withOpacity(0.12),
-                                  border: Border.all(color: _kGreen, width: 1.5),
+                                  color: _kRed.withOpacity(0.12),
+                                  border: Border.all(color: _kRed, width: 1.5),
                                 ),
-                                child: const Icon(Icons.sentiment_very_satisfied_rounded, color: _kGreen, size: 18),
+                                child: const Icon(Icons.sentiment_dissatisfied_rounded, color: _kRed, size: 18),
                               ),
                               const SizedBox(width: 8),
                               const Column(
@@ -1535,11 +1536,11 @@ class _ActionArea extends StatelessWidget {
                                 children: [
                                   Text(
                                     'Swipe Left',
-                                    style: TextStyle(color: _kGreen, fontSize: 10, fontWeight: FontWeight.w600),
+                                    style: TextStyle(color: _kRed, fontSize: 10, fontWeight: FontWeight.w600),
                                   ),
                                   Text(
-                                    'Remembered',
-                                    style: TextStyle(color: _kGreen, fontSize: 12, fontWeight: FontWeight.bold),
+                                    'Forgot',
+                                    style: TextStyle(color: _kRed, fontSize: 12, fontWeight: FontWeight.bold),
                                   ),
                                 ],
                               ),
@@ -1580,10 +1581,10 @@ class _ActionArea extends StatelessWidget {
                     ),
                     // Divider
                     Container(width: 1, height: 40, color: _kBorder),
-                    // ── Right: Forgot / Hard (Swipe Right) ──
+                    // ── Right: Remembered / Easy (Swipe Right) ──
                     Expanded(
                       child: GestureDetector(
-                        onTap: onForgot,
+                        onTap: onRemembered,
                         behavior: HitTestBehavior.opaque,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
@@ -1596,11 +1597,11 @@ class _ActionArea extends StatelessWidget {
                                 children: [
                                   Text(
                                     'Swipe Right',
-                                    style: TextStyle(color: _kRed, fontSize: 10, fontWeight: FontWeight.w600),
+                                    style: TextStyle(color: _kGreen, fontSize: 10, fontWeight: FontWeight.w600),
                                   ),
                                   Text(
-                                    'Forgot',
-                                    style: TextStyle(color: _kRed, fontSize: 12, fontWeight: FontWeight.bold),
+                                    'Remembered',
+                                    style: TextStyle(color: _kGreen, fontSize: 12, fontWeight: FontWeight.bold),
                                   ),
                                 ],
                               ),
@@ -1610,10 +1611,10 @@ class _ActionArea extends StatelessWidget {
                                 height: 32,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: _kRed.withOpacity(0.12),
-                                  border: Border.all(color: _kRed, width: 1.5),
+                                  color: _kGreen.withOpacity(0.12),
+                                  border: Border.all(color: _kGreen, width: 1.5),
                                 ),
-                                child: const Icon(Icons.sentiment_dissatisfied_rounded, color: _kRed, size: 18),
+                                child: const Icon(Icons.sentiment_very_satisfied_rounded, color: _kGreen, size: 18),
                               ),
                             ],
                           ),

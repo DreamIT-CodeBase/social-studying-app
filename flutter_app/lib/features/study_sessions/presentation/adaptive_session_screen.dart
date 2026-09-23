@@ -138,7 +138,11 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
           workspaceId: widget.workspaceId,
           mode: effectiveMode,
           subject: isSelfStudy ? widget.subject : null,
-          subcategory: isSelfStudy ? widget.subcategory : null,
+          subcategory: isSelfStudy
+              ? (widget.mode == AdaptiveSessionMode.flashcard
+                  ? null
+                  : widget.subcategory)
+              : null,
           questionType: widget.questionType,
         );
         if (!mounted || generation != _prepareGeneration) return;
