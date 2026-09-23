@@ -267,11 +267,7 @@ GoRouter router(RouterRef ref) {
         redirect: (_, state) {
           final workspaceId = state.pathParameters['workspaceId']!;
           if (isSelfLearningWorkspaceId(workspaceId)) {
-            final subject = state.uri.queryParameters['subject'];
-            final query = subject != null
-                ? '?mode=study&subject=${Uri.encodeComponent(subject)}'
-                : '?mode=study';
-            return '/student/session/$workspaceId$query';
+            return '${AppRoutes.studentHome}?tab=1';
           }
           return null;
         },

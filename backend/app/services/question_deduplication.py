@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Iterable
-
 from functools import lru_cache
 
 from app.services import question_validation, symbolic_math

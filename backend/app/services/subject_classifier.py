@@ -231,6 +231,23 @@ _WORLD_LANGUAGES_TERMS = [
     "linguistics", "conjugation", "phonetics", "espanol", "español", "français", "deutsch", "translation",
 ]
 
+_SCIENCE_TERMS = [
+    # Specific / compound phrases first
+    "general science", "integrated science", "physical science", "life science",
+    "natural science", "scientific method", "scientific inquiry", "scientific investigation",
+    "experiment", "laboratory", "hypothesis", "empirical",
+    # English
+    "science",
+    # Hindi
+    "विज्ञान", "सामान्य विज्ञान", "प्राकृतिक विज्ञान",
+    # Spanish
+    "ciencias", "ciencia", "ciencias naturales", "ciencias generales",
+    # French
+    "sciences", "science", "sciences naturelles",
+    # German
+    "naturwissenschaft", "naturwissenschaften", "wissenschaft",
+]
+
 _SUBJECT_CONFIGS = [
     # Most specific compound domains first
     ("Computer Science", _CS_TERMS),
@@ -250,6 +267,7 @@ _SUBJECT_CONFIGS = [
     ("Chemistry", _CHEMISTRY_TERMS),
     ("Biology", _BIOLOGY_TERMS),
     ("Physics", _PHYSICS_TERMS),
+    ("Science", _SCIENCE_TERMS),
     ("Mathematics", _MATH_TERMS),
 ]
 
@@ -317,6 +335,22 @@ def canonical_subject(text: str | None) -> str:
     return text.strip()
 
 
+_SCIENCE_DOMAINS = {
+    "science",
+    "general science",
+    "life science",
+    "physical science",
+    "natural science",
+    "integrated science",
+    "biology",
+    "chemistry",
+    "physics",
+    "earth & space science",
+    "earth science",
+    "environmental science",
+}
+
+
 def subjects_match(s1: str | None, s2: str | None) -> bool:
     """Return True if two subject strings refer to the same subject domain."""
     if not s1 or not s2:
@@ -327,7 +361,14 @@ def subjects_match(s1: str | None, s2: str | None) -> bool:
         return True
     r1 = s1.strip().casefold()
     r2 = s2.strip().casefold()
-    return bool(r1 == r2 or r1 in r2 or r2 in r1)
+    if r1 == r2 or r1 in r2 or r2 in r1:
+        return True
+    # Umbrella science domain matching: 'Science' encompasses Biology, Chemistry, Physics, etc.
+    canon_set = {c1, c2}
+    raw_set = {r1, r2}
+    if (canon_set & {"science", "general science"}) and canon_set.issubset(_SCIENCE_DOMAINS):
+        return True
+    return bool((raw_set & {"science", "general science"}) and (r1 in _SCIENCE_DOMAINS and r2 in _SCIENCE_DOMAINS))
 
 
 def classify_document_subject(doc: Document) -> str:

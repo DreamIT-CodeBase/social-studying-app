@@ -323,6 +323,7 @@ class SessionExhaustedView extends StatelessWidget {
     required this.onClose,
     this.sessionsUsed,
     this.isFirstUse = false,
+    this.subcategory,
   });
 
   final AdaptiveSessionMode mode;
@@ -339,6 +340,9 @@ class SessionExhaustedView extends StatelessWidget {
   /// Explicit flag indicating this is a first-use initialization state.
   final bool isFirstUse;
 
+  /// Optional topic or chapter name (e.g. Trigonometry).
+  final String? subcategory;
+
   bool get _effectiveFirstUse =>
       isFirstUse || (sessionsUsed != null && sessionsUsed == 0);
 
@@ -352,12 +356,18 @@ class SessionExhaustedView extends StatelessWidget {
           : 'We are generating your first questions from your study material. '
               'Tap "Try again" in a moment and your session will be ready!';
     }
+    final topicSuffix = subcategory != null && subcategory!.trim().isNotEmpty
+        ? ' for ${subcategory!.trim()}'
+        : '';
+    final topicMaterial = subcategory != null && subcategory!.trim().isNotEmpty
+        ? ' for ${subcategory!.trim()}'
+        : '';
     return switch (mode) {
       AdaptiveSessionMode.flashcard =>
         'You have reviewed every flashcard your current study material can '
-            'make. Upload more material to unlock a fresh set.',
+            'make$topicSuffix. Upload more material$topicMaterial to unlock a fresh set.',
       _ => 'You have answered every question your current study material can '
-          'make. Upload more material to unlock a fresh set.',
+          'make$topicSuffix. Upload more material$topicMaterial to unlock a fresh set.',
     };
   }
 

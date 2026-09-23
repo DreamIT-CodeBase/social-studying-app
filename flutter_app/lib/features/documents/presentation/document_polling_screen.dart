@@ -549,8 +549,9 @@ class _StudyActionsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final subject = subjectForDocument(doc);
-    final subjectParam =
-        subject.isNotEmpty ? '&subject=${Uri.encodeComponent(subject)}' : '';
+    final subjectParam = (subject.isNotEmpty && subject.toLowerCase() != 'study')
+        ? '&subject=${Uri.encodeComponent(subject)}'
+        : '';
 
     return Container(
       padding: const EdgeInsets.all(Spacing.lg),

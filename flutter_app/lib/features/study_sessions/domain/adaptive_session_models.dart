@@ -125,6 +125,7 @@ class AdaptiveSessionPlan {
     this.contentReady = true,
     this.exhausted = false,
     this.subject,
+    this.subcategory,
     this.questionType,
     this.sessionsUsed = 0,
   });
@@ -153,6 +154,7 @@ class AdaptiveSessionPlan {
         exhausted:
             json['exhausted'] is bool ? json['exhausted'] as bool : false,
         subject: json['subject'] as String?,
+        subcategory: json['subcategory'] as String?,
         questionType: json['question_type'] as String?,
         sessionsUsed: (json['sessions_used'] as num?)?.toInt() ?? 0,
       );
@@ -169,6 +171,7 @@ class AdaptiveSessionPlan {
   final List<PreparedFlashcard> flashcards;
   final bool contentReady;
   final String? subject;
+  final String? subcategory;
   final String? questionType;
 
   /// True when the learner has consumed every non-repeating session the

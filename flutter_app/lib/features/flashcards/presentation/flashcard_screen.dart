@@ -22,6 +22,7 @@ import 'package:social_study_app/features/taxonomy/presentation/taxonomy_notifie
 import 'package:social_study_app/features/progress/presentation/progress_notifier.dart';
 import 'package:social_study_app/features/notifications/data/notification_token_repository.dart';
 import 'package:social_study_app/features/notifications/presentation/notification_service.dart';
+import 'package:social_study_app/features/home/providers/self_study_subject_providers.dart';
 
 /// Flashcard review interface — Sprint 4.9 (MCQ redesign).
 ///
@@ -136,6 +137,13 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<String?>(selfStudySubcategoryProvider, (prev, next) {
+      if (prev != next && mounted) {
+        _sessionTimer?.cancel();
+        _notifier.resetSession();
+      }
+    });
+
     // Fire celebrations exactly once per transition into `rated`.
     ref.listen(
       flashcardSessionNotifierProvider(widget.workspaceId),

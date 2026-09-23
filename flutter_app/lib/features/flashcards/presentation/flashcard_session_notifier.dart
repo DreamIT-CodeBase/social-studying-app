@@ -267,11 +267,15 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
       final subject = isSelfLearningWorkspaceId(_workspaceId)
           ? ref.read(selfStudySubjectProvider)
           : null;
+      final subcategory = isSelfLearningWorkspaceId(_workspaceId)
+          ? ref.read(selfStudySubcategoryProvider)
+          : null;
       final card = await repo.next(
         workspaceId: _workspaceId,
         selectedTopicIds: _selectedTopicIds,
         mastery: _lastMastery,
         subject: subject,
+        subcategory: subcategory,
       );
       state = FlashcardSession.viewingFront(card: card);
       _cardStartTime = DateTime.now();

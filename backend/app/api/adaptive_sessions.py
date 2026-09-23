@@ -135,12 +135,39 @@ _CAPPED_MODES = frozenset({AdaptiveSessionMode.study, AdaptiveSessionMode.flashc
 # a burst of prepares can't run away with generation cost.
 _QUESTION_TOPUP_MIN = 12
 _QUESTION_TOPUP_MAX = 25
-_FLASHCARD_TOPUP_MIN = 8
+_FLASHCARD_TOPUP_MIN = 10
+_FLASHCARD_TOPUP_MAX = 20
 _MAX_DAILY_SESSIONS_PER_USER = 50
+_MAX_TOPIC_RECREATIONS = 10
+
+
+async def _topic_recreation_count(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    student_id: str,
+    subcategory: str | None,
+) -> int:
+    """Count how many times variations/recreations have been produced for this specific topic."""
+    if not subcategory:
+        return 0
+    subcat_clean = subcategory.strip().casefold()
+    try:
+        return await cosmos_retry(lambda: get_collection(tenant_id, ADAPTIVE_SESSIONS).count_documents(
+            {
+                "workspace_id": workspace_id,
+                "student_id": student_id,
+                "subcategory": subcat_clean,
+                "is_recreated": True,
+            }
+        ))
+    except Exception:
+        return 0
 
 
 def _is_self_study(workspace_id: str) -> bool:
     return workspace_id.startswith(_SELF_STUDY_PREFIX)
+
 
 
 def _source_snapshot(
@@ -686,20 +713,6 @@ async def _prepare_questions(
         except Exception:
             logger.warning("Skipping malformed queued question id=%s", raw.get("_id"))
 
-    if not available and current_sources.document_ids:
-        try:
-            from app.services.document_question_extractor import extract_and_queue_document_questions
-            for doc_id in current_sources.document_ids:
-                extracted = await extract_and_queue_document_questions(
-                    tenant_id=user.tenant_id,
-                    workspace_id=workspace_id,
-                    document_id=doc_id,
-                )
-                if extracted:
-                    available.extend(extracted)
-        except Exception as e:
-            logger.warning("Automated document question extraction encountered error: %s", e)
-
     doc_subjects: dict[str, str] = {}
     doc_subcats: dict[str, set[str]] = {}
     if current_sources.document_ids:
@@ -730,17 +743,42 @@ async def _prepare_questions(
                         break
             doc_subjects[str(doc_raw["_id"])] = s or ""
 
-        if subject:
-            def matches_subject(q: Question) -> bool:
-                q_top_subj = classify_subject_from_text(q.topic)
-                doc_subj = doc_subjects.get(q.document_id, "")
-                return (
-                    subjects_match(q_top_subj, subject)
-                    or subjects_match(doc_subj, subject)
-                    or subjects_match(q.topic, subject)
-                )
+    def matches_subject(q: Question) -> bool:
+        if not subject:
+            return True
+        q_top_subj = classify_subject_from_text(q.topic)
+        doc_subj = doc_subjects.get(q.document_id, "")
+        return (
+            subjects_match(q_top_subj, subject)
+            or subjects_match(doc_subj, subject)
+            or subjects_match(q.topic, subject)
+        )
 
-            available = [q for q in available if matches_subject(q)]
+    if subject:
+        available = [q for q in available if matches_subject(q)]
+
+    # If available questions for this subject/workspace are fewer than target,
+    # extract questions from any matching documents that haven't been queued yet
+    if len(available) < target and current_sources.document_ids:
+        try:
+            from app.services.document_question_extractor import (
+                extract_and_queue_document_questions,
+            )
+            for doc_id in current_sources.document_ids:
+                doc_s = doc_subjects.get(doc_id, "")
+                if not subject or subjects_match(doc_s, subject):
+                    doc_has_avail = any(q.document_id == doc_id for q in available)
+                    if not doc_has_avail:
+                        extracted = await extract_and_queue_document_questions(
+                            tenant_id=user.tenant_id,
+                            workspace_id=workspace_id,
+                            document_id=doc_id,
+                        )
+                        if extracted:
+                            matching_extracted = [q for q in extracted if matches_subject(q)]
+                            available.extend(matching_extracted)
+        except Exception as e:
+            logger.warning("Automated document question extraction encountered error: %s", e)
 
     def matches_subcat(q: Question) -> bool:
         if not subcategory:
@@ -749,14 +787,13 @@ async def _prepare_questions(
         q_top = q.topic.strip().casefold()
         if subcat_clean in q_top or q_top in subcat_clean:
             return True
-        sub_terms = set(re.findall(r"[a-z0-9]+", subcat_clean))
-        q_terms = set(re.findall(r"[a-z0-9]+", q_top))
+        sub_terms = set(re.findall(r"[a-z0-9]+", subcat_clean)) - {"the", "and", "in", "of", "to", "a", "an", "is", "for"}
+        q_terms = set(re.findall(r"[a-z0-9]+", q_top)) - {"the", "and", "in", "of", "to", "a", "an", "is", "for"}
         if bool(sub_terms and len(sub_terms & q_terms) >= max(1, len(sub_terms) // 2)):
-            return True
-        if any(subcat_clean in dt or dt in subcat_clean for dt in doc_subcats.get(q.document_id, set())):
             return True
         body_terms = set(re.findall(r"[a-z0-9]+", q.body.casefold()))
         return bool(sub_terms and len(sub_terms & body_terms) >= max(1, len(sub_terms) // 2))
+
 
     if subcategory:
         available = [q for q in available if matches_subcat(q)]
@@ -841,6 +878,7 @@ async def _prepare_questions(
                     question
                     for question in generated
                     if question.document_id in current_sources.document_ids
+                    and (not subject or matches_subject(question))
                     and (not subcategory or matches_subcat(question))
                     and question.id not in seen_ids
                     and question.id not in reserved_ids
@@ -853,6 +891,8 @@ async def _prepare_questions(
                     and (not question_type or question.question_type == question_type)
                 ]
             else:
+                if subject:
+                    generated = [q for q in generated if matches_subject(q)]
                 if question_type:
                     generated = [q for q in generated if q.question_type == question_type]
                 if subcategory:
@@ -880,6 +920,7 @@ async def _prepare_questions(
                     topup_clean = [
                         q for q in topup_generated
                         if q.document_id in current_sources.document_ids
+                        and (not subject or matches_subject(q))
                         and (not subcategory or matches_subcat(q))
                         and q.id not in seen_ids
                         and q.id not in reserved_ids
@@ -924,7 +965,13 @@ async def _prepare_questions(
     # in real time.
     if len(selected) < target and not revision and (current_sources.document_ids or available or historical_seen_records):
         needed = target - len(selected)
-        doc_id = list(current_sources.document_ids)[0] if current_sources.document_ids else "doc_runtime_material"
+        matching_doc_ids = [
+            did for did in current_sources.document_ids
+            if not subject or subjects_match(doc_subjects.get(did, ""), subject)
+        ]
+        doc_id = matching_doc_ids[0] if matching_doc_ids else (
+            list(current_sources.document_ids)[0] if current_sources.document_ids else "doc_runtime_material"
+        )
         current_seen_sigs = (
             seen_fingerprints
             | session_seen_fingerprints
@@ -945,6 +992,8 @@ async def _prepare_questions(
                 count=needed,
                 target_type=question_type,
             )
+            if subject:
+                variations = [q for q in variations if matches_subject(q)]
             if subcategory:
                 variations = [q for q in variations if matches_subcat(q)]
             if question_type:
@@ -957,7 +1006,13 @@ async def _prepare_questions(
         if revision and available:
             selected = [q for q in available if not question_type or q.question_type == question_type][:target]
         elif current_sources.document_ids or available or historical_seen_records:
-            doc_id = list(current_sources.document_ids)[0] if current_sources.document_ids else "doc_runtime_material"
+            matching_doc_ids = [
+                did for did in current_sources.document_ids
+                if not subject or subjects_match(doc_subjects.get(did, ""), subject)
+            ]
+            doc_id = matching_doc_ids[0] if matching_doc_ids else (
+                list(current_sources.document_ids)[0] if current_sources.document_ids else "doc_runtime_material"
+            )
             eff_subj = subject or doc_subjects.get(doc_id, "") or (classify_subject_from_text(subcategory) if subcategory else "") or "study"
             try:
                 variations = await generate_runtime_material_variations(
@@ -972,6 +1027,8 @@ async def _prepare_questions(
                     count=target,
                     target_type=question_type,
                 )
+                if subject:
+                    variations = [q for q in variations if matches_subject(q)]
                 if subcategory:
                     variations = [q for q in variations if matches_subcat(q)]
                 if question_type:
@@ -983,21 +1040,27 @@ async def _prepare_questions(
         # Emergency extraction retry if document questions were not available yet
         if not selected and current_sources.document_ids:
             try:
-                from app.services.document_question_extractor import extract_and_queue_document_questions
+                from app.services.document_question_extractor import (
+                    extract_and_queue_document_questions,
+                )
                 for doc_id in current_sources.document_ids:
-                    extracted = await extract_and_queue_document_questions(
-                        tenant_id=user.tenant_id,
-                        workspace_id=workspace_id,
-                        document_id=doc_id,
-                    )
-                    if extracted:
-                        if subcategory:
-                            extracted = [q for q in extracted if matches_subcat(q)]
-                        if question_type:
-                            extracted = [q for q in extracted if q.question_type == question_type]
-                        selected = extracted[:target]
-                        if selected:
-                            break
+                    doc_s = doc_subjects.get(doc_id, "")
+                    if not subject or subjects_match(doc_s, subject):
+                        extracted = await extract_and_queue_document_questions(
+                            tenant_id=user.tenant_id,
+                            workspace_id=workspace_id,
+                            document_id=doc_id,
+                        )
+                        if extracted:
+                            if subject:
+                                extracted = [q for q in extracted if matches_subject(q)]
+                            if subcategory:
+                                extracted = [q for q in extracted if matches_subcat(q)]
+                            if question_type:
+                                extracted = [q for q in extracted if q.question_type == question_type]
+                            selected = extracted[:target]
+                            if selected:
+                                break
             except Exception as ex:
                 logger.warning("Emergency document extraction retry failed: %s", ex)
 
@@ -1017,7 +1080,11 @@ async def _prepare_questions(
                     allow_repeats=True,
                 )
                 if emergency_gen:
-                    selected = [q for q in emergency_gen if not question_type or q.question_type == question_type][:target]
+                    selected = [
+                        q for q in emergency_gen
+                        if (not subject or matches_subject(q))
+                        and (not question_type or q.question_type == question_type)
+                    ][:target]
             except Exception as ex:
                 logger.warning("Emergency LLM batch generation failed: %s", ex)
 
@@ -1041,10 +1108,12 @@ async def _prepare_questions(
                 and canonical_question_signature(q.body) not in session_seen_fingerprints
                 and normalize_question_stem(q.body) not in seen_fingerprints
                 and (not question_type or q.question_type == question_type)
+                and (not subject or matches_subject(q))
             ]
             selected = (filtered_fallback if filtered_fallback else fb_plan.questions)[:target]
 
     # Strict question type safeguard: guarantee 100% format purity
+    eff_qtype_str = None
     if question_type:
         eff_qtype_str = (
             question_type.value if hasattr(question_type, "value") else str(question_type)
@@ -1053,26 +1122,6 @@ async def _prepare_questions(
             q for q in selected
             if (q.question_type.value if hasattr(q.question_type, "value") else str(q.question_type)).lower() == eff_qtype_str
         ]
-        # If strict filtering dropped the count to 0, top up from guaranteed fallback plan of the exact question type
-        if not selected:
-            fb_topup_plan = _build_guaranteed_fallback_plan(
-                workspace_id=workspace_id,
-                user_id=user.id,
-                tenant_id=user.tenant_id,
-                mode=AdaptiveSessionMode.study if not revision else AdaptiveSessionMode.revision,
-                level=level,
-                mastery=0.0,
-                subject=subject or (eff_subj if 'eff_subj' in locals() else None),
-                subcategory=subcategory,
-                question_type=question_type,
-                target=target,
-            )
-            for fb_q in fb_topup_plan.questions:
-                if (fb_q.question_type.value if hasattr(fb_q.question_type, "value") else str(fb_q.question_type)).lower() == eff_qtype_str:
-                    if fb_q.id not in {q.id for q in selected}:
-                        selected.append(fb_q)
-                        if len(selected) >= target:
-                            break
 
     prepared_results: list[PreparedQuestion] = []
     for question in selected:
@@ -1230,7 +1279,7 @@ async def _generate_flashcard_batch(
     elif subject:
         subject_topics = [
             t for t in topics
-            if classify_subject_from_text(t).casefold() == subject.casefold()
+            if subjects_match(classify_subject_from_text(t), subject)
         ]
         if subject_topics:
             topics = subject_topics
@@ -1488,7 +1537,7 @@ async def _prepare_flashcards(
             if not s or s.casefold() == "study":
                 for tag_name in tags:
                     ts = classify_subject_from_text(tag_name)
-                    if subject and ts.casefold() == subject.casefold():
+                    if subject and subjects_match(ts, subject):
                         s = subject
                         break
             doc_subjects[str(doc_raw["_id"])] = s or ""
@@ -1496,22 +1545,25 @@ async def _prepare_flashcards(
         if subject:
             def matches_card_subject(c: PreparedFlashcard) -> bool:
                 return (
-                    classify_subject_from_text(c.topic).casefold() == subject.casefold()
-                    or doc_subjects.get(card_doc_ids.get(c.id, ""), "").casefold() == subject.casefold()
+                    subjects_match(classify_subject_from_text(c.topic), subject)
+                    or subjects_match(doc_subjects.get(card_doc_ids.get(c.id, ""), ""), subject)
                 )
 
             available_cards = [c for c in available_cards if matches_card_subject(c)]
 
         if subcategory:
             subcat_clean = subcategory.strip().casefold()
-            sub_terms = set(re.findall(r"[a-z0-9]+", subcat_clean))
+            sub_terms = set(re.findall(r"[a-z0-9]+", subcat_clean)) - {"the", "and", "in", "of", "to", "a", "an", "is", "for"}
 
             def matches_card_subcat(c: PreparedFlashcard) -> bool:
                 c_top = c.topic.strip().casefold()
                 if subcat_clean in c_top or c_top in subcat_clean:
                     return True
-                c_terms = set(re.findall(r"[a-z0-9]+", c_top))
-                return bool(sub_terms and len(sub_terms & c_terms) >= max(1, len(sub_terms) // 2))
+                c_terms = set(re.findall(r"[a-z0-9]+", c_top)) - {"the", "and", "in", "of", "to", "a", "an", "is", "for"}
+                if bool(sub_terms and len(sub_terms & c_terms) >= max(1, len(sub_terms) // 2)):
+                    return True
+                body_terms = set(re.findall(r"[a-z0-9]+", (c.front + " " + c.back).casefold()))
+                return bool(sub_terms and len(sub_terms & body_terms) >= max(1, len(sub_terms) // 2))
 
             available_cards = [c for c in available_cards if matches_card_subcat(c)]
 
@@ -1568,17 +1620,23 @@ async def _prepare_flashcards(
             continue
         if subject:
             if (
-                classify_subject_from_text(question.topic).casefold() != subject.casefold()
-                and doc_subjects.get(question.document_id, "").casefold() != subject.casefold()
+                not subjects_match(classify_subject_from_text(question.topic), subject)
+                and not subjects_match(doc_subjects.get(question.document_id, ""), subject)
             ):
                 continue
         if subcategory:
             subcat_clean = subcategory.strip().casefold()
-            if (
-                subcat_clean not in question.topic.casefold()
-                and question.topic.casefold() not in subcat_clean
-                and not any(subcat_clean in dt for dt in doc_subcats.get(question.document_id, set()))
-            ):
+            sub_terms = set(re.findall(r"[a-z0-9]+", subcat_clean)) - {"the", "and", "in", "of", "to", "a", "an", "is", "for"}
+            q_top = question.topic.strip().casefold()
+            q_terms = set(re.findall(r"[a-z0-9]+", q_top)) - {"the", "and", "in", "of", "to", "a", "an", "is", "for"}
+            body_terms = set(re.findall(r"[a-z0-9]+", question.body.casefold()))
+            is_subcat_match = (
+                subcat_clean in q_top
+                or q_top in subcat_clean
+                or bool(sub_terms and len(sub_terms & q_terms) >= max(1, len(sub_terms) // 2))
+                or bool(sub_terms and len(sub_terms & body_terms) >= max(1, len(sub_terms) // 2))
+            )
+            if not is_subcat_match:
                 continue
         derived_id = f"derived_{question.id}"
         answer = question.answer
@@ -1825,6 +1883,453 @@ def _generate_fallback_equation_question(
             grading_hints=[],
         )
 
+_TRIG_FLASHCARDS = [
+    (
+        "Trigonometric Ratios",
+        "In a right triangle, how is sin(θ) defined in terms of side lengths?",
+        "Opposite side divided by Hypotenuse (Opposite / Hypotenuse).",
+        "sin(θ) = Opposite / Hypotenuse is the primary ratio for acute angles in a right-angled triangle.",
+    ),
+    (
+        "Trigonometric Ratios",
+        "In a right triangle, how is cos(θ) defined in terms of side lengths?",
+        "Adjacent side divided by Hypotenuse (Adjacent / Hypotenuse).",
+        "cos(θ) = Adjacent / Hypotenuse.",
+    ),
+    (
+        "Trigonometric Ratios",
+        "In a right triangle, how is tan(θ) defined?",
+        "Opposite side divided by Adjacent side (Opposite / Adjacent).",
+        "tan(θ) = Opposite / Adjacent, which is also equal to sin(θ) / cos(θ).",
+    ),
+    (
+        "Pythagorean Trigonometric Identity",
+        "What is the fundamental Pythagorean trigonometric identity relating sin(θ) and cos(θ)?",
+        "sin²(θ) + cos²(θ) = 1",
+        "Derived directly from the Pythagorean theorem a² + b² = c² by dividing through by c².",
+    ),
+    (
+        "Special Angle Values",
+        "What is the exact value of sin(30°) (or sin(π/6 radians))?",
+        "1/2 (or 0.5)",
+        "In a 30°-60°-90° special right triangle, the opposite leg is half the length of the hypotenuse.",
+    ),
+    (
+        "Special Angle Values",
+        "What is the exact value of cos(60°)?",
+        "1/2 (or 0.5)",
+        "cos(60°) = sin(30°) = 1/2 due to complementary angle properties.",
+    ),
+    (
+        "Special Angle Values",
+        "What is the exact value of tan(45°)?",
+        "1",
+        "In an isosceles right triangle (45°-45°-90°), opposite and adjacent sides are equal.",
+    ),
+    (
+        "Reciprocal Trigonometric Functions",
+        "What is the reciprocal function of cos(θ)?",
+        "sec(θ) (secant)",
+        "sec(θ) = 1 / cos(θ).",
+    ),
+    (
+        "Reciprocal Trigonometric Functions",
+        "What is the reciprocal function of sin(θ)?",
+        "csc(θ) (cosecant)",
+        "csc(θ) = 1 / sin(θ).",
+    ),
+    (
+        "Trigonometric Identities",
+        "State the identity relating tan²(θ) and sec²(θ).",
+        "1 + tan²(θ) = sec²(θ)",
+        "Dividing sin²(θ) + cos²(θ) = 1 through by cos²(θ) yields 1 + tan²(θ) = sec²(θ).",
+    ),
+    (
+        "Law of Sines",
+        "State the Law of Sines for a triangle with sides a, b, c and opposite angles A, B, C.",
+        "a / sin(A) = b / sin(B) = c / sin(C)",
+        "The Law of Sines equates the ratio of each side length to the sine of its opposite angle.",
+    ),
+    (
+        "Unit Circle Coordinates",
+        "On the unit circle with radius 1, what are the coordinates of the point for angle θ?",
+        "(cos(θ), sin(θ))",
+        "The x-coordinate corresponds to cos(θ) and the y-coordinate corresponds to sin(θ).",
+    ),
+]
+
+
+def _generate_fallback_trigonometry_question(
+    idx: int,
+    target_qtype: str | None,
+    subcategory: str | None = None,
+) -> PreparedQuestion:
+    triplets = [
+        (3, 4, 5),
+        (5, 12, 13),
+        (8, 15, 17),
+        (7, 24, 25),
+        (9, 40, 41),
+    ]
+    opp, adj, hyp = triplets[idx % len(triplets)]
+    scale = (idx // len(triplets)) + 1
+    opp_s, adj_s, hyp_s = opp * scale, adj * scale, hyp * scale
+
+    topic = subcategory or "Trigonometry"
+    eff_type = target_qtype or ("mcq" if idx % 3 == 0 else ("true_false" if idx % 3 == 1 else "short_answer"))
+
+    if eff_type == "true_false":
+        is_true = (idx % 2 == 0)
+        claimed_hyp = hyp_s if is_true else hyp_s + 2
+        return PreparedQuestion(
+            id=f"qst_trig_gen_tf_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="true_false",
+            difficulty="beginner",
+            body=f"In a right triangle with legs of length {opp_s} and {adj_s}, the length of the hypotenuse is {claimed_hyp}.",
+            options=[
+                PreparedOption(key="true", text="True"),
+                PreparedOption(key="false", text="False"),
+            ],
+            answer="true" if is_true else "false",
+            explanation=f"By the Pythagorean theorem, hypotenuse = √({opp_s}² + {adj_s}²) = √({opp_s**2 + adj_s**2}) = {hyp_s}.",
+            grading_hints=[],
+        )
+    elif eff_type == "short_answer":
+        return PreparedQuestion(
+            id=f"qst_trig_gen_sa_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="short_answer",
+            difficulty="beginner",
+            body=f"In a right-angled triangle with legs of length {opp_s} and {adj_s}, what is the length of the hypotenuse?",
+            options=[],
+            answer=str(hyp_s),
+            explanation=f"Hypotenuse = √({opp_s}² + {adj_s}²) = √({opp_s**2 + adj_s**2}) = {hyp_s}.",
+            grading_hints=[str(hyp_s), f"c = {hyp_s}", f"c={hyp_s}"],
+        )
+    elif eff_type == "long_answer":
+        return PreparedQuestion(
+            id=f"qst_trig_gen_la_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="long_answer",
+            difficulty="intermediate",
+            body=f"In a right-angled triangle with opposite side {opp_s} and adjacent side {adj_s}, calculate the hypotenuse and explain how to find sin(θ).",
+            options=[],
+            answer=f"First, calculate the hypotenuse using the Pythagorean theorem: c = √({opp_s}² + {adj_s}²) = {hyp_s}. Next, sin(θ) = Opposite / Hypotenuse = {opp_s} / {hyp_s} = {opp}/{hyp}.",
+            explanation="The Pythagorean theorem yields the hypotenuse, and the sine ratio evaluates opposite over hypotenuse.",
+            grading_hints=[f"{hyp_s}", f"{opp}/{hyp}", "opposite / hypotenuse", "Pythagorean theorem"],
+        )
+    else:
+        return PreparedQuestion(
+            id=f"qst_trig_gen_mcq_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="mcq",
+            difficulty="beginner",
+            body=f"In a right-angled triangle with opposite side {opp_s} and adjacent side {adj_s}, what is the value of sin(θ)?",
+            options=[
+                PreparedOption(key="A", text=f"{opp}/{hyp}"),
+                PreparedOption(key="B", text=f"{adj}/{hyp}"),
+                PreparedOption(key="C", text=f"{opp}/{adj}"),
+                PreparedOption(key="D", text=f"{hyp}/{opp}"),
+            ],
+            answer="A",
+            explanation=f"sin(θ) = Opposite / Hypotenuse. With hypotenuse = {hyp_s}, sin(θ) = {opp_s}/{hyp_s} = {opp}/{hyp}.",
+            grading_hints=[],
+        )
+
+
+_EXTRA_SCIENCE_FLASHCARDS = [
+    ("Scientific Method", "What is the role of an independent variable in an experiment?", "The variable that is deliberately changed or manipulated by the experimenter.", "The independent variable tests the effect on the dependent variable."),
+    ("Scientific Method", "What is a control group in a scientific investigation?", "A group that receives no experimental treatment to serve as a baseline for comparison.", "Control groups isolate the effects of the experimental manipulation."),
+    ("Cell Biology", "Which organelle is responsible for cellular respiration and ATP generation?", "Mitochondria (mitochondrion).", "Often termed the powerhouse of the cell, it breaks down glucose into usable ATP energy."),
+    ("Cell Biology", "Which plant cell organelle conducts photosynthesis?", "Chloroplast.", "Chloroplasts contain chlorophyll pigments that absorb sunlight to synthesize glucose."),
+    ("Cell Biology", "What is the primary function of ribosomes in living cells?", "Protein synthesis.", "Ribosomes assemble amino acid chains based on genetic mRNA codes."),
+    ("Cell Biology", "What cellular structure regulates what enters and exits the cell?", "The cell membrane (plasma membrane).", "A phospholipid bilayer with selective permeability."),
+    ("Molecular Genetics", "What molecule stores hereditary genetic instructions in living organisms?", "DNA (Deoxyribonucleic acid).", "DNA encodes instructions via sequences of adenine, thymine, cytosine, and guanine."),
+    ("Molecular Genetics", "What process results in two genetically identical diploid daughter cells?", "Mitosis.", "Mitosis is essential for growth, tissue repair, and asexual reproduction."),
+    ("Molecular Genetics", "What process produces four genetically diverse haploid gametes?", "Meiosis.", "Meiosis reduces chromosome number by half for sexual reproduction."),
+    ("Atomic Structure", "What does the atomic number of an element represent?", "The number of protons in the nucleus of an atom.", "The atomic number uniquely identifies the chemical element."),
+    ("Chemical Bonding", "What type of chemical bond forms when atoms share pairs of electrons?", "A covalent bond.", "Covalent bonding typically occurs between nonmetal atoms sharing valence electrons."),
+    ("Chemical Bonding", "What type of chemical bond forms from electrostatic attraction between oppositely charged ions?", "An ionic bond.", "Ionic bonds form when one atom transfers electrons to another, creating ions."),
+    ("Conservation of Mass", "State the Law of Conservation of Mass in chemical reactions.", "Mass is neither created nor destroyed; total reactant mass equals total product mass.", "Atoms are rearranged during chemical reactions without altering total mass."),
+    ("Acids and Bases", "On the pH scale, how are acidic, neutral, and alkaline solutions identified?", "pH < 7 is acidic, pH = 7 is neutral, and pH > 7 is basic (alkaline).", "pH measures hydrogen ion concentration on a logarithmic scale."),
+    ("Newton's Laws", "State Newton's First Law of Motion (Law of Inertia).", "An object at rest stays at rest, and an object in motion stays in motion unless acted upon by a net external force.", "Inertia is the resistance of an object to changes in its velocity."),
+    ("Newton's Laws", "State Newton's Second Law of Motion formula.", "F = ma (Net Force = mass × acceleration).", "Acceleration is directly proportional to net force and inversely proportional to mass."),
+    ("Newton's Laws", "State Newton's Third Law of Motion.", "For every action, there is an equal and opposite reaction.", "Forces always occur in matched interaction pairs acting on different bodies."),
+    ("Energy Transformations", "State the Law of Conservation of Energy.", "Energy cannot be created or destroyed, only transformed from one form to another.", "Total energy in an isolated system remains constant over time."),
+    ("Ecology", "In an ecological food chain, what role do producers (autotrophs) serve?", "They produce organic nutrients from inorganic sources like sunlight via photosynthesis.", "Plants and algae form the base trophic level for consumers."),
+    ("Earth Science", "What geological theory explains the movement of Earth's lithospheric plates?", "Plate Tectonics.", "Convection currents in the mantle drive the slow movement of continental and oceanic plates."),
+]
+
+_SCIENCE_QUESTION_BANKS = [
+    {
+        "topic": "Cell Biology",
+        "mcq": {
+            "body": "Which organelle is primarily responsible for synthesizing adenosine triphosphate (ATP) in eukaryotic cells?",
+            "options": [
+                ("A", "Mitochondria", True),
+                ("B", "Endoplasmic reticulum", False),
+                ("C", "Golgi apparatus", False),
+                ("D", "Lysosome", False),
+            ],
+            "explanation": "Mitochondria generate the vast majority of cellular ATP via oxidative phosphorylation.",
+        },
+        "true_false": {
+            "body": "Chloroplasts are specialized organelles found in plant cells that convert solar energy into chemical energy through photosynthesis.",
+            "answer": "true",
+            "explanation": "Chloroplasts contain chlorophyll to absorb light energy and synthesize glucose.",
+        },
+        "short_answer": {
+            "body": "Which cellular organelle is universally responsible for synthesizing proteins from amino acids?",
+            "answer": "ribosome",
+            "explanation": "Ribosomes translate mRNA transcripts into polypeptide chains.",
+            "hints": ["ribosome", "ribosomes"],
+        },
+        "long_answer": {
+            "body": "Explain the role of the cell membrane and how selective permeability protects cell function.",
+            "answer": "The phospholipid bilayer forms a semi-permeable barrier regulating the movement of substances into and out of the cell to maintain homeostasis.",
+            "explanation": "Selective transport maintains necessary internal concentrations of ions and nutrients.",
+            "hints": ["phospholipid bilayer", "selective permeability", "homeostasis", "transport"],
+        },
+    },
+    {
+        "topic": "Scientific Method",
+        "mcq": {
+            "body": "In a controlled scientific experiment, what is the variable that the experimenter deliberately changes to test an effect?",
+            "options": [
+                ("A", "Independent variable", True),
+                ("B", "Dependent variable", False),
+                ("C", "Controlled constant", False),
+                ("D", "Confounding factor", False),
+            ],
+            "explanation": "The independent variable is intentionally altered to observe its effect on the dependent variable.",
+        },
+        "true_false": {
+            "body": "A scientific hypothesis must be both testable through empirical observation and capable of being proven false (falsifiable).",
+            "answer": "true",
+            "explanation": "Scientific hypotheses require empirical testability and falsifiability to qualify as valid scientific inquiries.",
+        },
+        "short_answer": {
+            "body": "In a controlled experiment, what is the term for the baseline group that does not receive the experimental treatment?",
+            "answer": "control group",
+            "explanation": "The control group serves as a comparison benchmark to isolate the treatment's true effect.",
+            "hints": ["control group", "control", "control baseline"],
+        },
+        "long_answer": {
+            "body": "Explain the difference between an independent variable and a dependent variable in a scientific experiment.",
+            "answer": "The independent variable is changed or manipulated by the researcher, whereas the dependent variable is measured to observe the response caused by that change.",
+            "explanation": "Cause and effect relationships are isolated by manipulating only one variable at a time.",
+            "hints": ["independent variable", "dependent variable", "manipulate", "measure", "cause and effect"],
+        },
+    },
+    {
+        "topic": "Chemical Foundations",
+        "mcq": {
+            "body": "Which subatomic particle possesses a positive electrical charge and is located in the nucleus of an atom?",
+            "options": [
+                ("A", "Proton", True),
+                ("B", "Electron", False),
+                ("C", "Neutron", False),
+                ("D", "Photon", False),
+            ],
+            "explanation": "Protons have a +1 relative charge and reside within the atomic nucleus, defining the atomic number.",
+        },
+        "true_false": {
+            "body": "In a covalent bond, two atoms share one or more pairs of valence electrons to achieve stable electron configurations.",
+            "answer": "true",
+            "explanation": "Covalent bonding involves the mutual sharing of valence electrons between atoms.",
+        },
+        "short_answer": {
+            "body": "What term describes a substance with a pH value strictly lower than 7.0 on the pH scale?",
+            "answer": "acid",
+            "explanation": "A pH below 7 indicates an excess of hydronium ions, defining an acidic solution.",
+            "hints": ["acid", "acidic", "an acid"],
+        },
+        "long_answer": {
+            "body": "State the Law of Conservation of Mass and explain its significance in balancing chemical equations.",
+            "answer": "Mass cannot be created or destroyed in a chemical reaction; the total number and type of atoms in reactants must equal the total in products.",
+            "explanation": "Chemical reactions rearrange atomic bonds without altering total atomic mass.",
+            "hints": ["mass cannot be created or destroyed", "reactants equal products", "rearranged atoms"],
+        },
+    },
+    {
+        "topic": "Physics & Energy",
+        "mcq": {
+            "body": "According to Newton's Second Law of Motion, what is the direct mathematical relationship between net force (F), mass (m), and acceleration (a)?",
+            "options": [
+                ("A", "F = m · a", True),
+                ("B", "F = m / a", False),
+                ("C", "F = a / m", False),
+                ("D", "F = m + a", False),
+            ],
+            "explanation": "Newton's Second Law states that force equals mass multiplied by acceleration (F = ma).",
+        },
+        "true_false": {
+            "body": "The Law of Conservation of Energy states that energy can be created or destroyed during high-speed physical transformations.",
+            "answer": "false",
+            "explanation": "Energy cannot be created or destroyed; it can only be converted from one form to another.",
+        },
+        "short_answer": {
+            "body": "What is the scientific term for the tendency of an object to resist any change in its state of motion?",
+            "answer": "inertia",
+            "explanation": "Inertia is the property of matter described by Newton's First Law of Motion.",
+            "hints": ["inertia", "mass inertia"],
+        },
+        "long_answer": {
+            "body": "Explain Newton's Third Law of Motion and provide a real-world example illustrating action and reaction forces.",
+            "answer": "For every action force, there is an equal and opposite reaction force acting simultaneously on different objects, such as a rocket pushing exhaust gases downward while the gases push the rocket upward.",
+            "explanation": "Forces always occur in matched interaction pairs on interacting objects.",
+            "hints": ["equal and opposite", "action and reaction", "rocket", "pairs"],
+        },
+    },
+    {
+        "topic": "Genetics & Heredity",
+        "mcq": {
+            "body": "What helical macromolecule carries the primary genetic code and hereditary instructions in all living cellular organisms?",
+            "options": [
+                ("A", "Deoxyribonucleic acid (DNA)", True),
+                ("B", "Ribonucleic acid (RNA)", False),
+                ("C", "Hemoglobin", False),
+                ("D", "Adenosine triphosphate (ATP)", False),
+            ],
+            "explanation": "DNA contains the nucleotide sequences that encode hereditary instructions for cellular development and function.",
+        },
+        "true_false": {
+            "body": "Mitosis produces four genetically unique haploid gamete cells during reproduction.",
+            "answer": "false",
+            "explanation": "Mitosis produces two genetically identical diploid somatic cells. Meiosis produces four genetically diverse haploid gametes.",
+        },
+        "short_answer": {
+            "body": "What genetic term describes the observable physical traits and characteristics of an organism?",
+            "answer": "phenotype",
+            "explanation": "Phenotype is the expression of the organism's genotype interacting with its environment.",
+            "hints": ["phenotype", "the phenotype"],
+        },
+        "long_answer": {
+            "body": "Distinguish between an organism's genotype and its phenotype with a concrete biological example.",
+            "answer": "Genotype refers to the specific genetic allele combination inherited by an organism, whereas phenotype is the observable physical manifestation of those genes.",
+            "explanation": "Environmental and genetic factors interact to express phenotypic traits from genotypic data.",
+            "hints": ["genotype", "phenotype", "alleles", "observable traits"],
+        },
+    },
+    {
+        "topic": "Ecology & Earth Systems",
+        "mcq": {
+            "body": "In an ecosystem, which organism category converts sunlight into chemical energy to serve as the foundation of the food web?",
+            "options": [
+                ("A", "Primary producers (autotrophs)", True),
+                ("B", "Primary consumers (herbivores)", False),
+                ("C", "Secondary consumers (carnivores)", False),
+                ("D", "Decomposers (saprotrophs)", False),
+            ],
+            "explanation": "Autotrophic primary producers like plants and phytoplankton capture radiant energy via photosynthesis.",
+        },
+        "true_false": {
+            "body": "In the water cycle, water vapor cools and condenses to form liquid clouds in the atmosphere.",
+            "answer": "true",
+            "explanation": "Condensation transitions gaseous water vapor into liquid water droplets or ice crystals forming clouds.",
+        },
+        "short_answer": {
+            "body": "What biological process enables plants to convert sunlight, carbon dioxide, and water into glucose and oxygen?",
+            "answer": "photosynthesis",
+            "explanation": "Photosynthesis is the foundational autotrophic chemical pathway producing organic carbohydrates and oxygen.",
+            "hints": ["photosynthesis", "photo-synthesis"],
+        },
+        "long_answer": {
+            "body": "Explain the role of decomposers in an ecosystem and what would happen to nutrient cycling without them.",
+            "answer": "Decomposers break down dead organic matter and waste, releasing essential chemical nutrients back into the soil and ecosystem for primary producers to reabsorb.",
+            "explanation": "Without decomposers, organic matter would accumulate and vital nutrients like carbon and nitrogen would remain locked away.",
+            "hints": ["decomposers", "nutrient cycling", "break down", "recycle"],
+        },
+    },
+]
+
+
+def _is_science_subject(subject_or_category: str | None) -> bool:
+    if not subject_or_category:
+        return False
+    s = subject_or_category.strip().lower()
+    science_keywords = (
+        "science", "general science", "life science", "physical science",
+        "integrated science", "earth & space science", "earth science",
+        "environmental science", "biology", "chemistry", "physics"
+    )
+    if any(k in s for k in science_keywords):
+        return True
+    return subjects_match(subject_or_category, "Science")
+
+
+def _generate_fallback_science_question(
+    idx: int,
+    target_qtype: str | None,
+    subject: str | None = None,
+    subcategory: str | None = None,
+) -> PreparedQuestion:
+    bank = _SCIENCE_QUESTION_BANKS[idx % len(_SCIENCE_QUESTION_BANKS)]
+    topic = subcategory or bank["topic"]
+    eff_type = target_qtype or ("mcq" if idx % 3 == 0 else ("true_false" if idx % 3 == 1 else "short_answer"))
+
+    if eff_type == "true_false":
+        tf = bank["true_false"]
+        return PreparedQuestion(
+            id=f"qst_sci_gen_tf_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="true_false",
+            difficulty="beginner",
+            body=tf["body"],
+            options=[
+                PreparedOption(key="true", text="True"),
+                PreparedOption(key="false", text="False"),
+            ],
+            answer=tf["answer"],
+            explanation=tf["explanation"],
+            grading_hints=[],
+        )
+    elif eff_type == "short_answer":
+        sa = bank["short_answer"]
+        return PreparedQuestion(
+            id=f"qst_sci_gen_sa_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="short_answer",
+            difficulty="beginner",
+            body=sa["body"],
+            options=[],
+            answer=sa["answer"],
+            explanation=sa["explanation"],
+            grading_hints=sa["hints"],
+        )
+    elif eff_type == "long_answer":
+        la = bank["long_answer"]
+        return PreparedQuestion(
+            id=f"qst_sci_gen_la_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="long_answer",
+            difficulty="intermediate",
+            body=la["body"],
+            options=[],
+            answer=la["answer"],
+            explanation=la["explanation"],
+            grading_hints=la["hints"],
+        )
+    else:
+        mcq = bank["mcq"]
+        options = [
+            PreparedOption(key=opt[0], text=opt[1])
+            for opt in mcq["options"]
+        ]
+        correct_key = next((opt[0] for opt in mcq["options"] if opt[2]), "A")
+        return PreparedQuestion(
+            id=f"qst_sci_gen_mcq_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="mcq",
+            difficulty="beginner",
+            body=mcq["body"],
+            options=options,
+            answer=correct_key,
+            explanation=mcq["explanation"],
+            grading_hints=[],
+        )
+
 
 def _build_guaranteed_fallback_plan(
     *,
@@ -1857,7 +2362,22 @@ def _build_guaranteed_fallback_plan(
         target = _adaptive_count(mastery, level, ranges[level])
 
     if mode == AdaptiveSessionMode.flashcard:
-        if subj in ("chemistry", "chem"):
+        if subcategory and "trig" in subcategory.casefold():
+            flashcards = []
+            while len(flashcards) < target:
+                for _topic_name, front_text, back_text, expl_text in _TRIG_FLASHCARDS:
+                    flashcards.append(
+                        PreparedFlashcard(
+                            id=f"fls_trig_{uuid4().hex[:8]}",
+                            topic=subcategory.strip(),
+                            front=front_text,
+                            back=back_text,
+                            explanation=expl_text,
+                        )
+                    )
+                    if len(flashcards) >= target:
+                        break
+        elif subj in ("chemistry", "chem"):
             flashcards = [
                 PreparedFlashcard(
                     id=f"fls_chem_{uuid4().hex[:8]}",
@@ -1974,6 +2494,18 @@ def _build_guaranteed_fallback_plan(
                     explanation="Ribosomes translate genetic instructions from mRNA into functional protein chains.",
                 ),
             ]
+        elif _is_science_subject(subj) or subj in ("science", "general science", "life science", "physical science", "integrated science"):
+            topic_name = subcategory or (f"{subject} Concepts" if subject else "Science Concepts")
+            flashcards = [
+                PreparedFlashcard(
+                    id=f"fls_sci_{uuid4().hex[:8]}",
+                    topic=subcategory or topic_name_card,
+                    front=front_text,
+                    back=back_text,
+                    explanation=expl_text,
+                )
+                for topic_name_card, front_text, back_text, expl_text in _EXTRA_SCIENCE_FLASHCARDS[:max(4, target)]
+            ]
         else:
             topic_name = f"{subject} Concepts" if subject else "Key Concepts"
             flashcards = [
@@ -1994,20 +2526,51 @@ def _build_guaranteed_fallback_plan(
             ]
         if len(flashcards) < target:
             existing_fronts = {f.front.casefold() for f in flashcards}
-            for topic_name, front_text, back_text, expl_text in _EXTRA_MATH_FLASHCARDS:
-                if front_text.casefold() not in existing_fronts:
-                    flashcards.append(
-                        PreparedFlashcard(
-                            id=f"fls_math_ext_{uuid4().hex[:8]}",
-                            topic=subcategory or topic_name,
-                            front=front_text,
-                            back=back_text,
-                            explanation=expl_text,
+            if subcategory and "trig" in subcategory.casefold():
+                for _topic_name, front_text, back_text, expl_text in _TRIG_FLASHCARDS:
+                    if front_text.casefold() not in existing_fronts:
+                        flashcards.append(
+                            PreparedFlashcard(
+                                id=f"fls_trig_ext_{uuid4().hex[:8]}",
+                                topic=subcategory.strip(),
+                                front=front_text,
+                                back=back_text,
+                                explanation=expl_text,
+                            )
                         )
-                    )
-                    existing_fronts.add(front_text.casefold())
-                    if len(flashcards) >= target:
-                        break
+                        existing_fronts.add(front_text.casefold())
+                        if len(flashcards) >= target:
+                            break
+            elif _is_science_subject(subj) or _is_science_subject(subject) or _is_science_subject(subcategory):
+                for topic_name, front_text, back_text, expl_text in _EXTRA_SCIENCE_FLASHCARDS:
+                    if front_text.casefold() not in existing_fronts:
+                        flashcards.append(
+                            PreparedFlashcard(
+                                id=f"fls_sci_ext_{uuid4().hex[:8]}",
+                                topic=subcategory or topic_name,
+                                front=front_text,
+                                back=back_text,
+                                explanation=expl_text,
+                            )
+                        )
+                        existing_fronts.add(front_text.casefold())
+                        if len(flashcards) >= target:
+                            break
+            else:
+                for topic_name, front_text, back_text, expl_text in _EXTRA_MATH_FLASHCARDS:
+                    if front_text.casefold() not in existing_fronts:
+                        flashcards.append(
+                            PreparedFlashcard(
+                                id=f"fls_math_ext_{uuid4().hex[:8]}",
+                                topic=subcategory or topic_name,
+                                front=front_text,
+                                back=back_text,
+                                explanation=expl_text,
+                            )
+                        )
+                        existing_fronts.add(front_text.casefold())
+                        if len(flashcards) >= target:
+                            break
         flashcards = flashcards[:target]
         if subcategory:
             for f in flashcards:
@@ -2021,7 +2584,22 @@ def _build_guaranteed_fallback_plan(
             if hasattr(question_type, "value")
             else (str(question_type).strip().lower() if question_type else None)
         )
-        if subj in ("chemistry", "chem"):
+        if subcategory and "trig" in subcategory.casefold():
+            questions = [
+                _generate_fallback_trigonometry_question(idx=i, target_qtype=target_qtype, subcategory=subcategory)
+                for i in range(max(target, 8))
+            ]
+        elif _is_science_subject(subj) or subj in ("science", "general science", "life science", "physical science", "integrated science", "earth science", "environmental science"):
+            questions = [
+                _generate_fallback_science_question(
+                    idx=i,
+                    target_qtype=target_qtype,
+                    subject=subject or "Science",
+                    subcategory=subcategory,
+                )
+                for i in range(max(target, 8))
+            ]
+        elif subj in ("chemistry", "chem"):
             questions = [
                 PreparedQuestion(
                     id=f"qst_chem_{uuid4().hex[:8]}",
@@ -2682,123 +3260,152 @@ def _build_guaranteed_fallback_plan(
                 questions = filtered_q
             else:
                 # If the chosen subject didn't have enough questions of this type,
-                # fall back to math questions of this target type so the contract is never violated
-                math_fb = [
-                    PreparedQuestion(
-                        id=f"qst_math_{uuid4().hex[:8]}",
-                        topic="Linear Equations in Algebra",
-                        question_type="mcq",
-                        difficulty="beginner",
-                        body="What is the solution for x in 3x + 7 = 22?",
-                        options=[
-                            PreparedOption(key="A", text="x = 5"),
-                            PreparedOption(key="B", text="x = 4"),
-                            PreparedOption(key="C", text="x = 6"),
-                            PreparedOption(key="D", text="x = 3"),
-                        ],
-                        answer="A",
-                        explanation="Subtract 7 from both sides: 3x = 15. Divide by 3: x = 5.",
-                        grading_hints=[],
-                    ),
-                    PreparedQuestion(
-                        id=f"qst_math_{uuid4().hex[:8]}",
-                        topic="Two-Step Equations",
-                        question_type="mcq",
-                        difficulty="beginner",
-                        body="Solve for x: 5x - 15 = 10",
-                        options=[
-                            PreparedOption(key="A", text="x = 5"),
-                            PreparedOption(key="B", text="x = 4"),
-                            PreparedOption(key="C", text="x = 3"),
-                            PreparedOption(key="D", text="x = 2"),
-                        ],
-                        answer="A",
-                        explanation="Add 15 to both sides: 5x = 25. Divide by 5: x = 5.",
-                        grading_hints=[],
-                    ),
-                    PreparedQuestion(
-                        id=f"qst_math_{uuid4().hex[:8]}",
-                        topic="Algebraic Properties",
-                        question_type="true_false",
-                        difficulty="beginner",
-                        body="In the linear equation 2x + 5 = 15, subtracting 5 from both sides maintains equality and gives 2x = 10.",
-                        options=[
-                            PreparedOption(key="true", text="True"),
-                            PreparedOption(key="false", text="False"),
-                        ],
-                        answer="true",
-                        explanation="The subtraction property of equality allows subtracting the same quantity from both sides.",
-                        grading_hints=[],
-                    ),
-                    PreparedQuestion(
-                        id=f"qst_math_{uuid4().hex[:8]}",
-                        topic="Inverse Operations",
-                        question_type="true_false",
-                        difficulty="beginner",
-                        body="To isolate x in x / 4 = 3, multiplying both sides by 4 yields the solution x = 12.",
-                        options=[
-                            PreparedOption(key="true", text="True"),
-                            PreparedOption(key="false", text="False"),
-                        ],
-                        answer="true",
-                        explanation="Multiplication is the inverse operation of division.",
-                        grading_hints=[],
-                    ),
-                    PreparedQuestion(
-                        id=f"qst_math_{uuid4().hex[:8]}",
-                        topic="Linear Equations in Algebra",
-                        question_type="short_answer",
-                        difficulty="beginner",
-                        body="Solve for x: 3x + 6 = 21. What is the value of x?",
-                        options=[],
-                        answer="5",
-                        explanation="Subtract 6: 3x = 15. Divide by 3: x = 5.",
-                        grading_hints=["5", "x = 5", "x=5"],
-                    ),
-                    PreparedQuestion(
-                        id=f"qst_math_{uuid4().hex[:8]}",
-                        topic="Linear Equations in Algebra",
-                        question_type="long_answer",
-                        difficulty="intermediate",
-                        body="Explain the systematic method to solve the equation 3x + 7 = 22 and how to verify your solution.",
-                        options=[],
-                        answer="First subtract 7 from both sides to get 3x = 15. Next divide both sides by 3 to get x = 5. Verify by substituting 5 into 3(5) + 7 = 22.",
-                        explanation="Inverse operations isolate the variable in linear equations.",
-                        grading_hints=["subtract 7", "divide by 3", "x = 5", "verify"],
-                    ),
-                ]
-                filtered_math = [
-                    q for q in math_fb
-                    if (q.question_type.value if hasattr(q.question_type, "value") else str(q.question_type)).lower() == target_qtype
-                ]
-                if filtered_math:
-                    questions = filtered_math
-                else:
-                    # Dynamic generic fallback ensuring strict target_qtype compliance
+                # fall back to subject-appropriate questions of this target type so the contract is never violated
+                if _is_science_subject(subj) or _is_science_subject(subject) or _is_science_subject(subcategory):
                     questions = [
-                        PreparedQuestion(
-                            id=f"qst_gen_{uuid4().hex[:8]}",
-                            topic=subject or "Core Concepts",
-                            question_type=target_qtype,
-                            difficulty="intermediate",
-                            body=f"Explain the primary principles and structured methodology applied when studying {subject or 'this topic'}.",
-                            options=[],
-                            answer=f"Understanding {subject or 'this topic'} requires analyzing core definitions, identifying key patterns, and systematically applying foundational principles.",
-                            explanation=f"Mastery in {subject or 'this discipline'} develops from structured analysis.",
-                            grading_hints=["principles", "methodology", "analysis"],
+                        _generate_fallback_science_question(
+                            idx=i,
+                            target_qtype=target_qtype,
+                            subject=subject or "Science",
+                            subcategory=subcategory,
                         )
+                        for i in range(max(target, 6))
                     ]
+                else:
+                    math_fb = [
+                        PreparedQuestion(
+                            id=f"qst_math_{uuid4().hex[:8]}",
+                            topic="Linear Equations in Algebra",
+                            question_type="mcq",
+                            difficulty="beginner",
+                            body="What is the solution for x in 3x + 7 = 22?",
+                            options=[
+                                PreparedOption(key="A", text="x = 5"),
+                                PreparedOption(key="B", text="x = 4"),
+                                PreparedOption(key="C", text="x = 6"),
+                                PreparedOption(key="D", text="x = 3"),
+                            ],
+                            answer="A",
+                            explanation="Subtract 7 from both sides: 3x = 15. Divide by 3: x = 5.",
+                            grading_hints=[],
+                        ),
+                        PreparedQuestion(
+                            id=f"qst_math_{uuid4().hex[:8]}",
+                            topic="Two-Step Equations",
+                            question_type="mcq",
+                            difficulty="beginner",
+                            body="Solve for x: 5x - 15 = 10",
+                            options=[
+                                PreparedOption(key="A", text="x = 5"),
+                                PreparedOption(key="B", text="x = 4"),
+                                PreparedOption(key="C", text="x = 3"),
+                                PreparedOption(key="D", text="x = 2"),
+                            ],
+                            answer="A",
+                            explanation="Add 15 to both sides: 5x = 25. Divide by 5: x = 5.",
+                            grading_hints=[],
+                        ),
+                        PreparedQuestion(
+                            id=f"qst_math_{uuid4().hex[:8]}",
+                            topic="Algebraic Properties",
+                            question_type="true_false",
+                            difficulty="beginner",
+                            body="In the linear equation 2x + 5 = 15, subtracting 5 from both sides maintains equality and gives 2x = 10.",
+                            options=[
+                                PreparedOption(key="true", text="True"),
+                                PreparedOption(key="false", text="False"),
+                            ],
+                            answer="true",
+                            explanation="The subtraction property of equality allows subtracting the same quantity from both sides.",
+                            grading_hints=[],
+                        ),
+                        PreparedQuestion(
+                            id=f"qst_math_{uuid4().hex[:8]}",
+                            topic="Inverse Operations",
+                            question_type="true_false",
+                            difficulty="beginner",
+                            body="To isolate x in x / 4 = 3, multiplying both sides by 4 yields the solution x = 12.",
+                            options=[
+                                PreparedOption(key="true", text="True"),
+                                PreparedOption(key="false", text="False"),
+                            ],
+                            answer="true",
+                            explanation="Multiplication is the inverse operation of division.",
+                            grading_hints=[],
+                        ),
+                        PreparedQuestion(
+                            id=f"qst_math_{uuid4().hex[:8]}",
+                            topic="Linear Equations in Algebra",
+                            question_type="short_answer",
+                            difficulty="beginner",
+                            body="Solve for x: 3x + 6 = 21. What is the value of x?",
+                            options=[],
+                            answer="5",
+                            explanation="Subtract 6: 3x = 15. Divide by 3: x = 5.",
+                            grading_hints=["5", "x = 5", "x=5"],
+                        ),
+                        PreparedQuestion(
+                            id=f"qst_math_{uuid4().hex[:8]}",
+                            topic="Linear Equations in Algebra",
+                            question_type="long_answer",
+                            difficulty="intermediate",
+                            body="Explain the systematic method to solve the equation 3x + 7 = 22 and how to verify your solution.",
+                            options=[],
+                            answer="First subtract 7 from both sides to get 3x = 15. Next divide both sides by 3 to get x = 5. Verify by substituting 5 into 3(5) + 7 = 22.",
+                            explanation="Inverse operations isolate the variable in linear equations.",
+                            grading_hints=["subtract 7", "divide by 3", "x = 5", "verify"],
+                        ),
+                    ]
+                    filtered_math = [
+                        q for q in math_fb
+                        if (q.question_type.value if hasattr(q.question_type, "value") else str(q.question_type)).lower() == target_qtype
+                    ]
+                    if filtered_math:
+                        questions = filtered_math
+                    else:
+                        # Dynamic generic fallback ensuring strict target_qtype compliance
+                        questions = [
+                            PreparedQuestion(
+                                id=f"qst_gen_{uuid4().hex[:8]}",
+                                topic=subject or "Core Concepts",
+                                question_type=target_qtype,
+                                difficulty="intermediate",
+                                body=f"Explain the primary principles and structured methodology applied when studying {subject or 'this topic'}.",
+                                options=[],
+                                answer=f"Understanding {subject or 'this topic'} requires analyzing core definitions, identifying key patterns, and systematically applying foundational principles.",
+                                explanation=f"Mastery in {subject or 'this discipline'} develops from structured analysis.",
+                                grading_hints=["principles", "methodology", "analysis"],
+                            )
+                        ]
 
         if len(questions) < target:
             needed = target - len(questions)
             for idx in range(needed):
-                questions.append(
-                    _generate_fallback_equation_question(
-                        idx=idx + len(questions),
-                        target_qtype=target_qtype,
-                        subject=subject,
+                if subcategory and "trig" in subcategory.casefold():
+                    questions.append(
+                        _generate_fallback_trigonometry_question(
+                            idx=idx + len(questions),
+                            target_qtype=target_qtype,
+                            subcategory=subcategory,
+                        )
                     )
-                )
+                elif _is_science_subject(subj) or _is_science_subject(subject) or _is_science_subject(subcategory):
+                    questions.append(
+                        _generate_fallback_science_question(
+                            idx=idx + len(questions),
+                            target_qtype=target_qtype,
+                            subject=subject or "Science",
+                            subcategory=subcategory,
+                        )
+                    )
+                else:
+                    questions.append(
+                        _generate_fallback_equation_question(
+                            idx=idx + len(questions),
+                            target_qtype=target_qtype,
+                            subject=subject,
+                        )
+                    )
         # Always shuffle MCQ options so the correct answer key is randomized (never always 'A')
         questions = [_shuffle_prepared_mcq_options(q) for q in questions]
         if subcategory:
@@ -2874,10 +3481,10 @@ async def _supersede_open_sessions(tenant_id: str, workspace_id: str, student_id
     try:
         col = get_collection(tenant_id, ADAPTIVE_SESSIONS)
         for st in ("prepared", "processing"):
-            await cosmos_retry(lambda: col.update_many(
+            await cosmos_retry(lambda s=st: col.update_many(
                 {
                     "student_id": student_id,
-                    "status": st,
+                    "status": s,
                 },
                 {"$set": {"status": "superseded", "updated_at": utc_now()}},
             ))
@@ -3013,6 +3620,20 @@ async def _persist_prepared_session(
     failure is non-fatal — the in-memory plan is still served to the learner.
     """
     now = utc_now()
+    is_recreated = False
+    if plan.questions:
+        if any(
+            q.id.startswith(("qst_var_", "qst_trig_var_", "qst_llm_var_", "qst_trig_gen_"))
+            for q in plan.questions
+        ):
+            is_recreated = True
+    elif plan.flashcards:
+        if any(
+            f.id.startswith(("fls_var_", "fls_trig_var_", "fls_llm_var_", "fls_trig_gen_", "fls_trig_"))
+            for f in plan.flashcards
+        ):
+            is_recreated = True
+    subcat_val = (plan.subcategory or "").strip().casefold() or None
     try:
         await cosmos_retry(lambda: get_collection(tenant_id, ADAPTIVE_SESSIONS).insert_one(
             {
@@ -3027,6 +3648,8 @@ async def _persist_prepared_session(
                 "status": "prepared",
                 "source_snapshot": snapshot,
                 "plan": plan.model_dump(mode="json"),
+                "subcategory": subcat_val,
+                "is_recreated": is_recreated,
                 "created_at": now,
                 "updated_at": now,
             }
@@ -3194,7 +3817,16 @@ async def prepare_adaptive_session(
             any_doc = None
             try:
                 doc_col = get_collection(current_user.tenant_id, DOCUMENTS)
-                any_doc = await cosmos_retry(lambda: doc_col.find_one({"workspace_id": workspace_id, "deleted_at": None}))
+                cur = doc_col.find({"workspace_id": workspace_id, "deleted_at": None}).sort("uploaded_at", -1)
+                all_ws_docs = await cosmos_retry(lambda: cur.to_list(length=20))
+                if request.subject and request.subject.strip().casefold() != "study":
+                    for d in all_ws_docs:
+                        d_cat = d.get("category") or classify_subject_from_text(d.get("filename", ""))
+                        if subjects_match(d_cat, request.subject):
+                            any_doc = d
+                            break
+                if not any_doc and all_ws_docs:
+                    any_doc = all_ws_docs[0]
             except Exception as exc:
                 logger.debug("Failed to query documents fallback for workspace=%s: %s", workspace_id, exc)
             if any_doc:
@@ -3204,7 +3836,7 @@ async def prepare_adaptive_session(
                     logger.info("Document %s is in state '%s'; waiting for chunking/readiness...", any_doc.get("_id"), doc_status)
                     for _ in range(10):  # wait up to 20s
                         await asyncio.sleep(2.0)
-                        refreshed = await cosmos_retry(lambda: doc_col.find_one({"_id": any_doc["_id"]}))
+                        refreshed = await cosmos_retry(lambda d_id=any_doc["_id"]: doc_col.find_one({"_id": d_id}))
                         if refreshed and refreshed.get("status") in ("chunked", "vectorizing", "ready"):
                             any_doc = refreshed
                             sources = await study_sources.current_study_sources(
@@ -3219,7 +3851,7 @@ async def prepare_adaptive_session(
                             str(t.get("name", "")) for t in any_doc.get("topic_tags") or [] if isinstance(t, dict)
                         ),
                     )
-                if not request.subject:
+                if not request.subject or request.subject.strip().casefold() == "study":
                     request.subject = any_doc.get("category") or classify_subject_from_text(any_doc.get("filename", ""))
                 if not request.subcategory and any_doc.get("subcategory"):
                     request.subcategory = any_doc.get("subcategory")
@@ -3254,6 +3886,23 @@ async def prepare_adaptive_session(
         )
         if used >= _MAX_SELF_STUDY_SESSIONS:
             return _build_exhausted_plan(mode=request.mode, level=level, mastery=mastery, subject=request.subject, subcategory=request.subcategory, sessions_used=used)
+
+        if request.subcategory:
+            subcat_recreations = await _topic_recreation_count(
+                tenant_id=current_user.tenant_id,
+                workspace_id=workspace_id,
+                student_id=current_user.id,
+                subcategory=request.subcategory,
+            )
+            if subcat_recreations >= _MAX_TOPIC_RECREATIONS:
+                return _build_exhausted_plan(
+                    mode=request.mode,
+                    level=level,
+                    mastery=mastery,
+                    subject=request.subject,
+                    subcategory=request.subcategory,
+                    sessions_used=subcat_recreations,
+                )
 
 
     # Enforce daily session limit: maximum 50 sessions per user per day (UTC)
@@ -3332,6 +3981,23 @@ async def prepare_adaptive_session(
     item_count = len(flashcards if request.mode == AdaptiveSessionMode.flashcard else questions)
 
     if item_count == 0:
+        if request.subcategory:
+            subcat_recreations = await _topic_recreation_count(
+                tenant_id=current_user.tenant_id,
+                workspace_id=workspace_id,
+                student_id=current_user.id,
+                subcategory=request.subcategory,
+            )
+            if subcat_recreations >= _MAX_TOPIC_RECREATIONS:
+                return _build_exhausted_plan(
+                    mode=request.mode,
+                    level=level,
+                    mastery=mastery,
+                    subject=request.subject,
+                    subcategory=request.subcategory,
+                    sessions_used=subcat_recreations,
+                )
+
         if capped and used > 0:
             return _build_exhausted_plan(
                 mode=request.mode,
@@ -3345,11 +4011,12 @@ async def prepare_adaptive_session(
         if has_docs and request.mode != AdaptiveSessionMode.flashcard:
             doc_id = list(sources.document_ids)[0] if (sources and sources.document_ids) else "doc_runtime_material"
             try:
+                eff_subj = request.subject or (request.subcategory and classify_subject_from_text(request.subcategory)) or "Science"
                 var_questions = await generate_runtime_material_variations(
                     tenant_id=current_user.tenant_id,
                     workspace_id=workspace_id,
                     document_id=doc_id,
-                    subject=request.subject or "Algebra 1",
+                    subject=eff_subj,
                     subcategory=request.subcategory,
                     seed_questions=[],
                     historical_seen_bodies=[],
@@ -3361,16 +4028,50 @@ async def prepare_adaptive_session(
                     item_count = len(questions)
             except Exception as var_err:
                 logger.warning("Emergency material variation synthesis failed: %s", var_err)
+        elif request.mode == AdaptiveSessionMode.flashcard and request.subcategory and "trig" in request.subcategory.casefold():
+            var_cards = [
+                PreparedFlashcard(
+                    id=f"fls_trig_var_{uuid4().hex[:8]}",
+                    topic=request.subcategory.strip(),
+                    front=front_text,
+                    back=back_text,
+                    explanation=expl_text,
+                )
+                for topic_name, front_text, back_text, expl_text in _TRIG_FLASHCARDS
+            ]
+            flashcards = var_cards[:target]
+            item_count = len(flashcards)
+        elif request.mode == AdaptiveSessionMode.flashcard and (_is_science_subject(request.subject) or _is_science_subject(request.subcategory)):
+            var_cards = [
+                PreparedFlashcard(
+                    id=f"fls_sci_var_{uuid4().hex[:8]}",
+                    topic=request.subcategory.strip() if request.subcategory else topic_name,
+                    front=front_text,
+                    back=back_text,
+                    explanation=expl_text,
+                )
+                for topic_name, front_text, back_text, expl_text in _EXTRA_SCIENCE_FLASHCARDS
+            ]
+            flashcards = var_cards[:target]
+            item_count = len(flashcards)
 
         if item_count == 0:
-            if used > 0:
+            subcat_recreations = 0
+            if request.subcategory:
+                subcat_recreations = await _topic_recreation_count(
+                    tenant_id=current_user.tenant_id,
+                    workspace_id=workspace_id,
+                    student_id=current_user.id,
+                    subcategory=request.subcategory,
+                )
+            if used > 0 or subcat_recreations > 0:
                 return _build_exhausted_plan(
                     mode=request.mode,
                     level=level,
                     mastery=mastery,
                     subject=request.subject,
                     subcategory=request.subcategory,
-                    sessions_used=used,
+                    sessions_used=max(used, subcat_recreations),
                 )
             # Cold-start workspace with 0 items: serve guaranteed plan
             logger.info(
@@ -3609,8 +4310,8 @@ async def complete_adaptive_session(
                 response_time_ms=attempt.response_time_ms,
                 session_progress=len(seen_cards),
             )
-            await cosmos_retry(lambda: get_collection(current_user.tenant_id, FLASHCARD_RATINGS).insert_one(
-                event.model_dump(by_alias=True)
+            await cosmos_retry(lambda ev=event: get_collection(current_user.tenant_id, FLASHCARD_RATINGS).insert_one(
+                ev.model_dump(by_alias=True)
             ))
             delta = await gamification_service.record_flashcard_rating(
                 tenant_id=current_user.tenant_id,

@@ -489,6 +489,21 @@ const List<String> _worldLanguagesTerms = [
   'translation',
 ];
 
+const List<String> _scienceTerms = [
+  'general science', 'integrated science', 'physical science', 'life science',
+  'natural science', 'scientific method', 'scientific inquiry',
+  'scientific investigation', 'experiment', 'laboratory', 'hypothesis',
+  'science',
+  // Hindi
+  'विज्ञान', 'सामान्य विज्ञान', 'प्राकृतिक विज्ञान',
+  // Spanish
+  'ciencias', 'ciencia', 'ciencias naturales', 'ciencias generales',
+  // French
+  'sciences', 'science', 'sciences naturelles',
+  // German
+  'naturwissenschaft', 'naturwissenschaften', 'wissenschaft',
+];
+
 const List<MapEntry<String, List<String>>> _subjectConfigs = [
   MapEntry('Computer Science', _csTerms),
   MapEntry('Engineering', _engineeringTerms),
@@ -507,6 +522,7 @@ const List<MapEntry<String, List<String>>> _subjectConfigs = [
   MapEntry('Chemistry', _chemistryTerms),
   MapEntry('Biology', _biologyTerms),
   MapEntry('Physics', _physicsTerms),
+  MapEntry('Science', _scienceTerms),
   MapEntry('Mathematics', _mathTerms),
 ];
 
@@ -611,6 +627,9 @@ String subjectEmoji(String? subject) {
       return '📐';
     case 'chemistry':
       return '🧪';
+    case 'science':
+    case 'general science':
+      return '🔬';
     case 'biology':
       return '🧬';
     case 'computer science':
@@ -694,6 +713,9 @@ Color subjectColor(String? subject) {
       return const Color(0xFF06B6D4); // Cyan
     case 'chemistry':
       return const Color(0xFFF59E0B); // Amber
+    case 'science':
+    case 'general science':
+      return const Color(0xFF0EA5E9); // Ocean Sky Blue / Teal
     case 'biology':
       return const Color(0xFF10B981); // Emerald
     case 'computer science':

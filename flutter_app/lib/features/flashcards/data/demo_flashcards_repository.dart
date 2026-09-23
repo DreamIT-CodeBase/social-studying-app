@@ -81,6 +81,7 @@ class DemoFlashcardsRepository implements FlashcardsRepository {
     List<String>? selectedTopicIds,
     double? mastery,
     String? subject,
+    String? subcategory,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 250));
     final fixture = _fixtures[_index % _fixtures.length];

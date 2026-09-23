@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
@@ -86,6 +87,9 @@ class NextFlashcardRequest(BaseModel):
     )
     subject: str | None = Field(
         default=None, description="Optional subject name to filter flashcards."
+    )
+    subcategory: str | None = Field(
+        default=None, description="Optional subcategory / chapter name (e.g., Trigonometry) to filter flashcards."
     )
 
 
@@ -211,6 +215,21 @@ async def next_flashcard(
             == request_data.subject.casefold()
         ]
 
+    def _matches_sc(top: str, subcat: str) -> bool:
+        sc_clean = subcat.strip().casefold()
+        top_cf = top.casefold()
+        if sc_clean in top_cf or top_cf in sc_clean:
+            return True
+        st = set(re.findall(r"[a-z0-9]+", sc_clean)) - {"the", "and", "in", "of", "to", "a", "an", "is", "for"}
+        tt = set(re.findall(r"[a-z0-9]+", top_cf)) - {"the", "and", "in", "of", "to", "a", "an", "is", "for"}
+        return bool(st and len(st & tt) >= max(1, len(st) // 2))
+
+    if request_data and request_data.subcategory:
+        interactions = [
+            i for i in interactions
+            if _matches_sc(str(i.get("topic", "")), request_data.subcategory)
+        ]
+
     if not interactions:
         # Fallback 1: Return an existing approved flashcard if one is already saved
         fc_col = get_collection(current_user.tenant_id, FLASHCARDS)
@@ -223,6 +242,8 @@ async def next_flashcard(
             allowed_names = _resolve_descendants(workspace, request_data.topics)
             if allowed_names:
                 fc_filter["topic"] = {"$in": allowed_names}
+        if request_data and request_data.subcategory:
+            fc_filter["topic"] = {"$regex": re.escape(request_data.subcategory.strip()), "$options": "i"}
         existing_fc_doc = await fc_col.find_one(fc_filter)
         if existing_fc_doc:
             try:
@@ -251,6 +272,12 @@ async def next_flashcard(
                 if classify_subject_from_text(str(q.get("topic", ""))).casefold()
                 == request_data.subject.casefold()
             ]
+        if request_data and request_data.subcategory:
+            q_docs = [
+                q for q in q_docs
+                if _matches_sc(str(q.get("topic", "")), request_data.subcategory)
+                or _matches_sc(str(q.get("body", "")), request_data.subcategory)
+            ]
         if q_docs:
             interactions = [
                 {
@@ -261,11 +288,23 @@ async def next_flashcard(
                 for q in q_docs
             ]
 
+    if not interactions and request_data and request_data.subcategory and "trig" in request_data.subcategory.casefold():
+        from app.api.adaptive_sessions import _TRIG_FLASHCARDS
+        fc_item = random.choice(_TRIG_FLASHCARDS)
+        return FlashcardForStudent(
+            id=f"fls_trig_{uuid4().hex[:8]}",
+            topic=request_data.subcategory.strip(),
+            front=fc_item[1],
+            back=fc_item[2],
+            explanation=fc_item[3],
+        )
+
     if not interactions:
+        subcat_msg = f" for {request_data.subcategory}" if request_data and request_data.subcategory else ""
         msg = (
-            f"You haven't answered any {request_data.subject} questions correctly yet, and no study material is available. "
-            f"Go to the Study tab and answer {request_data.subject} questions or upload study material to unlock flashcards."
-            if request_data and request_data.subject
+            f"You haven't answered any {request_data.subject}{subcat_msg} questions correctly yet, and no study material is available. "
+            f"Go to the Study tab and answer questions or upload study material to unlock flashcards."
+            if request_data and (request_data.subject or request_data.subcategory)
             else "No study material or question history available yet. Please upload study materials or answer questions to unlock flashcards."
         )
         raise ConflictError(msg)

@@ -50,7 +50,10 @@ from app.services.question_deduplication import (
     is_candidate_duplicate,
     normalize_question_stem,
 )
-from app.services.subject_classifier import classify_subject_from_text
+from app.services.subject_classifier import (
+    classify_subject_from_text,
+    subjects_match,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,8 +109,8 @@ async def get_next_question(
         if str(question.get("document_id", "")) in current_document_ids
         and (
             not subject
-            or classify_subject_from_text(str(question.get("topic", ""))).casefold()
-            == subject.casefold()
+            or subjects_match(classify_subject_from_text(str(question.get("topic", ""))), subject)
+            or subjects_match(classify_subject_from_text(str(question.get("body", ""))), subject)
         )
     ]
 
@@ -338,10 +341,10 @@ async def _generate_and_persist_batch(
                 if not doc_subj or doc_subj.casefold() == "study":
                     for tag in tags:
                         tag_name = tag.get("name") if isinstance(tag, dict) else str(tag)
-                        if classify_subject_from_text(tag_name).casefold() == subject.casefold():
+                        if subjects_match(classify_subject_from_text(tag_name), subject):
                             doc_subj = subject
                             break
-                if doc_subj and doc_subj.casefold() == subject.casefold():
+                if doc_subj and subjects_match(doc_subj, subject):
                     matching_ids_set.add(str(doc_raw["_id"]))
                     matching_docs.append(doc_raw)
 
@@ -381,14 +384,14 @@ async def _generate_and_persist_batch(
                 # Filter candidate topics to those matching the requested subject
                 matched_candidates = [
                     c for c in candidates
-                    if classify_subject_from_text(c.topic_name).casefold() == subject.casefold()
+                    if subjects_match(classify_subject_from_text(c.topic_name), subject)
                 ]
                 if matched_candidates:
                     candidates = matched_candidates
                 else:
                     source_matches = [
                         t for t in current_sources.topic_names
-                        if classify_subject_from_text(t).casefold() == subject.casefold()
+                        if subjects_match(classify_subject_from_text(t), subject)
                     ]
                     if source_matches:
                         candidates = [
@@ -502,6 +505,20 @@ async def _generate_and_persist_batch(
             if not is_approved:
                 continue
 
+            # Ensure subject match if subject requested
+            if subject:
+                q_topic_subj = classify_subject_from_text(candidate_obj.topic_name)
+                q_body_subj = classify_subject_from_text(gq.body)
+                if not (subjects_match(q_topic_subj, subject) or subjects_match(q_body_subj, subject)):
+                    logger.warning(
+                        "Dropping question '%s' during batch generation: topic_subj=%s body_subj=%s does not match subject=%s",
+                        gq.body[:60],
+                        q_topic_subj,
+                        q_body_subj,
+                        subject,
+                    )
+                    continue
+
             await redis.sadd(seen_key, norm_body)  # store in temporary Redis memory
 
             # 3. Create model and save to db
@@ -575,7 +592,7 @@ async def _generate_topic_batch(
     calibration = calibrate_difficulty(mastery=mastery)
     difficulty = calibration.difficulty
 
-    effective_doc_ids = matching_doc_ids if matching_doc_ids else current_document_ids
+    effective_doc_ids = matching_doc_ids if matching_doc_ids is not None else current_document_ids
     current_chunks: list[RetrievedChunk] = []
     all_retrieved: list[RetrievedChunk] = []
     try:
@@ -658,7 +675,7 @@ async def _generate_topic_batch(
             logger.warning("Cosmos chunk fallback failed in topic batch: %s", e)
             return []
 
-    if not current_chunks and matching_doc_ids:
+    if not current_chunks and not matching_doc_ids:
         current_chunks = [
             chunk for chunk in all_retrieved if chunk.document_id in current_document_ids
         ]

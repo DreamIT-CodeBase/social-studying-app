@@ -643,6 +643,7 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
             mode: widget.mode,
             canUpload: isSelfLearningWorkspaceId(widget.workspaceId),
             sessionsUsed: _plan?.sessionsUsed ?? 0,
+            subcategory: _plan?.subcategory ?? widget.subcategory,
             onUpload: () => context.pushReplacement(
               '/student/documents/${widget.workspaceId}',
             ),

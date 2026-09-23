@@ -335,6 +335,10 @@ async def test_parallel_generation_dedupes_duplicate_content_before_persisting()
             AsyncMock(return_value=[chunk]),
         ),
         patch(
+            "app.api.adaptive_sessions.flashcard_generation.generate_batch_flashcards",
+            AsyncMock(side_effect=RuntimeError("batch fallback")),
+        ),
+        patch(
             "app.api.adaptive_sessions.flashcard_generation.generate_flashcard",
             AsyncMock(side_effect=[duplicate, new]),
         ) as generate,
@@ -460,6 +464,10 @@ async def test_study_session_is_not_padded_with_old_questions_when_generation_is
         ),
         patch(
             "app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch",
+            AsyncMock(return_value=[]),
+        ),
+        patch(
+            "app.api.adaptive_sessions.generate_runtime_material_variations",
             AsyncMock(return_value=[]),
         ),
     ):
@@ -1173,6 +1181,7 @@ async def test_generated_unrelated_topic_questions_strictly_rejected_when_subcat
         patch("app.api.adaptive_sessions.get_collection", return_value=queue_empty),
         patch("app.api.adaptive_sessions.study_sources.current_study_sources", AsyncMock(return_value=sources)),
         patch("app.api.adaptive_sessions.question_pipeline._generate_and_persist_batch", AsyncMock(return_value=[q_matching, q_unrelated])),
+        patch("app.api.adaptive_sessions.generate_runtime_material_variations", AsyncMock(return_value=[])),
     ):
         prepared = await _prepare_questions(
             user=student,

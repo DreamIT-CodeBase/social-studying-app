@@ -112,7 +112,10 @@ from app.services.question_generation import (
     InsufficientSource,
 )
 from app.services.question_safety import QuestionReview, ReviewVerdict
-from app.services.subject_classifier import classify_subject_from_text
+from app.services.subject_classifier import (
+    classify_subject_from_text,
+    subjects_match,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -169,8 +172,7 @@ async def next_question(
         if subject:
             interactions = [
                 i for i in interactions
-                if classify_subject_from_text(str(i.get("topic", ""))).casefold()
-                == subject.casefold()
+                if subjects_match(classify_subject_from_text(str(i.get("topic", ""))), subject)
             ]
 
         # 2. Extract wrong answers (recent wrong answers favoured/sorted first)

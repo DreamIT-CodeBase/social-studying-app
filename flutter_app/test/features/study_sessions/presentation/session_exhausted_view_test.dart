@@ -104,5 +104,32 @@ void main() {
       expect(find.text('Try again'), findsOneWidget);
       expect(find.text('All caught up!'), findsNothing);
     });
+
+    testWidgets(
+        'includes topic name in message when subcategory is provided',
+        (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SessionExhaustedView(
+              mode: AdaptiveSessionMode.study,
+              canUpload: true,
+              sessionsUsed: 10,
+              subcategory: 'Trigonometry',
+              onUpload: () {},
+              onClose: () {},
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('All caught up!'), findsOneWidget);
+      expect(
+        find.text(
+          'You have answered every question your current study material can make for Trigonometry. Upload more material for Trigonometry to unlock a fresh set.',
+        ),
+        findsOneWidget,
+      );
+    });
   });
 }

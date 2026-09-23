@@ -275,6 +275,17 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
     }
 
     final routerState = GoRouterState.of(context);
+    final tabParam = routerState.uri.queryParameters['tab'];
+    if (tabParam != null) {
+      final tabIndex = int.tryParse(tabParam);
+      if (tabIndex != null && tabIndex >= 0 && tabIndex < _tabs.length) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && ref.read(studentHomeTabProvider) != tabIndex) {
+            ref.read(studentHomeTabProvider.notifier).state = tabIndex;
+          }
+        });
+      }
+    }
     if (routerState.uri.queryParameters['action'] == 'unlock_question') {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _triggerUnlockQuestionSession();
@@ -410,24 +421,16 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
             onStartRevision: workspaceId == null
                 ? null
                 : () {
-                    final activeSubject = isSelfLearningWorkspaceId(workspaceId)
-                        ? ref.read(selfStudySubjectProvider)
-                        : null;
-                    final activeSubcat = isSelfLearningWorkspaceId(workspaceId)
-                        ? ref.read(selfStudySubcategoryProvider)
-                        : null;
+                    if (isSelfLearningWorkspaceId(workspaceId)) {
+                      ref.read(studentHomeTabProvider.notifier).state = 1;
+                      return;
+                    }
                     final activeType = ref.read(selfStudyQuestionTypeProvider);
-                    final subjectQuery = activeSubject != null
-                        ? '&subject=${Uri.encodeComponent(activeSubject)}'
-                        : '';
-                    final subcatQuery = activeSubcat != null
-                        ? '&subcategory=${Uri.encodeComponent(activeSubcat)}'
-                        : '';
                     final typeQuery = activeType != null
                         ? '&question_type=${Uri.encodeComponent(activeType)}'
                         : '';
                     context.push(
-                      '/student/revision/$workspaceId?mode=revision$subjectQuery$subcatQuery$typeQuery',
+                      '/student/revision/$workspaceId?mode=revision$typeQuery',
                     );
                   },
             onOpenBadges: (workspaceId == null || userId == null)
@@ -758,12 +761,12 @@ class _HomeTab extends ConsumerWidget {
     final memberships = effectiveStudentMemberships(user);
 
     // Extract progress parameters safely
-    final progressKey = (workspaceId: workspaceId ?? '', userId: userId ?? '');
+    final profileKey = (workspaceId: workspaceId ?? '', userId: userId ?? '');
     final streakAsync = (workspaceId != null && userId != null)
-        ? ref.watch(streakSummaryProvider(progressKey))
+        ? ref.watch(streakSummaryProvider(profileKey))
         : null;
     final profileAsync = (workspaceId != null && userId != null)
-        ? ref.watch(gamificationProfileProvider(progressKey))
+        ? ref.watch(gamificationProfileProvider(profileKey))
         : null;
 
     final streakDays = streakAsync?.valueOrNull?.streakDays ?? 0;

@@ -29,12 +29,14 @@ class RealFlashcardsRepository implements FlashcardsRepository {
     List<String>? selectedTopicIds,
     double? mastery,
     String? subject,
+    String? subcategory,
   }) async {
     try {
       final body = <String, dynamic>{};
       if (selectedTopicIds != null) body['topics'] = selectedTopicIds;
       if (mastery != null) body['mastery'] = mastery;
       if (subject != null) body['subject'] = subject;
+      if (subcategory != null) body['subcategory'] = subcategory;
       final response = await dio.post<Map<String, dynamic>>(
         '$_apiPrefix/workspaces/$workspaceId/flashcards/next',
         data: body.isEmpty ? null : body,
