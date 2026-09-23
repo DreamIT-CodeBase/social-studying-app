@@ -495,7 +495,7 @@ async def generate_batch_questions(
     response = await azure_openai.chat_json(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        max_output_tokens=1500,
+        max_output_tokens=min(4096, max(2000, count * 350)),
         temperature=0.7,
     )
 
