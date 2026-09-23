@@ -9,7 +9,9 @@ import 'package:social_study_app/shared/models/workspace.dart';
 
 void main() {
   group('Quick Revision in Self Study Workspace', () {
-    test('isSelfLearningWorkspaceId accurately identifies self study workspaces', () {
+    test(
+        'isSelfLearningWorkspaceId accurately identifies self study workspaces',
+        () {
       expect(isSelfLearningWorkspaceId('wsp_self_student123'), isTrue);
       expect(isSelfLearningWorkspaceId('wsp_group_class_4a'), isFalse);
     });
@@ -26,7 +28,8 @@ void main() {
       expect(container.read(studentHomeTabProvider), 1);
     });
 
-    testWidgets('GoRouter redirect for self study revision redirects to studentHome with tab=1',
+    testWidgets(
+        'GoRouter redirect for self study revision redirects to studentHome with tab=1',
         (tester) async {
       late BuildContext buildCtx;
       await tester.pumpWidget(
@@ -44,9 +47,8 @@ void main() {
       addTearDown(container.dispose);
       final r = container.read(routerProvider);
 
-      final route = r.configuration.routes
-          .whereType<GoRoute>()
-          .firstWhere((route) => route.path == AppRoutes.studentRevisionSession);
+      final route = r.configuration.routes.whereType<GoRoute>().firstWhere(
+          (route) => route.path == AppRoutes.studentRevisionSession);
 
       final mockStateSelfStudy = GoRouterState(
         r.configuration,

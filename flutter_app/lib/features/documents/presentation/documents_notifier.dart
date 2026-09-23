@@ -11,7 +11,9 @@ part 'documents_notifier.g.dart';
 class DocumentsList extends _$DocumentsList {
   @override
   Future<List<Document>> build(String workspaceId) async {
-    return ref.watch(documentsRepositoryProvider).list(workspaceId: workspaceId);
+    return ref
+        .watch(documentsRepositoryProvider)
+        .list(workspaceId: workspaceId);
   }
 
   /// Re-fetch the list. Used by pull-to-refresh and after upload success.

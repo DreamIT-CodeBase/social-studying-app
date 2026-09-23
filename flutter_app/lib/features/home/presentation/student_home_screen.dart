@@ -913,7 +913,8 @@ class _HomeTab extends ConsumerWidget {
                             onJoinWorkspace: () => showDialog<void>(
                               context: context,
                               barrierDismissible: false,
-                              builder: (_) => const _StudentJoinWorkspaceDialog(),
+                              builder: (_) =>
+                                  const _StudentJoinWorkspaceDialog(),
                             ),
                           ),
                         ),
@@ -1157,14 +1158,18 @@ class _HomeTab extends ConsumerWidget {
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
-                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF0F172A),
                             ),
                           ),
                           if (workspaceId != null)
                             GestureDetector(
                               onTap: () {
                                 // Navigate to progress tab
-                                ref.read(studentHomeTabProvider.notifier).state = 3;
+                                ref
+                                    .read(studentHomeTabProvider.notifier)
+                                    .state = 3;
                               },
                               child: const Text(
                                 'View all',
@@ -1184,7 +1189,8 @@ class _HomeTab extends ConsumerWidget {
                           ? const EmptyStateView(
                               icon: Icons.history_rounded,
                               title: 'No activity yet',
-                              subtitle: 'Join a workspace to see your progress here.',
+                              subtitle:
+                                  'Join a workspace to see your progress here.',
                             )
                           : progressAsync.when(
                               data: (progress) {
@@ -1212,8 +1218,8 @@ class _HomeTab extends ConsumerWidget {
                                     ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black
-                                            .withValues(alpha: isDark ? 0.12 : 0.03),
+                                        color: Colors.black.withValues(
+                                            alpha: isDark ? 0.12 : 0.03),
                                         blurRadius: 6,
                                         offset: const Offset(0, 2),
                                       ),
@@ -1223,7 +1229,9 @@ class _HomeTab extends ConsumerWidget {
                                     borderRadius: BorderRadius.circular(16),
                                     child: Column(
                                       children: [
-                                        for (int i = 0; i < entries.length; i++) ...[
+                                        for (int i = 0;
+                                            i < entries.length;
+                                            i++) ...[
                                           _ActivityEntryItem(entry: entries[i]),
                                           if (i < entries.length - 1)
                                             Divider(

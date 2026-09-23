@@ -165,7 +165,8 @@ class _AppTourSheetState extends State<AppTourSheet>
   }
 
   void _dismissTour() {
-    SessionPersistenceService.instance.setAppTourSeen(widget.userId, seen: true);
+    SessionPersistenceService.instance
+        .setAppTourSeen(widget.userId, seen: true);
     if (mounted) {
       if (Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
@@ -285,7 +286,8 @@ class _AppTourSheetState extends State<AppTourSheet>
       default:
         // Bottom navigation bar: Flashcards tab (index 2 of 4)
         final tabWidth = screenSize.width / 4;
-        return Rect.fromLTWH(tabWidth * 2, screenSize.height - 68, tabWidth, 68);
+        return Rect.fromLTWH(
+            tabWidth * 2, screenSize.height - 68, tabWidth, 68);
     }
   }
 
@@ -301,7 +303,8 @@ class _AppTourSheetState extends State<AppTourSheet>
     const boxHeight = 142.0;
 
     // Determine arrow direction & box vertical position
-    final pointsUp = step.arrowPointsUp || targetRect.top <= screenSize.height * 0.50;
+    final pointsUp =
+        step.arrowPointsUp || targetRect.top <= screenSize.height * 0.50;
     final double boxTop;
     final double arrowTipY;
 
@@ -327,7 +330,8 @@ class _AppTourSheetState extends State<AppTourSheet>
       16.0,
       screenSize.width - boxWidth - 16.0,
     );
-    final arrowX = targetCenterX.clamp(boxLeft + 24.0, boxLeft + boxWidth - 24.0);
+    final arrowX =
+        targetCenterX.clamp(boxLeft + 24.0, boxLeft + boxWidth - 24.0);
 
     return Material(
       color: Colors.transparent,
@@ -341,7 +345,8 @@ class _AppTourSheetState extends State<AppTourSheet>
                 onTap: _nextStep,
                 behavior: HitTestBehavior.opaque,
                 child: AnimatedBuilder(
-                  animation: _pulseController ?? const AlwaysStoppedAnimation(0.0),
+                  animation:
+                      _pulseController ?? const AlwaysStoppedAnimation(0.0),
                   builder: (context, _) {
                     return CustomPaint(
                       painter: _SpotlightBackdropPainter(
@@ -358,7 +363,8 @@ class _AppTourSheetState extends State<AppTourSheet>
             Positioned.fill(
               child: IgnorePointer(
                 child: AnimatedBuilder(
-                  animation: _pulseController ?? const AlwaysStoppedAnimation(0.0),
+                  animation:
+                      _pulseController ?? const AlwaysStoppedAnimation(0.0),
                   builder: (context, _) {
                     final pulseBounce = (_pulseController?.value ?? 0.0) * 4.0;
                     final effectiveTipY = pointsUp
@@ -367,7 +373,8 @@ class _AppTourSheetState extends State<AppTourSheet>
 
                     return CustomPaint(
                       painter: _LinkedArrowPainter(
-                        boxRect: Rect.fromLTWH(boxLeft, boxTop, boxWidth, boxHeight),
+                        boxRect:
+                            Rect.fromLTWH(boxLeft, boxTop, boxWidth, boxHeight),
                         arrowX: arrowX,
                         arrowTipY: effectiveTipY,
                         pointsUp: pointsUp,
@@ -378,189 +385,191 @@ class _AppTourSheetState extends State<AppTourSheet>
               ),
             ),
 
-          // 3. Compact, Professional Tooltip Card
-          Positioned(
-            left: boxLeft,
-            top: boxTop,
-            width: boxWidth,
-            height: boxHeight,
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: const Color(0xFF6366F1).withValues(alpha: 0.7),
-                  width: 1.4,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF6366F1).withValues(alpha: 0.22),
-                    blurRadius: 20,
-                    offset: const Offset(0, 4),
+            // 3. Compact, Professional Tooltip Card
+            Positioned(
+              left: boxLeft,
+              top: boxTop,
+              width: boxWidth,
+              height: boxHeight,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.7),
+                    width: 1.4,
                   ),
-                ],
-              ),
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Header Row: Step Pill + Skip
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF312E81),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          '${step.stepNumber} of ${_steps.length}',
-                          style: const TextStyle(
-                            color: Color(0xFFA5B4FC),
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: _dismissTour,
-                        behavior: HitTestBehavior.opaque,
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                          child: Text(
-                            'Skip',
-                            style: TextStyle(
-                              color: Colors.white60,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // Title
-                  Text(
-                    step.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.2,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF6366F1).withValues(alpha: 0.22),
+                      blurRadius: 20,
+                      offset: const Offset(0, 4),
                     ),
-                  ),
-
-                  // Description
-                  Text(
-                    step.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      fontSize: 11.5,
-                      height: 1.3,
-                      fontWeight: FontWeight.w400,
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
                     ),
-                  ),
-
-                  // Footer: Dots + Next Action Button
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // Dots Indicator
-                      Row(
-                        children: List.generate(_steps.length, (idx) {
-                          final isActive = idx == _currentStep;
-                          return AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            margin: const EdgeInsets.only(right: 5),
-                            width: isActive ? 16 : 5,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: isActive
-                                  ? const Color(0xFF818CF8)
-                                  : Colors.white24,
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                          );
-                        }),
-                      ),
-
-                      // Action Button (Next / Got It)
-                      GestureDetector(
-                        onTap: _nextStep,
-                        child: Container(
+                  ],
+                ),
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Header Row: Step Pill + Skip
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 5,
+                            horizontal: 8,
+                            vertical: 3,
                           ),
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
-                            ),
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF4F46E5).withValues(alpha: 0.4),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
+                            color: const Color(0xFF312E81),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                _currentStep == _steps.length - 1
-                                    ? 'Got It'
-                                    : 'Next',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                _currentStep == _steps.length - 1
-                                    ? Icons.check_rounded
-                                    : Icons.arrow_forward_rounded,
-                                color: Colors.white,
-                                size: 13,
-                              ),
-                            ],
+                          child: Text(
+                            '${step.stepNumber} of ${_steps.length}',
+                            style: const TextStyle(
+                              color: Color(0xFFA5B4FC),
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.3,
+                            ),
                           ),
                         ),
+                        GestureDetector(
+                          onTap: _dismissTour,
+                          behavior: HitTestBehavior.opaque,
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 2),
+                            child: Text(
+                              'Skip',
+                              style: TextStyle(
+                                color: Colors.white60,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // Title
+                    Text(
+                      step.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+
+                    // Description
+                    Text(
+                      step.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 11.5,
+                        height: 1.3,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+
+                    // Footer: Dots + Next Action Button
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Dots Indicator
+                        Row(
+                          children: List.generate(_steps.length, (idx) {
+                            final isActive = idx == _currentStep;
+                            return AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              margin: const EdgeInsets.only(right: 5),
+                              width: isActive ? 16 : 5,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                color: isActive
+                                    ? const Color(0xFF818CF8)
+                                    : Colors.white24,
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                            );
+                          }),
+                        ),
+
+                        // Action Button (Next / Got It)
+                        GestureDetector(
+                          onTap: _nextStep,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF4F46E5)
+                                      .withValues(alpha: 0.4),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _currentStep == _steps.length - 1
+                                      ? 'Got It'
+                                      : 'Next',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(
+                                  _currentStep == _steps.length - 1
+                                      ? Icons.check_rounded
+                                      : Icons.arrow_forward_rounded,
+                                  color: Colors.white,
+                                  size: 13,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 }
 
 /// Paints the dimmed background with a spotlight cutout and glowing outline
@@ -577,7 +586,8 @@ class _SpotlightBackdropPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paddedRect = targetRect.inflate(6.0);
-    final rrect = RRect.fromRectAndRadius(paddedRect, const Radius.circular(14));
+    final rrect =
+        RRect.fromRectAndRadius(paddedRect, const Radius.circular(14));
 
     // EvenOdd fill clears the spotlight cutout from the darkened backdrop
     final path = Path()

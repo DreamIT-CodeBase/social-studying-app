@@ -14,19 +14,26 @@ void main() {
   });
 
   group('SessionPersistenceService App Tour', () {
-    test('defaults to false for new user, and updates to true when marked', () async {
-      expect(SessionPersistenceService.instance.hasSeenAppTourSync('user_123'), isFalse);
+    test('defaults to false for new user, and updates to true when marked',
+        () async {
+      expect(SessionPersistenceService.instance.hasSeenAppTourSync('user_123'),
+          isFalse);
 
-      await SessionPersistenceService.instance.setAppTourSeen('user_123', seen: true);
-      expect(SessionPersistenceService.instance.hasSeenAppTourSync('user_123'), isTrue);
+      await SessionPersistenceService.instance
+          .setAppTourSeen('user_123', seen: true);
+      expect(SessionPersistenceService.instance.hasSeenAppTourSync('user_123'),
+          isTrue);
 
       // Other users remain false
-      expect(SessionPersistenceService.instance.hasSeenAppTourSync('other_user'), isFalse);
+      expect(
+          SessionPersistenceService.instance.hasSeenAppTourSync('other_user'),
+          isFalse);
     });
   });
 
   group('AppTourSheet Widget', () {
-    testWidgets('renders step 1 with Workspace Switcher title and skip button', (tester) async {
+    testWidgets('renders step 1 with Workspace Switcher title and skip button',
+        (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light,
@@ -60,16 +67,23 @@ void main() {
 
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(SessionPersistenceService.instance.hasSeenAppTourSync('test_user_skip'), isFalse);
+      expect(
+          SessionPersistenceService.instance
+              .hasSeenAppTourSync('test_user_skip'),
+          isFalse);
 
       await tester.tap(find.text('Skip'));
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(SessionPersistenceService.instance.hasSeenAppTourSync('test_user_skip'), isTrue);
+      expect(
+          SessionPersistenceService.instance
+              .hasSeenAppTourSync('test_user_skip'),
+          isTrue);
       expect(completed, isTrue);
     });
 
-    testWidgets('tapping Next advances through all 7 steps to Got It', (tester) async {
+    testWidgets('tapping Next advances through all 7 steps to Got It',
+        (tester) async {
       bool completed = false;
       await tester.pumpWidget(
         MaterialApp(
@@ -129,7 +143,10 @@ void main() {
       // Tap Got It -> completes and marks seen
       await tester.tap(find.text('Got It'));
       await tester.pump(const Duration(milliseconds: 300));
-      expect(SessionPersistenceService.instance.hasSeenAppTourSync('test_user_flow'), isTrue);
+      expect(
+          SessionPersistenceService.instance
+              .hasSeenAppTourSync('test_user_flow'),
+          isTrue);
       expect(completed, isTrue);
     });
   });

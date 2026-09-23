@@ -66,9 +66,8 @@ class FlashcardSessionNotifier extends _$FlashcardSessionNotifier {
   /// doesn't accidentally double-fetch.
   Future<void> start({double? mastery}) async {
     if (state is! FlashcardSessionIdle) return;
-    final progressVal = ref
-        .read(studentProgressNotifierProvider(_workspaceId))
-        .valueOrNull;
+    final progressVal =
+        ref.read(studentProgressNotifierProvider(_workspaceId)).valueOrNull;
     final effMastery = mastery ?? progressVal?.overallMastery;
     _lastMastery = effMastery;
     _sessionTargetLength = _sessionLengthForMastery(effMastery);

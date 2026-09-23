@@ -55,7 +55,8 @@ void main() {
 
   tearDown(() => container.dispose());
 
-  group('Study Question Session Target Length strictly follows mastery level', () {
+  group('Study Question Session Target Length strictly follows mastery level',
+      () {
     test('Beginner tier (mastery < 0.40) has 5 to 7 questions', () async {
       for (final mastery in [0.0, 0.2, 0.39]) {
         final notifier = container.read(
@@ -70,7 +71,8 @@ void main() {
       }
     });
 
-    test('Intermediate tier (0.40 <= mastery < 0.75) has 12 to 15 questions', () async {
+    test('Intermediate tier (0.40 <= mastery < 0.75) has 12 to 15 questions',
+        () async {
       for (final mastery in [0.40, 0.55, 0.74]) {
         final notifier = container.read(
           questionSessionNotifierProvider('wsp_test_$mastery').notifier,
@@ -114,7 +116,8 @@ void main() {
       }
     });
 
-    test('Intermediate tier (0.40 <= mastery < 0.75) has 10 to 13 cards', () async {
+    test('Intermediate tier (0.40 <= mastery < 0.75) has 10 to 13 cards',
+        () async {
       for (final mastery in [0.40, 0.55, 0.74]) {
         final notifier = container.read(
           flashcardSessionNotifierProvider('wsp_fc_$mastery').notifier,
@@ -158,7 +161,8 @@ void main() {
       }
     });
 
-    test('Intermediate tier (0.40 <= mastery < 0.75) has 12 to 15 items', () async {
+    test('Intermediate tier (0.40 <= mastery < 0.75) has 12 to 15 items',
+        () async {
       for (final mastery in [0.40, 0.55, 0.74]) {
         final notifier = container.read(
           revisionSessionNotifierProvider('wsp_rev_$mastery').notifier,

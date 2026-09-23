@@ -105,8 +105,7 @@ void main() {
       expect(find.text('All caught up!'), findsNothing);
     });
 
-    testWidgets(
-        'includes topic name in message when subcategory is provided',
+    testWidgets('includes topic name in message when subcategory is provided',
         (tester) async {
       await tester.pumpWidget(
         MaterialApp(

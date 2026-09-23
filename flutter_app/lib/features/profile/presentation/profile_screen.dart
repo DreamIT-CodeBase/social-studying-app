@@ -1062,7 +1062,8 @@ class _SignOutTile extends StatelessWidget {
                 color: iconBg,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.logout_rounded, size: 20, color: iconColor),
+              child:
+                  const Icon(Icons.logout_rounded, size: 20, color: iconColor),
             ),
             const SizedBox(width: 14),
             const Expanded(

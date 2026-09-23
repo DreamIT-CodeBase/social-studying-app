@@ -13,10 +13,8 @@ void main() {
     container.read(selfStudyQuestionTypeProvider.notifier).state = 'mcq';
     expect(container.read(selfStudyQuestionTypeProvider), equals('mcq'));
 
-    container.read(selfStudyQuestionTypeProvider.notifier).state =
-        'true_false';
-    expect(
-        container.read(selfStudyQuestionTypeProvider), equals('true_false'));
+    container.read(selfStudyQuestionTypeProvider.notifier).state = 'true_false';
+    expect(container.read(selfStudyQuestionTypeProvider), equals('true_false'));
 
     container.read(selfStudyQuestionTypeProvider.notifier).state =
         'long_answer';
@@ -33,7 +31,9 @@ void main() {
     expect(isSelfLearningWorkspaceId(''), isFalse);
   });
 
-  test('question_type query string is generated for both self-study and admin workspaces', () {
+  test(
+      'question_type query string is generated for both self-study and admin workspaces',
+      () {
     for (final ws in ['wsp_self_stu_123', 'wsp_classroom_normal_789']) {
       for (final type in ['mcq', 'true_false', 'short_answer', 'long_answer']) {
         final typeQuery = '&question_type=${Uri.encodeComponent(type)}';
