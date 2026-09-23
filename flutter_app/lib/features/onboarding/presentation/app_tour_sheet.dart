@@ -25,6 +25,8 @@ class AppTourSheet extends StatefulWidget {
     this.recentActivityKey,
     this.studyTabKey,
     this.flashcardsTabKey,
+    this.progressTabKey,
+    this.profileKey,
   });
 
   final String userId;
@@ -36,6 +38,8 @@ class AppTourSheet extends StatefulWidget {
   final GlobalKey? recentActivityKey;
   final GlobalKey? studyTabKey;
   final GlobalKey? flashcardsTabKey;
+  final GlobalKey? progressTabKey;
+  final GlobalKey? profileKey;
 
   static Future<void> show(
     BuildContext context, {
@@ -48,6 +52,8 @@ class AppTourSheet extends StatefulWidget {
     GlobalKey? recentActivityKey,
     GlobalKey? studyTabKey,
     GlobalKey? flashcardsTabKey,
+    GlobalKey? progressTabKey,
+    GlobalKey? profileKey,
   }) async {
     await showGeneralDialog<void>(
       context: context,
@@ -64,6 +70,8 @@ class AppTourSheet extends StatefulWidget {
         recentActivityKey: recentActivityKey,
         studyTabKey: studyTabKey,
         flashcardsTabKey: flashcardsTabKey,
+        progressTabKey: progressTabKey,
+        profileKey: profileKey,
       ),
     );
   }
@@ -141,6 +149,20 @@ class _AppTourSheetState extends State<AppTourSheet>
           'Tap the Flashcards tab in the lower bar to review spaced-repetition cards for memory retention.',
       arrowPointsUp: false,
     ),
+    _TourStepData(
+      stepNumber: 8,
+      title: 'Progress & Mastery',
+      description:
+          'Tap the Progress tab in the lower bar to view your detailed topic mastery, social balance, and accuracy.',
+      arrowPointsUp: false,
+    ),
+    _TourStepData(
+      stepNumber: 9,
+      title: 'Profile & Settings',
+      description:
+          'Tap your avatar in the top corner to view your profile, manage account settings, and review subscription details.',
+      arrowPointsUp: true,
+    ),
   ];
 
   @override
@@ -191,6 +213,10 @@ class _AppTourSheetState extends State<AppTourSheet>
         return widget.studyTabKey;
       case 6:
         return widget.flashcardsTabKey;
+      case 7:
+        return widget.progressTabKey;
+      case 8:
+        return widget.profileKey;
       default:
         return null;
     }
@@ -204,10 +230,12 @@ class _AppTourSheetState extends State<AppTourSheet>
         if (scrollable != null) {
           Scrollable.ensureVisible(
             targetKey.currentContext!,
-            alignment: 0.35,
+            alignment: stepIndex == 8 ? 0.0 : 0.35,
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
-          );
+          ).then((_) {
+            if (mounted) setState(() {});
+          });
         }
       } catch (_) {}
     }
@@ -283,11 +311,24 @@ class _AppTourSheetState extends State<AppTourSheet>
         final tabWidth = screenSize.width / 4;
         return Rect.fromLTWH(tabWidth, screenSize.height - 68, tabWidth, 68);
       case 6:
-      default:
         // Bottom navigation bar: Flashcards tab (index 2 of 4)
         final tabWidth = screenSize.width / 4;
         return Rect.fromLTWH(
             tabWidth * 2, screenSize.height - 68, tabWidth, 68);
+      case 7:
+        // Bottom navigation bar: Progress tab (index 3 of 4)
+        final tabWidth = screenSize.width / 4;
+        return Rect.fromLTWH(
+            tabWidth * 3, screenSize.height - 68, tabWidth, 68);
+      case 8:
+      default:
+        // Top right: Profile avatar
+        return Rect.fromLTWH(
+          screenSize.width - 56,
+          44,
+          40,
+          40,
+        );
     }
   }
 

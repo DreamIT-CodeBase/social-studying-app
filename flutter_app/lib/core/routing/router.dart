@@ -267,7 +267,9 @@ GoRouter router(RouterRef ref) {
         redirect: (_, state) {
           final workspaceId = state.pathParameters['workspaceId']!;
           if (isSelfLearningWorkspaceId(workspaceId)) {
-            return '${AppRoutes.studentHome}?tab=1';
+            final query =
+                state.uri.query.isNotEmpty ? '&${state.uri.query}' : '';
+            return '/student/session/$workspaceId?mode=study$query';
           }
           return null;
         },

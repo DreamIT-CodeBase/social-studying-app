@@ -29,7 +29,7 @@ void main() {
     });
 
     testWidgets(
-        'GoRouter redirect for self study revision redirects to studentHome with tab=1',
+        'GoRouter redirect for self study revision redirects to adaptive study session',
         (tester) async {
       late BuildContext buildCtx;
       await tester.pumpWidget(
@@ -64,7 +64,7 @@ void main() {
         mockStateSelfStudy,
       );
 
-      expect(redirectResultSelfStudy, '${AppRoutes.studentHome}?tab=1');
+      expect(redirectResultSelfStudy, '/student/session/wsp_self_123?mode=study');
 
       final mockStateGroup = GoRouterState(
         r.configuration,

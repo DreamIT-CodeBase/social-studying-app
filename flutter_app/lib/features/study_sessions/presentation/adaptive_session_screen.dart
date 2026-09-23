@@ -20,6 +20,8 @@ import 'package:social_study_app/shared/models/question.dart'
     show hasMultipleBlanks;
 import 'package:social_study_app/shared/models/workspace.dart'
     show isSelfLearningWorkspaceId;
+import 'package:social_study_app/features/home/presentation/student_home_screen.dart'
+    show studentHomeTabProvider;
 import 'package:social_study_app/shared/services/dio_client.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 
@@ -149,6 +151,9 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
           _remainingSeconds = plan.durationMinutes * 60;
           _phase = noContent ? _SessionPhase.exhausted : _SessionPhase.ready;
         });
+        if (!noContent) {
+          _start();
+        }
         return;
       } catch (error) {
         if (!mounted || generation != _prepareGeneration) return;
@@ -312,9 +317,18 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
     }
   }
 
+  void _handleExit() {
+    if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      context.pop();
+    } else {
+      ref.read(studentHomeTabProvider.notifier).state = 0;
+    }
+  }
+
   Future<void> _requestExit() async {
     if (_phase != _SessionPhase.active) {
-      if (mounted) context.pop();
+      _handleExit();
       return;
     }
     final shouldStop = await showDialog<bool>(
@@ -625,18 +639,18 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
         _SessionPhase.preparing => _PreparingView(
             mode: widget.mode,
             retrying: _preparationAttempt > 0,
-            onClose: () => context.pop(),
+            onClose: _handleExit,
           ),
         _SessionPhase.ready => _ReadyView(
             plan: _plan!,
             onStart: _start,
-            onClose: () => context.pop(),
+            onClose: _handleExit,
           ),
         _SessionPhase.active => _activeView(),
         _SessionPhase.completing => const _SavingView(),
         _SessionPhase.complete => _FinishView(
             summary: _summary!,
-            onDone: () => context.pop(),
+            onDone: _handleExit,
             onAnother: _prepare,
           ),
         _SessionPhase.exhausted => SessionExhaustedView(
@@ -651,7 +665,7 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
             // so the "Try again" button actually re-runs session generation.
             onClose: (_plan?.sessionsUsed ?? 0) == 0
                 ? _prepare
-                : () => context.pop(),
+                : _handleExit,
           ),
         _SessionPhase.error => _ErrorView(
             message: _error ?? 'Something went wrong.',
@@ -659,7 +673,7 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
             onRetry: _completionFailed
                 ? () => _finish(_pendingCompletionReason)
                 : _prepare,
-            onClose: _completionFailed ? null : () => context.pop(),
+            onClose: _completionFailed ? null : _handleExit,
           ),
       };
 

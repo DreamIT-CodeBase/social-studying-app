@@ -37,6 +37,8 @@ import 'package:social_study_app/features/notifications/presentation/notificatio
 import 'package:social_study_app/features/subscription/data/subscription_repository.dart';
 import 'package:social_study_app/features/subscription/presentation/student_paywall_dialog.dart';
 import 'package:social_study_app/features/onboarding/presentation/app_tour_sheet.dart';
+import 'package:social_study_app/features/study_sessions/presentation/adaptive_session_screen.dart';
+import 'package:social_study_app/features/study_sessions/domain/adaptive_session_models.dart';
 
 final studentHomeTabProvider = StateProvider<int>((ref) {
   final saved = SessionPersistenceService.instance.getTabSync() ?? 0;
@@ -114,6 +116,8 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
   final GlobalKey _recentActivityKey = GlobalKey();
   final GlobalKey _studyTabKey = GlobalKey();
   final GlobalKey _flashcardsTabKey = GlobalKey();
+  final GlobalKey _progressTabKey = GlobalKey();
+  final GlobalKey _profileKey = GlobalKey();
 
   void _showTour(String userId) {
     AppTourSheet.show(
@@ -126,6 +130,8 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
       recentActivityKey: _recentActivityKey,
       studyTabKey: _studyTabKey,
       flashcardsTabKey: _flashcardsTabKey,
+      progressTabKey: _progressTabKey,
+      profileKey: _profileKey,
     );
   }
 
@@ -394,6 +400,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
             formatKey: _formatSelectionKey,
             progressKey: _progressKey,
             recentActivityKey: _recentActivityKey,
+            profileButtonKey: _profileKey,
             onShowTour: userId != null ? () => _showTour(userId) : null,
             onStartStudy: workspaceId == null
                 ? () => ref.read(studentHomeTabProvider.notifier).state = 0
@@ -422,7 +429,24 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
                 ? null
                 : () {
                     if (isSelfLearningWorkspaceId(workspaceId)) {
-                      ref.read(studentHomeTabProvider.notifier).state = 1;
+                      final activeSubject =
+                          ref.read(selfStudySubjectProvider);
+                      final activeSubcat =
+                          ref.read(selfStudySubcategoryProvider);
+                      final activeType =
+                          ref.read(selfStudyQuestionTypeProvider);
+                      final subjectQuery = activeSubject != null
+                          ? '&subject=${Uri.encodeComponent(activeSubject)}'
+                          : '';
+                      final subcatQuery = activeSubcat != null
+                          ? '&subcategory=${Uri.encodeComponent(activeSubcat)}'
+                          : '';
+                      final typeQuery = activeType != null
+                          ? '&question_type=${Uri.encodeComponent(activeType)}'
+                          : '';
+                      context.push(
+                        '/student/session/$workspaceId?mode=study$subjectQuery$subcatQuery$typeQuery',
+                      );
                       return;
                     }
                     final activeType = ref.read(selfStudyQuestionTypeProvider);
@@ -489,10 +513,37 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
                 final isSelected = selectedIndex == index;
                 final Key? tabKey = index == 1
                     ? _studyTabKey
-                    : (index == 2 ? _flashcardsTabKey : null);
+                    : (index == 2
+                        ? _flashcardsTabKey
+                        : (index == 3 ? _progressTabKey : null));
                 return GestureDetector(
                   key: tabKey,
                   onTap: () {
+                    if (index == 1 && workspaceId != null) {
+                      final activeSubject =
+                          isSelfLearningWorkspaceId(workspaceId)
+                              ? ref.read(selfStudySubjectProvider)
+                              : null;
+                      final activeSubcat =
+                          isSelfLearningWorkspaceId(workspaceId)
+                              ? ref.read(selfStudySubcategoryProvider)
+                              : null;
+                      final activeType =
+                          ref.read(selfStudyQuestionTypeProvider);
+                      final subjectQuery = activeSubject != null
+                          ? '&subject=${Uri.encodeComponent(activeSubject)}'
+                          : '';
+                      final subcatQuery = activeSubcat != null
+                          ? '&subcategory=${Uri.encodeComponent(activeSubcat)}'
+                          : '';
+                      final typeQuery = activeType != null
+                          ? '&question_type=${Uri.encodeComponent(activeType)}'
+                          : '';
+                      context.push(
+                        '/student/session/$workspaceId?mode=study$subjectQuery$subcatQuery$typeQuery',
+                      );
+                      return;
+                    }
                     ref.read(studentHomeTabProvider.notifier).state = index;
                   },
                   behavior: HitTestBehavior.opaque,
@@ -725,6 +776,7 @@ class _HomeTab extends ConsumerWidget {
     this.formatKey,
     this.progressKey,
     this.recentActivityKey,
+    this.profileButtonKey,
     this.onShowTour,
   });
 
@@ -736,6 +788,7 @@ class _HomeTab extends ConsumerWidget {
   final GlobalKey? formatKey;
   final GlobalKey? progressKey;
   final GlobalKey? recentActivityKey;
+  final GlobalKey? profileButtonKey;
   final VoidCallback? onShowTour;
 
   final VoidCallback onStartStudy;
@@ -751,7 +804,10 @@ class _HomeTab extends ConsumerWidget {
         ? ref.watch(studentProgressNotifierProvider(workspaceId!))
         : const AsyncValue.loading();
 
-    final canManageStudy = ref.watch(isActiveWorkspaceAdminProvider);
+    final isSelfStudy =
+        workspaceId != null && isSelfLearningWorkspaceId(workspaceId!);
+    final canManageStudy =
+        isSelfStudy || ref.watch(isActiveWorkspaceAdminProvider);
 
     final authValue = ref.watch(authNotifierProvider).valueOrNull;
     final user = authValue?.maybeWhen(
@@ -954,6 +1010,7 @@ class _HomeTab extends ConsumerWidget {
                       ),
                       const SizedBox(width: 8),
                       GestureDetector(
+                        key: profileButtonKey,
                         onTap: () => context.push(AppRoutes.profile),
                         child: CircleAvatar(
                           backgroundColor: isDark
@@ -4039,13 +4096,13 @@ class _SmallPillButton extends StatelessWidget {
   }
 }
 
-class _StudyTab extends StatelessWidget {
+class _StudyTab extends ConsumerWidget {
   const _StudyTab({required this.workspaceId});
 
   final String? workspaceId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (workspaceId == null) {
       return const EmptyStateView(
         icon: Icons.menu_book_rounded,
@@ -4054,8 +4111,21 @@ class _StudyTab extends StatelessWidget {
             'Upload study notes, worksheets, or equations to practice questions.',
       );
     }
-    // Sprint 4.7 / 4.8 — the full question-answering loop.
-    return QuestionScreen(workspaceId: workspaceId!);
+    final activeSubject = isSelfLearningWorkspaceId(workspaceId!)
+        ? ref.watch(selfStudySubjectProvider)
+        : null;
+    final activeSubcat = isSelfLearningWorkspaceId(workspaceId!)
+        ? ref.watch(selfStudySubcategoryProvider)
+        : null;
+    final activeType = ref.watch(selfStudyQuestionTypeProvider);
+    return AdaptiveSessionScreen(
+      key: ValueKey('$workspaceId-$activeSubject-$activeSubcat-$activeType'),
+      workspaceId: workspaceId!,
+      mode: AdaptiveSessionMode.study,
+      subject: activeSubject,
+      subcategory: activeSubcat,
+      questionType: activeType,
+    );
   }
 }
 
