@@ -53,20 +53,15 @@ void main() {
     // Verify "All Subjects" chip is removed
     expect(find.text('All Subjects'), findsNothing);
 
-    // Verify clean "Subjects" header is present (no useless Mode header)
-    expect(find.text('Subjects'), findsOneWidget);
+    // Verify header row is completely removed (no "Subjects", no "Mode", no "+ Add PDF" above chips)
+    expect(find.text('Subjects'), findsNothing);
     expect(find.text('Self Study Subjects'), findsNothing);
     expect(find.text('Physics Mode'), findsNothing);
+    expect(find.text('+ Add PDF'), findsNothing);
 
-    // Verify "Physics" and "Chemistry" chips are present
+    // Verify "Physics" and "Chemistry" chips are present directly
     expect(find.text('Physics'), findsOneWidget);
     expect(find.text('Chemistry'), findsOneWidget);
-
-    // Verify "+ Add PDF" button is present and clickable
-    expect(find.text('+ Add PDF'), findsOneWidget);
-    await tester.tap(find.text('+ Add PDF'));
-    await tester.pump();
-    expect(addMaterialClicked, isTrue);
 
     // Initially without selecting a subject, topics should NOT appear
     expect(find.text('Topic Focus (Physics):'), findsNothing);
