@@ -368,8 +368,7 @@ class _StudentHomeScreenState extends ConsumerState<StudentHomeScreen>
     );
 
     final selectedIndex = ref.watch(studentHomeTabProvider);
-    final showCustomAppBar =
-        selectedIndex == 0 || selectedIndex == 1 || selectedIndex == 3;
+    final showCustomAppBar = true;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -4115,13 +4114,13 @@ class _StudyTab extends ConsumerWidget {
   }
 }
 
-class _FlashcardsTab extends StatelessWidget {
+class _FlashcardsTab extends ConsumerWidget {
   const _FlashcardsTab({required this.workspaceId});
 
   final String? workspaceId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (workspaceId == null) {
       return const EmptyStateView(
         icon: Icons.style_rounded,
@@ -4129,8 +4128,14 @@ class _FlashcardsTab extends StatelessWidget {
         subtitle: 'Upload study material to review active-recall flashcards.',
       );
     }
-    // Sprint 4.9 — the swipe-and-flip flashcard review loop.
-    return FlashcardScreen(workspaceId: workspaceId!);
+    final activeSubject = isSelfLearningWorkspaceId(workspaceId!)
+        ? ref.watch(selfStudySubjectProvider)
+        : null;
+    return FlashcardScreen(
+      key: ValueKey('$workspaceId-${activeSubject ?? "all"}'),
+      workspaceId: workspaceId!,
+      subject: activeSubject,
+    );
   }
 }
 

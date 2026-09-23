@@ -34,6 +34,7 @@ from pydantic import BaseModel, Field
 
 from app.core.auth import get_current_user
 from app.core.database import (
+    ADAPTIVE_SESSIONS,
     FLASHCARD_RATINGS,
     FLASHCARDS,
     INTERACTIONS,
@@ -359,23 +360,132 @@ async def next_flashcard(
         q_col = get_collection(current_user.tenant_id, QUESTION_QUEUE)
         q_doc_raw = await q_col.find_one({"_id": question_id})
         if not q_doc_raw:
+            # Check if this question was generated as part of an adaptive session
+            try:
+                sess_col = get_collection(current_user.tenant_id, ADAPTIVE_SESSIONS)
+                sess = await sess_col.find_one(
+                    {"workspace_id": workspace_id, "plan.questions.id": question_id}
+                )
+                if sess and sess.get("plan", {}).get("questions"):
+                    for q_item in sess["plan"]["questions"]:
+                        if q_item.get("id") == question_id:
+                            q_doc_raw = {
+                                "_id": q_item["id"],
+                                "tenant_id": current_user.tenant_id,
+                                "workspace_id": workspace_id,
+                                "topic": q_item.get("topic") or topic_name,
+                                "body": q_item.get("body", ""),
+                                "options": q_item.get("options", []),
+                                "answer": q_item.get("answer", ""),
+                                "explanation": q_item.get("explanation", ""),
+                                "difficulty": q_item.get("difficulty", "medium"),
+                                "question_type": q_item.get("question_type", "multiple_choice"),
+                                "status": "approved",
+                            }
+                            break
+            except Exception:
+                pass
+
+        if not q_doc_raw:
             attempt_log.append(
                 f"attempt={attempt_index} question={question_id} → question not found"
             )
             continue
 
-        question_doc = Question.model_validate(q_doc_raw)
+        try:
+            question_doc = Question.model_validate(q_doc_raw)
+            outcome = await _try_candidate(
+                current_user=current_user,
+                workspace_id=workspace_id,
+                topic_name=topic_name,
+                question_doc=question_doc,
+                mastery_tier=mastery_tier,
+            )
+            if isinstance(outcome, _Persisted):
+                return outcome.for_student
+            attempt_log.append(f"attempt={attempt_index} topic={topic_name!r} → {outcome.reason}")
+        except Exception as e:
+            attempt_log.append(f"attempt={attempt_index} error={e}")
 
-        outcome = await _try_candidate(
-            current_user=current_user,
+    # Fallback A: Check if an approved flashcard exists in FLASHCARDS collection
+    try:
+        fc_col = get_collection(current_user.tenant_id, FLASHCARDS)
+        fc_filter: dict[str, Any] = {
+            "workspace_id": workspace_id,
+            "status": FlashcardStatus.approved.value,
+            "deleted_at": None,
+        }
+        if request_data and request_data.subject:
+            fc_filter["topic"] = {"$regex": re.escape(request_data.subject.strip()), "$options": "i"}
+        existing_fc = await fc_col.find_one(fc_filter)
+        if existing_fc:
+            return FlashcardForStudent.from_doc(Flashcard.model_validate(existing_fc))
+    except Exception:
+        pass
+
+    # Fallback B: Check if ANY approved question in QUESTION_QUEUE matches this workspace/subject
+    try:
+        q_col = get_collection(current_user.tenant_id, QUESTION_QUEUE)
+        q_filter: dict[str, Any] = {"workspace_id": workspace_id, "status": "approved", "deleted_at": None}
+        if request_data and request_data.subject:
+            q_filter["topic"] = {"$regex": re.escape(request_data.subject.strip()), "$options": "i"}
+        fallback_q = await q_col.find_one(q_filter)
+        if fallback_q:
+            question_doc = Question.model_validate(fallback_q)
+            outcome = await _try_candidate(
+                current_user=current_user,
+                workspace_id=workspace_id,
+                topic_name=question_doc.topic,
+                question_doc=question_doc,
+                mastery_tier=mastery_tier,
+            )
+            if isinstance(outcome, _Persisted):
+                return outcome.for_student
+    except Exception:
+        pass
+
+    # Fallback C: Generate directly from document chunks in the workspace
+    try:
+        from app.services.study_sources import resolve_study_chunks
+        chunks, _ = await resolve_study_chunks(
+            tenant_id=current_user.tenant_id,
             workspace_id=workspace_id,
-            topic_name=topic_name,
-            question_doc=question_doc,
-            mastery_tier=mastery_tier,
+            subject=request_data.subject if request_data else None,
+            max_chunks=6,
         )
-        if isinstance(outcome, _Persisted):
-            return outcome.for_student
-        attempt_log.append(f"attempt={attempt_index} topic={topic_name!r} → {outcome.reason}")
+        if chunks:
+            from app.services import flashcard_generation
+            primary_topic = (
+                request_data.subject
+                if request_data and request_data.subject
+                else (workspace.taxonomy.topics[0].name if workspace.taxonomy and workspace.taxonomy.topics else "General")
+            )
+            generated_fc = await flashcard_generation.generate_flashcard(
+                topic=primary_topic,
+                grounding_chunks=chunks,
+                seen_card_fronts=[],
+                mastery_tier=mastery_tier,
+            )
+            if generated_fc:
+                flashcard_id = f"fls_{uuid4().hex}"
+                new_card = Flashcard(
+                    **{"_id": flashcard_id},
+                    tenant_id=current_user.tenant_id,
+                    workspace_id=workspace_id,
+                    document_id=getattr(chunks[0], "document_id", ""),
+                    topic=primary_topic,
+                    front=generated_fc.front,
+                    back=generated_fc.back,
+                    explanation=generated_fc.explanation,
+                    source_chunk_ids=[],
+                    prompt_version=generated_fc.prompt_version,
+                    status=FlashcardStatus.approved,
+                )
+                fc_col = get_collection(current_user.tenant_id, FLASHCARDS)
+                await fc_col.insert_one(new_card.model_dump(by_alias=True))
+                return FlashcardForStudent.from_doc(new_card)
+    except Exception as e:
+        logger.warning("Direct document flashcard generation fallback failed: %s", e)
 
     logger.warning(
         "next_flashcard exhausted attempts workspace=%s student=%s log=%s",

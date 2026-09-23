@@ -43,9 +43,10 @@ import 'package:social_study_app/features/home/providers/self_study_subject_prov
 ///    - Concise explanation is shown below the answer.
 /// 4. "Next Card" button advances the session.
 class FlashcardScreen extends ConsumerStatefulWidget {
-  const FlashcardScreen({super.key, required this.workspaceId});
+  const FlashcardScreen({super.key, required this.workspaceId, this.subject});
 
   final String workspaceId;
+  final String? subject;
 
   @override
   ConsumerState<FlashcardScreen> createState() => _FlashcardScreenState();
@@ -137,12 +138,7 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<String?>(selfStudySubcategoryProvider, (prev, next) {
-      if (prev != next && mounted) {
-        _sessionTimer?.cancel();
-        _notifier.resetSession();
-      }
-    });
+
 
     // Fire celebrations exactly once per transition into `rated`.
     ref.listen(
@@ -212,6 +208,7 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
       viewingFront: (card) => _CardView(
         key: ValueKey(card.id),
         workspaceId: widget.workspaceId,
+        subject: widget.subject,
         card: card,
         phase: _Phase.front,
         currentIndex: currentIndex,
@@ -220,6 +217,7 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
       revealed: (card) => _CardView(
         key: ValueKey(card.id),
         workspaceId: widget.workspaceId,
+        subject: widget.subject,
         card: card,
         phase: _Phase.revealed,
         currentIndex: currentIndex,
@@ -228,6 +226,7 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
       rating: (card, _) => _CardView(
         key: ValueKey(card.id),
         workspaceId: widget.workspaceId,
+        subject: widget.subject,
         card: card,
         phase: _Phase.rating,
         currentIndex: currentIndex,
@@ -236,6 +235,7 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
       rated: (card, _) => _CardView(
         key: ValueKey(card.id),
         workspaceId: widget.workspaceId,
+        subject: widget.subject,
         card: card,
         phase: _Phase.rated,
         currentIndex: currentIndex,
@@ -325,6 +325,7 @@ class _CardView extends ConsumerStatefulWidget {
   const _CardView({
     super.key,
     required this.workspaceId,
+    this.subject,
     required this.card,
     required this.phase,
     required this.currentIndex,
@@ -332,6 +333,7 @@ class _CardView extends ConsumerStatefulWidget {
   });
 
   final String workspaceId;
+  final String? subject;
   final Flashcard card;
   final _Phase phase;
   final int currentIndex;
@@ -397,11 +399,14 @@ class _CardViewState extends ConsumerState<_CardView>
   }
 
   void _onCardTap() {
-    if (widget.phase != _Phase.front) return;
     SoundService.instance.playCardFlip();
-    ref
-        .read(flashcardSessionNotifierProvider(widget.workspaceId).notifier)
-        .flip();
+    if (widget.phase == _Phase.front) {
+      ref
+          .read(flashcardSessionNotifierProvider(widget.workspaceId).notifier)
+          .flip();
+    } else {
+      setState(() => _revealed = !_revealed);
+    }
   }
 
   Future<void> _animateTo(double destination) async {
@@ -433,6 +438,25 @@ class _CardViewState extends ConsumerState<_CardView>
     await notifier.rate(
       rating,
       isCorrect: !forgot,
+      responseTimeMs: responseTimeMs,
+      sessionProgress: widget.currentIndex,
+      accuracyPercentage: accuracy,
+    );
+  }
+
+  Future<void> _rateMedium() async {
+    if (_committingSwipe) return;
+    _committingSwipe = true;
+    HapticFeedback.lightImpact();
+    final notifier = ref.read(
+      flashcardSessionNotifierProvider(widget.workspaceId).notifier,
+    );
+    final responseTimeMs = _stopwatch.elapsedMilliseconds;
+    _stopwatch.stop();
+    final accuracy = _calculateAccuracy(notifier.sessionRatings, FlashcardRating.medium);
+    await notifier.rate(
+      FlashcardRating.medium,
+      isCorrect: true,
       responseTimeMs: responseTimeMs,
       sessionProgress: widget.currentIndex,
       accuracyPercentage: accuracy,
@@ -496,12 +520,14 @@ class _CardViewState extends ConsumerState<_CardView>
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Session Progress',
+                        widget.subject != null
+                            ? '${widget.subject} Flashcards'
+                            : 'Flashcards Session',
                         style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: _kTextMuted,
-                          letterSpacing: 0.2,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: _kPrimaryText,
+                          letterSpacing: 0.1,
                         ),
                       ),
                       Row(
@@ -512,7 +538,7 @@ class _CardViewState extends ConsumerState<_CardView>
                           Text(
                             '${(widget.remainingSeconds ~/ 60).toString().padLeft(2, '0')}:${(widget.remainingSeconds % 60).toString().padLeft(2, '0')}  ·  ${widget.currentIndex} of $targetLength',
                             style: const TextStyle(
-                              fontSize: 11,
+                              fontSize: 12,
                               fontWeight: FontWeight.bold,
                               color: _kPurpleLight,
                             ),
@@ -629,32 +655,10 @@ class _CardViewState extends ConsumerState<_CardView>
               card: widget.card,
               currentIndex: widget.currentIndex,
               showGestureHint: widget.currentIndex == 1,
-              onRemembered: () {
-                final responseTimeMs = _stopwatch.elapsedMilliseconds;
-                _stopwatch.stop();
-                final accuracy = _calculateAccuracy(
-                    notifier.sessionRatings, FlashcardRating.easy);
-                notifier.rate(
-                  FlashcardRating.easy,
-                  isCorrect: true,
-                  responseTimeMs: responseTimeMs,
-                  sessionProgress: widget.currentIndex,
-                  accuracyPercentage: accuracy,
-                );
-              },
-              onForgot: () {
-                final responseTimeMs = _stopwatch.elapsedMilliseconds;
-                _stopwatch.stop();
-                final accuracy = _calculateAccuracy(
-                    notifier.sessionRatings, FlashcardRating.hard);
-                notifier.rate(
-                  FlashcardRating.hard,
-                  isCorrect: false,
-                  responseTimeMs: responseTimeMs,
-                  sessionProgress: widget.currentIndex,
-                  accuracyPercentage: accuracy,
-                );
-              },
+              onFlip: _onCardTap,
+              onRemembered: () => _finishSwipe(forgot: false),
+              onMedium: _rateMedium,
+              onForgot: () => _finishSwipe(forgot: true),
             ),
           ],
         ),
@@ -1417,7 +1421,9 @@ class _ActionArea extends StatelessWidget {
     required this.card,
     required this.currentIndex,
     required this.showGestureHint,
+    required this.onFlip,
     required this.onRemembered,
+    required this.onMedium,
     required this.onForgot,
   });
 
@@ -1426,159 +1432,198 @@ class _ActionArea extends StatelessWidget {
   final Flashcard card;
   final int currentIndex;
   final bool showGestureHint;
+  final VoidCallback onFlip;
   final VoidCallback onRemembered;
+  final VoidCallback onMedium;
   final VoidCallback onForgot;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final _kBg = isDark ? const Color(0xFF0D0D1F) : Colors.white;
-    final _kCardBg = isDark ? const Color(0xFF13132A) : Colors.white;
-    final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : Colors.white;
-    final _kBorder = isDark ? const Color(0xFF2A2A50) : const Color(0xFFE5E7EB);
+    final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF1F5F9);
+    final _kBorder = isDark ? const Color(0xFF2A2A50) : const Color(0xFFE2E8F0);
     final _kTextMuted =
-        isDark ? const Color(0xFF8888AA) : const Color(0xFF7A7A8C);
-    final _kPrimaryText = isDark ? Colors.white : const Color(0xFF1A1A2E);
+        isDark ? const Color(0xFF8888AA) : const Color(0xFF64748B);
 
     final isRevealed = phase == _Phase.revealed || phase == _Phase.rating;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       color: _kBg,
       child: SafeArea(
         top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // No tap-to-reveal hint shown — tapping the card still works.
-            if (showGestureHint)
-              // Single unified pill: ← Swipe Left | Swipe Right →
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
+            if (!isRevealed) ...[
+              // Front action: Tap card to flip & check answer button
+              InkWell(
+                onTap: onFlip,
+                borderRadius: BorderRadius.circular(16),
                 child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
                   decoration: BoxDecoration(
-                    color: _kSurface2,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: _kBorder, width: 1.5),
+                    color: _kPurple.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: _kPurple.withOpacity(0.4), width: 1.5),
                   ),
-                  child: Row(
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // ── Left: Remembered ──────────────────────────────
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: isRevealed ? onRemembered : null,
-                          behavior: HitTestBehavior.opaque,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 18, horizontal: 12),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                // Arrow circle
-                                Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border:
-                                        Border.all(color: _kGreen, width: 1.5),
-                                  ),
-                                  child: const Icon(
-                                    Icons.arrow_back_rounded,
-                                    color: _kGreen,
-                                    size: 18,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                const Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Swipe Left',
-                                      style: TextStyle(
-                                        color: _kGreen,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Remembered',
-                                      style: TextStyle(
-                                        color: _kGreen,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      // ── Divider ────────────────────────────────────────
-                      Container(
-                        width: 1,
-                        height: 48,
-                        color: _kBorder,
-                      ),
-                      // ── Right: Forgot ──────────────────────────────────
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: isRevealed ? onForgot : null,
-                          behavior: HitTestBehavior.opaque,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 18, horizontal: 12),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      'Swipe Right',
-                                      style: TextStyle(
-                                        color: _kRed,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Forgot',
-                                      style: TextStyle(
-                                        color: _kRed,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(width: 10),
-                                // Arrow circle
-                                Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border:
-                                        Border.all(color: _kRed, width: 1.5),
-                                  ),
-                                  child: const Icon(
-                                    Icons.arrow_forward_rounded,
-                                    color: _kRed,
-                                    size: 18,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                      Icon(Icons.flip_to_back_rounded, color: _kPurpleLight, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Tap Card to Flip & Check Answer',
+                        style: TextStyle(
+                          color: _kPurpleLight,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
                   ),
                 ),
               ),
+            ] else ...[
+              // Revealed actions: Rating buttons
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  'How well did you recall it?',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: _kTextMuted,
+                  ),
+                ),
+              ),
+              // Unified 3-way recall buttons: Hard / Medium / Easy
+              Container(
+                decoration: BoxDecoration(
+                  color: _kSurface2,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: _kBorder, width: 1.5),
+                ),
+                child: Row(
+                  children: [
+                    // ── Left: Remembered / Easy (Swipe Left) ──
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: onRemembered,
+                        behavior: HitTestBehavior.opaque,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: _kGreen.withOpacity(0.12),
+                                  border: Border.all(color: _kGreen, width: 1.5),
+                                ),
+                                child: const Icon(Icons.sentiment_very_satisfied_rounded, color: _kGreen, size: 18),
+                              ),
+                              const SizedBox(width: 8),
+                              const Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Swipe Left',
+                                    style: TextStyle(color: _kGreen, fontSize: 10, fontWeight: FontWeight.w600),
+                                  ),
+                                  Text(
+                                    'Remembered',
+                                    style: TextStyle(color: _kGreen, fontSize: 12, fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Divider
+                    Container(width: 1, height: 40, color: _kBorder),
+                    // ── Middle: Medium ──
+                    GestureDetector(
+                      onTap: onMedium,
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _kStarGold.withOpacity(0.12),
+                                border: Border.all(color: _kStarGold, width: 1.5),
+                              ),
+                              child: const Icon(Icons.sentiment_neutral_rounded, color: _kStarGold, size: 18),
+                            ),
+                            const SizedBox(width: 6),
+                            const Text(
+                              'Medium',
+                              style: TextStyle(color: _kStarGold, fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // Divider
+                    Container(width: 1, height: 40, color: _kBorder),
+                    // ── Right: Forgot / Hard (Swipe Right) ──
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: onForgot,
+                        behavior: HitTestBehavior.opaque,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Swipe Right',
+                                    style: TextStyle(color: _kRed, fontSize: 10, fontWeight: FontWeight.w600),
+                                  ),
+                                  Text(
+                                    'Forgot',
+                                    style: TextStyle(color: _kRed, fontSize: 12, fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: _kRed.withOpacity(0.12),
+                                  border: Border.all(color: _kRed, width: 1.5),
+                                ),
+                                child: const Icon(Icons.sentiment_dissatisfied_rounded, color: _kRed, size: 18),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
