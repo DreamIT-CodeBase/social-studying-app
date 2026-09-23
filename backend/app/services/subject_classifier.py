@@ -17,13 +17,16 @@ if TYPE_CHECKING:
 
 _PHYSICS_TERMS = [
     # Multi-word / specific terms first
+    "newton's laws of motion", "newton's third law", "newton's second law", "newton's first law",
+    "newton's laws", "newton's law", "laws of motion", "law of motion", "newtonian mechanics",
     "quantum mechanics", "thermodynamics", "nuclear physics", "magnetic field", "electric current",
     "ap physics 1", "ap physics 2", "ap physics c", "ap physics", "classical mechanics",
     "electromagnetism", "special relativity", "general relativity", "fluid dynamics",
+    "kinetic energy", "potential energy", "work energy power", "linear momentum",
     # English
-    "physics", "force", "gravity", "motion", "wave", "energy", "velocity",
-    "mechanics", "electricity", "magnetism", "quantum", "optics",
-    "friction", "acceleration", "kinematics", "astrophysics",
+    "physics", "newton", "inertia", "momentum", "force", "gravity", "gravitation",
+    "motion", "wave", "energy", "velocity", "mechanics", "electricity", "magnetism",
+    "quantum", "optics", "friction", "acceleration", "kinematics", "astrophysics",
     # Hindi
     "भौतिक विज्ञान", "भौतिकी", "भौतिक", "गति के नियम", "गुरुत्वाकर्षण", "ऊर्जा", "प्रकाश",
     # Spanish
@@ -445,36 +448,113 @@ def is_math_question_body(body: str | None) -> bool:
     return bool(_MATH_BODY_PATTERN.search(body.strip()))
 
 
+_BIOLOGY_CONFLICT_PATTERN = re.compile(
+    r"\b(?:"
+    r"mitochondri(?:a|on)?|chloroplasts?|ribosomes?|organelles?|photosynthes(?:is|e)|"
+    r"mitosis|meiosis|eukaryot(?:ic|e)s?|prokaryot(?:ic|e)s?|cytoplasm|vacuoles?|"
+    r"endoplasmic\s+reticulum|golgi(?:\s+apparatus)?|adenosine\s+triphosphate|\batp\b|"
+    r"cellular\s+respiration|dna\s+replication|rna\s+transcription|mendel(?:'s|\s+laws)?|"
+    r"genetics?|ecosystems?|species|biodiversity|respiration\s+in\s+plants"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_PHYSICS_CONFLICT_PATTERN = re.compile(
+    r"\b(?:"
+    r"newton(?:'s)?(?:\s+laws?)?|inertia|kinematics|friction|velocity|acceleration|"
+    r"momentum|refraction|optics|quantum\s+mechanics|thermodynamics|ohm(?:'s)?\s+law|"
+    r"work[- ]energy|kinetic\s+energy|potential\s+energy|gravitational|coulomb(?:'s)?|"
+    r"magnetic\s+field|electric\s+current|projectile\s+motion|centripetal"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_CHEMISTRY_CONFLICT_PATTERN = re.compile(
+    r"\b(?:"
+    r"periodic\s+table|molar\s+mass|avogadro|chemical\s+bonds?|covalent\s+bonds?|"
+    r"ionic\s+bonds?|acids?(?:\s+and\s+bases?)?|ph\s+scale|titration|stoichiometry|"
+    r"oxidation[- ]reduction|atomic\s+number|valence\s+electrons?|sublimation|"
+    r"exothermic|endothermic|electronegativity"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
 def is_conflicting_subject(
     candidate_subject: str | None,
     requested_subject: str | None,
     body: str | None = None,
 ) -> bool:
-    """Return True if candidate_subject or body conflicts with requested_subject."""
+    """Return True if candidate_subject or question body conflicts with requested_subject.
+
+    Guarantees strict subject isolation across all core curriculum domains.
+    For instance, Physics sessions reject questions belonging to Biology, Chemistry,
+    or Mathematics, and questions with biological keywords (ATP, mitochondria, etc.).
+    """
     if not requested_subject:
         return False
     req = canonical_subject(requested_subject).strip().casefold()
-    if req in ("science", "chemistry", "physics", "biology"):
-        # Non-math science subject requested: any math equation body is an immediate conflict
-        if body and is_math_question_body(body):
-            body_subj = classify_subject_from_text(body).strip().casefold()
-            if body_subj in ("mathematics", "study") or body_subj != req:
+    if not req or req == "study":
+        return False
+
+    # Check candidate subject conflict across disjoint domains
+    if candidate_subject:
+        cand = canonical_subject(candidate_subject).strip().casefold()
+        if cand and cand != "study":
+            if req in _DISJOINT_DOMAINS and cand in _DISJOINT_DOMAINS and req != cand:
                 return True
-        if candidate_subject:
-            cand = canonical_subject(candidate_subject).strip().casefold()
-            if cand == "mathematics":
+            if req == "science" and cand in ("mathematics", "history", "english & literature"):
                 return True
-            if req == "chemistry" and cand in ("physics", "mathematics"):
+
+    # Check question body content against requested subject
+    if body and body.strip():
+        body_clean = body.strip()
+
+        # Non-math subjects reject pure math equations (e.g. 'Solve for x')
+        if req != "mathematics" and is_math_question_body(body_clean):
+            return True
+
+        # Physics rejects biological and chemical questions
+        if req == "physics":
+            if _BIOLOGY_CONFLICT_PATTERN.search(body_clean):
                 return True
-            if req == "physics" and cand in ("chemistry", "mathematics"):
+            if _CHEMISTRY_CONFLICT_PATTERN.search(body_clean):
                 return True
-            if req == "biology" and cand in ("physics", "chemistry", "mathematics"):
+            body_subj = classify_subject_from_text(body_clean).strip().casefold()
+            if body_subj in ("biology", "chemistry", "mathematics", "history", "english & literature"):
+                if not _PHYSICS_CONFLICT_PATTERN.search(body_clean):
+                    return True
+
+        # Biology rejects physics mechanics and pure chemistry questions
+        elif req == "biology":
+            if _PHYSICS_CONFLICT_PATTERN.search(body_clean):
                 return True
-    elif req == "mathematics":
-        if candidate_subject:
-            cand = canonical_subject(candidate_subject).strip().casefold()
-            if cand in ("chemistry", "physics", "biology", "history", "english & literature"):
+            body_subj = classify_subject_from_text(body_clean).strip().casefold()
+            if body_subj in ("physics", "mathematics", "history", "english & literature"):
                 return True
+
+        # Chemistry rejects pure biology organelle/genetics and physics mechanics questions
+        elif req == "chemistry":
+            if _BIOLOGY_CONFLICT_PATTERN.search(body_clean):
+                return True
+            if _PHYSICS_CONFLICT_PATTERN.search(body_clean):
+                return True
+            body_subj = classify_subject_from_text(body_clean).strip().casefold()
+            if body_subj in ("biology", "physics", "mathematics", "history", "english & literature"):
+                return True
+
+        # Mathematics rejects natural science and humanities questions
+        elif req == "mathematics":
+            body_subj = classify_subject_from_text(body_clean).strip().casefold()
+            if body_subj in ("biology", "chemistry", "history", "english & literature"):
+                return True
+
+        # English rejects science and math equations
+        elif req in ("english & literature", "english"):
+            body_subj = classify_subject_from_text(body_clean).strip().casefold()
+            if body_subj in ("mathematics", "physics", "chemistry", "biology"):
+                return True
+
     return False
 
 

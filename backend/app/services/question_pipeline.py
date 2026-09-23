@@ -408,6 +408,10 @@ async def _generate_and_persist_batch(
 
         if matching_ids_set:
             matching_doc_ids = frozenset(matching_ids_set)
+        elif subject:
+            # When a subject is explicitly requested but no documents in workspace match it,
+            # do not fall back to querying chunks from other subjects' documents (e.g. Biology docs for Physics)
+            matching_doc_ids = frozenset()
 
         if not target_topic and subject:
             # Deeply extract topics directly from the matching subject documents!
@@ -561,6 +565,8 @@ async def _generate_and_persist_batch(
                 if is_conflicting_subject(q_topic_subj, subject, body=gq.body):
                     continue
                 if is_conflicting_subject(q_body_subj, subject, body=gq.body):
+                    continue
+                if is_conflicting_subject(None, subject, body=gq.body):
                     continue
                 if is_math_question_body(gq.body) and canonical_subject(subject).casefold() != "mathematics":
                     continue
@@ -735,7 +741,7 @@ async def _generate_topic_batch(
             logger.warning("Cosmos chunk fallback failed in topic batch: %s", e)
             return []
 
-    if not current_chunks and not matching_doc_ids:
+    if not current_chunks and matching_doc_ids is None:
         current_chunks = [
             chunk for chunk in all_retrieved if chunk.document_id in current_document_ids
         ]

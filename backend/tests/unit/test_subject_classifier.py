@@ -182,4 +182,13 @@ def test_is_conflicting_subject():
     assert is_conflicting_subject(None, "Chemistry", body="Solve for x: 3x + 12 = 36") is True
     assert is_conflicting_subject(None, "Chemistry", body="Which element has atomic number 6?") is False
 
+    # Physics vs Biology collision checks
+    assert is_conflicting_subject("Biology", "Physics") is True
+    assert is_conflicting_subject("Physics", "Biology") is True
+    assert is_conflicting_subject(None, "Physics", body="Which cellular organelle produces ATP?") is True
+    assert is_conflicting_subject(None, "Physics", body="What is the function of mitochondria?") is True
+    assert is_conflicting_subject(None, "Physics", body="Calculate the net force on a 5 kg mass accelerating at 4 m/s²") is False
+    assert is_conflicting_subject(None, "Physics", body="Newton's Third Law states action and reaction are equal and opposite") is False
+    assert is_conflicting_subject(None, "Biology", body="Calculate the acceleration using F = ma") is True
+
 

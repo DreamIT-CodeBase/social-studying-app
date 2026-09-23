@@ -762,16 +762,23 @@ async def _prepare_questions(
         q_top_subj = classify_subject_from_text(q.topic)
         if is_conflicting_subject(q_top_subj, subject, body=q.body):
             return False
+        if is_conflicting_subject(None, subject, body=q.body):
+            return False
         if is_math_question_body(q.body) and canonical_subject(subject).casefold() != "mathematics":
             return False
 
-        if doc_s and subjects_match(doc_s, subject):
-            return True
+        # Reject if body content clearly classifies to a different core subject
+        body_subj = classify_subject_from_text(q.body)
+        if is_conflicting_subject(body_subj, subject, body=q.body):
+            return False
+
         if q_top_subj and subjects_match(q_top_subj, subject):
             return True
-        if subjects_match(classify_subject_from_text(q.body), subject):
+        if subjects_match(body_subj, subject):
             return True
-        return bool(subjects_match(q.topic, subject))
+        if subjects_match(q.topic, subject):
+            return True
+        return bool(doc_s and subjects_match(doc_s, subject))
 
     if subject:
         available = [q for q in available if matches_subject(q)]
@@ -802,21 +809,29 @@ async def _prepare_questions(
     def matches_subcat(q: Question) -> bool:
         if not subcategory:
             return True
+        # If question topic conflicts with subject, reject immediately
+        if subject and is_conflicting_subject(classify_subject_from_text(q.topic), subject, body=q.body):
+            return False
         subcat_clean = subcategory.strip().casefold()
         q_top = q.topic.strip().casefold()
         if subcat_clean == q_top or subcat_clean in q_top or q_top in subcat_clean:
             return True
         sub_terms = {
             t for t in re.findall(r"[a-z0-9]+", subcat_clean)
-            if len(t) >= 2 and not t.isdigit() and t not in {"the", "and", "in", "of", "to", "a", "an", "is", "for", "with", "on", "concepts", "fundamentals", "basics", "study"}
+            if len(t) >= 2 and not t.isdigit() and t not in {
+                "the", "and", "in", "of", "to", "a", "an", "is", "for", "with", "on", "concepts", "fundamentals", "basics", "study", "class", "unit", "chapter"
+            }
         }
         if not sub_terms:
             return True
         q_terms = {t for t in re.findall(r"[a-z0-9]+", q_top) if len(t) >= 2 and not t.isdigit()}
         body_terms = {t for t in re.findall(r"[a-z0-9]+", q.body.casefold()) if len(t) >= 2 and not t.isdigit()}
-        if len(sub_terms & q_terms) >= max(1, len(sub_terms) // 2):
-            return True
-        return len(sub_terms & body_terms) >= max(1, len(sub_terms) // 2)
+        # For concise topics (1-2 terms, e.g. 'Laws of Motion' -> 'laws', 'motion'):
+        # Require ALL distinctive terms to match in either topic or body
+        if len(sub_terms) <= 2:
+            return sub_terms.issubset(q_terms) or sub_terms.issubset(body_terms)
+        min_overlap = max(2, int(len(sub_terms) * 0.7))
+        return len(sub_terms & q_terms) >= min_overlap or len(sub_terms & body_terms) >= min_overlap
 
     if subcategory:
         available = [q for q in available if matches_subcat(q)]
@@ -876,9 +891,9 @@ async def _prepare_questions(
         bool(current_sources.document_ids) or subcategory or question_type or _is_self_study(workspace_id)
     )
     if should_generate:
-        # Provide sufficient generation headroom for LLM grounding and synthesis
-        gen_timeout = 60.0 if (_is_self_study(workspace_id) or question_type) else (35.0 if current_sources.document_ids else 5.0)
-        gen_batch = missing if (_is_self_study(workspace_id) or question_type) else (min(missing, 3) if subcategory else min(missing, 2))
+        # Optimized timeouts for fast responsiveness: LLM calls take 3-6s; 18s is ample while preventing HTTP/gateway timeouts
+        gen_timeout = 18.0 if (_is_self_study(workspace_id) or question_type) else (15.0 if current_sources.document_ids else 5.0)
+        gen_batch = missing
         try:
             generated = await asyncio.wait_for(
                 question_pipeline._generate_and_persist_batch(
@@ -921,7 +936,7 @@ async def _prepare_questions(
                 if subcategory:
                     generated = [q for q in generated if matches_subcat(q)]
             selected = _unique_questions([*selected, *generated])[:target]
-            # If after generation we still have missing slots, do an eager top-up generation pass
+            # If after generation we still have missing slots, do a swift top-up generation pass
             if len(selected) < target and not revision and current_sources.document_ids:
                 try:
                     topup_needed = target - len(selected)
@@ -935,10 +950,10 @@ async def _prepare_questions(
                             subject=subject,
                             target_topic=subcategory,
                             target_type=question_type,
-                            batch_size=max(topup_needed + 3, 5),
+                            batch_size=max(topup_needed + 2, 5),
                             extra_seen_bodies=[*[b for b, _ in historical_seen_records], *(q.body for q in selected)],
                         ),
-                        timeout=25.0,
+                        timeout=8.0,
                     )
                     topup_clean = [
                         q for q in topup_generated
@@ -2291,14 +2306,15 @@ def _is_science_subject(subject_or_category: str | None) -> bool:
     if not subject_or_category:
         return False
     s = subject_or_category.strip().lower()
+    # Dedicated scientific disciplines must NEVER be grouped into generic science
+    if any(d in s for d in ("physics", "phys", "chemistry", "chem", "biology", "bio")):
+        return False
     science_keywords = (
         "science", "general science", "life science", "physical science",
         "integrated science", "earth & space science", "earth science",
-        "environmental science", "biology", "chemistry", "physics"
+        "environmental science",
     )
-    if any(k in s for k in science_keywords):
-        return True
-    return subjects_match(subject_or_category, "Science")
+    return any(k in s for k in science_keywords)
 
 
 def _generate_fallback_science_question(
@@ -2369,6 +2385,508 @@ def _generate_fallback_science_question(
             options=options,
             answer=correct_key,
             explanation=mcq["explanation"],
+            grading_hints=[],
+        )
+
+
+def _is_physics_subject(subject_or_category: str | None) -> bool:
+    if not subject_or_category:
+        return False
+    s = subject_or_category.strip().lower()
+    physics_keywords = (
+        "physics", "phys", "motion", "mechanics", "kinematics", "dynamics",
+        "thermodynamics", "optics", "electromagnetism", "gravity", "gravitation",
+        "newton", "rotational", "oscillation", "waves", "electrostatics", "force",
+    )
+    if any(k in s for k in physics_keywords):
+        return True
+    return canonical_subject(subject_or_category).casefold() == "physics"
+
+
+def _is_chemistry_subject(subject_or_category: str | None) -> bool:
+    if not subject_or_category:
+        return False
+    s = subject_or_category.strip().lower()
+    chem_keywords = (
+        "chemistry", "chem", "organic chemistry", "inorganic chemistry",
+        "physical chemistry", "periodic table", "stoichiometry", "atomic structure",
+        "chemical bonding", "electrochemistry", "equilibrium", "solutions",
+    )
+    if any(k in s for k in chem_keywords) and not _is_physics_subject(subject_or_category):
+        return True
+    return canonical_subject(subject_or_category).casefold() == "chemistry"
+
+
+def _is_biology_subject(subject_or_category: str | None) -> bool:
+    if not subject_or_category:
+        return False
+    s = subject_or_category.strip().lower()
+    bio_keywords = (
+        "biology", "bio", "cell", "cellular", "genetics", "botany", "zoology",
+        "ecosystem", "ecology", "anatomy", "physiology", "reproduction",
+        "evolution", "biotechnology", "microbiology",
+    )
+    if any(k in s for k in bio_keywords) and not _is_physics_subject(subject_or_category):
+        return True
+    return canonical_subject(subject_or_category).casefold() == "biology"
+
+
+_PHYSICS_FALLBACK_BANK = [
+    {
+        "topic": "Newton's Laws of Motion",
+        "mcq": {
+            "body": "Which property of a physical body causes it to resist any change in its state of rest or uniform motion?",
+            "options": [("A", "Friction"), ("B", "Inertia"), ("C", "Gravity"), ("D", "Momentum")],
+            "answer": "B",
+            "explanation": "Inertia is the inherent tendency of an object to resist changes in its state of motion.",
+        },
+        "true_false": {
+            "body": "Newton's First Law of Motion is also widely known as the Law of Inertia.",
+            "answer": "true",
+            "explanation": "Newton's First Law states that an object continues in its state of rest or uniform straight-line motion unless acted upon by an external unbalanced force.",
+        },
+        "short_answer": {
+            "body": "The tendency of a body to remain at rest or continue moving with uniform velocity is known as ________.",
+            "answer": "inertia",
+            "explanation": "Inertia is the property of matter by which it continues in its existing state of rest or uniform motion.",
+            "grading_hints": ["inertia"],
+        },
+        "long_answer": {
+            "body": "State Newton's First Law of Motion and explain why passengers lurch forward when a moving bus suddenly brakes.",
+            "answer": "Newton's First Law states that an object continues in its state of rest or uniform motion in a straight line unless acted upon by an external net force. When the bus decelerates suddenly, passengers' bodies tend to maintain their forward velocity due to inertia, causing them to pitch forward until an external restraining force acts on them.",
+            "explanation": "Inertia resists the instantaneous change in velocity.",
+            "grading_hints": ["law of inertia", "external force", "tendency to continue moving", "deceleration"],
+        },
+    },
+    {
+        "topic": "Newton's Laws of Motion",
+        "mcq": {
+            "body": "According to Newton's Second Law of Motion (F = ma), what net force is required to accelerate a 5 kg mass at 4 m/s²?",
+            "options": [("A", "20 N"), ("B", "10 N"), ("C", "1.25 N"), ("D", "9 N")],
+            "answer": "A",
+            "explanation": "F = m * a = 5 kg * 4 m/s² = 20 N.",
+        },
+        "true_false": {
+            "body": "According to Newton's Second Law, acceleration is directly proportional to net force and inversely proportional to mass.",
+            "answer": "true",
+            "explanation": "a = F_net / m, meaning acceleration scales linearly with force and inversely with mass.",
+        },
+        "short_answer": {
+            "body": "In the equation F = ma, the SI unit of force is the ________.",
+            "answer": "newton",
+            "explanation": "One Newton is defined as 1 kg·m/s².",
+            "grading_hints": ["newton", "newtons", "N"],
+        },
+        "long_answer": {
+            "body": "Explain the relationship between net force, mass, and acceleration as described by Newton's Second Law.",
+            "answer": "Newton's Second Law states that the rate of change of linear momentum of a body is directly proportional to the applied force. For constant mass, this simplifies to F = ma, where force equals mass times acceleration.",
+            "explanation": "F = ma connects dynamics and kinematics.",
+            "grading_hints": ["F = ma", "directly proportional", "inversely proportional", "momentum"],
+        },
+    },
+    {
+        "topic": "Newton's Laws of Motion",
+        "mcq": {
+            "body": "Newton's Third Law states that for every action, there is an equal and opposite reaction. These action-reaction forces:",
+            "options": [
+                ("A", "Act on the same object and cancel each other out"),
+                ("B", "Act on different interacting objects"),
+                ("C", "Act in the same direction"),
+                ("D", "Differ in magnitude depending on mass"),
+            ],
+            "answer": "B",
+            "explanation": "Action and reaction forces always act on two different interacting bodies, so they never cancel each other out on a single object.",
+        },
+        "true_false": {
+            "body": "Newton's Third Law of Motion implies that forces always occur in matched interaction pairs.",
+            "answer": "true",
+            "explanation": "Isolated single forces cannot exist in nature; forces always occur in mutual interaction pairs.",
+        },
+        "short_answer": {
+            "body": "The product of an object's mass and its velocity (p = mv) represents linear ________.",
+            "answer": "momentum",
+            "explanation": "Linear momentum is defined as the product of mass and velocity.",
+            "grading_hints": ["momentum", "linear momentum"],
+        },
+        "long_answer": {
+            "body": "Explain how Newton's Third Law applies to rocket propulsion in the vacuum of space.",
+            "answer": "A rocket expels high-velocity exhaust gases backward out of its nozzle (action force). By Newton's Third Law, the escaping gas exerts an equal and opposite forward thrust force on the rocket (reaction force), accelerating the rocket forward without needing surrounding air to push against.",
+            "explanation": "Rocket engines rely on conservation of momentum and Newton's third law interaction pairs.",
+            "grading_hints": ["action force", "reaction force", "thrust", "exhaust gases", "opposite direction"],
+        },
+    },
+    {
+        "topic": "Kinetic Energy",
+        "mcq": {
+            "body": "If the velocity of a moving object is doubled, by what factor does its kinetic energy (KE = ½mv²) increase?",
+            "options": [("A", "2 times"), ("B", "4 times"), ("C", "8 times"), ("D", "Remains unchanged")],
+            "answer": "B",
+            "explanation": "Since kinetic energy depends on the square of velocity (v²), doubling v results in 2² = 4 times the kinetic energy.",
+        },
+        "true_false": {
+            "body": "Work is done on an object only when a force causes a displacement along the direction of that force.",
+            "answer": "true",
+            "explanation": "W = F * d * cos(theta). If displacement is zero or perpendicular to force, work done is zero.",
+        },
+        "short_answer": {
+            "body": "The rate at which work is performed or energy is transferred per unit time is defined as ________.",
+            "answer": "power",
+            "explanation": "Power P = W / t, measured in Watts (Joules per second).",
+            "grading_hints": ["power"],
+        },
+        "long_answer": {
+            "body": "State the Work-Energy Theorem and explain how it relates the net work done on an object to its motion.",
+            "answer": "The Work-Energy Theorem states that the net work done by all forces acting on a particle equals the change in its kinetic energy: W_net = Delta KE = 1/2 m v_f^2 - 1/2 m v_i^2. Positive net work increases speed, while negative net work decreases speed.",
+            "explanation": "The theorem connects mechanical work directly to changes in kinetic energy.",
+            "grading_hints": ["change in kinetic energy", "net work", "velocity", "W = Delta KE"],
+        },
+    },
+    {
+        "topic": "Gravitation",
+        "mcq": {
+            "body": "According to Newton's Law of Universal Gravitation, what happens to the gravitational attraction between two masses if the distance between them is doubled?",
+            "options": [("A", "It doubles"), ("B", "It is halved"), ("C", "It is reduced to one-fourth (1/4)"), ("D", "It is quadrupled")],
+            "answer": "C",
+            "explanation": "Gravitational force follows an inverse-square law: F is proportional to 1/r², so doubling distance reduces force to 1/4.",
+        },
+        "true_false": {
+            "body": "In a vacuum where aerodynamic drag is absent, all free-falling objects accelerate toward Earth at the exact same rate regardless of their mass.",
+            "answer": "true",
+            "explanation": "Gravitational acceleration g = GM/r² is independent of the falling object's own mass.",
+        },
+        "short_answer": {
+            "body": "The standard acceleration due to gravity near Earth's surface is approximately ________ m/s² (rounded to one decimal place).",
+            "answer": "9.8",
+            "explanation": "g = 9.8 m/s² near the surface of the Earth.",
+            "grading_hints": ["9.8", "9.81", "9.8 m/s^2"],
+        },
+        "long_answer": {
+            "body": "Distinguish clearly between the mass of an object and its weight on different celestial bodies.",
+            "answer": "Mass is an intrinsic measure of the quantity of matter in an object and remains constant anywhere in the universe (measured in kg). Weight is the downward gravitational force acting on that mass (W = mg), which varies directly with the local gravitational field strength g of the planet or celestial body (measured in Newtons).",
+            "explanation": "Mass is an invariant scalar quantity, whereas weight is a force dependent on local gravity.",
+            "grading_hints": ["mass is constant", "weight is force", "W = mg", "gravitational acceleration", "Newtons vs kilograms"],
+        },
+    },
+]
+
+_CHEMISTRY_FALLBACK_BANK = [
+    {
+        "topic": "Atomic Structure",
+        "mcq": {
+            "body": "Which subatomic particle carries a negative electric charge and orbits the atomic nucleus?",
+            "options": [("A", "Proton"), ("B", "Electron"), ("C", "Neutron"), ("D", "Positron")],
+            "answer": "B",
+            "explanation": "Electrons carry a negative elementary charge (-1) and occupy orbitals around the positive nucleus.",
+        },
+        "true_false": {
+            "body": "The atomic number of an element is determined solely by the number of protons in its nucleus.",
+            "answer": "true",
+            "explanation": "Atomic number Z equals the number of nuclear protons, defining the element's identity.",
+        },
+        "short_answer": {
+            "body": "The dense central core of an atom containing protons and neutrons is called the ________.",
+            "answer": "nucleus",
+            "explanation": "The atomic nucleus contains essentially all of the atom's mass.",
+            "grading_hints": ["nucleus", "atomic nucleus"],
+        },
+        "long_answer": {
+            "body": "Describe the three primary subatomic particles of an atom, including their relative charges and locations.",
+            "answer": "Protons have a +1 charge and reside in the nucleus. Neutrons have no charge (neutral) and reside in the nucleus. Electrons have a -1 charge and orbit the nucleus in electron shells.",
+            "explanation": "These three particles compose standard atomic architecture.",
+            "grading_hints": ["proton", "neutron", "electron", "nucleus", "charges"],
+        },
+    },
+    {
+        "topic": "Chemical Bonding",
+        "mcq": {
+            "body": "A chemical bond formed by the sharing of one or more electron pairs between nonmetal atoms is called a(n):",
+            "options": [("A", "Ionic bond"), ("B", "Covalent bond"), ("C", "Metallic bond"), ("D", "Hydrogen bond")],
+            "answer": "B",
+            "explanation": "Covalent bonding involves the mutual sharing of valence electrons between atoms.",
+        },
+        "true_false": {
+            "body": "Ionic bonds are formed through the electrostatic attraction between oppositely charged ions.",
+            "answer": "true",
+            "explanation": "Ionic bonds occur when electrons are transferred from a metal to a nonmetal, creating oppositely charged ions.",
+        },
+        "short_answer": {
+            "body": "A positively charged ion formed when an atom loses one or more electrons is called a(n) ________.",
+            "answer": "cation",
+            "explanation": "Cations are positive ions; anions are negative ions.",
+            "grading_hints": ["cation", "cations"],
+        },
+        "long_answer": {
+            "body": "Compare covalent and ionic bonds in terms of electron distribution and properties of the resulting compounds.",
+            "answer": "In covalent bonds, electrons are shared between atoms, often forming molecular compounds with lower melting points. In ionic bonds, electrons are transferred completely, creating crystal lattices with high melting points and electrical conductivity when dissolved.",
+            "explanation": "Bond type dictates physical and chemical characteristics.",
+            "grading_hints": ["sharing vs transfer", "melting points", "lattice", "ions"],
+        },
+    },
+]
+
+_BIOLOGY_FALLBACK_BANK = [
+    {
+        "topic": "Cell Biology",
+        "mcq": {
+            "body": "Which cellular organelle is responsible for generating most of the cell's ATP via aerobic cellular respiration?",
+            "options": [("A", "Ribosome"), ("B", "Mitochondria"), ("C", "Endoplasmic reticulum"), ("D", "Golgi apparatus")],
+            "answer": "B",
+            "explanation": "Mitochondria generate ATP through oxidative phosphorylation during cellular respiration.",
+        },
+        "true_false": {
+            "body": "Plant cells contain chloroplasts and a rigid cellulose cell wall, which are absent in animal cells.",
+            "answer": "true",
+            "explanation": "Chloroplasts for photosynthesis and cellulose walls are characteristic features of plant cells.",
+        },
+        "short_answer": {
+            "body": "The cellular organelle widely referred to as the powerhouse of eukaryotic cells is the ________.",
+            "answer": "mitochondria",
+            "explanation": "Mitochondria generate ATP from glucose and oxygen.",
+            "grading_hints": ["mitochondria", "mitochondrion"],
+        },
+        "long_answer": {
+            "body": "Describe the structural and functional differences between plant cells and animal cells.",
+            "answer": "Plant cells have a rigid cellulose cell wall, chloroplasts for photosynthesis, and a large central vacuole for turgor pressure. Animal cells lack cell walls and chloroplasts, and possess smaller, multiple vacuoles and centrioles.",
+            "explanation": "These structural adaptations reflect photosynthetic vs heterotrophic lifestyles.",
+            "grading_hints": ["cell wall", "chloroplasts", "central vacuole", "photosynthesis"],
+        },
+    },
+    {
+        "topic": "Genetics & DNA",
+        "mcq": {
+            "body": "In a double-stranded DNA molecule, which nitrogenous base forms complementary hydrogen bonds with adenine (A)?",
+            "options": [("A", "Guanine (G)"), ("B", "Cytosine (C)"), ("C", "Thymine (T)"), ("D", "Uracil (U)")],
+            "answer": "C",
+            "explanation": "Adenine pairs with thymine via two hydrogen bonds in DNA (A-T).",
+        },
+        "true_false": {
+            "body": "The double-helix molecular structure of DNA was discovered by James Watson and Francis Crick in 1953.",
+            "answer": "true",
+            "explanation": "Watson and Crick elucidated the antiparallel double-helix structure using Rosalind Franklin's X-ray data.",
+        },
+        "short_answer": {
+            "body": "The monomer building blocks that polymerize to form DNA and RNA nucleic acids are called ________.",
+            "answer": "nucleotides",
+            "explanation": "Each nucleotide consists of a nitrogenous base, a pentose sugar, and a phosphate group.",
+            "grading_hints": ["nucleotides", "nucleotide"],
+        },
+        "long_answer": {
+            "body": "Explain the Central Dogma of molecular biology.",
+            "answer": "The Central Dogma describes the directional flow of genetic information: DNA is transcribed into messenger RNA (mRNA) in the nucleus, and mRNA is then translated into functional polypeptides (proteins) by ribosomes in the cytoplasm.",
+            "explanation": "Replication, transcription, and translation define genetic expression.",
+            "grading_hints": ["DNA to RNA", "RNA to protein", "transcription", "translation", "ribosomes"],
+        },
+    },
+]
+
+
+_EXTRA_PHYSICS_FLASHCARDS = [
+    ("Newton's Laws of Motion", "What is Newton's First Law of Motion?", "An object remains at rest or in uniform motion unless acted upon by an external net force.", "Known as the Law of Inertia."),
+    ("Newton's Laws of Motion", "What is Newton's Third Law of Motion?", "For every action, there is an equal and opposite reaction.", "Action and reaction forces act on different interacting bodies."),
+    ("Kinetic Energy", "What is the formula for kinetic energy?", "KE = ½mv²", "Kinetic energy is directly proportional to mass and the square of velocity."),
+    ("Work and Energy", "What is the SI unit of work and energy?", "Joule (J = N·m = kg·m²/s²)", "One Joule is the work done by a force of one Newton moving through one meter."),
+    ("Gravitation", "What is the standard acceleration due to gravity near Earth's surface?", "g ≈ 9.8 m/s²", "Free-fall acceleration in the absence of air resistance."),
+    ("Linear Momentum", "What is the formula for linear momentum?", "p = mv", "Momentum is the product of an object's mass and its velocity."),
+]
+
+
+def _generate_fallback_physics_question(
+    idx: int,
+    target_qtype: str | None,
+    subject: str | None = None,
+    subcategory: str | None = None,
+) -> PreparedQuestion:
+    bank = _PHYSICS_FALLBACK_BANK[idx % len(_PHYSICS_FALLBACK_BANK)]
+    topic = subcategory or bank["topic"]
+    eff_type = target_qtype or ("mcq" if idx % 3 == 0 else ("true_false" if idx % 3 == 1 else "short_answer"))
+
+    if eff_type == "true_false":
+        tf = bank["true_false"]
+        return PreparedQuestion(
+            id=f"qst_phys_tf_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="true_false",
+            difficulty="beginner",
+            body=tf["body"],
+            options=[
+                PreparedOption(key="true", text="True"),
+                PreparedOption(key="false", text="False"),
+            ],
+            answer=tf["answer"],
+            explanation=tf["explanation"],
+            grading_hints=[],
+        )
+    elif eff_type == "short_answer":
+        sa = bank["short_answer"]
+        return PreparedQuestion(
+            id=f"qst_phys_sa_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="short_answer",
+            difficulty="beginner",
+            body=sa["body"],
+            options=[],
+            answer=sa["answer"],
+            explanation=sa["explanation"],
+            grading_hints=sa["grading_hints"],
+        )
+    elif eff_type == "long_answer":
+        la = bank["long_answer"]
+        return PreparedQuestion(
+            id=f"qst_phys_la_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="long_answer",
+            difficulty="intermediate",
+            body=la["body"],
+            options=[],
+            answer=la["answer"],
+            explanation=la["explanation"],
+            grading_hints=la["grading_hints"],
+        )
+    else:
+        mc = bank["mcq"]
+        return PreparedQuestion(
+            id=f"qst_phys_mc_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="mcq",
+            difficulty="intermediate" if idx % 2 == 1 else "beginner",
+            body=mc["body"],
+            options=[PreparedOption(key=k, text=t) for k, t in mc["options"]],
+            answer=mc["answer"],
+            explanation=mc["explanation"],
+            grading_hints=[],
+        )
+
+
+def _generate_fallback_chemistry_question(
+    idx: int,
+    target_qtype: str | None,
+    subject: str | None = None,
+    subcategory: str | None = None,
+) -> PreparedQuestion:
+    bank = _CHEMISTRY_FALLBACK_BANK[idx % len(_CHEMISTRY_FALLBACK_BANK)]
+    topic = subcategory or bank["topic"]
+    eff_type = target_qtype or ("mcq" if idx % 3 == 0 else ("true_false" if idx % 3 == 1 else "short_answer"))
+
+    if eff_type == "true_false":
+        tf = bank["true_false"]
+        return PreparedQuestion(
+            id=f"qst_chem_tf_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="true_false",
+            difficulty="beginner",
+            body=tf["body"],
+            options=[
+                PreparedOption(key="true", text="True"),
+                PreparedOption(key="false", text="False"),
+            ],
+            answer=tf["answer"],
+            explanation=tf["explanation"],
+            grading_hints=[],
+        )
+    elif eff_type == "short_answer":
+        sa = bank["short_answer"]
+        return PreparedQuestion(
+            id=f"qst_chem_sa_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="short_answer",
+            difficulty="beginner",
+            body=sa["body"],
+            options=[],
+            answer=sa["answer"],
+            explanation=sa["explanation"],
+            grading_hints=sa["grading_hints"],
+        )
+    elif eff_type == "long_answer":
+        la = bank["long_answer"]
+        return PreparedQuestion(
+            id=f"qst_chem_la_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="long_answer",
+            difficulty="intermediate",
+            body=la["body"],
+            options=[],
+            answer=la["answer"],
+            explanation=la["explanation"],
+            grading_hints=la["grading_hints"],
+        )
+    else:
+        mc = bank["mcq"]
+        return PreparedQuestion(
+            id=f"qst_chem_mc_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="mcq",
+            difficulty="intermediate" if idx % 2 == 1 else "beginner",
+            body=mc["body"],
+            options=[PreparedOption(key=k, text=t) for k, t in mc["options"]],
+            answer=mc["answer"],
+            explanation=mc["explanation"],
+            grading_hints=[],
+        )
+
+
+def _generate_fallback_biology_question(
+    idx: int,
+    target_qtype: str | None,
+    subject: str | None = None,
+    subcategory: str | None = None,
+) -> PreparedQuestion:
+    bank = _BIOLOGY_FALLBACK_BANK[idx % len(_BIOLOGY_FALLBACK_BANK)]
+    topic = subcategory or bank["topic"]
+    eff_type = target_qtype or ("mcq" if idx % 3 == 0 else ("true_false" if idx % 3 == 1 else "short_answer"))
+
+    if eff_type == "true_false":
+        tf = bank["true_false"]
+        return PreparedQuestion(
+            id=f"qst_bio_tf_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="true_false",
+            difficulty="beginner",
+            body=tf["body"],
+            options=[
+                PreparedOption(key="true", text="True"),
+                PreparedOption(key="false", text="False"),
+            ],
+            answer=tf["answer"],
+            explanation=tf["explanation"],
+            grading_hints=[],
+        )
+    elif eff_type == "short_answer":
+        sa = bank["short_answer"]
+        return PreparedQuestion(
+            id=f"qst_bio_sa_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="short_answer",
+            difficulty="beginner",
+            body=sa["body"],
+            options=[],
+            answer=sa["answer"],
+            explanation=sa["explanation"],
+            grading_hints=sa["grading_hints"],
+        )
+    elif eff_type == "long_answer":
+        la = bank["long_answer"]
+        return PreparedQuestion(
+            id=f"qst_bio_la_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="long_answer",
+            difficulty="intermediate",
+            body=la["body"],
+            options=[],
+            answer=la["answer"],
+            explanation=la["explanation"],
+            grading_hints=la["grading_hints"],
+        )
+    else:
+        mc = bank["mcq"]
+        return PreparedQuestion(
+            id=f"qst_bio_mc_{uuid4().hex[:8]}",
+            topic=topic,
+            question_type="mcq",
+            difficulty="intermediate" if idx % 2 == 1 else "beginner",
+            body=mc["body"],
+            options=[PreparedOption(key=k, text=t) for k, t in mc["options"]],
+            answer=mc["answer"],
+            explanation=mc["explanation"],
             grading_hints=[],
         )
 
@@ -2585,6 +3103,21 @@ def _build_guaranteed_fallback_plan(
                         existing_fronts.add(front_text.casefold())
                         if len(flashcards) >= target:
                             break
+            elif _is_physics_subject(subj) or _is_physics_subject(subject) or _is_physics_subject(subcategory):
+                for topic_name, front_text, back_text, expl_text in _EXTRA_PHYSICS_FLASHCARDS:
+                    if front_text.casefold() not in existing_fronts:
+                        flashcards.append(
+                            PreparedFlashcard(
+                                id=f"fls_phys_ext_{uuid4().hex[:8]}",
+                                topic=subcategory or topic_name,
+                                front=front_text,
+                                back=back_text,
+                                explanation=expl_text,
+                            )
+                        )
+                        existing_fronts.add(front_text.casefold())
+                        if len(flashcards) >= target:
+                            break
             elif _is_science_subject(subj) or _is_science_subject(subject) or _is_science_subject(subcategory):
                 for topic_name, front_text, back_text, expl_text in _EXTRA_SCIENCE_FLASHCARDS:
                     if front_text.casefold() not in existing_fronts:
@@ -2633,16 +3166,179 @@ def _build_guaranteed_fallback_plan(
                 _generate_fallback_trigonometry_question(idx=i, target_qtype=target_qtype, subcategory=subcategory)
                 for i in range(max(target, 8))
             ]
-        elif _is_science_subject(subj) or subj in ("science", "general science", "life science", "physical science", "integrated science", "earth science", "environmental science"):
+        elif subj in ("physics", "phys") or (subject and canonical_subject(subject).casefold() == "physics"):
             questions = [
-                _generate_fallback_science_question(
-                    idx=i,
-                    target_qtype=target_qtype,
-                    subject=subject or "Science",
-                    subcategory=subcategory,
-                )
-                for i in range(max(target, 8))
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Newton's Laws of Motion",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="Which property of a body causes it to resist changes in its state of rest or uniform motion?",
+                    options=[
+                        PreparedOption(key="A", text="Friction"),
+                        PreparedOption(key="B", text="Inertia"),
+                        PreparedOption(key="C", text="Gravity"),
+                        PreparedOption(key="D", text="Momentum"),
+                    ],
+                    answer="B",
+                    explanation="Inertia is the inherent tendency of an object to resist changes in its state of motion.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Newton's Laws of Motion",
+                    question_type="mcq",
+                    difficulty="intermediate",
+                    body="According to Newton's Second Law of Motion, what net force is required to accelerate a 5 kg mass at 4 m/s²?",
+                    options=[
+                        PreparedOption(key="A", text="20 N"),
+                        PreparedOption(key="B", text="10 N"),
+                        PreparedOption(key="C", text="1.25 N"),
+                        PreparedOption(key="D", text="9 N"),
+                    ],
+                    answer="A",
+                    explanation="F = ma = 5 kg × 4 m/s² = 20 N.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Newton's Laws of Motion",
+                    question_type="true_false",
+                    difficulty="beginner",
+                    body="Newton's Third Law states that for every action force, there is an equal and opposite reaction force acting on a different object.",
+                    options=[
+                        PreparedOption(key="true", text="True"),
+                        PreparedOption(key="false", text="False"),
+                    ],
+                    answer="true",
+                    explanation="Action and reaction forces are always equal in magnitude, opposite in direction, and act on interacting bodies.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Newton's Laws of Motion",
+                    question_type="short_answer",
+                    difficulty="beginner",
+                    body="According to the laws of motion, the product of an object's mass and its velocity (p = mv) is defined as linear ________.",
+                    options=[],
+                    answer="momentum",
+                    explanation="Linear momentum p = mv is a fundamental conserved quantity in classical mechanics.",
+                    grading_hints=["momentum", "linear momentum"],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Newton's Laws of Motion",
+                    question_type="long_answer",
+                    difficulty="intermediate",
+                    body="Explain Newton's First Law of Motion and describe what happens to passengers in a bus when the driver suddenly applies brakes.",
+                    options=[],
+                    answer="Newton's First Law (Law of Inertia) states that an object continues in its state of rest or uniform motion unless acted upon by an external unbalanced force. When brakes are applied, the bus decelerates, but passengers continue moving forward due to inertia.",
+                    explanation="Inertia resists the sudden change in state of motion until an external force (seatbelt or friction) decelerates the passenger.",
+                    grading_hints=["law of inertia", "external force", "tendency to continue moving", "deceleration"],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Kinetic Energy",
+                    question_type="mcq",
+                    difficulty="intermediate",
+                    body="If the speed of a moving object is doubled, what happens to its kinetic energy (KE = ½mv²)?",
+                    options=[
+                        PreparedOption(key="A", text="It doubles"),
+                        PreparedOption(key="B", text="It quadruples (4x)"),
+                        PreparedOption(key="C", text="It stays the same"),
+                        PreparedOption(key="D", text="It increases by eight times"),
+                    ],
+                    answer="B",
+                    explanation="Kinetic energy is proportional to the square of velocity, so doubling speed quadruples kinetic energy.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Optics & Light",
+                    question_type="mcq",
+                    difficulty="beginner",
+                    body="What phenomenon describes the bending of a light wave as it passes from one medium to another with a different refractive index?",
+                    options=[
+                        PreparedOption(key="A", text="Reflection"),
+                        PreparedOption(key="B", text="Refraction"),
+                        PreparedOption(key="C", text="Diffraction"),
+                        PreparedOption(key="D", text="Polarization"),
+                    ],
+                    answer="B",
+                    explanation="Refraction is the change in direction of wave propagation due to a change in transmission speed across media.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Thermodynamics",
+                    question_type="mcq",
+                    difficulty="intermediate",
+                    body="Which law of thermodynamics states that energy cannot be created or destroyed, only transformed from one form to another?",
+                    options=[
+                        PreparedOption(key="A", text="Zeroth Law of Thermodynamics"),
+                        PreparedOption(key="B", text="First Law of Thermodynamics"),
+                        PreparedOption(key="C", text="Second Law of Thermodynamics"),
+                        PreparedOption(key="D", text="Third Law of Thermodynamics"),
+                    ],
+                    answer="B",
+                    explanation="The First Law of Thermodynamics is the law of conservation of energy.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Electricity Basics",
+                    question_type="true_false",
+                    difficulty="beginner",
+                    body="Ohm's Law states that electric current through a conductor is directly proportional to voltage, provided temperature remains constant (V = IR).",
+                    options=[
+                        PreparedOption(key="true", text="True"),
+                        PreparedOption(key="false", text="False"),
+                    ],
+                    answer="true",
+                    explanation="V = IR is the mathematical expression of Ohm's Law.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Gravitation",
+                    question_type="true_false",
+                    difficulty="beginner",
+                    body="In a vacuum where air resistance is absent, all objects fall toward the Earth with the same gravitational acceleration regardless of mass.",
+                    options=[
+                        PreparedOption(key="true", text="True"),
+                        PreparedOption(key="false", text="False"),
+                    ],
+                    answer="true",
+                    explanation="Gravitational acceleration g is independent of the falling object's mass in a vacuum.",
+                    grading_hints=[],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Work, Energy, and Power",
+                    question_type="short_answer",
+                    difficulty="beginner",
+                    body="The rate of doing work or transferring energy per unit time is defined as ________.",
+                    options=[],
+                    answer="power",
+                    explanation="Power P = Work / time, measured in Watts (J/s).",
+                    grading_hints=["power"],
+                ),
+                PreparedQuestion(
+                    id=f"qst_phys_{uuid4().hex[:8]}",
+                    topic="Force and Motion",
+                    question_type="short_answer",
+                    difficulty="beginner",
+                    body="The SI unit of force, named in honor of the physicist who formulated the laws of motion, is the ________.",
+                    options=[],
+                    answer="newton",
+                    explanation="Force is measured in Newtons (N = kg·m/s²).",
+                    grading_hints=["newton", "newtons"],
+                ),
             ]
+            if subcategory and ("motion" in subcategory.casefold() or "law" in subcategory.casefold()):
+                for q in questions:
+                    q.topic = subcategory.strip()
+
         elif subj in ("chemistry", "chem"):
             questions = [
                 PreparedQuestion(
@@ -2952,123 +3648,6 @@ def _build_guaranteed_fallback_plan(
                     grading_hints=["subtract 7", "divide by 3", "x = 5", "inverse operations", "isolate"],
                 ),
             ]
-        elif subj in ("physics", "phys"):
-            questions = [
-                PreparedQuestion(
-                    id=f"qst_phys_{uuid4().hex[:8]}",
-                    topic="Newton's Laws of Motion",
-                    question_type="mcq",
-                    difficulty="beginner",
-                    body="Which property of a body causes it to resist changes in its state of rest or uniform motion?",
-                    options=[
-                        PreparedOption(key="A", text="Friction"),
-                        PreparedOption(key="B", text="Inertia"),
-                        PreparedOption(key="C", text="Gravity"),
-                        PreparedOption(key="D", text="Momentum"),
-                    ],
-                    answer="B",
-                    explanation="Inertia is the inherent tendency of an object to resist changes in its state of motion.",
-                    grading_hints=[],
-                ),
-                PreparedQuestion(
-                    id=f"qst_phys_{uuid4().hex[:8]}",
-                    topic="Kinetic Energy",
-                    question_type="mcq",
-                    difficulty="intermediate",
-                    body="If the speed of a moving object is doubled, what happens to its kinetic energy (KE = ½mv²)?",
-                    options=[
-                        PreparedOption(key="A", text="It doubles"),
-                        PreparedOption(key="B", text="It quadruples (4x)"),
-                        PreparedOption(key="C", text="It stays the same"),
-                        PreparedOption(key="D", text="It increases by eight times"),
-                    ],
-                    answer="B",
-                    explanation="Kinetic energy is proportional to the square of velocity, so doubling speed quadruples kinetic energy.",
-                    grading_hints=[],
-                ),
-                PreparedQuestion(
-                    id=f"qst_phys_{uuid4().hex[:8]}",
-                    topic="Optics & Light",
-                    question_type="mcq",
-                    difficulty="beginner",
-                    body="What phenomenon describes the bending of a light wave as it passes from one medium to another with a different refractive index?",
-                    options=[
-                        PreparedOption(key="A", text="Reflection"),
-                        PreparedOption(key="B", text="Refraction"),
-                        PreparedOption(key="C", text="Diffraction"),
-                        PreparedOption(key="D", text="Polarization"),
-                    ],
-                    answer="B",
-                    explanation="Refraction is the change in direction of wave propagation due to a change in transmission speed across media.",
-                    grading_hints=[],
-                ),
-                PreparedQuestion(
-                    id=f"qst_phys_{uuid4().hex[:8]}",
-                    topic="Thermodynamics",
-                    question_type="mcq",
-                    difficulty="intermediate",
-                    body="Which law of thermodynamics states that energy cannot be created or destroyed, only transformed from one form to another?",
-                    options=[
-                        PreparedOption(key="A", text="Zeroth Law of Thermodynamics"),
-                        PreparedOption(key="B", text="First Law of Thermodynamics"),
-                        PreparedOption(key="C", text="Second Law of Thermodynamics"),
-                        PreparedOption(key="D", text="Third Law of Thermodynamics"),
-                    ],
-                    answer="B",
-                    explanation="The First Law of Thermodynamics is the law of conservation of energy.",
-                    grading_hints=[],
-                ),
-                PreparedQuestion(
-                    id=f"qst_phys_{uuid4().hex[:8]}",
-                    topic="Electricity Basics",
-                    question_type="true_false",
-                    difficulty="beginner",
-                    body="Ohm's Law states that electric current through a conductor is directly proportional to voltage, provided temperature remains constant (V = IR).",
-                    options=[
-                        PreparedOption(key="true", text="True"),
-                        PreparedOption(key="false", text="False"),
-                    ],
-                    answer="true",
-                    explanation="V = IR is the mathematical expression of Ohm's Law.",
-                    grading_hints=[],
-                ),
-                PreparedQuestion(
-                    id=f"qst_phys_{uuid4().hex[:8]}",
-                    topic="Gravitation",
-                    question_type="true_false",
-                    difficulty="beginner",
-                    body="In a vacuum where air resistance is absent, all objects fall toward the Earth with the same gravitational acceleration regardless of mass.",
-                    options=[
-                        PreparedOption(key="true", text="True"),
-                        PreparedOption(key="false", text="False"),
-                    ],
-                    answer="true",
-                    explanation="Gravitational acceleration g is independent of the falling object's mass in a vacuum.",
-                    grading_hints=[],
-                ),
-                PreparedQuestion(
-                    id=f"qst_phys_{uuid4().hex[:8]}",
-                    topic="Work, Energy, and Power",
-                    question_type="short_answer",
-                    difficulty="beginner",
-                    body="The rate of doing work or transferring energy per unit time is defined as ________.",
-                    options=[],
-                    answer="power",
-                    explanation="Power P = Work / time, measured in Watts (J/s).",
-                    grading_hints=["power"],
-                ),
-                PreparedQuestion(
-                    id=f"qst_phys_{uuid4().hex[:8]}",
-                    topic="Force and Motion",
-                    question_type="short_answer",
-                    difficulty="beginner",
-                    body="The SI unit of force, named in honor of the physicist who formulated the laws of motion, is the ________.",
-                    options=[],
-                    answer="newton",
-                    explanation="Force is measured in Newtons (N = kg·m/s²).",
-                    grading_hints=["newton", "newtons"],
-                ),
-            ]
         elif subj in ("biology", "bio"):
             questions = [
                 PreparedQuestion(
@@ -3292,6 +3871,16 @@ def _build_guaranteed_fallback_plan(
                     grading_hints=["alliteration"],
                 ),
             ]
+        elif _is_science_subject(subj) or subj in ("science", "general science", "life science", "physical science", "integrated science"):
+            questions = [
+                _generate_fallback_science_question(
+                    idx=i,
+                    target_qtype=target_qtype,
+                    subject=subject or "Science",
+                    subcategory=subcategory,
+                )
+                for i in range(max(target, 8))
+            ]
         else:
             topic_name = f"{subject} Concepts" if subject else "Core Concepts"
             questions = [
@@ -3418,12 +4007,32 @@ def _build_guaranteed_fallback_plan(
                 ) or (subject and canonical_subject(subject).casefold() in (
                     "english & literature", "english",
                 ))
-                if _is_science_subject(subj) or _is_science_subject(subject) or _is_science_subject(subcategory):
+                if _is_physics_subject(subj) or _is_physics_subject(subject) or _is_physics_subject(subcategory):
                     questions = [
-                        _generate_fallback_science_question(
+                        _generate_fallback_physics_question(
                             idx=i,
                             target_qtype=target_qtype,
-                            subject=subject or "Science",
+                            subject=subject or "Physics",
+                            subcategory=subcategory,
+                        )
+                        for i in range(max(target, 6))
+                    ]
+                elif _is_chemistry_subject(subj) or _is_chemistry_subject(subject) or _is_chemistry_subject(subcategory):
+                    questions = [
+                        _generate_fallback_chemistry_question(
+                            idx=i,
+                            target_qtype=target_qtype,
+                            subject=subject or "Chemistry",
+                            subcategory=subcategory,
+                        )
+                        for i in range(max(target, 6))
+                    ]
+                elif _is_biology_subject(subj) or _is_biology_subject(subject) or _is_biology_subject(subcategory):
+                    questions = [
+                        _generate_fallback_biology_question(
+                            idx=i,
+                            target_qtype=target_qtype,
+                            subject=subject or "Biology",
                             subcategory=subcategory,
                         )
                         for i in range(max(target, 6))
@@ -3490,6 +4099,16 @@ def _build_guaranteed_fallback_plan(
                         if (q.question_type.value if hasattr(q.question_type, "value") else str(q.question_type)).lower() == target_qtype
                     ]
                     questions = filtered_eng if filtered_eng else eng_type_fb
+                elif _is_science_subject(subj) or _is_science_subject(subject) or _is_science_subject(subcategory):
+                    questions = [
+                        _generate_fallback_science_question(
+                            idx=i,
+                            target_qtype=target_qtype,
+                            subject=subject or "Science",
+                            subcategory=subcategory,
+                        )
+                        for i in range(max(target, 6))
+                    ]
                 else:
                     math_fb = [
                         PreparedQuestion(
@@ -3605,6 +4224,33 @@ def _build_guaranteed_fallback_plan(
                         _generate_fallback_trigonometry_question(
                             idx=idx + len(questions),
                             target_qtype=target_qtype,
+                            subcategory=subcategory,
+                        )
+                    )
+                elif _is_physics_subject(subj) or _is_physics_subject(subject) or _is_physics_subject(subcategory):
+                    questions.append(
+                        _generate_fallback_physics_question(
+                            idx=idx + len(questions),
+                            target_qtype=target_qtype,
+                            subject=subject or "Physics",
+                            subcategory=subcategory,
+                        )
+                    )
+                elif _is_chemistry_subject(subj) or _is_chemistry_subject(subject) or _is_chemistry_subject(subcategory):
+                    questions.append(
+                        _generate_fallback_chemistry_question(
+                            idx=idx + len(questions),
+                            target_qtype=target_qtype,
+                            subject=subject or "Chemistry",
+                            subcategory=subcategory,
+                        )
+                    )
+                elif _is_biology_subject(subj) or _is_biology_subject(subject) or _is_biology_subject(subcategory):
+                    questions.append(
+                        _generate_fallback_biology_question(
+                            idx=idx + len(questions),
+                            target_qtype=target_qtype,
+                            subject=subject or "Biology",
                             subcategory=subcategory,
                         )
                     )
@@ -4077,8 +4723,8 @@ async def prepare_adaptive_session(
                 doc_status = any_doc.get("status")
                 if doc_status in ("pending", "extracting", "text_extracted", "extracting_topics", "topics_extracted", "chunking"):
                     logger.info("Document %s is in state '%s'; waiting for chunking/readiness...", any_doc.get("_id"), doc_status)
-                    for _ in range(10):  # wait up to 20s
-                        await asyncio.sleep(2.0)
+                    for _ in range(3):  # wait up to 4.5s
+                        await asyncio.sleep(1.5)
                         refreshed = await cosmos_retry(lambda d_id=any_doc["_id"]: doc_col.find_one({"_id": d_id}))
                         if refreshed and refreshed.get("status") in ("chunked", "vectorizing", "ready"):
                             any_doc = refreshed
@@ -4102,7 +4748,6 @@ async def prepare_adaptive_session(
                 raise ConflictError(
                     "No study material has been uploaded yet. Please upload study material to begin."
                 )
-        snapshot = _source_snapshot(sources, subject=request.subject, subcategory=request.subcategory)
         has_custom_selection = bool(request.subject or request.subcategory or request.question_type)
         if has_custom_selection:
             # When the student explicitly chooses a subject, topic, or format type,
