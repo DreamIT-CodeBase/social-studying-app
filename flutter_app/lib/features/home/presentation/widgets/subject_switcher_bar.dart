@@ -95,41 +95,20 @@ class SubjectSwitcherBar extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Horizontal scrolling subject pills
+          // Clean header row: Subjects title on left, + Add PDF on right
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: (activeSubject != null
-                                ? subjectColor(activeSubject)
-                                : const Color(0xFF6366F1))
-                            .withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        subjectEmoji(activeSubject),
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      activeSubject != null
-                          ? '$activeSubject Mode'
-                          : 'Self Study Subjects',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.2,
-                        color: isDark ? Colors.white70 : Colors.black87,
-                      ),
-                    ),
-                  ],
+                Text(
+                  'Subjects',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.2,
+                    color: isDark ? Colors.white70 : const Color(0xFF475569),
+                  ),
                 ),
                 if (onAddMaterial != null)
                   InkWell(
@@ -166,29 +145,13 @@ class SubjectSwitcherBar extends ConsumerWidget {
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                // "All Subjects" Chip
-                _SubjectChip(
-                  label: 'All Subjects',
-                  emoji: '📚',
-                  count: totalDocs,
-                  isSelected: activeSubject == null,
-                  accentColor: const Color(0xFF6366F1),
-                  onTap: () {
-                    ref.read(selfStudySubjectProvider.notifier).state = null;
-                    ref.read(selfStudySubcategoryProvider.notifier).state =
-                        null;
-                    ref.invalidate(
-                        questionSessionNotifierProvider(workspaceId));
-                  },
-                ),
-                const SizedBox(width: 8),
                 // Subject Chips
                 ...subjects.map((subject) {
                   final isSelected =
@@ -219,7 +182,7 @@ class SubjectSwitcherBar extends ConsumerWidget {
               ],
             ),
           ),
-          if (subcategories.isNotEmpty) ...[
+          if (activeSubject != null && subcategories.isNotEmpty) ...[
             const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -234,9 +197,7 @@ class SubjectSwitcherBar extends ConsumerWidget {
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    activeSubject != null
-                        ? 'Topic Focus ($activeSubject):'
-                        : 'Topics from Study Material:',
+                    'Topic Focus ($activeSubject):',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -276,15 +237,9 @@ class SubjectSwitcherBar extends ConsumerWidget {
               child: Row(
                 children: [
                   _SubcategoryChip(
-                    label: activeSubject != null
-                        ? 'All $activeSubject Topics'
-                        : 'All Topics',
+                    label: 'All $activeSubject Topics',
                     isSelected: activeSubcategory == null,
-                    accentColor: activeSubject != null
-                        ? subjectColor(activeSubject)
-                        : (isDark
-                            ? const Color(0xFF818CF8)
-                            : const Color(0xFF4F46E5)),
+                    accentColor: subjectColor(activeSubject),
                     onTap: () {
                       ref.read(selfStudySubcategoryProvider.notifier).state =
                           null;
@@ -301,11 +256,7 @@ class SubjectSwitcherBar extends ConsumerWidget {
                       child: _SubcategoryChip(
                         label: subcat,
                         isSelected: isSubSelected,
-                        accentColor: activeSubject != null
-                            ? subjectColor(activeSubject)
-                            : (isDark
-                                ? const Color(0xFF818CF8)
-                                : const Color(0xFF4F46E5)),
+                        accentColor: subjectColor(activeSubject),
                         onTap: () {
                           ref
                               .read(selfStudySubcategoryProvider.notifier)
@@ -317,21 +268,6 @@ class SubjectSwitcherBar extends ConsumerWidget {
                     );
                   }),
                 ],
-              ),
-            ),
-          ] else if (totalDocs > 0) ...[
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Topics are being extracted from your study material…',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontStyle: FontStyle.italic,
-                  color: isDark
-                      ? const Color(0xFF94A3B8)
-                      : const Color(0xFF64748B),
-                ),
               ),
             ),
           ],

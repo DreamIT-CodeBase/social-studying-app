@@ -562,19 +562,24 @@ def classify_document_subject(doc: Document) -> str:
     """Classify the subject of a document using LLM-evaluated category, filename, and topic tags."""
     # 0. Test LLM-evaluated category first (e.g. novel name, Bible, specific book/subject)
     if doc.category and doc.category.strip():
+        canon = canonical_subject(doc.category)
+        if canon and canon.casefold() != "study":
+            return "English" if canon.casefold() == "english & literature" else canon
         return doc.category.strip()
 
     # 1. Test filename
     from_filename = classify_subject_from_text(doc.filename)
     if from_filename != "Study":
-        return from_filename
+        canon = canonical_subject(from_filename)
+        return "English" if canon.casefold() == "english & literature" else canon
 
     # 2. Test topic tags
     if doc.topic_tags:
         for tag in doc.topic_tags:
             from_tag = classify_subject_from_text(tag.name)
             if from_tag != "Study":
-                return from_tag
+                canon = canonical_subject(from_tag)
+                return "English" if canon.casefold() == "english & literature" else canon
 
     return "Study"
 

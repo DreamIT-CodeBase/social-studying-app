@@ -22,8 +22,7 @@ Output STRICT JSON matching this schema:
   ]
 }
 
-Field rules:
-- subject: Concisely identify and judge the overarching subject or work title. If the study material is a novel (e.g., 'The Great Gatsby', 'To Kill a Mockingbird'), a religious text (e.g., 'The Holy Bible'), or a specific literary work/book, the subject MUST be the exact novel/book title. If it is an academic subject (e.g., 'Organic Chemistry', 'Calculus', 'World History'), use the specific discipline name.
+- subject: Concisely identify and judge the overarching subject or work title. For academic curriculum subjects, use the clean canonical subject name (e.g., 'Physics', 'Chemistry', 'Mathematics', 'Biology', 'English', 'History') — NEVER include grade levels, class numbers, or part numbers (e.g., use 'Physics' NOT 'Class 11 Physics' or 'Physics Part 1'; use 'Mathematics' NOT 'Class 11 Maths' or 'Algebra 1'; use 'Chemistry' NOT 'Class 11 Chemistry'; use 'English' NOT 'Class 11 English'). If the study material is a novel (e.g., 'The Great Gatsby', 'To Kill a Mockingbird'), a religious text (e.g., 'The Holy Bible'), or a specific literary work/book, the subject MUST be the exact novel/book title.
 - name: Unique, concise Title Case name (2 to 6 words).
 - description: Exactly 1 clear, complete sentence. No bullet lists.
 - complexity_level: Integer 1 to 5 (1 = introductory, 5 = advanced).

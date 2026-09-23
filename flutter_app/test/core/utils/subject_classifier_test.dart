@@ -128,4 +128,59 @@ void main() {
     expect(subjectColor('The Holy Bible'), isNotNull);
     expect(subjectColor('The Great Gatsby'), isNotNull);
   });
+
+  test('canonicalSubject resolves raw class/grade names and groups correctly', () {
+    expect(canonicalSubject('Class 11 Physics'), 'Physics');
+    expect(canonicalSubject('Class 11 Chemistry'), 'Chemistry');
+    expect(canonicalSubject('Class 11 English'), 'English');
+    expect(canonicalSubject('Class 11 Maths'), 'Mathematics');
+    expect(canonicalSubject('Algebra 1'), 'Mathematics');
+    expect(canonicalSubject('Math 2'), 'Mathematics');
+    expect(canonicalSubject('The Great Gatsby'), 'The Great Gatsby');
+    expect(canonicalSubject('The Holy Bible'), 'The Holy Bible');
+
+    // 2 maths docs resolve to Mathematics
+    const docMath1 = Document(
+      id: 'doc_m1',
+      workspaceId: 'w1',
+      filename: 'maths_class11.pdf',
+      docType: DocumentType.pdf,
+      status: DocumentStatus.ready,
+      createdAt: '2026-05-14T00:00:00Z',
+      category: 'Class 11 Maths',
+    );
+    const docMath2 = Document(
+      id: 'doc_m2',
+      workspaceId: 'w1',
+      filename: 'algebra1_notes.pdf',
+      docType: DocumentType.pdf,
+      status: DocumentStatus.ready,
+      createdAt: '2026-05-14T00:00:00Z',
+      category: 'Algebra 1',
+    );
+    expect(subjectForDocument(docMath1), 'Mathematics');
+    expect(subjectForDocument(docMath2), 'Mathematics');
+
+    const docPhys = Document(
+      id: 'doc_p1',
+      workspaceId: 'w1',
+      filename: 'laws_of_motion.pdf',
+      docType: DocumentType.pdf,
+      status: DocumentStatus.ready,
+      createdAt: '2026-05-14T00:00:00Z',
+      category: 'Class 11 Physics',
+    );
+    expect(subjectForDocument(docPhys), 'Physics');
+
+    const docEng = Document(
+      id: 'doc_e1',
+      workspaceId: 'w1',
+      filename: 'english_grammar.pdf',
+      docType: DocumentType.pdf,
+      status: DocumentStatus.ready,
+      createdAt: '2026-05-14T00:00:00Z',
+      category: 'Class 11 English',
+    );
+    expect(subjectForDocument(docEng), 'English');
+  });
 }

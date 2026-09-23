@@ -37,11 +37,13 @@ final selfStudyAvailableSubjectsProvider =
 });
 
 /// List of available subcategories/topics detected from ready documents in the workspace.
-/// If an active subject filter is applied, filters topics for that subject;
-/// otherwise returns all distinct topics detected across all ready study materials.
+/// Topics are scoped to the actively selected subject (returns empty if no subject is selected).
 final selfStudyAvailableSubcategoriesProvider =
     Provider.family<List<String>, String>((ref, workspaceId) {
   final activeSubject = ref.watch(selfStudySubjectProvider);
+  if (activeSubject == null) {
+    return const <String>[];
+  }
   final docsAsync = ref.watch(documentsListProvider(workspaceId));
   final docs = docsAsync.valueOrNull ?? const <Document>[];
   final extractedTopics = <String>{};
@@ -49,7 +51,7 @@ final selfStudyAvailableSubcategoriesProvider =
   for (final doc in docs) {
     if (!doc.status.isUsableForStudy) continue;
 
-    final matchesSubject = activeSubject == null ||
+    final matchesSubject =
         subjectForDocument(doc).toLowerCase() == activeSubject.toLowerCase();
 
     if (matchesSubject) {

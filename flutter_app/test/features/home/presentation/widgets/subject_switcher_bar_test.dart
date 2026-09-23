@@ -50,8 +50,13 @@ void main() {
     // Initial pump and settle
     await tester.pumpAndSettle();
 
-    // Verify "All Subjects" chip is present
-    expect(find.text('All Subjects'), findsOneWidget);
+    // Verify "All Subjects" chip is removed
+    expect(find.text('All Subjects'), findsNothing);
+
+    // Verify clean "Subjects" header is present (no useless Mode header)
+    expect(find.text('Subjects'), findsOneWidget);
+    expect(find.text('Self Study Subjects'), findsNothing);
+    expect(find.text('Physics Mode'), findsNothing);
 
     // Verify "Physics" and "Chemistry" chips are present
     expect(find.text('Physics'), findsOneWidget);
@@ -63,16 +68,19 @@ void main() {
     await tester.pump();
     expect(addMaterialClicked, isTrue);
 
+    // Initially without selecting a subject, topics should NOT appear
+    expect(find.text('Topic Focus (Physics):'), findsNothing);
+
     // Tap "Physics" chip
     await tester.tap(find.text('Physics'));
     await tester.pumpAndSettle();
 
-    // Verify "Physics Mode" header title appears
-    expect(find.text('Physics Mode'), findsOneWidget);
+    // "Physics Mode" text should NOT exist (space reclaimed)
+    expect(find.text('Physics Mode'), findsNothing);
   });
 
   testWidgets(
-      'SubjectSwitcherBar renders detected topics from document topicTags',
+      'SubjectSwitcherBar dynamically reveals topics only after subject is selected',
       (tester) async {
     const docs = [
       Document(
@@ -118,13 +126,22 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    // Verify detected topics header is present
-    expect(find.text('Topics from Study Material:'), findsOneWidget);
+    // Before tapping Biology, topics must NOT be visible on screen
+    expect(find.text('Cell Membrane & Osmosis'), findsNothing);
+    expect(find.text('Mitochondria ATP'), findsNothing);
+    expect(find.text('All Biology Topics'), findsNothing);
 
-    // Verify detected topic chips are present
+    // Tap "Biology" subject chip
+    await tester.tap(find.text('Biology'));
+    await tester.pumpAndSettle();
+
+    // Verify topic focus header dynamically appears for Biology
+    expect(find.text('Topic Focus (Biology):'), findsOneWidget);
+
+    // Verify detected topic chips are now visible
     expect(find.text('Cell Membrane & Osmosis'), findsOneWidget);
     expect(find.text('Mitochondria ATP'), findsOneWidget);
-    expect(find.text('All Topics'), findsOneWidget);
+    expect(find.text('All Biology Topics'), findsOneWidget);
 
     // Tap on a specific topic chip
     await tester.tap(find.text('Cell Membrane & Osmosis'));
@@ -132,6 +149,56 @@ void main() {
 
     // Clear focus button should appear
     expect(find.text('Clear Focus'), findsOneWidget);
+  });
+
+  testWidgets(
+      'SubjectSwitcherBar groups multiple math documents under a single Mathematics chip',
+      (tester) async {
+    const docs = [
+      Document(
+        id: 'doc_m1',
+        workspaceId: 'wsp_self_1',
+        filename: 'math1.pdf',
+        docType: DocumentType.pdf,
+        status: DocumentStatus.ready,
+        createdAt: '2026-05-01T00:00:00Z',
+        category: 'Class 11 Maths',
+      ),
+      Document(
+        id: 'doc_m2',
+        workspaceId: 'wsp_self_1',
+        filename: 'algebra.pdf',
+        docType: DocumentType.pdf,
+        status: DocumentStatus.ready,
+        createdAt: '2026-05-01T00:00:00Z',
+        category: 'Algebra 1',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          documentsListProvider('wsp_self_1').overrideWith(
+            () => _FakeDocumentsList(docs),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SubjectSwitcherBar(
+              workspaceId: 'wsp_self_1',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    // Only one "Mathematics" chip should exist with count 2
+    expect(find.text('Mathematics'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
+    expect(find.text('Class 11 Maths'), findsNothing);
+    expect(find.text('Algebra 1'), findsNothing);
   });
 }
 

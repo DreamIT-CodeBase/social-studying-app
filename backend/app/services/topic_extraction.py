@@ -270,6 +270,11 @@ async def extract_topics_and_subject(text: str) -> tuple[list[TopicTag], str | N
         if isinstance(judged_subject, str)
         else None
     )
+    if judged_subject:
+        from app.services.subject_classifier import canonical_subject
+        canon = canonical_subject(judged_subject)
+        if canon and canon.casefold() != "study":
+            judged_subject = "English" if canon.casefold() == "english & literature" else canon
 
     global _LAST_EXTRACTED_SUBJECT
     _LAST_EXTRACTED_SUBJECT = judged_subject

@@ -283,6 +283,7 @@ const List<String> _englishLiteratureTerms = [
   'british literature',
   'world literature',
   'english language',
+  'english',
   'ap english',
   'ap literature',
   'ap lit',
@@ -564,24 +565,74 @@ String subjectForTopic(String topic) {
   return bestSubject;
 }
 
+/// Resolves a raw subject, course title, or topic string (e.g. 'Class 11 Physics',
+/// 'Class 11 Chemistry', 'Algebra 1', 'Class 11 English') into a clean, canonical
+/// discipline name ('Physics', 'Chemistry', 'Mathematics', 'English').
+///
+/// Novel titles (e.g. 'The Great Gatsby') and religious scriptures ('The Holy Bible')
+/// are preserved as-is.
+String canonicalSubject(String? text) {
+  if (text == null || text.trim().isEmpty) {
+    return 'Study';
+  }
+  final clean = text.trim();
+  final lower = clean.toLowerCase();
+
+  // Preserve recognized religious texts
+  if (lower.contains('bible') ||
+      lower.contains('scripture') ||
+      lower.contains('testament') ||
+      lower.contains('quran') ||
+      lower.contains('koran') ||
+      lower.contains('gita') ||
+      lower.contains('torah')) {
+    return clean;
+  }
+
+  // Preserve recognized specific novels/literary works
+  if (lower.contains('gatsby') ||
+      lower.contains('mockingbird') ||
+      lower.contains('odyssey') ||
+      lower.contains('iliad') ||
+      lower.contains('hamlet') ||
+      lower.contains('frankenstein')) {
+    return clean;
+  }
+
+  // Classify through academic terms
+  final classified = subjectForTopic(clean);
+  if (classified != 'Study') {
+    if (classified == 'English & Literature') {
+      return 'English';
+    }
+    return classified;
+  }
+
+  return clean;
+}
+
 /// Derives the primary subject of a Document from its LLM evaluated category, filename, or topic tags.
 String subjectForDocument(Document doc) {
-  // 0. Use LLM-evaluated category first (e.g. novel name, Bible, specific book/subject)
+  // 0. Use LLM-evaluated category first, normalized to clean canonical discipline
   if (doc.category != null && doc.category!.trim().isNotEmpty) {
+    final canon = canonicalSubject(doc.category);
+    if (canon.isNotEmpty && canon != 'Study') {
+      return canon;
+    }
     return doc.category!.trim();
   }
 
   // 1. Check filename
   final fromFilename = subjectForTopic(doc.filename);
   if (fromFilename != 'Study') {
-    return fromFilename;
+    return canonicalSubject(fromFilename);
   }
 
   // 2. Check topic tags
   for (final tag in doc.topicTags) {
     final fromTag = subjectForTopic(tag.name);
     if (fromTag != 'Study') {
-      return fromTag;
+      return canonicalSubject(fromTag);
     }
   }
 
