@@ -1037,6 +1037,10 @@ class _FlashcardActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!isFirstCard) {
+      return const SizedBox.shrink();
+    }
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final background = isDark ? const Color(0xFF0D0D1F) : Colors.white;
     final surface = isDark ? const Color(0xFF1A1A3A) : Colors.white;

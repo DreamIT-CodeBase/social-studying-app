@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.api.adaptive_sessions import (
+    _build_guaranteed_fallback_plan,
     _current_grounding_chunks,
     _flashcard_fingerprint,
     _generate_flashcard_batch,
@@ -15,7 +16,7 @@ from app.api.adaptive_sessions import (
     _unique_questions,
 )
 from app.mcp_tools.retrieve_content import RetrieveContentOutput, RetrievedChunk
-from app.models.adaptive_session import AdaptiveLevel, PreparedFlashcard
+from app.models.adaptive_session import AdaptiveLevel, AdaptiveSessionMode, PreparedFlashcard
 from app.models.flashcard import Flashcard, FlashcardStatus
 from app.models.question import DifficultyLevel, Question, QuestionStatus, QuestionType
 from app.models.user import UserRole
@@ -61,21 +62,21 @@ def _raw(question_id: str, body: str) -> dict:
     return _question(question_id, body).model_dump(by_alias=True)
 
 
-def _flashcard(card_id: str, front: str, back: str) -> Flashcard:
+def _flashcard(card_id: str, front: str, back: str, document_id: str = "doc_a", topic: str = "Biology") -> Flashcard:
     return Flashcard(
         **{"_id": card_id},
         tenant_id="ten_test001",
         workspace_id="wsp_a",
-        document_id="doc_a",
-        topic="Biology",
+        document_id=document_id,
+        topic=topic,
         front=front,
         back=back,
         status=FlashcardStatus.approved,
     )
 
 
-def _raw_flashcard(card_id: str, front: str, back: str) -> dict:
-    return _flashcard(card_id, front, back).model_dump(by_alias=True)
+def _raw_flashcard(card_id: str, front: str, back: str, document_id: str = "doc_a", topic: str = "Biology") -> dict:
+    return _flashcard(card_id, front, back, document_id=document_id, topic=topic).model_dump(by_alias=True)
 
 
 def test_fingerprint_and_unique_questions_ignore_cosmetic_body_differences():
@@ -571,29 +572,29 @@ def test_mastery_level_count_ranges_match_specification():
         _level_for_mastery,
     )
 
-    # Beginner (score < 0.40): 5-7 questions, 3-4 flashcards
+    # Beginner (score < 0.40): 5-7 questions, 5-7 flashcards
     beg_level = _level_for_mastery(0.0)
     assert beg_level == AdaptiveLevel.beginner
     beg_q_count = _adaptive_count(0.0, beg_level, _QUESTION_RANGES[beg_level])
     assert 5 <= beg_q_count <= 7
     beg_f_count = _adaptive_count(0.0, beg_level, _FLASHCARD_RANGES[beg_level])
-    assert 3 <= beg_f_count <= 4
+    assert 5 <= beg_f_count <= 7
 
-    # Intermediate (score 0.40 - 0.75): 12-15 questions, 10-13 flashcards
+    # Intermediate (score 0.40 - 0.75): 12-15 questions, 12-15 flashcards
     inter_level = _level_for_mastery(0.55)
     assert inter_level == AdaptiveLevel.intermediate
     inter_q_count = _adaptive_count(0.55, inter_level, _QUESTION_RANGES[inter_level])
     assert 12 <= inter_q_count <= 15
     inter_f_count = _adaptive_count(0.55, inter_level, _FLASHCARD_RANGES[inter_level])
-    assert 10 <= inter_f_count <= 13
+    assert 12 <= inter_f_count <= 15
 
-    # Expert (score > 0.75): 20-25 questions, 18-25 flashcards
+    # Expert (score > 0.75): 20-25 questions, 20-25 flashcards
     exp_level = _level_for_mastery(0.90)
     assert exp_level == AdaptiveLevel.expert
     exp_q_count = _adaptive_count(0.90, exp_level, _QUESTION_RANGES[exp_level])
     assert 20 <= exp_q_count <= 25
     exp_f_count = _adaptive_count(0.90, exp_level, _FLASHCARD_RANGES[exp_level])
-    assert 18 <= exp_f_count <= 25
+    assert 20 <= exp_f_count <= 25
 
 
 def _raw_with_topic(question_id: str, body: str, topic: str) -> dict:
@@ -1197,5 +1198,98 @@ async def test_generated_unrelated_topic_questions_strictly_rejected_when_subcat
     assert prepared[0].id == "qst_match"
 
 
+@pytest.mark.asyncio
+async def test_physics_flashcard_session_strictly_excludes_mathematics_document_and_questions():
+    """Verify that when a student selects Physics, math documents and math questions are excluded."""
+    from app.services.subject_classifier import is_math_question_body
+    student = make_user(user_id="stu_phys1", role=UserRole.student, workspace_ids=["wsp_hybrid"])
+    sources = CurrentStudySources(
+        document_ids=frozenset({"doc_physics", "doc_math"}),
+        topic_names=("Newton's Laws", "Linear Equations"),
+    )
+
+    doc_col = MagicMock()
+    doc_col.find.return_value = _Cursor([
+        {"_id": "doc_physics", "filename": "physics_ch1.pdf", "category": "Physics", "subcategory": "Mechanics", "topic_tags": []},
+        {"_id": "doc_math", "filename": "math_algebra.pdf", "category": "Mathematics", "subcategory": "Linear Equations", "topic_tags": []},
+    ])
+
+    card_col = MagicMock()
+    card_col.find.return_value = _Cursor([
+        _raw_flashcard("fc_phys_1", "What is Newton's First Law?", "Law of Inertia", document_id="doc_physics", topic="Physics"),
+        _raw_flashcard("fc_math_1", "Solve for x: 3x + 9 = 21", "x = 4", document_id="doc_math", topic="Mathematics"),
+    ])
+
+    q_col = MagicMock()
+    q_col.find.return_value = _Cursor([])
+
+    def mock_get_collection(tenant_id, name):
+        if name == "documents":
+            return doc_col
+        if name == "flashcards":
+            return card_col
+        return q_col
+
+    with (
+        patch("app.api.adaptive_sessions._history", AsyncMock(return_value=([], {}))),
+        patch("app.api.adaptive_sessions._flashcard_history", AsyncMock(return_value=(set(), set(), []))),
+        patch("app.api.adaptive_sessions._reserved_flashcards", AsyncMock(return_value=(set(), set()))),
+        patch("app.api.adaptive_sessions.study_sources.current_study_sources", AsyncMock(return_value=sources)),
+        patch("app.api.adaptive_sessions._generate_flashcard_batch", AsyncMock(return_value=[])),
+        patch("app.api.adaptive_sessions.get_collection", side_effect=mock_get_collection),
+    ):
+        prepared = await _prepare_flashcards(
+            user=student,
+            workspace_id="wsp_hybrid",
+            target=5,
+            subject="Physics",
+        )
+
+    # Every prepared card must be physics and none can be math equations or from doc_math
+    assert len(prepared) >= 1
+    for card in prepared:
+        assert not is_math_question_body(card.front)
+        assert not is_math_question_body(card.back)
+        assert "solve for x" not in card.front.lower()
+        assert "linear equation" not in card.topic.lower()
 
 
+def test_physics_guaranteed_fallback_has_zero_linear_equations_or_math():
+    """Verify guaranteed fallback for Physics generates rich physics content with zero math leakage."""
+    from app.services.subject_classifier import is_math_question_body
+    from app.api.adaptive_sessions import _build_guaranteed_fallback_plan
+
+    # Flashcard mode
+    fc_plan = _build_guaranteed_fallback_plan(
+        workspace_id="wsp_p",
+        user_id="u_p",
+        tenant_id="t_p",
+        mode=AdaptiveSessionMode.flashcard,
+        level=AdaptiveLevel.expert,
+        mastery=0.0,
+        subject="Physics",
+        target=25,
+    )
+    assert len(fc_plan.flashcards) == 25
+    for fc in fc_plan.flashcards:
+        assert not is_math_question_body(fc.front)
+        assert not is_math_question_body(fc.back)
+        assert "solve for x" not in fc.front.lower()
+        assert "linear equation" not in fc.topic.lower()
+
+    # Question mode
+    q_plan = _build_guaranteed_fallback_plan(
+        workspace_id="wsp_p",
+        user_id="u_p",
+        tenant_id="t_p",
+        mode=AdaptiveSessionMode.study,
+        level=AdaptiveLevel.expert,
+        mastery=0.0,
+        subject="Physics",
+        target=10,
+    )
+    assert len(q_plan.questions) == 10
+    for q in q_plan.questions:
+        assert not is_math_question_body(q.body)
+        assert "solve for x" not in q.body.lower()
+        assert "linear equation" not in q.topic.lower()

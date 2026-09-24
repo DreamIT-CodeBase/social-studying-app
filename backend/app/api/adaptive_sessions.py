@@ -101,9 +101,9 @@ _QUESTION_RANGES = {
     AdaptiveLevel.expert: (20, 25),
 }
 _FLASHCARD_RANGES = {
-    AdaptiveLevel.beginner: (3, 4),
-    AdaptiveLevel.intermediate: (10, 13),
-    AdaptiveLevel.expert: (18, 25),
+    AdaptiveLevel.beginner: (5, 7),
+    AdaptiveLevel.intermediate: (12, 15),
+    AdaptiveLevel.expert: (20, 25),
 }
 _MINUTES_PER_ITEM = 2  # kept for XP calculations only — not used for duration
 # Per-type time allocations (seconds). These drive the session clock.
@@ -725,12 +725,23 @@ async def _prepare_questions(
     }
     if current_sources.document_ids:
         matching_doc_ids = (
-            [did for did in current_sources.document_ids if subjects_match(doc_subjects.get(did, ""), subject)]
+            [
+                did for did in current_sources.document_ids
+                if subjects_match(doc_subjects.get(did, ""), subject)
+                and not is_conflicting_subject(doc_subjects.get(did, ""), subject)
+            ]
             if subject
             else list(current_sources.document_ids)
         )
-        # If matching documents exist for the requested subject, query ONLY from those documents
-        target_doc_ids = matching_doc_ids if matching_doc_ids else list(current_sources.document_ids)
+        if subject and matching_doc_ids:
+            target_doc_ids = matching_doc_ids
+        elif subject:
+            target_doc_ids = [
+                did for did in current_sources.document_ids
+                if not is_conflicting_subject(doc_subjects.get(did, ""), subject)
+            ] or list(current_sources.document_ids)
+        else:
+            target_doc_ids = list(current_sources.document_ids)
         q_query["document_id"] = {"$in": sorted(target_doc_ids)}
 
     cursor = col.find(q_query)
@@ -748,7 +759,7 @@ async def _prepare_questions(
     for raw in all_raw:
         try:
             question = Question.model_validate(raw)
-            if question.document_id in current_sources.document_ids:
+            if question.document_id in target_doc_ids:
                 available.append(question)
         except Exception:
             logger.warning("Skipping malformed queued question id=%s", raw.get("_id"))
@@ -1047,7 +1058,7 @@ async def _prepare_questions(
         elif current_sources.document_ids or available or historical_seen_records:
             matching_doc_ids = [
                 did for did in current_sources.document_ids
-                if not subject or subjects_match(doc_subjects.get(did, ""), subject)
+                if not subject or (subjects_match(doc_subjects.get(did, ""), subject) and not is_conflicting_subject(doc_subjects.get(did, ""), subject))
             ]
             doc_id = matching_doc_ids[0] if matching_doc_ids else (
                 None if subject else (list(current_sources.document_ids)[0] if current_sources.document_ids else "doc_runtime_material")
@@ -1085,7 +1096,7 @@ async def _prepare_questions(
                 )
                 for doc_id in current_sources.document_ids:
                     doc_s = doc_subjects.get(doc_id, "")
-                    if not subject or subjects_match(doc_s, subject):
+                    if not subject or (subjects_match(doc_s, subject) and not is_conflicting_subject(doc_s, subject)):
                         extracted = await extract_and_queue_document_questions(
                             tenant_id=user.tenant_id,
                             workspace_id=workspace_id,
@@ -1320,9 +1331,12 @@ async def _generate_flashcard_batch(
         subject_topics = [
             t for t in topics
             if subjects_match(classify_subject_from_text(t), subject)
+            and not is_conflicting_subject(classify_subject_from_text(t), subject)
         ]
         if subject_topics:
             topics = subject_topics
+        else:
+            topics = [subject, f"{subject} Concepts", f"{subject} Fundamentals"]
 
     topics.sort(
         key=lambda topic: (
@@ -1373,6 +1387,12 @@ async def _generate_flashcard_batch(
                 mastery_tier=level.value,
             )
             for card in batch_cards:
+                card_text = f"{card.front} {card.back}"
+                if subject and (
+                    is_conflicting_subject(None, subject, body=card_text)
+                    or (is_math_question_body(card_text) and canonical_subject(subject).casefold() != "mathematics")
+                ):
+                    continue
                 fp = _flashcard_fingerprint(card.front, card.back)
                 if fp in fingerprints:
                     continue
@@ -1434,6 +1454,12 @@ async def _generate_flashcard_batch(
                 topic,
                 result,
             )
+            continue
+        card_text = f"{result.front} {result.back}"
+        if subject and (
+            is_conflicting_subject(None, subject, body=card_text)
+            or (is_math_question_body(card_text) and canonical_subject(subject).casefold() != "mathematics")
+        ):
             continue
         fingerprint = _flashcard_fingerprint(result.front, result.back)
         if fingerprint in fingerprints:
@@ -1514,13 +1540,64 @@ async def _prepare_flashcards(
             "No ready study material is available for flashcards. Wait for the latest "
             "source to finish processing, then try again."
         )
+    doc_subjects: dict[str, str] = {}
+    doc_subcats: dict[str, set[str]] = {}
+    if subject and current_sources.document_ids:
+        doc_col = get_collection(user.tenant_id, DOCUMENTS)
+        doc_cursor = doc_col.find(
+            {"_id": {"$in": list(current_sources.document_ids)}},
+            {"filename": 1, "topic_tags": 1, "category": 1, "subcategory": 1},
+        )
+        docs_raw = await cosmos_retry(lambda: doc_cursor.to_list(length=100))
+        for doc_raw in docs_raw:
+            did = str(doc_raw["_id"])
+            fn = doc_raw.get("filename", "")
+            cat = doc_raw.get("category")
+            subcat = doc_raw.get("subcategory")
+            tags: set[str] = set()
+            if subcat:
+                tags.add(str(subcat).casefold())
+            for tag in doc_raw.get("topic_tags") or []:
+                tag_name = tag.get("name") if isinstance(tag, dict) else str(tag)
+                tags.add(str(tag_name).casefold())
+            doc_subcats[did] = tags
+
+            s = cat or classify_subject_from_text(f"{fn} {subcat or ''}")
+            if not s or s.casefold() == "study":
+                for tag_name in tags:
+                    ts = classify_subject_from_text(tag_name)
+                    if ts and ts.casefold() != "study":
+                        s = ts
+                        break
+            doc_subjects[did] = s or ""
+
+    # Scope documents strictly to requested subject and exclude any conflicting documents
+    matching_doc_ids: list[str] = []
+    if subject:
+        for did in current_sources.document_ids:
+            doc_s = doc_subjects.get(did, "")
+            if subjects_match(doc_s, subject) and not is_conflicting_subject(doc_s, subject):
+                matching_doc_ids.append(did)
+
+    if subject and matching_doc_ids:
+        allowed_doc_ids = set(matching_doc_ids)
+    elif subject:
+        allowed_doc_ids = {
+            did for did in current_sources.document_ids
+            if not is_conflicting_subject(doc_subjects.get(did, ""), subject)
+        }
+        if not allowed_doc_ids:
+            allowed_doc_ids = set(current_sources.document_ids)
+    else:
+        allowed_doc_ids = set(current_sources.document_ids)
+
     fc_query: dict[str, Any] = {
         "workspace_id": workspace_id,
         "status": FlashcardStatus.approved.value,
         "deleted_at": None,
     }
-    if current_sources.document_ids:
-        fc_query["document_id"] = {"$in": sorted(current_sources.document_ids)}
+    if allowed_doc_ids:
+        fc_query["document_id"] = {"$in": sorted(allowed_doc_ids)}
     cursor = get_collection(user.tenant_id, FLASHCARDS).find(fc_query)
     raw_cards = await cosmos_retry(lambda: cursor.to_list(length=600))
     raw_cards.sort(
@@ -1539,7 +1616,7 @@ async def _prepare_flashcards(
         except Exception:
             continue
         all_existing_fingerprints.add(_flashcard_fingerprint(card.front, card.back))
-        if card.document_id not in current_sources.document_ids:
+        if card.document_id not in allowed_doc_ids:
             continue
         card_doc_ids[card.id] = card.document_id
         available_cards.append(
@@ -1552,77 +1629,49 @@ async def _prepare_flashcards(
             )
         )
 
-    doc_subjects: dict[str, str] = {}
-    doc_subcats: dict[str, set[str]] = {}
-    if subject or subcategory:
-        doc_col = get_collection(user.tenant_id, DOCUMENTS)
-        doc_cursor = doc_col.find(
-            {"_id": {"$in": list(current_sources.document_ids)}},
-            {"filename": 1, "topic_tags": 1, "category": 1, "subcategory": 1},
-        )
-        docs_raw = await cosmos_retry(lambda: doc_cursor.to_list(length=100))
-        for doc_raw in docs_raw:
-            fn = doc_raw.get("filename", "")
-            cat = doc_raw.get("category")
-            subcat = doc_raw.get("subcategory")
-            tags: set[str] = set()
-            if subcat:
-                tags.add(str(subcat).casefold())
-            for tag in doc_raw.get("topic_tags") or []:
-                tag_name = tag.get("name") if isinstance(tag, dict) else str(tag)
-                tags.add(str(tag_name).casefold())
-            doc_subcats[str(doc_raw["_id"])] = tags
+    if subject:
+        def matches_card_subject(c: PreparedFlashcard) -> bool:
+            card_text = f"{c.front} {c.back}"
+            doc_s = doc_subjects.get(card_doc_ids.get(c.id, ""), "")
+            if is_conflicting_subject(doc_s, subject, body=card_text):
+                return False
+            c_top_s = classify_subject_from_text(c.topic)
+            if is_conflicting_subject(c_top_s, subject, body=card_text):
+                return False
+            if is_math_question_body(card_text) and canonical_subject(subject).casefold() != "mathematics":
+                return False
+            if is_conflicting_subject(None, subject, body=card_text):
+                return False
+            if doc_s and subjects_match(doc_s, subject):
+                return True
+            if c_top_s and subjects_match(c_top_s, subject):
+                return True
+            if subjects_match(classify_subject_from_text(card_text), subject):
+                return True
+            return bool(subjects_match(c.topic, subject))
 
-            s = cat or classify_subject_from_text(f"{fn} {subcat or ''}")
-            if not s or s.casefold() == "study":
-                for tag_name in tags:
-                    ts = classify_subject_from_text(tag_name)
-                    if ts and ts.casefold() != "study":
-                        s = ts
-                        break
-            doc_subjects[str(doc_raw["_id"])] = s or ""
+        available_cards = [c for c in available_cards if matches_card_subject(c)]
 
-        if subject:
-            def matches_card_subject(c: PreparedFlashcard) -> bool:
-                card_text = f"{c.front} {c.back}"
-                doc_s = doc_subjects.get(card_doc_ids.get(c.id, ""), "")
-                if is_conflicting_subject(doc_s, subject, body=card_text):
-                    return False
-                c_top_s = classify_subject_from_text(c.topic)
-                if is_conflicting_subject(c_top_s, subject, body=card_text):
-                    return False
-                if is_math_question_body(card_text) and canonical_subject(subject).casefold() != "mathematics":
-                    return False
-                if doc_s and subjects_match(doc_s, subject):
-                    return True
-                if c_top_s and subjects_match(c_top_s, subject):
-                    return True
-                if subjects_match(classify_subject_from_text(card_text), subject):
-                    return True
-                return bool(subjects_match(c.topic, subject))
+    if subcategory:
+        subcat_clean = subcategory.strip().casefold()
+        sub_terms = {
+            t for t in re.findall(r"[a-z0-9]+", subcat_clean)
+            if len(t) >= 2 and not t.isdigit() and t not in {"the", "and", "in", "of", "to", "a", "an", "is", "for", "with", "on", "concepts", "fundamentals", "basics", "study"}
+        }
 
-            available_cards = [c for c in available_cards if matches_card_subject(c)]
+        def matches_card_subcat(c: PreparedFlashcard) -> bool:
+            c_top = c.topic.strip().casefold()
+            if subcat_clean == c_top or subcat_clean in c_top or c_top in subcat_clean:
+                return True
+            if not sub_terms:
+                return True
+            c_terms = {t for t in re.findall(r"[a-z0-9]+", c_top) if len(t) >= 2 and not t.isdigit()}
+            body_terms = {t for t in re.findall(r"[a-z0-9]+", (c.front + " " + c.back).casefold()) if len(t) >= 2 and not t.isdigit()}
+            if len(sub_terms & c_terms) >= max(1, len(sub_terms) // 2):
+                return True
+            return len(sub_terms & body_terms) >= max(1, len(sub_terms) // 2)
 
-        if subcategory:
-            subcat_clean = subcategory.strip().casefold()
-            sub_terms = {
-                t for t in re.findall(r"[a-z0-9]+", subcat_clean)
-                if len(t) >= 2 and not t.isdigit() and t not in {"the", "and", "in", "of", "to", "a", "an", "is", "for", "with", "on", "concepts", "fundamentals", "basics", "study"}
-            }
-
-            def matches_card_subcat(c: PreparedFlashcard) -> bool:
-                c_top = c.topic.strip().casefold()
-                if subcat_clean == c_top or subcat_clean in c_top or c_top in subcat_clean:
-                    return True
-                if not sub_terms:
-                    return True
-                c_terms = {t for t in re.findall(r"[a-z0-9]+", c_top) if len(t) >= 2 and not t.isdigit()}
-                body_terms = {t for t in re.findall(r"[a-z0-9]+", (c.front + " " + c.back).casefold()) if len(t) >= 2 and not t.isdigit()}
-                if len(sub_terms & c_terms) >= max(1, len(sub_terms) // 2):
-                    return True
-                return len(sub_terms & body_terms) >= max(1, len(sub_terms) // 2)
-
-            available_cards = [c for c in available_cards if matches_card_subcat(c)]
+        available_cards = [c for c in available_cards if matches_card_subcat(c)]
 
     seen_fingerprints = historical_fingerprints | {
         _flashcard_fingerprint(card.front, card.back)
@@ -1657,8 +1706,8 @@ async def _prepare_flashcards(
         "status": QuestionStatus.approved.value,
         "deleted_at": None,
     }
-    if current_sources.document_ids:
-        q_fc_query["document_id"] = {"$in": sorted(current_sources.document_ids)}
+    if allowed_doc_ids:
+        q_fc_query["document_id"] = {"$in": sorted(allowed_doc_ids)}
     question_cursor = get_collection(user.tenant_id, QUESTION_QUEUE).find(q_fc_query)
     question_rows = await cosmos_retry(lambda: question_cursor.to_list(length=600))
     question_rows.sort(
@@ -1673,12 +1722,25 @@ async def _prepare_flashcards(
             question = Question.model_validate(raw)
         except Exception:
             continue
-        if question.document_id not in current_sources.document_ids:
+        if question.document_id not in allowed_doc_ids:
             continue
         if subject:
-            if (
-                not subjects_match(classify_subject_from_text(question.topic), subject)
-                and not subjects_match(doc_subjects.get(question.document_id, ""), subject)
+            q_text = f"{question.topic} {question.body}"
+            doc_s = doc_subjects.get(question.document_id, "")
+            if is_conflicting_subject(doc_s, subject, body=q_text):
+                continue
+            q_top_s = classify_subject_from_text(question.topic)
+            if is_conflicting_subject(q_top_s, subject, body=q_text):
+                continue
+            if is_math_question_body(question.body) and canonical_subject(subject).casefold() != "mathematics":
+                continue
+            if is_conflicting_subject(None, subject, body=question.body):
+                continue
+            if not (
+                (doc_s and subjects_match(doc_s, subject))
+                or (q_top_s and subjects_match(q_top_s, subject))
+                or subjects_match(classify_subject_from_text(question.body), subject)
+                or subjects_match(question.topic, subject)
             ):
                 continue
         if subcategory:
@@ -1726,14 +1788,14 @@ async def _prepare_flashcards(
             break
 
     missing = target - len(cards)
-    # When subcategory is provided, always attempt generation if any cards are
-    # missing — the student explicitly chose this topic. Without a subcategory,
-    # only generate synchronously when fewer than 2 cards are ready.
-    should_gen_fc = missing > 0 and (subcategory or len(cards) < 2 or _is_self_study(workspace_id))
+    should_gen_fc = missing > 0 and (subcategory or len(cards) < target or _is_self_study(workspace_id))
     if should_gen_fc:
-        # In self-study workspace, allow 60s for LLM generation of cards
-        gen_fc_timeout = 60.0 if _is_self_study(workspace_id) else (15.0 if subcategory else 5.0)
-        gen_fc_batch = missing if _is_self_study(workspace_id) else (min(missing, 3) if subcategory else min(missing, 2))
+        gen_fc_timeout = 60.0 if _is_self_study(workspace_id) else (15.0 if subcategory else 10.0)
+        gen_fc_batch = min(missing, 15) if _is_self_study(workspace_id) else (min(missing, 5) if subcategory else min(missing, target))
+        allowed_sources = study_sources.CurrentStudySources(
+            document_ids=frozenset(allowed_doc_ids),
+            topic_names=current_sources.topic_names,
+        )
         try:
             generated_cards = await asyncio.wait_for(
                 _generate_flashcard_batch(
@@ -1741,7 +1803,7 @@ async def _prepare_flashcards(
                     workspace_id=workspace_id,
                     target=gen_fc_batch,
                     level=level,
-                    current_sources=current_sources,
+                    current_sources=allowed_sources,
                     weak_topics=weak_topics,
                     historical_fronts=[*historical_fronts, *(card.front for card in cards)],
                     blocked_fingerprints=(
@@ -1755,15 +1817,21 @@ async def _prepare_flashcards(
                 ),
                 timeout=gen_fc_timeout,
             )
-            cards.extend(generated_cards)
+            for card in generated_cards:
+                card_text = f"{card.front} {card.back}"
+                if subject and (
+                    is_conflicting_subject(None, subject, body=card_text)
+                    or (is_math_question_body(card_text) and canonical_subject(subject).casefold() != "mathematics")
+                ):
+                    continue
+                cards.append(card)
         except TimeoutError:
             logger.info("Synchronous flashcard generation timed out; serving fast available cards")
         except Exception:
             logger.exception("Adaptive session flashcard generation failed")
 
-    selected = _unique_flashcards(cards)[:target]
-
-    if not selected:
+    cards = _unique_flashcards(cards)
+    if not cards or (_is_self_study(workspace_id) and len(cards) < target):
         fb_plan = _build_guaranteed_fallback_plan(
             workspace_id=workspace_id,
             user_id=user.id,
@@ -1775,9 +1843,15 @@ async def _prepare_flashcards(
             subcategory=subcategory,
             target=target,
         )
-        return fb_plan.flashcards[:target]
+        existing_fronts = {c.front.casefold() for c in cards}
+        for fb_card in fb_plan.flashcards:
+            if fb_card.front.casefold() not in existing_fronts:
+                cards.append(fb_card)
+                existing_fronts.add(fb_card.front.casefold())
+                if len(cards) >= target:
+                    break
 
-    return selected[:target]
+    return cards[:target]
 
 
 def _shuffle_prepared_mcq_options(q: PreparedQuestion) -> PreparedQuestion:
@@ -2395,8 +2469,10 @@ def _is_physics_subject(subject_or_category: str | None) -> bool:
     s = subject_or_category.strip().lower()
     physics_keywords = (
         "physics", "phys", "motion", "mechanics", "kinematics", "dynamics",
-        "thermodynamics", "optics", "electromagnetism", "gravity", "gravitation",
+        "thermodynamics", "optics", "electromagnetism", "electromagnetic", "gravity", "gravitation",
         "newton", "rotational", "oscillation", "waves", "electrostatics", "force",
+        "work", "energy", "power", "induction", "semiconductor", "electricity", "current",
+        "magnetic", "magnetism", "radiation", "nuclear", "quantum", "capacitance",
     )
     if any(k in s for k in physics_keywords):
         return True
@@ -2567,6 +2643,110 @@ _PHYSICS_FALLBACK_BANK = [
             "grading_hints": ["mass is constant", "weight is force", "W = mg", "gravitational acceleration", "Newtons vs kilograms"],
         },
     },
+    {
+        "topic": "Electricity & Circuits",
+        "mcq": {
+            "body": "According to Ohm's Law (V = IR), if the resistance in a simple circuit is kept constant and the voltage is doubled, what happens to the electric current?",
+            "options": [("A", "It is halved"), ("B", "It doubles"), ("C", "It quadruples"), ("D", "It remains unchanged")],
+            "answer": "B",
+            "explanation": "Current is directly proportional to voltage when resistance is constant (I = V / R).",
+        },
+        "true_false": {
+            "body": "In a series circuit, the electric current is the same through every component along the path.",
+            "answer": "true",
+            "explanation": "There is only one path for charge to flow in a series circuit, so current remains constant throughout.",
+        },
+        "short_answer": {
+            "body": "The SI unit of electric resistance, named after the German physicist who formulated the voltage-current relationship, is the ________.",
+            "answer": "ohm",
+            "explanation": "Resistance is measured in Ohms (Ω = V/A).",
+            "grading_hints": ["ohm", "ohms"],
+        },
+        "long_answer": {
+            "body": "Compare series and parallel circuits in terms of current distribution, voltage across branches, and equivalent resistance.",
+            "answer": "In series, current is identical through all components, total voltage is the sum of component voltages, and total resistance increases (R = R1 + R2). In parallel, voltage is identical across all branches, total current is the sum of branch currents, and total equivalent resistance decreases (1/R = 1/R1 + 1/R2).",
+            "explanation": "Series and parallel circuits offer distinct electrical topology characteristics.",
+            "grading_hints": ["series vs parallel", "same current in series", "same voltage in parallel", "equivalent resistance"],
+        },
+    },
+    {
+        "topic": "Optics & Light",
+        "mcq": {
+            "body": "What phenomenon occurs when a light wave changes direction as it enters a medium with a different optical density?",
+            "options": [("A", "Reflection"), ("B", "Refraction"), ("C", "Diffraction"), ("D", "Polarization")],
+            "answer": "B",
+            "explanation": "Refraction is the bending of light caused by a change in its propagation speed across media.",
+        },
+        "true_false": {
+            "body": "According to the Law of Reflection, the angle of incidence is always equal to the angle of reflection.",
+            "answer": "true",
+            "explanation": "θ_i = θ_r, measured relative to the normal line at the boundary.",
+        },
+        "short_answer": {
+            "body": "The ratio of the speed of light in a vacuum to the speed of light in a medium (n = c / v) is known as the index of ________.",
+            "answer": "refraction",
+            "explanation": "The refractive index n indicates how much light slows down in a medium.",
+            "grading_hints": ["refraction", "refractive index"],
+        },
+        "long_answer": {
+            "body": "Explain the conditions necessary for Total Internal Reflection (TIR) to occur and describe one practical application.",
+            "answer": "Total Internal Reflection requires: 1) Light must travel from an optically denser medium to an optically rarer medium (higher to lower refractive index). 2) The angle of incidence must exceed the critical angle. A primary application is fiber optic telecommunications, where light pulses transmit data through glass cables with negligible loss.",
+            "explanation": "TIR traps light inside high-index core materials.",
+            "grading_hints": ["denser to rarer", "critical angle", "fiber optics", "internal reflection"],
+        },
+    },
+    {
+        "topic": "Wave Motion",
+        "mcq": {
+            "body": "Which formula correctly relates the speed of a wave (v), its frequency (f), and its wavelength (λ)?",
+            "options": [("A", "v = f · λ"), ("B", "v = f / λ"), ("C", "v = λ / f"), ("D", "v = f² · λ")],
+            "answer": "A",
+            "explanation": "Wave speed equals frequency multiplied by wavelength (v = fλ).",
+        },
+        "true_false": {
+            "body": "Sound waves require a physical material medium to propagate and cannot travel through a vacuum.",
+            "answer": "true",
+            "explanation": "Sound is a mechanical wave requiring particle oscillations; light is electromagnetic and can travel in a vacuum.",
+        },
+        "short_answer": {
+            "body": "The number of complete wave cycles that pass a fixed point per unit time is called the wave ________.",
+            "answer": "frequency",
+            "explanation": "Frequency is measured in Hertz (Hz = 1/s).",
+            "grading_hints": ["frequency"],
+        },
+        "long_answer": {
+            "body": "Distinguish between transverse waves and longitudinal waves, providing one example of each.",
+            "answer": "In transverse waves, particle displacement is perpendicular to the direction of wave propagation (e.g., light waves or waves on a string). In longitudinal waves, particle displacement is parallel to wave propagation, consisting of compressions and rarefactions (e.g., sound waves in air).",
+            "explanation": "Wave classification depends on relative oscillation direction.",
+            "grading_hints": ["perpendicular vs parallel", "light vs sound", "compressions and rarefactions", "transverse vs longitudinal"],
+        },
+    },
+    {
+        "topic": "Thermodynamics",
+        "mcq": {
+            "body": "Which law of thermodynamics states that energy cannot be created or destroyed, only transformed from one form to another?",
+            "options": [("A", "Zeroth Law"), ("B", "First Law"), ("C", "Second Law"), ("D", "Third Law")],
+            "answer": "B",
+            "explanation": "The First Law of Thermodynamics is the principle of conservation of energy (ΔU = Q - W).",
+        },
+        "true_false": {
+            "body": "Absolute zero (0 Kelvin or -273.15 °C) is the theoretical temperature at which particle thermal motion reaches its minimum.",
+            "answer": "true",
+            "explanation": "At absolute zero, entropy and thermal kinetic motion reach minimum theoretical values.",
+        },
+        "short_answer": {
+            "body": "The transfer of thermal energy through electromagnetic waves without requiring a material medium is called ________.",
+            "answer": "radiation",
+            "explanation": "Thermal radiation transfers heat through infrared and other electromagnetic waves.",
+            "grading_hints": ["radiation", "thermal radiation"],
+        },
+        "long_answer": {
+            "body": "Explain the three mechanisms of heat transfer (conduction, convection, and radiation) with real-world examples.",
+            "answer": "1) Conduction is heat transfer through direct molecular collisions in solids (e.g., a metal spoon heating up in hot soup). 2) Convection is heat transfer by fluid bulk motion (e.g., boiling water circulating in a pot). 3) Radiation is heat transfer via electromagnetic waves requiring no medium (e.g., sunlight warming the Earth through space).",
+            "explanation": "Heat moves via direct contact, fluid flow, or electromagnetic emission.",
+            "grading_hints": ["conduction", "convection", "radiation", "solids vs fluids vs electromagnetic"],
+        },
+    },
 ]
 
 _CHEMISTRY_FALLBACK_BANK = [
@@ -2682,11 +2862,31 @@ _BIOLOGY_FALLBACK_BANK = [
 
 _EXTRA_PHYSICS_FLASHCARDS = [
     ("Newton's Laws of Motion", "What is Newton's First Law of Motion?", "An object remains at rest or in uniform motion unless acted upon by an external net force.", "Known as the Law of Inertia."),
+    ("Newton's Laws of Motion", "What is Newton's Second Law of Motion?", "F = ma (Net Force = mass × acceleration).", "Acceleration is directly proportional to net force and inversely proportional to mass."),
     ("Newton's Laws of Motion", "What is Newton's Third Law of Motion?", "For every action, there is an equal and opposite reaction.", "Action and reaction forces act on different interacting bodies."),
     ("Kinetic Energy", "What is the formula for kinetic energy?", "KE = ½mv²", "Kinetic energy is directly proportional to mass and the square of velocity."),
+    ("Gravitational Potential Energy", "What is the formula for gravitational potential energy near Earth's surface?", "PE = mgh", "Potential energy equals mass × gravitational acceleration × height."),
     ("Work and Energy", "What is the SI unit of work and energy?", "Joule (J = N·m = kg·m²/s²)", "One Joule is the work done by a force of one Newton moving through one meter."),
+    ("Work, Energy, and Power", "What is the definition and formula for mechanical power?", "Power is the rate of doing work: P = W / t (measured in Watts).", "One Watt equals one Joule per second."),
     ("Gravitation", "What is the standard acceleration due to gravity near Earth's surface?", "g ≈ 9.8 m/s²", "Free-fall acceleration in the absence of air resistance."),
+    ("Universal Gravitation", "State Newton's Law of Universal Gravitation formula.", "F = G(m₁m₂) / r²", "Gravitational force is proportional to product of masses and inversely proportional to square of separation distance."),
     ("Linear Momentum", "What is the formula for linear momentum?", "p = mv", "Momentum is the product of an object's mass and its velocity."),
+    ("Conservation of Momentum", "State the Law of Conservation of Linear Momentum.", "In an isolated system with no external forces, total momentum remains constant.", "Total initial momentum equals total final momentum before and after collisions."),
+    ("Electricity & Circuits", "What is Ohm's Law relating voltage, current, and resistance?", "V = I · R (Voltage = Current × Resistance)", "Voltage is directly proportional to current through an ohmic conductor."),
+    ("Electric Current", "How is electric current defined mathematically?", "I = Q / t (Current = Charge / time)", "Measured in Amperes (1 A = 1 Coulomb/second)."),
+    ("Electrical Power", "What is the formula for electrical power in a resistive circuit?", "P = V · I = I²R = V² / R", "Power expresses the rate of electrical energy dissipation."),
+    ("Wave Motion", "What is the fundamental wave speed equation?", "v = f · λ (Speed = frequency × wavelength)", "Wave speed equals the product of its frequency and wavelength."),
+    ("Sound Waves", "What type of wave is a sound wave in air?", "A longitudinal mechanical wave.", "Sound travels via alternating compressions and rarefactions parallel to wave direction."),
+    ("Optics & Light", "What is Snell's Law of Refraction?", "n₁ sin(θ₁) = n₂ sin(θ₂)", "Relates refractive indices of two media to angles of incidence and refraction."),
+    ("Optics & Reflection", "State the Law of Reflection.", "The angle of incidence equals the angle of reflection (θᵢ = θᵣ).", "Both angles are measured relative to the normal line at the boundary."),
+    ("Total Internal Reflection", "When does total internal reflection occur?", "When light travels from a denser to a rarer medium at an angle greater than the critical angle.", "All light is reflected back into the denser medium."),
+    ("Thermodynamics", "State the First Law of Thermodynamics.", "ΔU = Q - W (Change in internal energy = heat added minus work done by system).", "A restatement of the law of conservation of energy for thermal systems."),
+    ("Thermodynamics", "What is absolute zero temperature on the Celsius and Kelvin scales?", "0 Kelvin = -273.15 °C", "The theoretical point where particles have minimum thermodynamic energy."),
+    ("Electromagnetism", "What does Faraday's Law of Electromagnetic Induction state?", "Induced electromotive force (EMF) is proportional to the rate of change of magnetic flux.", "ε = -dΦ/dt, where the negative sign reflects Lenz's Law."),
+    ("Modern Physics", "What is the formula for photon energy in terms of frequency?", "E = h · f (Energy = Planck's constant × frequency)", "Shows that electromagnetic radiation is quantized into discrete packets."),
+    ("Modern Physics", "State Einstein's mass-energy equivalence equation.", "E = mc²", "Energy equals mass multiplied by the square of the speed of light."),
+    ("Circular Motion", "What is the formula for centripetal acceleration in uniform circular motion?", "a_c = v² / r = ω²r", "Centripetal acceleration always points radially inward toward the center."),
+    ("Friction", "What is the relationship between maximum static friction and normal force?", "f_s ≤ μ_s · N", "Static friction resists motion up to a maximum threshold proportional to normal force."),
 ]
 
 
@@ -3001,29 +3201,16 @@ def _build_guaranteed_fallback_plan(
                     explanation="Collect variable terms on one side and constant terms on the other.",
                 ),
             ]
-        elif subj in ("physics", "phys"):
+        elif subj in ("physics", "phys") or _is_physics_subject(subj) or _is_physics_subject(subject):
             flashcards = [
                 PreparedFlashcard(
                     id=f"fls_phys_{uuid4().hex[:8]}",
-                    topic="Newton's Laws of Motion",
-                    front="State Newton's Second Law of Motion formula.",
-                    back="F = ma (Force = mass × acceleration)",
-                    explanation="The net force applied on a body equals mass times its acceleration.",
-                ),
-                PreparedFlashcard(
-                    id=f"fls_phys_{uuid4().hex[:8]}",
-                    topic="Electricity Basics",
-                    front="What is Ohm's Law equation relating voltage, current, and resistance?",
-                    back="V = I · R",
-                    explanation="Voltage (V) = Current (I) × Resistance (R).",
-                ),
-                PreparedFlashcard(
-                    id=f"fls_phys_{uuid4().hex[:8]}",
-                    topic="Wave Speed and Frequency",
-                    front="What is the equation relating wave speed, frequency, and wavelength?",
-                    back="v = f · λ",
-                    explanation="Wave speed equals frequency multiplied by wavelength.",
-                ),
+                    topic=subcategory or topic_name,
+                    front=front_text,
+                    back=back_text,
+                    explanation=expl_text,
+                )
+                for topic_name, front_text, back_text, expl_text in _EXTRA_PHYSICS_FLASHCARDS[:max(4, target)]
             ]
         elif subj in ("biology", "bio"):
             flashcards = [
@@ -3118,6 +3305,25 @@ def _build_guaranteed_fallback_plan(
                         existing_fronts.add(front_text.casefold())
                         if len(flashcards) >= target:
                             break
+                if len(flashcards) < target:
+                    for bank_item in _PHYSICS_FALLBACK_BANK:
+                        mcq = bank_item["mcq"]
+                        front_q = mcq["body"]
+                        if front_q.casefold() not in existing_fronts:
+                            corr_key = mcq["answer"]
+                            corr_text = next((opt[1] for opt in mcq["options"] if opt[0] == corr_key), corr_key)
+                            flashcards.append(
+                                PreparedFlashcard(
+                                    id=f"fls_phys_bk_{uuid4().hex[:8]}",
+                                    topic=subcategory or bank_item["topic"],
+                                    front=front_q,
+                                    back=corr_text,
+                                    explanation=mcq["explanation"],
+                                )
+                            )
+                            existing_fronts.add(front_q.casefold())
+                            if len(flashcards) >= target:
+                                break
             elif _is_science_subject(subj) or _is_science_subject(subject) or _is_science_subject(subcategory):
                 for topic_name, front_text, back_text, expl_text in _EXTRA_SCIENCE_FLASHCARDS:
                     if front_text.casefold() not in existing_fronts:
@@ -3133,7 +3339,7 @@ def _build_guaranteed_fallback_plan(
                         existing_fronts.add(front_text.casefold())
                         if len(flashcards) >= target:
                             break
-            else:
+            elif canonical_subject(subj).casefold() == "mathematics" or canonical_subject(subject).casefold() == "mathematics":
                 for topic_name, front_text, back_text, expl_text in _EXTRA_MATH_FLASHCARDS:
                     if front_text.casefold() not in existing_fronts:
                         flashcards.append(
@@ -3148,6 +3354,17 @@ def _build_guaranteed_fallback_plan(
                         existing_fronts.add(front_text.casefold())
                         if len(flashcards) >= target:
                             break
+            else:
+                for i in range(len(flashcards), target):
+                    flashcards.append(
+                        PreparedFlashcard(
+                            id=f"fls_gen_ext_{uuid4().hex[:8]}",
+                            topic=subcategory or (f"{subject} Concepts" if subject else "General Concepts"),
+                            front=f"What is a critical application of core concepts in {subject or 'this topic'}?",
+                            back="Applying fundamental rules systematically to solve problem sets and analyze evidence.",
+                            explanation=f"Structured problem solving develops fluency across {subject or 'the field'}.",
+                        )
+                    )
         flashcards = flashcards[:target]
         if subcategory:
             for f in flashcards:
@@ -3166,7 +3383,7 @@ def _build_guaranteed_fallback_plan(
                 _generate_fallback_trigonometry_question(idx=i, target_qtype=target_qtype, subcategory=subcategory)
                 for i in range(max(target, 8))
             ]
-        elif subj in ("physics", "phys") or (subject and canonical_subject(subject).casefold() == "physics"):
+        elif _is_physics_subject(subj) or _is_physics_subject(subject) or _is_physics_subject(subcategory) or (subject and canonical_subject(subject).casefold() == "physics"):
             questions = [
                 PreparedQuestion(
                     id=f"qst_phys_{uuid4().hex[:8]}",
@@ -3339,7 +3556,7 @@ def _build_guaranteed_fallback_plan(
                 for q in questions:
                     q.topic = subcategory.strip()
 
-        elif subj in ("chemistry", "chem"):
+        elif _is_chemistry_subject(subj) or _is_chemistry_subject(subject) or _is_chemistry_subject(subcategory) or (subject and canonical_subject(subject).casefold() == "chemistry"):
             questions = [
                 PreparedQuestion(
                     id=f"qst_chem_{uuid4().hex[:8]}",
@@ -3648,7 +3865,7 @@ def _build_guaranteed_fallback_plan(
                     grading_hints=["subtract 7", "divide by 3", "x = 5", "inverse operations", "isolate"],
                 ),
             ]
-        elif subj in ("biology", "bio"):
+        elif _is_biology_subject(subj) or _is_biology_subject(subject) or _is_biology_subject(subcategory) or (subject and canonical_subject(subject).casefold() == "biology"):
             questions = [
                 PreparedQuestion(
                     id=f"qst_bio_{uuid4().hex[:8]}",
@@ -4109,7 +4326,7 @@ def _build_guaranteed_fallback_plan(
                         )
                         for i in range(max(target, 6))
                     ]
-                else:
+                elif subj in ("mathematics", "math", "maths", "algebra", "algebra 1", "geometry", "calculus") or (subject and canonical_subject(subject).casefold() == "mathematics") or "math" in subj:
                     math_fb = [
                         PreparedQuestion(
                             id=f"qst_math_{uuid4().hex[:8]}",
@@ -4201,20 +4418,42 @@ def _build_guaranteed_fallback_plan(
                     if filtered_math:
                         questions = filtered_math
                     else:
-                        # Dynamic generic fallback ensuring strict target_qtype compliance
                         questions = [
-                            PreparedQuestion(
-                                id=f"qst_gen_{uuid4().hex[:8]}",
-                                topic=subject or "Core Concepts",
-                                question_type=target_qtype,
-                                difficulty="intermediate",
-                                body=f"Explain the primary principles and structured methodology applied when studying {subject or 'this topic'}.",
-                                options=[],
-                                answer=f"Understanding {subject or 'this topic'} requires analyzing core definitions, identifying key patterns, and systematically applying foundational principles.",
-                                explanation=f"Mastery in {subject or 'this discipline'} develops from structured analysis.",
-                                grading_hints=["principles", "methodology", "analysis"],
+                            _generate_fallback_equation_question(
+                                idx=0,
+                                target_qtype=target_qtype,
+                                subject=subject,
                             )
                         ]
+                else:
+                    # Non-math subject fallback ensuring subject relevance and strict target_qtype compliance
+                    topic_name = subcategory.strip() if subcategory else (subject or "Core Concepts")
+                    questions = [
+                        PreparedQuestion(
+                            id=f"qst_gen_{uuid4().hex[:8]}",
+                            topic=topic_name,
+                            question_type=target_qtype or "mcq",
+                            difficulty="intermediate",
+                            body=f"Explain the primary principles and structured methodology applied when studying {topic_name}." if target_qtype in ("short_answer", "long_answer") else (
+                                f"In {topic_name}, foundational principles provide the basis for advanced analysis." if target_qtype == "true_false" else
+                                f"What is the most effective approach to analyzing core concepts in {topic_name}?"
+                            ),
+                            options=[
+                                PreparedOption(key="A", text="Systematically identifying underlying principles and evidence"),
+                                PreparedOption(key="B", text="Relying on arbitrary conjecture without verification"),
+                                PreparedOption(key="C", text="Ignoring foundational definitions"),
+                                PreparedOption(key="D", text="Assuming conclusions without supporting rationale"),
+                            ] if (target_qtype or "mcq") == "mcq" else (
+                                [
+                                    PreparedOption(key="true", text="True"),
+                                    PreparedOption(key="false", text="False"),
+                                ] if target_qtype == "true_false" else []
+                            ),
+                            answer="A" if (target_qtype or "mcq") == "mcq" else ("true" if target_qtype == "true_false" else "principles"),
+                            explanation=f"Structured conceptual mastery in {topic_name} begins with verified foundational principles.",
+                            grading_hints=["principles", "methodology", "analysis", "systematic"],
+                        )
+                    ]
 
         if len(questions) < target:
             needed = target - len(questions)
@@ -4287,12 +4526,40 @@ def _build_guaranteed_fallback_plan(
                             grading_hints=["theme"],
                         )
                     )
-                else:
+                elif subj in ("mathematics", "math", "maths", "algebra", "algebra 1", "geometry", "calculus") or (subject and canonical_subject(subject).casefold() == "mathematics") or "math" in subj:
                     questions.append(
                         _generate_fallback_equation_question(
                             idx=idx + len(questions),
                             target_qtype=target_qtype,
                             subject=subject,
+                        )
+                    )
+                else:
+                    top_name = subcategory.strip() if subcategory else (subject or "Core Concepts")
+                    questions.append(
+                        PreparedQuestion(
+                            id=f"qst_gen_{uuid4().hex[:8]}",
+                            topic=top_name,
+                            question_type=target_qtype or "mcq",
+                            difficulty="beginner",
+                            body=f"What is the central focus when studying foundational topics in {top_name}?" if (target_qtype or "mcq") == "mcq" else (
+                                f"Foundational knowledge in {top_name} builds upon core principles." if target_qtype == "true_false" else
+                                f"The systematic study of key rules in {top_name} is known as conceptual ________."
+                            ),
+                            options=[
+                                PreparedOption(key="A", text="Mastering core principles and relationships"),
+                                PreparedOption(key="B", text="Unrelated extraneous details"),
+                                PreparedOption(key="C", text="Superficial rote memorization"),
+                                PreparedOption(key="D", text="Unverified assumptions"),
+                            ] if (target_qtype or "mcq") == "mcq" else (
+                                [
+                                    PreparedOption(key="true", text="True"),
+                                    PreparedOption(key="false", text="False"),
+                                ] if target_qtype == "true_false" else []
+                            ),
+                            answer="A" if (target_qtype or "mcq") == "mcq" else ("true" if target_qtype == "true_false" else "analysis"),
+                            explanation=f"Comprehending {top_name} requires developing a strong foundation in core principles.",
+                            grading_hints=["analysis", "principles", "concepts"],
                         )
                     )
         # Always shuffle MCQ options so the correct answer key is randomized (never always 'A')

@@ -445,6 +445,11 @@ def is_math_question_body(body: str | None) -> bool:
     """Return True if the text contains clear mathematical formulas/equations (e.g. Solve for x)."""
     if not body or not body.strip():
         return False
+    # Optics and physics wave formulas (e.g. Snell's law: n₁ sin(θ₁) = n₂ sin(θ₂)) are physics, not pure mathematics
+    if re.search(r"\b(?:snell|refraction|optics|refractive|light\s+ray|angle\s+of\s+incidence)\b", body, re.IGNORECASE):
+        return False
+    if re.search(r"n[1₁]\s*sin\s*\(?\s*[θtheta]", body, re.IGNORECASE):
+        return False
     return bool(_MATH_BODY_PATTERN.search(body.strip()))
 
 

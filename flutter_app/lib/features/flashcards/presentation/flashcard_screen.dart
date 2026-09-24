@@ -1440,6 +1440,10 @@ class _ActionArea extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (currentIndex > 1) {
+      return const SizedBox.shrink();
+    }
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final _kBg = isDark ? const Color(0xFF0D0D1F) : Colors.white;
     final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF1F5F9);
