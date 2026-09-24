@@ -202,17 +202,17 @@ async def _handle_inner(msg: ReceivedVectorizationMessage) -> None:
     )
 
     try:
-        from app.services.document_question_extractor import extract_and_queue_document_questions
+        from app.services.study_buffer_service import prefill_document_study_buffers
         asyncio.create_task(
-            extract_and_queue_document_questions(
+            prefill_document_study_buffers(
                 tenant_id=payload.tenant_id,
                 workspace_id=payload.workspace_id,
                 document_id=payload.document_id,
             )
         )
-        logger.info("Triggered auto question extraction for ready doc=%s", payload.document_id)
+        logger.info("Triggered study buffer pre-fill for ready doc=%s", payload.document_id)
     except Exception as q_exc:
-        logger.warning("Auto question extraction trigger failed for doc=%s: %s", payload.document_id, q_exc)
+        logger.warning("Study buffer pre-fill trigger failed for doc=%s: %s", payload.document_id, q_exc)
 
 
 # ── Main loop ────────────────────────────────────────────────────────────────

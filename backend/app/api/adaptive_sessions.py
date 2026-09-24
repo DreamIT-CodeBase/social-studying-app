@@ -4837,6 +4837,22 @@ async def _topup_question_pool(*, user: User, workspace_id: str, revision: bool)
             revision=revision,
             batch_size=_QUESTION_TOPUP_MAX,
         )
+        if sources.document_ids:
+            doc_id = list(sources.document_ids)[0]
+            try:
+                from app.services.study_buffer_service import topup_topic_study_buffer
+                await topup_topic_study_buffer(
+                    tenant_id=user.tenant_id,
+                    workspace_id=workspace_id,
+                    document_id=doc_id,
+                    subject=None,
+                    topic=None,
+                    is_flashcard=False,
+                    seen_ids=set(),
+                    seen_bodies_or_fronts=[],
+                )
+            except Exception as b_exc:
+                logger.debug("Study buffer question top-up in background skipped: %s", b_exc)
     except Exception:
         logger.exception("Background question top-up failed workspace=%s", workspace_id)
 
@@ -4896,6 +4912,22 @@ async def _topup_flashcard_pool(*, user: User, workspace_id: str, level: Adaptiv
                 historical_fingerprints | reserved_fingerprints | existing_fingerprints
             ),
         )
+        if sources.document_ids:
+            doc_id = list(sources.document_ids)[0]
+            try:
+                from app.services.study_buffer_service import topup_topic_study_buffer
+                await topup_topic_study_buffer(
+                    tenant_id=user.tenant_id,
+                    workspace_id=workspace_id,
+                    document_id=doc_id,
+                    subject=None,
+                    topic=None,
+                    is_flashcard=True,
+                    seen_ids=set(),
+                    seen_bodies_or_fronts=[],
+                )
+            except Exception as b_exc:
+                logger.debug("Study buffer flashcard top-up in background skipped: %s", b_exc)
     except Exception:
         logger.exception("Background flashcard top-up failed workspace=%s", workspace_id)
 
@@ -4907,6 +4939,8 @@ def _schedule_topups(
     workspace_id: str,
     mode: AdaptiveSessionMode,
     level: AdaptiveLevel,
+    subject: str | None = None,
+    subcategory: str | None = None,
 ) -> None:
     """Queue the mode-appropriate pool top-up for capped self-study sessions.
 
@@ -5307,6 +5341,8 @@ async def prepare_adaptive_session(
         workspace_id=workspace_id,
         mode=request.mode,
         level=level,
+        subject=request.subject,
+        subcategory=request.subcategory,
     )
     return plan
 

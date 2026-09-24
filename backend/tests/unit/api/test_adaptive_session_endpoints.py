@@ -687,21 +687,21 @@ def test_session_question_count_strictly_governed_by_mastery_level(
 @pytest.mark.parametrize(
     "level,mastery,expected_min,expected_max",
     [
-        (AdaptiveLevel.beginner, 0.0, 3, 4),
-        (AdaptiveLevel.beginner, 0.35, 3, 4),
-        (AdaptiveLevel.intermediate, 0.40, 10, 13),
-        (AdaptiveLevel.intermediate, 0.65, 10, 13),
-        (AdaptiveLevel.expert, 0.75, 18, 25),
-        (AdaptiveLevel.expert, 0.95, 18, 25),
+        (AdaptiveLevel.beginner, 0.0, 5, 7),
+        (AdaptiveLevel.beginner, 0.35, 5, 7),
+        (AdaptiveLevel.intermediate, 0.40, 12, 15),
+        (AdaptiveLevel.intermediate, 0.65, 12, 15),
+        (AdaptiveLevel.expert, 0.75, 20, 25),
+        (AdaptiveLevel.expert, 0.95, 20, 25),
     ],
 )
 def test_session_flashcard_count_strictly_governed_by_mastery_level(
     level: AdaptiveLevel, mastery: float, expected_min: int, expected_max: int
 ):
     """Verify flashcard sessions deliver exact card count range based on mastery level:
-    - Beginner: 3-4 cards
-    - Intermediate: 10-13 cards
-    - Expert: 18-25 cards
+    - Beginner: 5-7 cards
+    - Intermediate: 12-15 cards
+    - Expert: 20-25 cards
     """
     from app.api.adaptive_sessions import _build_guaranteed_fallback_plan
 
