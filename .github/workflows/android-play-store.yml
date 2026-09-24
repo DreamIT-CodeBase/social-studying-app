@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - master
       - tarun/entra-auth
   workflow_dispatch:
 
