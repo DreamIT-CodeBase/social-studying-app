@@ -4814,7 +4814,14 @@ async def _persist_prepared_session(
         logger.exception("Failed to insert prepared adaptive session row; serving in-memory plan")
 
 
-async def _topup_question_pool(*, user: User, workspace_id: str, revision: bool) -> None:
+async def _topup_question_pool(
+    *,
+    user: User,
+    workspace_id: str,
+    revision: bool,
+    subject: str | None = None,
+    topic: str | None = None,
+) -> None:
     """Background: grow the persistent question pool so the next session is warm.
 
     Runs after the response is sent. ``_generate_and_persist_batch`` dedups
@@ -4838,26 +4845,45 @@ async def _topup_question_pool(*, user: User, workspace_id: str, revision: bool)
             batch_size=_QUESTION_TOPUP_MAX,
         )
         if sources.document_ids:
-            doc_id = list(sources.document_ids)[0]
             try:
                 from app.services.study_buffer_service import topup_topic_study_buffer
-                await topup_topic_study_buffer(
+                interactions, _ = await _history(
                     tenant_id=user.tenant_id,
                     workspace_id=workspace_id,
-                    document_id=doc_id,
-                    subject=None,
-                    topic=None,
-                    is_flashcard=False,
-                    seen_ids=set(),
-                    seen_bodies_or_fronts=[],
+                    student_id=user.id,
                 )
+                seen_ids = {str(row.get("question_id")) for row in interactions}
+                session_seen_ids, _, session_seen_bodies = await _question_session_history(
+                    tenant_id=user.tenant_id,
+                    workspace_id=workspace_id,
+                    student_id=user.id,
+                )
+                all_seen_ids = seen_ids | session_seen_ids
+                for doc_id in sources.document_ids:
+                    await topup_topic_study_buffer(
+                        tenant_id=user.tenant_id,
+                        workspace_id=workspace_id,
+                        document_id=doc_id,
+                        subject=subject,
+                        topic=topic,
+                        is_flashcard=False,
+                        seen_ids=all_seen_ids,
+                        seen_bodies_or_fronts=list(session_seen_bodies),
+                    )
             except Exception as b_exc:
                 logger.debug("Study buffer question top-up in background skipped: %s", b_exc)
     except Exception:
         logger.exception("Background question top-up failed workspace=%s", workspace_id)
 
 
-async def _topup_flashcard_pool(*, user: User, workspace_id: str, level: AdaptiveLevel) -> None:
+async def _topup_flashcard_pool(
+    *,
+    user: User,
+    workspace_id: str,
+    level: AdaptiveLevel,
+    subject: str | None = None,
+    topic: str | None = None,
+) -> None:
     """Background: grow the persistent flashcard pool so the next session is warm.
 
     Mirrors :func:`_topup_question_pool`. Blocks regeneration of any card whose
@@ -4876,12 +4902,12 @@ async def _topup_flashcard_pool(*, user: User, workspace_id: str, level: Adaptiv
             workspace_id=workspace_id,
             student_id=user.id,
         )
-        _, historical_fingerprints, historical_fronts = await _flashcard_history(
+        seen_ids, historical_fingerprints, historical_fronts = await _flashcard_history(
             tenant_id=user.tenant_id,
             workspace_id=workspace_id,
             student_id=user.id,
         )
-        _, reserved_fingerprints = await _reserved_flashcards(
+        reserved_ids, reserved_fingerprints = await _reserved_flashcards(
             tenant_id=user.tenant_id,
             workspace_id=workspace_id,
             student_id=user.id,
@@ -4913,19 +4939,20 @@ async def _topup_flashcard_pool(*, user: User, workspace_id: str, level: Adaptiv
             ),
         )
         if sources.document_ids:
-            doc_id = list(sources.document_ids)[0]
             try:
                 from app.services.study_buffer_service import topup_topic_study_buffer
-                await topup_topic_study_buffer(
-                    tenant_id=user.tenant_id,
-                    workspace_id=workspace_id,
-                    document_id=doc_id,
-                    subject=None,
-                    topic=None,
-                    is_flashcard=True,
-                    seen_ids=set(),
-                    seen_bodies_or_fronts=[],
-                )
+                all_seen_ids = seen_ids | reserved_ids
+                for doc_id in sources.document_ids:
+                    await topup_topic_study_buffer(
+                        tenant_id=user.tenant_id,
+                        workspace_id=workspace_id,
+                        document_id=doc_id,
+                        subject=subject,
+                        topic=topic,
+                        is_flashcard=True,
+                        seen_ids=all_seen_ids,
+                        seen_bodies_or_fronts=historical_fronts,
+                    )
             except Exception as b_exc:
                 logger.debug("Study buffer flashcard top-up in background skipped: %s", b_exc)
     except Exception:
@@ -4951,11 +4978,21 @@ def _schedule_topups(
         return
     if mode == AdaptiveSessionMode.flashcard:
         background_tasks.add_task(
-            _topup_flashcard_pool, user=user, workspace_id=workspace_id, level=level
+            _topup_flashcard_pool,
+            user=user,
+            workspace_id=workspace_id,
+            level=level,
+            subject=subject,
+            topic=subcategory,
         )
     else:
         background_tasks.add_task(
-            _topup_question_pool, user=user, workspace_id=workspace_id, revision=False
+            _topup_question_pool,
+            user=user,
+            workspace_id=workspace_id,
+            revision=False,
+            subject=subject,
+            topic=subcategory,
         )
 
 
