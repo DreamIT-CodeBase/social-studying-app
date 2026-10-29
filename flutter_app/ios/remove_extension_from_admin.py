@@ -64,11 +64,11 @@ import UserNotifications
     return "notDetermined"
   }
 
-  func requestAuthorization(completion: @escaping (Bool, Error?) -> Void) {
+  func requestAuthorization(completion: @escaping (Bool, String?) -> Void) {
     completion(false, nil)
   }
 
-  func presentAppPicker(completion: @escaping (Bool, Error?) -> Void) {
+  func presentAppPicker(completion: @escaping (Bool, String?) -> Void) {
     completion(false, nil)
   }
 
