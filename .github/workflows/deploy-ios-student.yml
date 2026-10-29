@@ -192,6 +192,9 @@ jobs:
               echo "Student profile '$profile_name' is missing Family Controls or the Screen Time App Group. Regenerate IOS_PROVISIONING_PROFILE_BASE64 after enabling both capabilities for $APP_BUNDLE_ID." >&2
               exit 1
             fi
+          elif [[ "$APP_FLAVOR" == "admin" ]]; then
+            profile_family_controls=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.family-controls' "$profile_plist" 2>/dev/null || true)
+            echo "Admin profile '$profile_name' Family Controls: ${profile_family_controls:-missing}"
           fi
 
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
@@ -327,6 +330,28 @@ jobs:
             printf 'PROVISIONING_PROFILE_SPECIFIER=%s\n' "$IOS_PROFILE_NAME"
             if [[ "$APP_FLAVOR" == "student" ]]; then
               printf 'CODE_SIGN_ENTITLEMENTS=Runner/Runner.entitlements\n'
+            else
+              admin_ent_path="ios/Runner/Admin.entitlements"
+              plutil -create xml1 "$admin_ent_path" 2>/dev/null || true
+              /usr/libexec/PlistBuddy -c 'Clear dict' "$admin_ent_path" 2>/dev/null || true
+
+              admin_fc=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.family-controls' "$RUNNER_TEMP/$APP_FLAVOR-profile.plist" 2>/dev/null || true)
+              if [[ "$admin_fc" == "true" ]]; then
+                /usr/libexec/PlistBuddy -c 'Add :com.apple.developer.family-controls bool true' "$admin_ent_path"
+              fi
+
+              admin_aps=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' "$RUNNER_TEMP/$APP_FLAVOR-profile.plist" 2>/dev/null || true)
+              if [[ -n "$admin_aps" ]]; then
+                /usr/libexec/PlistBuddy -c "Add :aps-environment string $admin_aps" "$admin_ent_path"
+              fi
+
+              admin_app_group=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups:0' "$RUNNER_TEMP/$APP_FLAVOR-profile.plist" 2>/dev/null || true)
+              if [[ -n "$admin_app_group" ]]; then
+                /usr/libexec/PlistBuddy -c 'Add :com.apple.security.application-groups array' "$admin_ent_path"
+                /usr/libexec/PlistBuddy -c "Add :com.apple.security.application-groups:0 string $admin_app_group" "$admin_ent_path"
+              fi
+
+              printf 'CODE_SIGN_ENTITLEMENTS=Runner/Admin.entitlements\n'
             fi
           } > "$signing_config"
 
