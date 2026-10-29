@@ -2,9 +2,6 @@ import Flutter
 import UIKit
 import UserNotifications
 
-#if canImport(FamilyControls)
-import FamilyControls
-#endif
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
