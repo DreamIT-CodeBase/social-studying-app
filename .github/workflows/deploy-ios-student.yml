@@ -216,7 +216,10 @@ jobs:
             ext_profile_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$ext_profile_plist")
             ext_profile_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$ext_profile_plist")
             ext_profile_app_id=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$ext_profile_plist")
+            ext_profile_fc=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.family-controls' "$ext_profile_plist" 2>/dev/null || echo "missing")
             expected_extension_app_id="$APPLE_TEAM_ID.$APP_BUNDLE_ID.ScreenTimeExtension"
+
+            echo "ScreenTimeExtension profile '$ext_profile_name' (UUID: $ext_profile_uuid, App ID: $ext_profile_app_id, FamilyControls: $ext_profile_fc)"
 
             if [[ "$ext_profile_app_id" != "$expected_extension_app_id" ]]; then
               echo "Screen Time extension profile is for '$ext_profile_app_id', expected '$expected_extension_app_id'." >&2
@@ -243,6 +246,17 @@ jobs:
             security cms -D -i "$sc_profile_path" > "$sc_plist"
             sc_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$sc_plist")
             sc_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$sc_plist")
+            sc_app_id=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$sc_plist" 2>/dev/null || echo "unknown")
+            sc_fc=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.family-controls' "$sc_plist" 2>/dev/null || echo "missing")
+            expected_sc_app_id="$APPLE_TEAM_ID.$APP_BUNDLE_ID.ShieldConfigurationExtension"
+
+            echo "ShieldConfiguration profile '$sc_name' (UUID: $sc_uuid, App ID: $sc_app_id, FamilyControls: $sc_fc)"
+
+            if [[ "$sc_app_id" != "$expected_sc_app_id" ]]; then
+              echo "ShieldConfigurationExtension profile is for '$sc_app_id', expected '$expected_sc_app_id'." >&2
+              exit 1
+            fi
+
             cp "$sc_profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$sc_uuid.mobileprovision"
             echo "IOS_SHIELD_CONFIG_PROFILE_NAME=$sc_name" >> "$GITHUB_ENV"
             echo "Installed ShieldConfiguration profile '$sc_name' ($sc_uuid)"
@@ -263,6 +277,17 @@ jobs:
             security cms -D -i "$sa_profile_path" > "$sa_plist"
             sa_uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$sa_plist")
             sa_name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$sa_plist")
+            sa_app_id=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$sa_plist" 2>/dev/null || echo "unknown")
+            sa_fc=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.family-controls' "$sa_plist" 2>/dev/null || echo "missing")
+            expected_sa_app_id="$APPLE_TEAM_ID.$APP_BUNDLE_ID.ShieldActionExtension"
+
+            echo "ShieldAction profile '$sa_name' (UUID: $sa_uuid, App ID: $sa_app_id, FamilyControls: $sa_fc)"
+
+            if [[ "$sa_app_id" != "$expected_sa_app_id" ]]; then
+              echo "ShieldActionExtension profile is for '$sa_profile_app_id', expected '$expected_sa_app_id'." >&2
+              exit 1
+            fi
+
             cp "$sa_profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$sa_uuid.mobileprovision"
             echo "IOS_SHIELD_ACTION_PROFILE_NAME=$sa_name" >> "$GITHUB_ENV"
             echo "Installed ShieldAction profile '$sa_name' ($sa_uuid)"
@@ -312,23 +337,9 @@ jobs:
             python3 ios/remove_extension_from_admin.py
           fi
 
-          # Inject the extension provisioning profile specifier into the pbxproj build settings
+          # Inject the extension provisioning profile specifier into the pbxproj build settings via Python
           if [[ "$APP_FLAVOR" == "student" ]]; then
-            EXT_PROFILE_ESCAPED=$(echo "$IOS_EXT_PROFILE_NAME" | sed 's/[&/\]/\\&/g')
-            sed -i '' "s|PRODUCT_BUNDLE_IDENTIFIER = \"ai\.socialstudying\.app\.ScreenTimeExtension\";|PRODUCT_BUNDLE_IDENTIFIER = \"ai.socialstudying.app.ScreenTimeExtension\";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${EXT_PROFILE_ESCAPED}\";|g" ios/Runner.xcodeproj/project.pbxproj
-            echo "Injected PROVISIONING_PROFILE_SPECIFIER = $IOS_EXT_PROFILE_NAME"
-
-            if [[ -n "${IOS_SHIELD_CONFIG_PROFILE_NAME:-}" ]]; then
-              SC_PROFILE_ESCAPED=$(echo "$IOS_SHIELD_CONFIG_PROFILE_NAME" | sed 's/[&/\]/\\&/g')
-              sed -i '' "s|PRODUCT_BUNDLE_IDENTIFIER = \"ai\.socialstudying\.app\.ShieldConfigurationExtension\";|PRODUCT_BUNDLE_IDENTIFIER = \"ai.socialstudying.app.ShieldConfigurationExtension\";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${SC_PROFILE_ESCAPED}\";|g" ios/Runner.xcodeproj/project.pbxproj
-              echo "Injected PROVISIONING_PROFILE_SPECIFIER = $IOS_SHIELD_CONFIG_PROFILE_NAME"
-            fi
-
-            if [[ -n "${IOS_SHIELD_ACTION_PROFILE_NAME:-}" ]]; then
-              SA_PROFILE_ESCAPED=$(echo "$IOS_SHIELD_ACTION_PROFILE_NAME" | sed 's/[&/\]/\\&/g')
-              sed -i '' "s|PRODUCT_BUNDLE_IDENTIFIER = \"ai\.socialstudying\.app\.ShieldActionExtension\";|PRODUCT_BUNDLE_IDENTIFIER = \"ai.socialstudying.app.ShieldActionExtension\";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${SA_PROFILE_ESCAPED}\";|g" ios/Runner.xcodeproj/project.pbxproj
-              echo "Injected PROVISIONING_PROFILE_SPECIFIER = $IOS_SHIELD_ACTION_PROFILE_NAME"
-            fi
+            python3 ios/inject_extension_signing.py
           fi
 
           flutter build ipa \
@@ -339,8 +350,14 @@ jobs:
             --build-number "$build_number" \
             --export-options-plist "$RUNNER_TEMP/ExportOptions.plist"
 
-      - name: Upload IPA artifact
+      - name: Verify signed build Family Controls & entitlements
         if: env.SKIP_BUILD != 'true'
+        run: |
+          chmod +x ../scripts/ci/verify_family_controls_ipa.sh
+          ../scripts/ci/verify_family_controls_ipa.sh build/ios/ipa/*.ipa
+
+      - name: Upload IPA artifact
+        if: "!cancelled() && env.SKIP_BUILD != 'true'"
         uses: actions/upload-artifact@v4
         with:
           name: social-studying-${{ matrix.flavor }}-ios-${{ github.run_number }}
