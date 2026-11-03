@@ -190,7 +190,7 @@ class _PermissionOnboardingScreenState
           ],
         ),
         actions: [
-          if (!permission.isRequired)
+          if (!permission.isRequired && !Platform.isIOS)
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
               child: const Text('Not now'),
@@ -207,7 +207,7 @@ class _PermissionOnboardingScreenState
     setState(() => _isDialogOpen = false);
     _attempted.add(permission);
 
-    if (shouldOpen != true) {
+    if (shouldOpen != true && !Platform.isIOS) {
       _scheduleNextDialog();
       return;
     }
@@ -525,9 +525,15 @@ class _PermissionOnboardingScreenState
               child: Column(
                 children: [
                   FilledButton.icon(
-                    onPressed: _isChecking || _isSubmitting || _sequenceActive
+                    onPressed: _isChecking || _isSubmitting
                         ? null
-                        : () => setState(() => _currentStep = 1),
+                        : () {
+                            if (_sequenceActive) {
+                              _scheduleNextDialog();
+                            } else {
+                              setState(() => _currentStep = 1);
+                            }
+                          },
                     style: FilledButton.styleFrom(
                       minimumSize: const Size(double.infinity, 52),
                     ),
@@ -543,19 +549,19 @@ class _PermissionOnboardingScreenState
                         : const Icon(Icons.arrow_forward_rounded),
                     label: Text(
                       _sequenceActive
-                          ? (Platform.isIOS
-                              ? 'Complete the prompt'
-                              : 'Complete the Android prompt')
+                          ? 'Continue'
                           : 'Continue to Choose Apps',
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: _isSubmitting
-                        ? null
-                        : () => setState(() => _currentStep = 1),
-                    child: const Text('Skip permissions and choose apps'),
-                  ),
+                  if (!Platform.isIOS) ...[
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: _isSubmitting
+                          ? null
+                          : () => setState(() => _currentStep = 1),
+                      child: const Text('Skip permissions and choose apps'),
+                    ),
+                  ],
                   TextButton.icon(
                     onPressed: () async {
                       var authState =
@@ -1004,7 +1010,7 @@ class _PermissionTile extends StatelessWidget {
       ),
       subtitle: Text(permission.isRequired ? 'Required' : 'Recommended'),
       trailing: Text(
-        granted ? 'Allowed' : 'Set up',
+        granted ? 'Granted' : 'Set up',
         style: TextStyle(
           color: granted ? Colors.green : Theme.of(context).colorScheme.primary,
           fontWeight: FontWeight.w700,
@@ -1042,13 +1048,13 @@ enum _PermissionKind {
       };
 
   String get title => switch (this) {
-        _PermissionKind.notifications => 'Allow Social Studying notifications?',
-        _PermissionKind.accessibility => 'Turn on app blocking?',
-        _PermissionKind.usageAccess => 'Allow Usage Access?',
-        _PermissionKind.overlay => 'Allow display over other apps?',
-        _PermissionKind.battery => 'Keep app blocking responsive?',
-        _PermissionKind.screenTime => 'Allow Screen Time access?',
-        _PermissionKind.selectApps => 'Choose apps to shield',
+        _PermissionKind.notifications => 'Notifications',
+        _PermissionKind.accessibility => 'App Blocking Service',
+        _PermissionKind.usageAccess => 'Usage Access',
+        _PermissionKind.overlay => 'Display Over Apps',
+        _PermissionKind.battery => 'Battery Optimization',
+        _PermissionKind.screenTime => 'Screen Time Access',
+        _PermissionKind.selectApps => 'Choose Apps to Shield',
       };
 
   String get description => switch (this) {
@@ -1063,18 +1069,18 @@ enum _PermissionKind {
         _PermissionKind.battery =>
           'This optional setting helps Android keep the blocking service responsive when the phone is idle.',
         _PermissionKind.screenTime =>
-          'Apple Screen Time allows Social Studying to securely shield social media apps when earned study minutes run out.',
+          'Apple Screen Time enables Social Studying to securely shield social media apps when earned study minutes run out.',
         _PermissionKind.selectApps =>
           'Pick the social media apps, categories, or websites you want Social Studying to shield during study sessions.',
       };
 
   String get actionLabel => switch (this) {
-        _PermissionKind.notifications => 'Allow',
+        _PermissionKind.notifications => 'Continue',
         _PermissionKind.accessibility => 'Open Android settings',
         _PermissionKind.usageAccess => 'Open Android settings',
         _PermissionKind.overlay => 'Open Android settings',
         _PermissionKind.battery => 'Continue',
-        _PermissionKind.screenTime => 'Allow',
+        _PermissionKind.screenTime => 'Continue',
         _PermissionKind.selectApps => 'Select apps',
       };
 

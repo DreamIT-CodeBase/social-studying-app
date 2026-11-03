@@ -139,7 +139,7 @@ class IOSPermissionSetupScreen extends ConsumerWidget {
       title: 'Enable\nScreen Time',
       subtitle:
           'Apple\'s Screen Time API lets Social Studying shield distracting apps when study minutes run out. Tap below and approve the dialog.',
-      primaryLabel: 'Enable Screen Time',
+      primaryLabel: 'Continue',
     ),
     _StepData(
       icon: Icons.app_blocking_rounded,
@@ -155,7 +155,7 @@ class IOSPermissionSetupScreen extends ConsumerWidget {
       title: 'Stay Informed',
       subtitle:
           'Allow notifications so we can alert you when you\'ve earned new screen-time minutes for completing study sessions.',
-      primaryLabel: 'Allow Notifications',
+      primaryLabel: 'Continue',
       secondaryLabel: 'Skip for Now',
     ),
     _StepData(

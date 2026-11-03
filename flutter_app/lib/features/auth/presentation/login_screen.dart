@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -167,8 +169,10 @@ class _LoginBody extends StatelessWidget {
                           ],
                           const SizedBox(height: 32),
                           _MicrosoftSignInButton(onPressed: onMicrosoftSignIn),
-                          const SizedBox(height: 12),
-                          _GoogleSignInButton(onPressed: onGoogleSignIn),
+                          if (kIsWeb || !Platform.isIOS) ...[
+                            const SizedBox(height: 12),
+                            _GoogleSignInButton(onPressed: onGoogleSignIn),
+                          ],
                         ],
                       ),
                     ),
