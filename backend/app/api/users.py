@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from app.core.auth import get_current_user, invalidate_user_cache, require_role
 from app.core.database import USERS, WORKSPACES, cosmos_retry, get_collection
-from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from app.models.base import utc_now
 from app.models.user import (
     User,
@@ -136,29 +136,33 @@ async def list_users(
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def deactivate_user(
     user_id: str,
-    current_user: User = Depends(require_role(UserRole.tenant_admin)),
+    current_user: User = Depends(get_current_user),
 ) -> None:
     """Soft-delete a user (sets deleted_at). Auth cache will expire within 5 minutes."""
+    target_id = current_user.id if user_id == "me" else user_id
+    if current_user.id != target_id and current_user.role != UserRole.tenant_admin:
+        raise ForbiddenError("You can only delete your own account or must be a tenant admin.")
+
     col = get_collection(current_user.tenant_id, USERS)
-    user_doc = await col.find_one({"_id": user_id, "deleted_at": None})
+    user_doc = await col.find_one({"_id": target_id, "deleted_at": None})
     if user_doc is None:
         raise NotFoundError("User", user_id)
 
     user = User.model_validate(user_doc)
 
     result = await col.update_one(
-        {"_id": user_id, "deleted_at": None},
+        {"_id": target_id, "deleted_at": None},
         {"$set": {"deleted_at": utc_now(), "updated_at": utc_now(), "is_active": False}},
     )
     if result.matched_count == 0:
-        raise NotFoundError("User", user_id)
+        raise NotFoundError("User", target_id)
 
     # Remove user from all their workspaces
     wsp_col = get_collection(current_user.tenant_id, "workspaces")
     for membership in user.workspace_memberships:
         await wsp_col.update_one(
             {"_id": membership.workspace_id},
-            {"$pull": {"student_ids": user_id, "admin_ids": user_id}},
+            {"$pull": {"student_ids": target_id, "admin_ids": target_id}},
         )
     await invalidate_user_cache(user)
 

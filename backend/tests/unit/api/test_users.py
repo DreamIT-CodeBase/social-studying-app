@@ -134,6 +134,28 @@ def test_create_user_student_role_is_forbidden(client):
     assert response.status_code == 403
 
 
+def test_deactivate_user_self_as_student_happy_path(client):
+    student = make_user(user_id="usr_self", role=UserRole.student)
+    app.dependency_overrides[get_current_user] = lambda: student
+    col = MagicMock()
+    col.find_one = AsyncMock(return_value=student.model_dump(by_alias=True))
+    col.update_one = AsyncMock(return_value=MagicMock(matched_count=1))
+    wsp_col = MagicMock()
+    wsp_col.update_one = AsyncMock()
+
+    def mock_get_collection(tenant_id, name):
+        if name == "workspaces":
+            return wsp_col
+        return col
+
+    with patch("app.api.users.get_collection", side_effect=mock_get_collection), patch(
+        "app.api.users.invalidate_user_cache", new_callable=AsyncMock
+    ):
+        response = client.delete("/api/v1/users/usr_self")
+
+    assert response.status_code == 204
+
+
 # ── GET /api/v1/users/{user_id} ───────────────────────────────────────────────
 
 

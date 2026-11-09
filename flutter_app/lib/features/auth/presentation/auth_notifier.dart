@@ -133,15 +133,16 @@ class AuthNotifier extends _$AuthNotifier {
 
   Future<void> deleteAccount() async {
     _authGeneration += 1;
-    final currentUser = state.valueOrNull?.maybeWhen(
+    var currentUser = state.valueOrNull?.maybeWhen(
       authenticated: (user) => user,
       orElse: () => null,
     );
+    currentUser ??= await ref.read(authRepositoryProvider).getStoredUser();
     if (currentUser == null) return;
 
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await ref.read(authRepositoryProvider).deleteAccount(currentUser.id);
+      await ref.read(authRepositoryProvider).deleteAccount(currentUser!.id);
       return const AuthState.unauthenticated();
     });
   }

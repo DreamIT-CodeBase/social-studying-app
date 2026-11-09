@@ -7,6 +7,7 @@ import 'package:social_study_app/core/theme/theme_manager.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
 import 'package:social_study_app/features/screen_time/widgets/accessibility_disclosure_dialog.dart';
 import 'package:social_study_app/shared/models/user.dart';
+import 'package:social_study_app/shared/widgets/delete_account_dialog.dart';
 
 // ─── Colours matching the reference exactly ───────────────────────────────
 const _kSkyTop = Color(0xFFB8EBF7); // pale sky blue
@@ -297,6 +298,16 @@ class ProfileScreen extends ConsumerWidget {
                     ),
                   ),
 
+                  const SizedBox(height: Spacing.md),
+
+                  // ── Delete Account & Data ─────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: _DeleteAccountTile(
+                      onTap: () => showDeleteAccountDialog(context, ref),
+                    ),
+                  ),
+
                   SizedBox(
                     height: MediaQuery.of(context).padding.bottom + 28,
                   ),
@@ -526,6 +537,14 @@ class _CollegeProfileScreen extends ConsumerWidget {
                 subtitle: 'Sign out of this account',
                 isDestructive: true,
                 onTap: () => _confirmSignOut(context, ref),
+              ),
+              _CollegeSettingsTile(
+                icon: Icons.delete_forever_rounded,
+                title: 'Delete Account & Data',
+                subtitle:
+                    'Permanently remove your account and all associated data',
+                isDestructive: true,
+                onTap: () => showDeleteAccountDialog(context, ref),
               ),
             ],
           ),
@@ -1074,6 +1093,80 @@ class _SignOutTile extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   color: textCol,
                 ),
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded,
+                color: isDark ? const Color(0xFF475569) : _kChevron, size: 22),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Delete Account tile ───────────────────────────────────────────────────
+class _DeleteAccountTile extends StatelessWidget {
+  const _DeleteAccountTile({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final cardBg = isDark ? const Color(0xFF13132A) : _kMenuBg;
+    final borderColor =
+        isDark ? const Color(0xFF2A2A50) : const Color(0xFFF0F0F0);
+    final iconBg = isDark ? const Color(0xFF451A1A) : const Color(0xFFFEEAEA);
+    const iconColor = Color(0xFFDC2626);
+    const textCol = Color(0xFFDC2626);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: borderColor, width: isDark ? 1.5 : 0.0),
+          boxShadow: const [
+            BoxShadow(
+                color: Color(0x12000000), blurRadius: 10, offset: Offset(0, 3)),
+          ],
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: iconBg,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.delete_forever_rounded,
+                  size: 20, color: iconColor),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Delete Account & Data',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: textCol,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Permanently delete account and all study data',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF94A3B8),
+                    ),
+                  ),
+                ],
               ),
             ),
             Icon(Icons.chevron_right_rounded,

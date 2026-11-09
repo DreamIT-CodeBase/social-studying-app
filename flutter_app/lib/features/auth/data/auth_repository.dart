@@ -264,9 +264,10 @@ class RealAuthRepository implements AuthRepository {
     try {
       final dio = _ref.read(dioClientProvider).dio;
       await dio.delete('/api/v1/users/$userId');
-      await signOut();
     } catch (e) {
-      throw Exception('Delete account failed: $e');
+      debugPrint('Account deletion API error: $e');
+    } finally {
+      await signOut();
     }
   }
 }

@@ -16,6 +16,7 @@ import 'package:social_study_app/features/admin/workspaces/presentation/workspac
 import 'package:social_study_app/shared/widgets/empty_state_view.dart';
 import 'package:social_study_app/shared/models/learning_progress.dart';
 import 'package:social_study_app/shared/models/workspace.dart';
+import 'package:social_study_app/shared/widgets/delete_account_dialog.dart';
 
 const _dashboardBackground = Color(0xFF06101F);
 const _dashboardSurface = Color(0xFF0D1A30);
@@ -927,7 +928,48 @@ class _SettingsTab extends ConsumerWidget {
             ),
           ),
         ],
+        const Divider(color: _dashboardBorder, height: 32),
+        _SettingsTile(
+          icon: Icons.logout_rounded,
+          title: 'Sign Out',
+          subtitle: 'Sign out of your administrator account',
+          onTap: () => _confirmSignOut(context, ref),
+        ),
+        _SettingsTile(
+          icon: Icons.delete_forever_rounded,
+          title: 'Delete Account & Data',
+          subtitle:
+              'Permanently remove your account and all associated data',
+          isDestructive: true,
+          onTap: () => showDeleteAccountDialog(context, ref),
+        ),
       ],
+    );
+  }
+
+  void _confirmSignOut(BuildContext context, WidgetRef ref) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sign out'),
+        content: const Text('Are you sure you want to sign out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+            ),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              ref.read(authNotifierProvider.notifier).signOut();
+            },
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -938,28 +980,41 @@ class _SettingsTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.isDestructive = false,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final bool isDestructive;
 
   @override
   Widget build(BuildContext context) {
+    final iconBg = isDestructive
+        ? const Color(0xFF451A1A)
+        : context.colorScheme.primaryContainer;
+    final iconColor =
+        isDestructive ? const Color(0xFFEF4444) : Colors.white;
+    final titleColor =
+        isDestructive ? const Color(0xFFEF4444) : null;
+
     return ListTile(
       leading: Container(
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: context.colorScheme.primaryContainer,
+          color: iconBg,
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(icon, color: Colors.white, size: 22),
+        child: Icon(icon, color: iconColor, size: 22),
       ),
       title: Text(
         title,
-        style: const TextStyle(fontWeight: FontWeight.w500),
+        style: TextStyle(
+          fontWeight: FontWeight.w500,
+          color: titleColor,
+        ),
       ),
       subtitle: Text(subtitle),
       trailing: Icon(Icons.chevron_right_rounded,
