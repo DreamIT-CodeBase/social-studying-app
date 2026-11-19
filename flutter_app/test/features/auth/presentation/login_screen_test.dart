@@ -32,12 +32,14 @@ void main() {
   });
 
   group('LoginScreen — unauthenticated', () {
-    testWidgets('shows sign-in buttons', (tester) async {
+    testWidgets('shows sign-in buttons on default/Android platform',
+        (tester) async {
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump(); // let FutureProvider resolve
 
       expect(find.text('Sign in / Sign up with Email'), findsOneWidget);
       expect(find.text('Sign in with Google'), findsOneWidget);
+      expect(find.byType(SignInWithAppleButton), findsNothing);
       expect(find.text('Continue with Demo Account'), findsNothing);
     });
 
@@ -122,7 +124,7 @@ void main() {
   });
 
   group('LoginScreen — iOS platform', () {
-    testWidgets('shows Apple, Google, and Email sign-in buttons on iOS',
+    testWidgets('shows only Apple and Email sign-in buttons on iOS (no Google)',
         (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       try {
@@ -130,7 +132,7 @@ void main() {
         await tester.pump();
 
         expect(find.byType(SignInWithAppleButton), findsOneWidget);
-        expect(find.text('Sign in with Google'), findsOneWidget);
+        expect(find.text('Sign in with Google'), findsNothing);
         expect(find.text('Sign in / Sign up with Email'), findsOneWidget);
       } finally {
         debugDefaultTargetPlatformOverride = null;

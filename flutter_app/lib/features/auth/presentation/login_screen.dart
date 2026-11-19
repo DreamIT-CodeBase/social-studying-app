@@ -179,8 +179,12 @@ class _LoginBody extends StatelessWidget {
                             _AppleSignInButton(onPressed: onAppleSignIn),
                             const SizedBox(height: 12),
                           ],
-                          _GoogleSignInButton(onPressed: onGoogleSignIn),
-                          const SizedBox(height: 12),
+                          if (kIsWeb ||
+                              defaultTargetPlatform !=
+                                  TargetPlatform.iOS) ...[
+                            _GoogleSignInButton(onPressed: onGoogleSignIn),
+                            const SizedBox(height: 12),
+                          ],
                           _MicrosoftSignInButton(onPressed: onMicrosoftSignIn),
                         ],
                       ),
