@@ -129,7 +129,8 @@ void main() {
     expect(subjectColor('The Great Gatsby'), isNotNull);
   });
 
-  test('canonicalSubject resolves raw class/grade names and groups correctly', () {
+  test('canonicalSubject resolves raw class/grade names and groups correctly',
+      () {
     expect(canonicalSubject('Class 11 Physics'), 'Physics');
     expect(canonicalSubject('Class 11 Chemistry'), 'Chemistry');
     expect(canonicalSubject('Class 11 English'), 'English');

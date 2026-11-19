@@ -161,7 +161,8 @@ class UploadController extends _$UploadController {
             d.filename.trim().toLowerCase() == target,
       );
       if (isDuplicate) {
-        throw const DuplicateDocumentException('This document is already present.');
+        throw const DuplicateDocumentException(
+            'This document is already present.');
       }
     } on DuplicateDocumentException {
       rethrow;

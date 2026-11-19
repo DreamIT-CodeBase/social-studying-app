@@ -66,8 +66,8 @@ class LoginScreen extends ConsumerWidget {
               ref.read(authNotifierProvider.notifier).signInWithMicrosoft(),
           onGoogleSignIn: () =>
               ref.read(authNotifierProvider.notifier).signInWithGoogle(),
-            onAppleSignIn: () =>
-                ref.read(authNotifierProvider.notifier).signInWithApple(),
+          onAppleSignIn: () =>
+              ref.read(authNotifierProvider.notifier).signInWithApple(),
         ),
       ),
     );
@@ -174,14 +174,12 @@ class _LoginBody extends StatelessWidget {
                           ],
                           const SizedBox(height: 32),
                           if (!kIsWeb &&
-                              defaultTargetPlatform ==
-                                  TargetPlatform.iOS) ...[
+                              defaultTargetPlatform == TargetPlatform.iOS) ...[
                             _AppleSignInButton(onPressed: onAppleSignIn),
                             const SizedBox(height: 12),
                           ],
                           if (kIsWeb ||
-                              defaultTargetPlatform !=
-                                  TargetPlatform.iOS) ...[
+                              defaultTargetPlatform != TargetPlatform.iOS) ...[
                             _GoogleSignInButton(onPressed: onGoogleSignIn),
                             const SizedBox(height: 12),
                           ],
@@ -263,8 +261,6 @@ class _LegalFooter extends StatelessWidget {
       );
 }
 
-
-
 class _AppleSignInButton extends StatelessWidget {
   const _AppleSignInButton({required this.onPressed});
 
@@ -287,6 +283,7 @@ class _AppleSignInButton extends StatelessWidget {
     );
   }
 }
+
 class _MicrosoftSignInButton extends StatelessWidget {
   const _MicrosoftSignInButton({required this.onPressed});
 

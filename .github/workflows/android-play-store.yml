@@ -76,7 +76,8 @@ jobs:
             --release \
             --flavor ${{ matrix.flavor }} \
             --target ${{ matrix.target }} \
-            --build-number "$build_number"
+            --build-number "$build_number" \
+            --android-skip-build-dependency-validation
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4

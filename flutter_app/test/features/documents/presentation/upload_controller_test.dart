@@ -209,7 +209,8 @@ void main() {
     final state = container.read(uploadControllerProvider);
     expect(state, isA<AsyncError<Document?>>());
     expect((state as AsyncError).error, isA<DuplicateDocumentException>());
-    expect(state.error.toString(), contains('This document is already present'));
+    expect(
+        state.error.toString(), contains('This document is already present'));
 
     verifyNever(() => repo.upload(
           workspaceId: any(named: 'workspaceId'),

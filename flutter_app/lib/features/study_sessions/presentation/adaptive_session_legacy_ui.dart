@@ -1108,8 +1108,8 @@ class _FlashcardActions extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
                 child: Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                      vertical: 14, horizontal: 20),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
                   decoration: BoxDecoration(
                     color: const Color(0xFF7C5CFC).withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(16),

@@ -311,7 +311,8 @@ class RealDocumentsRepository implements DocumentsRepository {
     if (status == 404) return const DocumentNotFoundException();
     if (status == 409) {
       final detail = _detailMessage(e.response?.data);
-      return DuplicateDocumentException(detail ?? 'This document is already present.');
+      return DuplicateDocumentException(
+          detail ?? 'This document is already present.');
     }
     if (status == 413) return const UploadTooLargeException();
     if (status == 422) {

@@ -480,4 +480,3 @@ class GoogleAuthResult {
   final String idToken;
   final String? refreshToken;
 }
-

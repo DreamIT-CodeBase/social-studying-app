@@ -16,7 +16,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 from uuid import uuid4
 
 from app.core.database import (
@@ -40,14 +41,12 @@ from app.services import azure_openai
 from app.services.question_deduplication import (
     canonical_question_signature,
     is_candidate_duplicate,
-    normalize_question_stem,
 )
 from app.services.subject_classifier import (
     canonical_subject,
     classify_subject_from_text,
     is_conflicting_subject,
     is_math_question_body,
-    subjects_match,
 )
 
 logger = logging.getLogger(__name__)

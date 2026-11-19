@@ -138,8 +138,6 @@ class _FlashcardScreenState extends ConsumerState<FlashcardScreen> {
 
   @override
   Widget build(BuildContext context) {
-
-
     // Fire celebrations exactly once per transition into `rated`.
     ref.listen(
       flashcardSessionNotifierProvider(widget.workspaceId),
@@ -453,7 +451,8 @@ class _CardViewState extends ConsumerState<_CardView>
     );
     final responseTimeMs = _stopwatch.elapsedMilliseconds;
     _stopwatch.stop();
-    final accuracy = _calculateAccuracy(notifier.sessionRatings, FlashcardRating.medium);
+    final accuracy =
+        _calculateAccuracy(notifier.sessionRatings, FlashcardRating.medium);
     await notifier.rate(
       FlashcardRating.medium,
       isCorrect: true,
@@ -1446,7 +1445,8 @@ class _ActionArea extends StatelessWidget {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final _kBg = isDark ? const Color(0xFF0D0D1F) : Colors.white;
-    final _kSurface2 = isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF1F5F9);
+    final _kSurface2 =
+        isDark ? const Color(0xFF1A1A3A) : const Color(0xFFF1F5F9);
     final _kBorder = isDark ? const Color(0xFF2A2A50) : const Color(0xFFE2E8F0);
     final _kTextMuted =
         isDark ? const Color(0xFF8888AA) : const Color(0xFF64748B);
@@ -1468,16 +1468,19 @@ class _ActionArea extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
                 child: Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
                   decoration: BoxDecoration(
                     color: _kPurple.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: _kPurple.withOpacity(0.4), width: 1.5),
+                    border: Border.all(
+                        color: _kPurple.withOpacity(0.4), width: 1.5),
                   ),
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.flip_to_back_rounded, color: _kPurpleLight, size: 20),
+                      Icon(Icons.flip_to_back_rounded,
+                          color: _kPurpleLight, size: 20),
                       SizedBox(width: 8),
                       Text(
                         'Tap Card to Flip & Check Answer',
@@ -1519,7 +1522,8 @@ class _ActionArea extends StatelessWidget {
                         onTap: onForgot,
                         behavior: HitTestBehavior.opaque,
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 12, horizontal: 8),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -1531,7 +1535,10 @@ class _ActionArea extends StatelessWidget {
                                   color: _kRed.withOpacity(0.12),
                                   border: Border.all(color: _kRed, width: 1.5),
                                 ),
-                                child: const Icon(Icons.sentiment_dissatisfied_rounded, color: _kRed, size: 18),
+                                child: const Icon(
+                                    Icons.sentiment_dissatisfied_rounded,
+                                    color: _kRed,
+                                    size: 18),
                               ),
                               const SizedBox(width: 8),
                               const Column(
@@ -1540,11 +1547,17 @@ class _ActionArea extends StatelessWidget {
                                 children: [
                                   Text(
                                     'Swipe Left',
-                                    style: TextStyle(color: _kRed, fontSize: 10, fontWeight: FontWeight.w600),
+                                    style: TextStyle(
+                                        color: _kRed,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600),
                                   ),
                                   Text(
                                     'Forgot',
-                                    style: TextStyle(color: _kRed, fontSize: 12, fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                        color: _kRed,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold),
                                   ),
                                 ],
                               ),
@@ -1560,7 +1573,8 @@ class _ActionArea extends StatelessWidget {
                       onTap: onMedium,
                       behavior: HitTestBehavior.opaque,
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 12, horizontal: 12),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -1570,14 +1584,19 @@ class _ActionArea extends StatelessWidget {
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: _kStarGold.withOpacity(0.12),
-                                border: Border.all(color: _kStarGold, width: 1.5),
+                                border:
+                                    Border.all(color: _kStarGold, width: 1.5),
                               ),
-                              child: const Icon(Icons.sentiment_neutral_rounded, color: _kStarGold, size: 18),
+                              child: const Icon(Icons.sentiment_neutral_rounded,
+                                  color: _kStarGold, size: 18),
                             ),
                             const SizedBox(width: 6),
                             const Text(
                               'Medium',
-                              style: TextStyle(color: _kStarGold, fontSize: 12, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                  color: _kStarGold,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold),
                             ),
                           ],
                         ),
@@ -1591,7 +1610,8 @@ class _ActionArea extends StatelessWidget {
                         onTap: onRemembered,
                         behavior: HitTestBehavior.opaque,
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 12, horizontal: 8),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -1601,11 +1621,17 @@ class _ActionArea extends StatelessWidget {
                                 children: [
                                   Text(
                                     'Swipe Right',
-                                    style: TextStyle(color: _kGreen, fontSize: 10, fontWeight: FontWeight.w600),
+                                    style: TextStyle(
+                                        color: _kGreen,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600),
                                   ),
                                   Text(
                                     'Remembered',
-                                    style: TextStyle(color: _kGreen, fontSize: 12, fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                        color: _kGreen,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold),
                                   ),
                                 ],
                               ),
@@ -1616,9 +1642,13 @@ class _ActionArea extends StatelessWidget {
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   color: _kGreen.withOpacity(0.12),
-                                  border: Border.all(color: _kGreen, width: 1.5),
+                                  border:
+                                      Border.all(color: _kGreen, width: 1.5),
                                 ),
-                                child: const Icon(Icons.sentiment_very_satisfied_rounded, color: _kGreen, size: 18),
+                                child: const Icon(
+                                    Icons.sentiment_very_satisfied_rounded,
+                                    color: _kGreen,
+                                    size: 18),
                               ),
                             ],
                           ),

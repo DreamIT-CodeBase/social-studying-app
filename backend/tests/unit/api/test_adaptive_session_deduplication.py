@@ -1257,7 +1257,6 @@ async def test_physics_flashcard_session_strictly_excludes_mathematics_document_
 def test_physics_guaranteed_fallback_has_zero_linear_equations_or_math():
     """Verify guaranteed fallback for Physics generates rich physics content with zero math leakage."""
     from app.services.subject_classifier import is_math_question_body
-    from app.api.adaptive_sessions import _build_guaranteed_fallback_plan
 
     # Flashcard mode
     fc_plan = _build_guaranteed_fallback_plan(

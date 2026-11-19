@@ -938,8 +938,7 @@ class _SettingsTab extends ConsumerWidget {
         _SettingsTile(
           icon: Icons.delete_forever_rounded,
           title: 'Delete Account & Data',
-          subtitle:
-              'Permanently remove your account and all associated data',
+          subtitle: 'Permanently remove your account and all associated data',
           isDestructive: true,
           onTap: () => showDeleteAccountDialog(context, ref),
         ),
@@ -994,10 +993,8 @@ class _SettingsTile extends StatelessWidget {
     final iconBg = isDestructive
         ? const Color(0xFF451A1A)
         : context.colorScheme.primaryContainer;
-    final iconColor =
-        isDestructive ? const Color(0xFFEF4444) : Colors.white;
-    final titleColor =
-        isDestructive ? const Color(0xFFEF4444) : null;
+    final iconColor = isDestructive ? const Color(0xFFEF4444) : Colors.white;
+    final titleColor = isDestructive ? const Color(0xFFEF4444) : null;
 
     return ListTile(
       leading: Container(

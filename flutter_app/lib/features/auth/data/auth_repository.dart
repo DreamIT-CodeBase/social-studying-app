@@ -236,7 +236,8 @@ class RealAuthRepository implements AuthRepository {
         throw StateError('Apple sign-in failed: no identity token returned.');
       }
 
-      debugPrint('Apple Sign-in: received identity token, persisting session...');
+      debugPrint(
+          'Apple Sign-in: received identity token, persisting session...');
       await AuthSessionService.instance.persistAppleSession(identityToken);
 
       // Fetch the real user profile from the backend

@@ -14,18 +14,17 @@ Tests verified:
 6. Symmetrical flashcard flow: Whole-subject scope, zero duplicate cards, sub-100ms slicing.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
 import time
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
-from app.models.adaptive_session import AdaptiveLevel, AdaptiveSessionMode
-from app.models.question import QuestionStatus, QuestionType
 from app.services.study_buffer_service import (
+    LOW_WATERMARK_THRESHOLD,
+    MAX_VARIATION_ROUNDS_PER_TOPIC,
     get_remaining_study_buffer_count,
     prefill_document_study_buffers,
     topup_topic_study_buffer,
-    LOW_WATERMARK_THRESHOLD,
-    MAX_VARIATION_ROUNDS_PER_TOPIC,
 )
 
 

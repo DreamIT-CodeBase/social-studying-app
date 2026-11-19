@@ -146,7 +146,8 @@ class DemoDocumentsRepository implements DocumentsRepository {
         existing.any((d) =>
             d.status != DocumentStatus.failed &&
             d.filename.trim().toLowerCase() == filename.trim().toLowerCase())) {
-      throw const DuplicateDocumentException('This document is already present.');
+      throw const DuplicateDocumentException(
+          'This document is already present.');
     }
 
     final id = 'doc_${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}';

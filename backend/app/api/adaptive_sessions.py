@@ -1333,10 +1333,7 @@ async def _generate_flashcard_batch(
             if subjects_match(classify_subject_from_text(t), subject)
             and not is_conflicting_subject(classify_subject_from_text(t), subject)
         ]
-        if subject_topics:
-            topics = subject_topics
-        else:
-            topics = [subject, f"{subject} Concepts", f"{subject} Fundamentals"]
+        topics = subject_topics or [subject, f"{subject} Concepts", f"{subject} Fundamentals"]
 
     topics.sort(
         key=lambda topic: (
@@ -3355,7 +3352,7 @@ def _build_guaranteed_fallback_plan(
                         if len(flashcards) >= target:
                             break
             else:
-                for i in range(len(flashcards), target):
+                for _i in range(len(flashcards), target):
                     flashcards.append(
                         PreparedFlashcard(
                             id=f"fls_gen_ext_{uuid4().hex[:8]}",

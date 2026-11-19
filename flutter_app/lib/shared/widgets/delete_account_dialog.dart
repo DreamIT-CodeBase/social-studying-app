@@ -6,7 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 /// Shows a standard confirmation dialog allowing the user to initiate and
 /// complete permanent deletion of their account and all associated data,
 /// complying with Apple App Store Review Guideline 5.1.1(v).
-Future<void> showDeleteAccountDialog(BuildContext context, WidgetRef ref) async {
+Future<void> showDeleteAccountDialog(
+    BuildContext context, WidgetRef ref) async {
   return showDialog<void>(
     context: context,
     barrierDismissible: false,
@@ -26,8 +27,7 @@ class _DeleteAccountDialogState extends ConsumerState<_DeleteAccountDialog> {
   bool _isDeleting = false;
   String? _errorMessage;
 
-  static const _webDeletionUrl =
-      'https://www.socialstudying.ai/delete-account';
+  static const _webDeletionUrl = 'https://www.socialstudying.ai/delete-account';
 
   Future<void> _launchWebDeletionPolicy() async {
     final uri = Uri.parse(_webDeletionUrl);
@@ -126,10 +126,14 @@ class _DeleteAccountDialogState extends ConsumerState<_DeleteAccountDialog> {
               ),
             ),
             const SizedBox(height: 10),
-            _bulletPoint('Profile information and login credentials', secondaryTextColor),
-            _bulletPoint('Study progress, quiz records, and flashcards', secondaryTextColor),
-            _bulletPoint('Screen Time shields, stats, and focus history', secondaryTextColor),
-            _bulletPoint('All workspace memberships and roles', secondaryTextColor),
+            _bulletPoint('Profile information and login credentials',
+                secondaryTextColor),
+            _bulletPoint('Study progress, quiz records, and flashcards',
+                secondaryTextColor),
+            _bulletPoint('Screen Time shields, stats, and focus history',
+                secondaryTextColor),
+            _bulletPoint(
+                'All workspace memberships and roles', secondaryTextColor),
             const SizedBox(height: 14),
             InkWell(
               onTap: _isDeleting ? null : _launchWebDeletionPolicy,
@@ -241,4 +245,3 @@ class _DeleteAccountDialogState extends ConsumerState<_DeleteAccountDialog> {
     );
   }
 }
-

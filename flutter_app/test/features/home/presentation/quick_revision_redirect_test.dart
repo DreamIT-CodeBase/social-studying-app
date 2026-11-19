@@ -64,7 +64,8 @@ void main() {
         mockStateSelfStudy,
       );
 
-      expect(redirectResultSelfStudy, '/student/session/wsp_self_123?mode=study');
+      expect(
+          redirectResultSelfStudy, '/student/session/wsp_self_123?mode=study');
 
       final mockStateGroup = GoRouterState(
         r.configuration,

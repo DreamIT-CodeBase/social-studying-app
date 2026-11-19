@@ -667,9 +667,7 @@ class _AdaptiveSessionScreenState extends ConsumerState<AdaptiveSessionScreen> {
             ),
             // For first-use (sessionsUsed == 0), onClose retries preparation
             // so the "Try again" button actually re-runs session generation.
-            onClose: (_plan?.sessionsUsed ?? 0) == 0
-                ? _prepare
-                : _handleExit,
+            onClose: (_plan?.sessionsUsed ?? 0) == 0 ? _prepare : _handleExit,
           ),
         _SessionPhase.error => _ErrorView(
             message: _error ?? 'Something went wrong.',

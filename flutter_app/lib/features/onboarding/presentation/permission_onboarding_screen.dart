@@ -548,9 +548,7 @@ class _PermissionOnboardingScreenState
                           )
                         : const Icon(Icons.arrow_forward_rounded),
                     label: Text(
-                      _sequenceActive
-                          ? 'Continue'
-                          : 'Continue to Choose Apps',
+                      _sequenceActive ? 'Continue' : 'Continue to Choose Apps',
                     ),
                   ),
                   if (!Platform.isIOS) ...[
