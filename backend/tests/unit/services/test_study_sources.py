@@ -47,7 +47,7 @@ async def test_current_sources_keep_latest_ready_version_per_filename():
     collection.find.assert_called_once_with(
         {
             "workspace_id": "wsp_a",
-            "status": {"$in": ["ready", "vectorizing", "chunked", "topics_extracted"]},
+            "status": {"$in": ["ready"]},
             "deleted_at": None,
         }
     )
