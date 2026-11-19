@@ -269,16 +269,54 @@ class _AppleSignInButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return SizedBox(
+    return Container(
       width: double.infinity,
       height: 52,
-      child: SignInWithAppleButton(
-        onPressed: onPressed,
-        style: isDark
-            ? SignInWithAppleButtonStyle.white
-            : SignInWithAppleButtonStyle.black,
-        borderRadius: BorderRadius.circular(12),
-        height: 52,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: isDark
+            ? null
+            : Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1F000000),
+            blurRadius: 8,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(14),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Padding(
+                padding: EdgeInsets.only(bottom: 2),
+                child: SizedBox(
+                  width: 17,
+                  height: 21,
+                  child: CustomPaint(
+                    painter: AppleLogoPainter(color: Colors.black),
+                  ),
+                ),
+              ),
+              SizedBox(width: 10),
+              Text(
+                'Sign in with Apple',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 16.5,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.3,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -296,7 +334,7 @@ class _MicrosoftSignInButton extends StatelessWidget {
       height: 52,
       decoration: BoxDecoration(
         color: const Color(0xFF2563EB),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         boxShadow: const [
           BoxShadow(
             color: Color(0x332563EB),
@@ -309,27 +347,26 @@ class _MicrosoftSignInButton extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onPressed,
-          borderRadius: BorderRadius.circular(12),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Icon(Icons.email_outlined, color: Colors.white, size: 22),
-                SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    'Sign in / Sign up with Email',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+          borderRadius: BorderRadius.circular(14),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.mail_outline_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+              SizedBox(width: 10),
+              Text(
+                'Continue with email',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16.5,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.3,
                 ),
-                SizedBox(width: 22),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -344,15 +381,19 @@ class _GoogleSignInButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: double.infinity,
       height: 52,
       decoration: BoxDecoration(
-        color: const Color(0xFF1E40AF),
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: isDark
+            ? null
+            : Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x331E40AF),
+            color: Color(0x1F000000),
             blurRadius: 8,
             offset: Offset(0, 3),
           ),
@@ -362,36 +403,22 @@ class _GoogleSignInButton extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onPressed,
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: const _GoogleLogoIcon(),
+          borderRadius: BorderRadius.circular(14),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _GoogleLogoIcon(),
+              SizedBox(width: 10),
+              Text(
+                'Sign in with Google',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 16.5,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.3,
                 ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Text(
-                    'Sign in with Google',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 28),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

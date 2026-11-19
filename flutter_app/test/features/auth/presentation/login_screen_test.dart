@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:social_study_app/core/theme/app_theme.dart';
 import 'package:social_study_app/features/auth/data/auth_repository.dart';
 import 'package:social_study_app/features/auth/presentation/login_screen.dart';
@@ -37,9 +36,9 @@ void main() {
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump(); // let FutureProvider resolve
 
-      expect(find.text('Sign in / Sign up with Email'), findsOneWidget);
+      expect(find.text('Continue with email'), findsOneWidget);
       expect(find.text('Sign in with Google'), findsOneWidget);
-      expect(find.byType(SignInWithAppleButton), findsNothing);
+      expect(find.text('Sign in with Apple'), findsNothing);
       expect(find.text('Continue with Demo Account'), findsNothing);
     });
 
@@ -64,11 +63,11 @@ void main() {
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump();
 
-      await tester.tap(find.text('Sign in / Sign up with Email'));
+      await tester.tap(find.text('Continue with email'));
       await tester.pump(); // trigger loading state
 
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
-      expect(find.text('Sign in / Sign up with Email'), findsNothing);
+      expect(find.text('Continue with email'), findsNothing);
 
       completer.complete(_fakeUser); // clean up pending future
       await tester.pump();
@@ -101,11 +100,11 @@ void main() {
       await tester.pumpWidget(_buildSubject(repo: mockRepo));
       await tester.pump();
 
-      await tester.tap(find.text('Sign in / Sign up with Email'));
+      await tester.tap(find.text('Continue with email'));
       await tester.pumpAndSettle();
 
       expect(find.text('Auth failed'), findsOneWidget);
-      expect(find.text('Sign in / Sign up with Email'), findsOneWidget);
+      expect(find.text('Continue with email'), findsOneWidget);
     });
 
     testWidgets('shows error view when Google sign-in fails', (tester) async {
@@ -131,9 +130,9 @@ void main() {
         await tester.pumpWidget(_buildSubject(repo: mockRepo));
         await tester.pump();
 
-        expect(find.byType(SignInWithAppleButton), findsOneWidget);
+        expect(find.text('Sign in with Apple'), findsOneWidget);
         expect(find.text('Sign in with Google'), findsNothing);
-        expect(find.text('Sign in / Sign up with Email'), findsOneWidget);
+        expect(find.text('Continue with email'), findsOneWidget);
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }
@@ -150,11 +149,11 @@ void main() {
         await tester.pumpWidget(_buildSubject(repo: mockRepo));
         await tester.pump();
 
-        await tester.tap(find.byType(SignInWithAppleButton));
+        await tester.tap(find.text('Sign in with Apple'));
         await tester.pump();
 
         expect(find.byType(CircularProgressIndicator), findsOneWidget);
-        expect(find.byType(SignInWithAppleButton), findsNothing);
+        expect(find.text('Sign in with Apple'), findsNothing);
 
         completer.complete(_fakeUser);
         await tester.pump();
@@ -172,11 +171,11 @@ void main() {
         await tester.pumpWidget(_buildSubject(repo: mockRepo));
         await tester.pump();
 
-        await tester.tap(find.byType(SignInWithAppleButton));
+        await tester.tap(find.text('Sign in with Apple'));
         await tester.pumpAndSettle();
 
         expect(find.text('Apple auth failed'), findsOneWidget);
-        expect(find.byType(SignInWithAppleButton), findsOneWidget);
+        expect(find.text('Sign in with Apple'), findsOneWidget);
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }
