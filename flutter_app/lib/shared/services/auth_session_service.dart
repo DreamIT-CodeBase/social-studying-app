@@ -25,6 +25,7 @@ class AuthSessionService {
 
   static const _microsoftProvider = 'microsoft';
   static const _googleProvider = 'google';
+  static const _appleProvider = 'apple';
   static const _storage = FlutterSecureStorage();
   static const _appAuth = FlutterAppAuth();
 
@@ -108,6 +109,15 @@ class AuthSessionService {
       token: idToken,
       refreshToken: refreshToken,
       provider: _googleProvider,
+    );
+  }
+
+  Future<void> persistAppleSession(String idToken) async {
+    await _beginSessionReplacement();
+    await _writeSession(
+      token: idToken,
+      refreshToken: null,
+      provider: _appleProvider,
     );
   }
 
@@ -439,6 +449,7 @@ class AuthSessionService {
     final issuer = _parseJwt(token)?['iss']?.toString().toLowerCase();
     if (issuer == null) return null;
     if (issuer.contains('accounts.google.com')) return _googleProvider;
+    if (issuer.contains('appleid.apple.com')) return _appleProvider;
     if (issuer.contains('microsoftonline.com') ||
         issuer.contains('ciamlogin.com')) {
       return _microsoftProvider;

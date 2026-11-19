@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:social_study_app/core/theme/app_theme.dart';
 import 'package:social_study_app/features/auth/data/auth_repository.dart';
 import 'package:social_study_app/features/auth/presentation/login_screen.dart';
@@ -116,6 +118,66 @@ void main() {
 
       expect(find.text('Auth failed'), findsOneWidget);
       expect(find.text('Sign in with Google'), findsOneWidget);
+    });
+  });
+
+  group('LoginScreen — iOS platform', () {
+    testWidgets('shows Apple, Google, and Email sign-in buttons on iOS',
+        (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      try {
+        await tester.pumpWidget(_buildSubject(repo: mockRepo));
+        await tester.pump();
+
+        expect(find.byType(SignInWithAppleButton), findsOneWidget);
+        expect(find.text('Sign in with Google'), findsOneWidget);
+        expect(find.text('Sign in / Sign up with Email'), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets('shows loading indicator while Apple sign-in is in progress',
+        (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      try {
+        final completer = Completer<User>();
+        when(() => mockRepo.signInWithApple())
+            .thenAnswer((_) => completer.future);
+
+        await tester.pumpWidget(_buildSubject(repo: mockRepo));
+        await tester.pump();
+
+        await tester.tap(find.byType(SignInWithAppleButton));
+        await tester.pump();
+
+        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+        expect(find.byType(SignInWithAppleButton), findsNothing);
+
+        completer.complete(_fakeUser);
+        await tester.pump();
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets('shows error view when Apple sign-in fails', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      try {
+        when(() => mockRepo.signInWithApple())
+            .thenThrow(Exception('Apple auth failed'));
+
+        await tester.pumpWidget(_buildSubject(repo: mockRepo));
+        await tester.pump();
+
+        await tester.tap(find.byType(SignInWithAppleButton));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Apple auth failed'), findsOneWidget);
+        expect(find.byType(SignInWithAppleButton), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
   });
 

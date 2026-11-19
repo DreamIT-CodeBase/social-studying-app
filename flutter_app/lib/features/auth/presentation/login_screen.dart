@@ -1,13 +1,12 @@
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:go_router/go_router.dart';
 import 'package:social_study_app/core/config/app_flavor.dart';
 import 'package:social_study_app/core/routing/routes.dart';
 import 'package:social_study_app/features/auth/domain/auth_state.dart';
 import 'package:social_study_app/features/auth/presentation/auth_notifier.dart';
-import 'package:social_study_app/shared/services/session_persistence_service.dart';
 import 'package:social_study_app/shared/widgets/app_logo.dart';
 import 'package:social_study_app/shared/widgets/loading_indicator.dart';
 
@@ -56,6 +55,8 @@ class LoginScreen extends ConsumerWidget {
                 ref.read(authNotifierProvider.notifier).signInWithMicrosoft(),
             onGoogleSignIn: () =>
                 ref.read(authNotifierProvider.notifier).signInWithGoogle(),
+            onAppleSignIn: () =>
+                ref.read(authNotifierProvider.notifier).signInWithApple(),
           ),
         ),
         loading: () => const LoadingIndicator(message: 'Signing you in…'),
@@ -65,6 +66,8 @@ class LoginScreen extends ConsumerWidget {
               ref.read(authNotifierProvider.notifier).signInWithMicrosoft(),
           onGoogleSignIn: () =>
               ref.read(authNotifierProvider.notifier).signInWithGoogle(),
+            onAppleSignIn: () =>
+                ref.read(authNotifierProvider.notifier).signInWithApple(),
         ),
       ),
     );
@@ -75,11 +78,13 @@ class _LoginBody extends StatelessWidget {
   const _LoginBody({
     required this.onMicrosoftSignIn,
     required this.onGoogleSignIn,
+    required this.onAppleSignIn,
     this.errorMessage,
   });
 
   final VoidCallback onMicrosoftSignIn;
   final VoidCallback onGoogleSignIn;
+  final VoidCallback onAppleSignIn;
   final String? errorMessage;
 
   @override
@@ -115,7 +120,7 @@ class _LoginBody extends StatelessWidget {
                                       ? const Color(0x66000000)
                                       : const Color(0x260F172A),
                                   blurRadius: 14,
-                                  offset: Offset(0, 5),
+                                  offset: const Offset(0, 5),
                                 ),
                               ],
                             ),
@@ -168,11 +173,15 @@ class _LoginBody extends StatelessWidget {
                             ),
                           ],
                           const SizedBox(height: 32),
-                          _MicrosoftSignInButton(onPressed: onMicrosoftSignIn),
-                          if (kIsWeb || !Platform.isIOS) ...[
+                          if (!kIsWeb &&
+                              defaultTargetPlatform ==
+                                  TargetPlatform.iOS) ...[
+                            _AppleSignInButton(onPressed: onAppleSignIn),
                             const SizedBox(height: 12),
-                            _GoogleSignInButton(onPressed: onGoogleSignIn),
                           ],
+                          _GoogleSignInButton(onPressed: onGoogleSignIn),
+                          const SizedBox(height: 12),
+                          _MicrosoftSignInButton(onPressed: onMicrosoftSignIn),
                         ],
                       ),
                     ),
@@ -250,6 +259,30 @@ class _LegalFooter extends StatelessWidget {
       );
 }
 
+
+
+class _AppleSignInButton extends StatelessWidget {
+  const _AppleSignInButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: SignInWithAppleButton(
+        onPressed: onPressed,
+        style: isDark
+            ? SignInWithAppleButtonStyle.white
+            : SignInWithAppleButtonStyle.black,
+        borderRadius: BorderRadius.circular(12),
+        height: 52,
+      ),
+    );
+  }
+}
 class _MicrosoftSignInButton extends StatelessWidget {
   const _MicrosoftSignInButton({required this.onPressed});
 

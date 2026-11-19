@@ -30,6 +30,9 @@ class _StubAuthRepo implements AuthRepository {
   Future<User> signInWithGoogle() async => _user;
 
   @override
+  Future<User> signInWithApple() async => _user;
+
+  @override
   Future<void> signOut() async {}
 
   @override

@@ -97,6 +97,28 @@ async def test_validate_token_google_returns_claims():
     assert claims["iss"] == "https://accounts.google.com"
 
 
+@pytest.mark.asyncio
+async def test_validate_token_apple_returns_claims():
+    apple_claims = {
+        "sub": "apple_user_001",
+        "iss": "https://appleid.apple.com",
+        "email": "student@privaterelay.appleid.com",
+        "aud": "ai.socialstudying.app",
+    }
+    with (
+        patch("app.core.auth._get_apple_jwks", AsyncMock(return_value={"keys": []})),
+        patch(
+            "app.core.auth.jwt.get_unverified_claims",
+            return_value={"iss": "https://appleid.apple.com"},
+        ),
+        patch("app.core.auth.jwt.decode", return_value=apple_claims),
+    ):
+        claims = await _validate_token("apple.token.here")
+    assert claims["sub"] == "apple_user_001"
+    assert claims["iss"] == "https://appleid.apple.com"
+    assert claims["email"] == "student@privaterelay.appleid.com"
+
+
 # ── get_current_user ──────────────────────────────────────────────────────────
 
 

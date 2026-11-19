@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:social_study_app/core/config/environment.dart';
 import 'package:social_study_app/shared/models/user.dart';
@@ -15,6 +16,7 @@ part 'auth_repository.g.dart';
 abstract class AuthRepository {
   Future<User> signInWithMicrosoft();
   Future<User> signInWithGoogle();
+  Future<User> signInWithApple();
   Future<void> signOut();
   Future<User?> getStoredUser();
   Future<void> updateStoredUser(User user);
@@ -215,6 +217,86 @@ class RealAuthRepository implements AuthRepository {
     } catch (e, st) {
       debugPrint('Google Sign-in failed with error: $e\n$st');
       throw Exception('Google Sign in failed: $e');
+    }
+  }
+
+  @override
+  Future<User> signInWithApple() async {
+    try {
+      debugPrint('Apple Sign-in: requesting credential...');
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      final identityToken = credential.identityToken;
+      if (identityToken == null || identityToken.isEmpty) {
+        throw StateError('Apple sign-in failed: no identity token returned.');
+      }
+
+      debugPrint('Apple Sign-in: received identity token, persisting session...');
+      await AuthSessionService.instance.persistAppleSession(identityToken);
+
+      // Fetch the real user profile from the backend
+      final dio = _ref.read(dioClientProvider).dio;
+      User? backendUser;
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          if (attempt > 0) {
+            await Future<void>.delayed(const Duration(seconds: 1));
+          }
+          final response = await dio.get('/api/v1/users/me');
+          backendUser = User.fromJson(response.data as Map<String, dynamic>);
+          break;
+        } catch (e) {
+          debugPrint(
+            'Apple Sign-in: profile fetch attempt ${attempt + 1} failed: $e',
+          );
+          if (attempt == 1) rethrow;
+        }
+      }
+
+      // If Apple returned a full name on first sign-in, update user profile on the backend
+      final fullName = [credential.givenName, credential.familyName]
+          .whereType<String>()
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .join(' ');
+      if (fullName.isNotEmpty &&
+          backendUser != null &&
+          (backendUser.displayName.isEmpty ||
+              backendUser.displayName == 'User' ||
+              backendUser.displayName.contains('@'))) {
+        try {
+          final patchResponse = await dio.patch(
+            '/api/v1/users/me',
+            data: {'display_name': fullName},
+          );
+          backendUser =
+              User.fromJson(patchResponse.data as Map<String, dynamic>);
+        } catch (e) {
+          debugPrint('Apple Sign-in: failed to patch display name: $e');
+        }
+      }
+
+      debugPrint(
+        'Apple Sign-in: user profile loaded (${backendUser!.email})',
+      );
+      await AuthSessionService.instance
+          .writeUser(jsonEncode(backendUser.toJson()));
+      debugPrint('Apple Sign-in: complete, returning user');
+      return backendUser;
+    } on SignInWithAppleAuthorizationException catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) {
+        throw Exception('Apple sign-in was cancelled.');
+      }
+      debugPrint('Apple Sign-in authorization failed: $e');
+      throw Exception('Apple Sign-in failed: ${e.message}');
+    } catch (e, st) {
+      debugPrint('Apple Sign-in failed with error: $e\n$st');
+      throw Exception('Apple Sign in failed: $e');
     }
   }
 

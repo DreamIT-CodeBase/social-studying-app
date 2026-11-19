@@ -76,8 +76,24 @@ async def _get_google_jwks() -> dict[str, Any]:
     return jwks  # type: ignore[no-any-return]
 
 
+async def _get_apple_jwks() -> dict[str, Any]:
+    """Fetch JWKS from Apple, cached in Redis."""
+    redis = await get_redis()
+    cached = await redis.get("apple:jwks")
+    if cached:
+        return json.loads(cached)  # type: ignore[no-any-return]
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get("https://appleid.apple.com/auth/keys", timeout=10)
+        response.raise_for_status()
+        jwks = response.json()
+
+    await redis.setex("apple:jwks", _JWKS_TTL_SECONDS, json.dumps(jwks))
+    return jwks  # type: ignore[no-any-return]
+
+
 async def _validate_token(token: str) -> dict[str, Any]:
-    """Validate a JWT token (either Azure AD B2C or Google OAuth2 ID Token) and return its claims."""
+    """Validate a JWT token (Azure AD B2C, Google OAuth2 ID Token, or Sign in with Apple ID Token) and return its claims."""
     try:
         try:
             unverified_claims = jwt.get_unverified_claims(token)
@@ -88,6 +104,16 @@ async def _validate_token(token: str) -> dict[str, Any]:
         if "accounts.google.com" in iss:
             # Google ID Token validation
             jwks = await _get_google_jwks()
+            claims = jwt.decode(
+                token,
+                jwks,
+                algorithms=["RS256"],
+                options={"verify_at_hash": False, "verify_aud": False, "verify_exp": False},
+            )
+            return claims
+        elif "appleid.apple.com" in iss:
+            # Apple ID Token validation
+            jwks = await _get_apple_jwks()
             claims = jwt.decode(
                 token,
                 jwks,

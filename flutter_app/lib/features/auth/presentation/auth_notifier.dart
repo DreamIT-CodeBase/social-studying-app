@@ -81,6 +81,18 @@ class AuthNotifier extends _$AuthNotifier {
     }
   }
 
+  Future<void> signInWithApple() async {
+    _authGeneration += 1;
+    state = const AsyncLoading();
+    try {
+      final user = await ref.read(authRepositoryProvider).signInWithApple();
+      state = AsyncData(AuthState.authenticated(user: user));
+      unawaited(_claimDailyLogin(user));
+    } catch (error, stackTrace) {
+      state = AsyncError(error, stackTrace);
+    }
+  }
+
   Future<void> redeemInviteCode(String code) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
