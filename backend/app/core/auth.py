@@ -218,9 +218,14 @@ async def _lookup_or_create_user(
             or real_email.split("@")[0]  # last-resort: use local part of email
         )
 
+    aud = str(claims.get("aud") or "")
+    is_admin_app = "admin" in aud
+
     if doc is None:
         # User not found. Auto-create/provision the tenant & user.
-        role_str = claims.get("extension_Role") or "student"
+        role_str = claims.get("extension_Role")
+        if not role_str:
+            role_str = "tenant_admin" if is_admin_app else "student"
 
         # Ensure tenant exists
         from uuid import uuid4
@@ -263,6 +268,9 @@ async def _lookup_or_create_user(
     # If this user was previously created before we had the correct claim
     # extraction, update their profile with the real values now.
     patch: dict[str, Any] = {}
+    if is_admin_app and user.role == UserRole.student:
+        patch["role"] = UserRole.tenant_admin.value
+        logger.info("Upgrading user=%s to tenant_admin for Admin app login", user.id)
     if user.email == _PLACEHOLDER_EMAIL and real_email != _PLACEHOLDER_EMAIL:
         patch["email"] = real_email
         logger.info("Patching placeholder email for user=%s → %s", user.id, real_email)
